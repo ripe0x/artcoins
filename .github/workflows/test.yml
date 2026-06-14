@@ -1,0 +1,50 @@
+name: CI
+
+permissions: {}
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  FOUNDRY_PROFILE: ci
+
+jobs:
+  check:
+    name: Foundry project
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Install Foundry
+        # Pin to a specific release so CI's `forge fmt --check` matches local
+        # `forge fmt`. Without a pin, the action installs whatever's current
+        # at job start, which has caused CI to flag cosmetic diffs that local
+        # fmt doesn't produce.
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.5.0
+
+      - name: Show Forge version
+        run: forge --version
+
+      - name: Run Forge fmt
+        run: forge fmt --check
+
+      - name: Run Forge build
+        run: forge build --sizes
+
+      - name: Run Forge tests
+        # CI runs the deterministic, network-free suite. Fork-gated tests
+        # detect the absence of a fork (no code at the mainnet PoolManager) and
+        # skip themselves, so they cost nothing here. The two self-forking
+        # suites call `vm.createSelectFork` unconditionally and would reach a
+        # public RPC on every run — exclude them. Run fork tests locally with
+        # `forge test --fork-url $MAINNET_RPC_URL` when needed.
+        run: forge test --no-match-contract "AutoBurnOpenTab|DeployConversionLockerAndWire" -vvv

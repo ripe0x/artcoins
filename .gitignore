@@ -1,0 +1,44 @@
+# Compiler output
+cache/
+foundry-out/
+out/
+
+# Broadcast logs
+!/broadcast
+/broadcast/*/31337/
+/broadcast/**/dry-run/
+
+# Environment — ignore all .env files except the committed templates
+.env
+.env.*
+ui/.env
+ui/.env.*
+# Allow the placeholder-only templates to be committed
+!.env.example
+!ui/.env.example
+
+# Docs
+docs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (ui/)
+ui/node_modules/
+ui/dist/
+ui/.env
+
+# Node (script-js/)
+script-js/node_modules/
+script-js/package-lock.json
+
+# IDE
+.vscode/
+.idea/
+
+# Local Claude dev environment (per-user, not for shared history)
+.claude/
+
+# Local working scratch (logs, dryrun output, ad-hoc files)
+tmp/

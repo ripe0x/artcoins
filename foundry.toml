@@ -1,0 +1,63 @@
+[profile.default]
+src = "src"
+out = "foundry-out"
+libs = ["lib"]
+solc = "0.8.26"
+bytecode_hash = "none"
+cbor_metadata = false
+viaIR = true
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 20_000
+fs_permissions = [
+    { access = "read",       path = "script-js/data" },
+    { access = "read-write", path = "tmp" },
+]
+
+[rpc_endpoints]
+mainnet = "${MAINNET_RPC_URL}"
+sepolia = "${SEPOLIA_RPC_URL}"
+
+[etherscan]
+mainnet = { key = "${ETHERSCAN_API_KEY}" }
+sepolia = { key = "${ETHERSCAN_API_KEY}" }
+
+[fmt]
+line_length = 100
+number_underscore = "thousands"
+sort_imports = true
+tab_width = 4
+
+
+# [profile.tune] — used exclusively for forge script DeployV1Stack.s.sol.
+# The hook bytecode MUST be < 24,576 bytes (EIP-170). Calibrated runs that
+# keep it under the ceiling while maximising gas efficiency on the swap hot
+# path.  At optimizer_runs = 200 + viaIR the hook lands at ~24,547 bytes
+# (29 bytes of headroom). Raising runs above ~210 blows the limit; lowering
+# below 100 costs a few hundred gas per swap with no meaningful size benefit.
+[profile.tune]
+viaIR = true
+optimizer = true
+optimizer_runs = 200
+[profile.tune.optimizer_details]
+yul = true
+[profile.tune.optimizer_details.yulDetails]
+stackAllocation = true
+
+
+# [profile.ci] — used by the GitHub Actions "Foundry project" job
+# (the workflow sets FOUNDRY_PROFILE=ci). Mirrors [profile.tune] so that
+# `forge build --sizes` validates the runtime bytecode we actually ship:
+# the size-critical contracts (ArtCoinsHookSkimFee, ArtCoinsLpLocker) only fit
+# under EIP-170 (24,576 bytes) at
+# optimizer_runs = 200. Building CI at the default 20,000 runs overflows the
+# limit and fails the size check on a configuration that is never deployed.
+# Keep these settings in sync with [profile.tune].
+[profile.ci]
+viaIR = true
+optimizer = true
+optimizer_runs = 200
+[profile.ci.optimizer_details]
+yul = true
+[profile.ci.optimizer_details.yulDetails]
+stackAllocation = true

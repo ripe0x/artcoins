@@ -1,0 +1,51 @@
+# Mirror master to the public repo, ripe0x/artcoins.
+#
+# This repo is the private working repo. The public repo is a
+# history-preserving mirror of master: same commits, same SHAs.
+# Issues, PRs, and WIP branches stay here. The permanent-collection
+# repo's artcoins submodule resolves from the public mirror.
+#
+# Auth: MIRROR_DEPLOY_KEY is an SSH private key whose public half is a
+# write deploy key on the public repo (scoped to that single repo).
+name: mirror
+
+on:
+  push:
+    branches: [master]
+    tags: ["*"]
+  workflow_dispatch:
+
+concurrency:
+  group: mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    # No-op everywhere except the private working repo. This file is
+    # itself mirrored to the public repo, where it must not run.
+    if: github.repository == 'ripe0x/new-material-coin-launcher'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Push master + tags to the public mirror
+        env:
+          DEPLOY_KEY: ${{ secrets.MIRROR_DEPLOY_KEY }}
+        run: |
+          if [ -z "$DEPLOY_KEY" ]; then
+            echo "::error::MIRROR_DEPLOY_KEY secret is not set; mirror push skipped, the public repo is going stale"
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/mirror_key
+          chmod 600 ~/.ssh/mirror_key
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/mirror_key -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
+          # Fast-forward only (no --force): the mirror is append-only.
+          git push git@github.com:ripe0x/artcoins.git \
+            refs/remotes/origin/master:refs/heads/master --tags
