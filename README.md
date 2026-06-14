@@ -1,171 +1,99 @@
-# NewMaterial Token Launcher
+# artcoins
 
-A token launcher for Ethereum mainnet built on Uniswap V4. Deploy ERC20 tokens with automatic liquidity pools, configurable trading fees, anti-sniper protection, and on-chain metadata rendering.
+A token launcher for Ethereum mainnet built on Uniswap V4. Deploy ERC20s with automatic V4 liquidity, a swap-fee hook, anti-sniper protection, on-chain metadata rendering, and an optional venue-scoped transfer tax.
 
-Forked from [Clanker v4.1](https://github.com/clanker-devco/v4-contracts) with significant additions:
+Originally forked from [Clanker v4.1](https://github.com/clanker-devco/v4-contracts) and substantially rewritten. ETH mainnet only — no cross-chain code.
 
-- **Upgradeable tokens** — UUPS proxy pattern, token admin controls upgrades
-- **On-chain metadata** — `contractURI()` + `tokenURI()` with pluggable renderer contracts for on-chain SVG art
-- **Configurable supply** — deployers choose their own total supply (default 1B)
-- **Anti-sniper protection** — linear fee decay (99% to 1% over 69 minutes) inspired by PunkStrategy
-- **Configurable protocol fee** — factory owner can adjust the protocol fee (default 20%, max 50%)
-- **ETH mainnet only** — no superchain/cross-chain code
+This is the launcher that [permanent-collection](https://github.com/ripe0x/permanent-collection) deploys its `111` art coin on; permanent-collection embeds this repo as a pinned git submodule.
+
+## Highlights
+
+- **Immutable tokens** — `ArtCoinsToken` is deployed directly via CREATE2 (no proxy, not upgradeable); construction-time configuration is fixed for the life of the token.
+- **On-chain metadata** — ERC-7572 `contractURI()` plus a pluggable `IMetadataRenderer` for fully on-chain SVG art.
+- **Configurable supply** — default 1,000,000,000, minimum 1 token.
+- **Anti-sniper** — pluggable MEV modules that ramp the early fee (or skim) down over a launch window (linear, descending, stepped, or time-delay).
+- **Swap-fee hook** — a skim-based V4 hook that takes a configurable share of swap volume and splits it at swap time across recipients (bounty / protocol / referral); a static per-direction fee hook is also available.
+- **Configurable protocol fee** — default 20% of the protocol slice, hard-capped at 30% (`MAX_PROTOCOL_FEE_BPS = 3000`); the rest flows to LP-fee recipients.
+- **Optional transfer tax** — a dormant, venue-scoped buy-side transfer tax (default off, 20% hard cap) that a single deployment can switch on at deploy time.
 
 ## Architecture
 
 ```
-NewMaterialFactory (deploys tokens)
-  |-- NewMaterialToken (UUPS upgradeable ERC20 proxy)
-  |     \-- IMetadataRenderer (optional on-chain art)
-  |-- NewMaterialHookStaticFeeV2 (Uniswap V4 hook)
-  |-- NewMaterialLpLockerMultiple (LP fee distribution)
-  |-- MEV Modules
-  |     |-- NewMaterialMevLinearFees (anti-sniper, recommended)
-  |     |-- NewMaterialMevDescendingFees (parabolic decay)
-  |     \-- NewMaterialMevTimeDelay (block trading)
-  \-- Extensions
-        |-- NewMaterialVault (token lockup/vesting)
-        |-- NewMaterialAirdropV2 (merkle airdrop)
-        \-- NewMaterialUniv4EthDevBuy (initial token purchase)
+ArtCoinsFactory  — deploys + wires a token + V4 pool in one transaction
+  ├─ ArtCoinsToken ............. immutable ERC20 (Solady) + Permit/Votes/Burnable,
+  │                              optional venue-scoped transfer tax, pluggable renderer
+  ├─ hooks/
+  │   ├─ ArtCoinsHookSkimFee ... skims a % of swap volume → 3-leg split
+  │   │                          (bounty / protocol / referral), flushed in-swap
+  │   └─ ArtCoinsHookStaticFee . per-direction LP-fee variant
+  ├─ lp-lockers/ArtCoinsLpLocker  collects V4 LP fees → up to 7 recipients
+  ├─ ArtCoinsFeeEscrow ......... pull-based per-(owner, token) balances (native ETH + ERC20)
+  ├─ protocol-fee/ProtocolFeeController  fixed treasury / burn split
+  ├─ mev-modules/ ............. anti-sniper: LinearFees, LinearSkim, DescendingFees,
+  │                              TimeDelay, SniperSteppedFees
+  ├─ extensions/ ............. Vault (vesting), Airdrop (merkle), Univ4EthDevBuy,
+  │                              BurnExtension, AutoBurnPool, LiquidityLayer* …
+  └─ renderer/ ............... DefaultMetadataRenderer, DynamicBlockRenderer
 ```
 
-## Quick Start
-
-### Prerequisites
-
-- [Foundry](https://book.getfoundry.sh/getting-started/installation)
-- Node.js 18+ (for UI)
-
-### Build and Test
-
-```bash
-git clone <repo-url>
-cd new-material-coin-launcher
-
-# Build contracts
-forge build
-
-# Run tests
-forge test -vv
-
-# Run fork tests (requires RPC)
-forge test --match-contract IntegrationForkTest --fork-url $SEPOLIA_RPC_URL -vvv
-```
-
-### Deploy
-
-```bash
-cp .env.example .env
-# Fill in your RPC URL, private key, and etherscan key
-
-source .env
-
-# Deploy to Sepolia (full stack)
-forge script script/Deploy.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast -vvv
-
-# Deploy to mainnet
-forge script script/Deploy.s.sol --rpc-url $MAINNET_RPC_URL --broadcast --verify -vvv
-```
-
-The deploy script deploys the entire stack (12+ contracts), mines the V4 hook address, wires everything together, and activates the factory.
-
-### Launch UI
-
-```bash
-cd ui
-npm install
-npm run dev
-```
-
-Update contract addresses in `ui/src/lib/config.ts` after deployment.
-
-## Token Features
-
-Every token deployed through the factory is an ERC20 with:
+## Token features
 
 | Feature | Details |
-|---------|---------|
-| Standard | ERC20 + ERC20Permit + ERC20Votes + ERC20Burnable |
-| Upgradeable | UUPS proxy, admin can upgrade implementation |
-| Metadata | `contractURI()` and `tokenURI()` per ERC-7572 |
-| Renderer | Admin can set a custom IMetadataRenderer for on-chain art |
-| Supply | Configurable at deployment (default 1B, min 1 token) |
+|---|---|
+| Standard | ERC20 (Solady) + Permit + Votes + Burnable |
+| Upgradeable | No — deployed via CREATE2, immutable for the token's life |
+| Metadata | ERC-7572 `contractURI()` / `tokenURI()`, admin-settable `IMetadataRenderer` |
+| Supply | Configurable at deploy (default 1B, min 1 token) |
+| Transfer tax | Optional, venue-scoped, buy-side; default off, 20% hard cap |
 
-### Metadata Renderers
+The token launches with built-in metadata (JSON from stored strings). The admin can deploy a custom renderer and set it post-launch via `setMetadataRenderer(...)`. Reference renderers: `DefaultMetadataRenderer` (JSON) and `DynamicBlockRenderer` (on-chain SVG).
 
-Tokens launch with built-in metadata (JSON from stored strings). The token admin can deploy a custom renderer contract and set it post-launch:
+## Fees
 
-```solidity
-MyCustomRenderer renderer = new MyCustomRenderer();
-NewMaterialToken(myToken).setMetadataRenderer(address(renderer));
+- **Swap-fee hook** — `ArtCoinsHookSkimFee` skims a configurable share of swap volume and splits it at swap time (bounty / protocol / referral). A static per-direction fee hook (`ArtCoinsHookStaticFee`) is available for pools that prefer a fixed LP fee.
+- **Protocol fee** — default 20% of the protocol slice, capped at 30%; set globally on the factory or overridden per deploy.
+- **LP rewards** — the remaining LP fees distribute to up to 7 recipients via `ArtCoinsLpLocker`; recipients pull from `ArtCoinsFeeEscrow` (`claim(feeOwner, token)`; `token = address(0)` for native ETH).
+
+## Anti-sniper (MEV modules)
+
+Pick one per token; each ramps the early fee or skim down over a launch window:
+
+| Module | Mechanism |
+|---|---|
+| `ArtCoinsMevLinearFees` | Linear LP-fee decay (default 69% → 1% over 69 minutes) |
+| `ArtCoinsMevLinearSkim` | Linear skim decay at the hook level (share of volume) |
+| `ArtCoinsMevDescendingFees` | Parabolic fee decay |
+| `ArtCoinsMevSniperSteppedFees` | Stepped fee schedule |
+| `ArtCoinsMevTimeDelay` | Blocks trading for N seconds |
+
+The fee-decay approach is inspired by PunkStrategy's launch mechanics.
+
+## Build & test
+
+```bash
+git clone https://github.com/ripe0x/artcoins.git
+cd artcoins
+git submodule update --init --recursive   # forge-std, OpenZeppelin, Uniswap v4, solady
+forge build
+forge test
 ```
 
-Two reference implementations are included:
+## Deploy
 
-- **DefaultMetadataRenderer** — Returns JSON with name, symbol, description, image URL
-- **ExampleOnChainRenderer** — Generates on-chain SVG art with unique colors derived from the token address. No external hosting needed.
+The factory ships `deprecated = true`; the owner flips it active before public deploys. The scripts in `script/` deploy and wire the full stack (token, V4 pool, hook, LP locker, MEV module) in one broadcast — e.g. `Deploy.s.sol`, `DeployNativeEthStack.s.sol`, `DeployProtocolFeeStack.s.sol`.
 
-### Implementing a Custom Renderer
-
-```solidity
-import {IMetadataRenderer} from "./interfaces/IMetadataRenderer.sol";
-
-contract MyRenderer is IMetadataRenderer {
-    function contractURI(address token) external view returns (string memory) {
-        // Read token properties, generate SVG/JSON, return data URI
-    }
-}
+```bash
+forge script script/Deploy.s.sol --rpc-url $MAINNET_RPC_URL --broadcast --verify
 ```
 
-## Anti-Sniper Protection
+## UI
 
-Three MEV modules available. Deployers choose one per token:
+`ui/` is a React 19 + Vite app (wagmi + RainbowKit + Tailwind) for deploying and managing tokens:
 
-| Module | Mechanism | Default |
-|--------|-----------|---------|
-| Linear Fees (recommended) | 99% fee decays linearly to 1% | 69 min duration |
-| Descending Fees | Parabolic fee decay | 80% to 5%, 30s |
-| Time Delay | Blocks all trading for N seconds | 120s |
-
-## Fee Structure
-
-- **Trading fees**: Configurable per token (0-10% buy, 0-10% sell)
-- **Protocol fee**: 20% of LP fees to factory owner (configurable 0-50%)
-- **LP rewards**: Remaining fees distributed to up to 7 recipients
-
-## Asset Hosting
-
-Token images and metadata can be handled two ways:
-
-1. **External hosting** — Store images on IPFS, Arweave, or your own server. Set the URL in `TokenConfig.image`. The token's built-in `contractURI()` references this URL.
-
-2. **Fully on-chain** — Deploy a metadata renderer contract that generates SVG art directly in Solidity. No hosting needed. See `ExampleOnChainRenderer.sol` for a working example.
-
-## Project Structure
-
-```
-src/
-  NewMaterialToken.sol            Upgradeable ERC20 token
-  NewMaterialFactory.sol          Token launcher factory
-  NewMaterialFeeLocker.sol        Fee collection
-  interfaces/                     All interfaces
-  hooks/                          Uniswap V4 hooks
-  lp-lockers/                     LP fee distribution
-  mev-modules/                    Anti-sniper modules
-  extensions/                     Vault, airdrop, dev buy
-  renderer/
-    DefaultMetadataRenderer.sol   Basic JSON renderer
-    ExampleOnChainRenderer.sol    On-chain SVG art example
-  utils/                          Deployer, access control
-test/                             Forge tests
-script/
-  Deploy.s.sol                    Full stack deployment
-ui/                               React deployment UI
-  src/
-    components/                   Form components
-    lib/                          ABI, encoding, config
+```bash
+cd ui && npm install && npm run dev
 ```
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
