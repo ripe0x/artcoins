@@ -3,7 +3,12 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@openzeppelin/merkle-tree": "^1.0.8",
     "puppeteer": "^23.0.0",
-    "sharp": "^0.33.0"
+    "sharp": "^0.33.0",
+    "viem": "^2.47.16"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0"
   }
 }

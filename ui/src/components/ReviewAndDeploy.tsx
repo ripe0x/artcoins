@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useAccount, useChainId, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { useAccount, useChainId } from 'wagmi';
 import { useQueryClient } from '@tanstack/react-query';
-import { parseEther, decodeEventLog, type Address } from 'viem';
+import { parseEther, decodeEventLog, type Address, type TransactionReceipt } from 'viem';
 import { factoryAbi } from '../lib/abi';
 import { getAddresses } from '../lib/config';
+import { useTxFlow } from '../lib/useTxFlow';
 import {
   generateSalt,
   encodePoolData,
@@ -40,6 +41,34 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+/**
+ * Pure log-parsing helper: pulls the deployed token address out of a
+ * `TokenCreated` event in a deploy-transaction receipt. Returns `null` if no
+ * such event is found (e.g. the receipt is for an unrelated tx, or the ABI
+ * doesn't match). No side effects — safe to call from render or from an
+ * effect.
+ */
+function parseDeployedTokenFromReceipt(receipt: TransactionReceipt): string | null {
+  for (const log of receipt.logs) {
+    try {
+      const decoded = decodeEventLog({
+        abi: factoryAbi,
+        data: log.data,
+        topics: log.topics,
+      });
+      if (decoded.eventName === 'TokenCreated') {
+        const args = decoded.args as { tokenAddress?: string };
+        if (args.tokenAddress) {
+          return args.tokenAddress;
+        }
+      }
+    } catch {
+      // not our event
+    }
+  }
+  return null;
+}
+
 export default function ReviewAndDeploy({
   tokenForm,
   poolForm,
@@ -52,42 +81,26 @@ export default function ReviewAndDeploy({
   const addresses = getAddresses(chainId);
   const queryClient = useQueryClient();
 
-  const { writeContract, data: txHash, isPending, error: writeError } = useWriteContract();
-
-  const { data: receipt, isLoading: isConfirming } = useWaitForTransactionReceipt({
-    hash: txHash,
-  });
-
   const [deployedToken, setDeployedToken] = useState<string | null>(null);
 
-  // Parse TokenCreated event from receipt
-  if (receipt && !deployedToken) {
-    for (const log of receipt.logs) {
-      try {
-        const decoded = decodeEventLog({
-          abi: factoryAbi,
-          data: log.data,
-          topics: log.topics,
-        });
-        if (decoded.eventName === 'TokenCreated') {
-          const args = decoded.args as { tokenAddress?: string };
-          if (args.tokenAddress) {
-            setDeployedToken(args.tokenAddress);
-          }
-        }
-      } catch {
-        // not our event
+  // Parse the TokenCreated event out of the receipt, and invalidate the
+  // tokens list cache so the new token shows up on /tokens without a manual
+  // refresh — both driven from onConfirmed (an effect internal to
+  // useTxFlow), never during render.
+  const onConfirmed = useCallback(
+    (receipt: TransactionReceipt) => {
+      const tokenAddress = parseDeployedTokenFromReceipt(receipt);
+      if (tokenAddress) {
+        setDeployedToken(tokenAddress);
+        queryClient.invalidateQueries({ queryKey: ['tokens', chainId] });
       }
-    }
-  }
+    },
+    [chainId, queryClient]
+  );
 
-  // Invalidate the tokens list cache when a new token is deployed so it
-  // shows up on /tokens without a manual refresh.
-  useEffect(() => {
-    if (deployedToken) {
-      queryClient.invalidateQueries({ queryKey: ['tokens', chainId] });
-    }
-  }, [deployedToken, chainId, queryClient]);
+  const { submit, hash: txHash, status, error: writeError } = useTxFlow({ onConfirmed });
+  const isPending = status === 'confirming';
+  const isConfirming = status === 'pending';
 
   const etherscanBase = chainId === 1 ? 'https://etherscan.io' : 'https://sepolia.etherscan.io';
 
@@ -237,7 +250,7 @@ export default function ReviewAndDeploy({
       extensionConfigs,
     };
 
-    writeContract({
+    submit({
       address: addresses.factory,
       abi: factoryAbi,
       functionName: 'deployToken',

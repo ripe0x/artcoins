@@ -1,4 +1,4 @@
 {
-  "_comment": "Runtime config for the artcoins UI. Edited and re-uploaded as a static asset — does NOT require a frontend rebuild. defaultReferrer is the address credited as the referrer when a visitor swaps without a `?ref=0x...` URL parameter. URL-attributed swaps (`?ref=0xfriend`) always override. Set to the canonical protocol payout address (the same value used for the team/creator fee and the title-auction payout) so default-referrer revenue lands in one place. Change by editing this file and re-deploying — operator only.",
+  "_comment": "See ui/README.md (Runtime config) before editing this file.",
   "defaultReferrer": "0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4"
 }

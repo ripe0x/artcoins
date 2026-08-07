@@ -1,12 +1,6 @@
-import { useEffect, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import {
-  useAccount,
-  useChainId,
-  useReadContracts,
-  useWaitForTransactionReceipt,
-  useWriteContract,
-} from 'wagmi';
+import { useAccount, useChainId, useReadContracts } from 'wagmi';
 import { useQuery } from '@tanstack/react-query';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import type { Address } from 'viem';
@@ -18,6 +12,7 @@ import CopyableAddress from '../components/CopyableAddress';
 import { getAddresses } from '../lib/config';
 import { airdropAbi, tokenAbi } from '../lib/abi';
 import { useTokenEvent } from '../lib/useTokenEvent';
+import { useTxFlow } from '../lib/useTxFlow';
 import { formatSupply, formatTimestamp } from '../lib/format';
 import { findEntry, verifyProof, type AllowlistFile } from '../lib/merkle';
 
@@ -172,28 +167,26 @@ export default function ClaimPage() {
   const lockupActive = lockupEndTime !== undefined && nowSec < lockupEndTime;
 
   // Write path
-  const { writeContract, data: txHash, isPending, error: writeError, reset } = useWriteContract();
-  const { isLoading: confirming, isSuccess: confirmed } = useWaitForTransactionReceipt({
-    hash: txHash,
-  });
+  const onConfirmed = useCallback(() => {
+    refetchReads();
+    refetchAvailable();
+  }, [refetchReads, refetchAvailable]);
+
+  const { submit, status, hash: txHash, error: writeError, reset } = useTxFlow({ onConfirmed });
+  const isPending = status === 'confirming';
+  const confirming = status === 'pending';
+  const confirmed = status === 'confirmed';
 
   const onClaim = () => {
     if (!wallet || !entry) return;
     reset();
-    writeContract({
+    submit({
       address: addresses.airdrop,
       abi: airdropAbi,
       functionName: 'claim',
       args: [tokenAddress, wallet, BigInt(entry.amount), entry.proof],
     });
   };
-
-  useEffect(() => {
-    if (confirmed) {
-      refetchReads();
-      refetchAvailable();
-    }
-  }, [confirmed, refetchReads, refetchAvailable]);
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8 space-y-6">

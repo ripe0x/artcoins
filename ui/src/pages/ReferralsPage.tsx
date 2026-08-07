@@ -1,12 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import {
-  useAccount,
-  useChainId,
-  useReadContracts,
-  useWaitForTransactionReceipt,
-  useWriteContract,
-} from 'wagmi';
+import { useAccount, useChainId, useReadContracts } from 'wagmi';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import {
   BaseError,
@@ -20,6 +14,7 @@ import InfoRow from '../components/InfoRow';
 import CopyableAddress from '../components/CopyableAddress';
 import { skimHookAbi, referralPayoutAbi } from '../lib/abi';
 import { useTokenEvent } from '../lib/useTokenEvent';
+import { useTxFlow } from '../lib/useTxFlow';
 import { shortAddr } from '../lib/format';
 
 function explorerTxUrl(chainId: number, hash: `0x${string}`): string {
@@ -45,13 +40,6 @@ function decodeClaimError(err: unknown): string {
   }
   return err instanceof Error ? err.message : String(err);
 }
-
-type TxState =
-  | { kind: 'idle' }
-  | { kind: 'awaitingSig' }
-  | { kind: 'pending'; hash: `0x${string}` }
-  | { kind: 'confirmed'; hash: `0x${string}` }
-  | { kind: 'error'; message: string };
 
 export default function ReferralsPage() {
   const { address: tokenAddressParam } = useParams<{ address: string }>();
@@ -121,34 +109,24 @@ export default function ReferralsPage() {
   const hookAccrued =
     balanceData?.[1]?.status === 'success' ? (balanceData[1].result as bigint) : 0n;
 
-  // 4. Claim write path.
-  const { writeContractAsync } = useWriteContract();
-  const [tx, setTx] = useState<TxState>({ kind: 'idle' });
-  const waitFor =
-    tx.kind === 'pending' || tx.kind === 'confirmed' ? (tx.hash as `0x${string}`) : undefined;
-  useWaitForTransactionReceipt({ hash: waitFor, query: { enabled: !!waitFor } });
+  // 4. Claim write path. Balances only refresh once the receipt actually
+  // lands (`onConfirmed`) — never on a timer, since mainnet blocks are
+  // ~12s and a fixed-delay refetch can read pre-transaction state.
+  const onConfirmed = useCallback(() => {
+    refetchBalances();
+  }, [refetchBalances]);
 
-  const onClaim = async () => {
+  const { submit, status, hash: txHash, error: txError, reset } = useTxFlow({ onConfirmed });
+
+  const onClaim = () => {
     if (!referralPayoutAddr) return;
-    setTx({ kind: 'awaitingSig' });
-    try {
-      const hash = await writeContractAsync({
-        address: referralPayoutAddr,
-        abi: referralPayoutAbi,
-        functionName: 'claim',
-        args: [],
-      });
-      setTx({ kind: 'pending', hash });
-      // Background-refetch after the tx lands. wagmi's
-      // useWaitForTransactionReceipt above will mark it confirmed; we
-      // just trigger the re-read here.
-      setTimeout(() => {
-        refetchBalances();
-        setTx({ kind: 'confirmed', hash });
-      }, 1500);
-    } catch (e) {
-      setTx({ kind: 'error', message: decodeClaimError(e) });
-    }
+    reset();
+    submit({
+      address: referralPayoutAddr,
+      abi: referralPayoutAbi,
+      functionName: 'claim',
+      args: [],
+    });
   };
 
   // 5. UI
@@ -251,46 +229,46 @@ export default function ReferralsPage() {
           <button
             type="button"
             onClick={onClaim}
-            disabled={ledgerBalance === 0n || tx.kind === 'awaitingSig' || tx.kind === 'pending'}
+            disabled={ledgerBalance === 0n || status === 'confirming' || status === 'pending'}
             className="flex-1 rounded-xl border border-violet-600/40 bg-violet-950/20 hover:border-violet-500 hover:bg-violet-900/30 disabled:opacity-50 disabled:cursor-not-allowed px-5 py-3 text-sm font-medium text-violet-200 hover:text-white"
           >
-            {tx.kind === 'awaitingSig'
+            {status === 'confirming'
               ? 'Confirm in wallet...'
-              : tx.kind === 'pending'
+              : status === 'pending'
                 ? 'Claiming...'
                 : `Claim ${formatEther(ledgerBalance)} ETH`}
           </button>
         </div>
       )}
 
-      {tx.kind === 'pending' && (
+      {status === 'pending' && txHash && (
         <p className="text-xs text-zinc-500">
           Tx pending —{' '}
           <a
-            href={explorerTxUrl(chainId, tx.hash)}
+            href={explorerTxUrl(chainId, txHash)}
             target="_blank"
             rel="noreferrer"
             className="text-violet-300 hover:text-violet-200"
           >
-            {shortAddr(tx.hash)}
+            {shortAddr(txHash)}
           </a>
         </p>
       )}
-      {tx.kind === 'confirmed' && (
+      {status === 'confirmed' && txHash && (
         <p className="text-xs text-emerald-300">
           Confirmed —{' '}
           <a
-            href={explorerTxUrl(chainId, tx.hash)}
+            href={explorerTxUrl(chainId, txHash)}
             target="_blank"
             rel="noreferrer"
             className="text-emerald-200 hover:text-emerald-100"
           >
-            {shortAddr(tx.hash)}
+            {shortAddr(txHash)}
           </a>
         </p>
       )}
-      {tx.kind === 'error' && (
-        <p className="text-xs text-red-400">{tx.message}</p>
+      {status === 'error' && txError && (
+        <p className="text-xs text-red-400">{decodeClaimError(txError)}</p>
       )}
     </div>
   );

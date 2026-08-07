@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   useAccount,
   useBalance,
@@ -6,8 +6,6 @@ import {
   usePublicClient,
   useReadContract,
   useReadContracts,
-  useWaitForTransactionReceipt,
-  useWriteContract,
 } from 'wagmi';
 import { formatUnits, parseEther, parseUnits, type Address, type Hex } from 'viem';
 
@@ -32,6 +30,7 @@ import {
 } from '../lib/attribution';
 import { useReferrer } from '../lib/useReferrer';
 import { useDebouncedValue } from '../lib/useDebouncedValue';
+import { useTxFlow } from '../lib/useTxFlow';
 
 type Direction = 'buy' | 'sell';
 
@@ -104,7 +103,7 @@ export default function SwapWidget({
   // Two approvals needed for sell:
   //   1. token.approve(permit2, MAX_UINT256)
   //   2. permit2.approve(token, universalRouter, MAX_UINT160, expiration)
-  const { data: erc20ToPermit2 } = useReadContract({
+  const { data: erc20ToPermit2, refetch: refetchErc20Allowance } = useReadContract({
     address: tokenAddress,
     abi: erc20Abi,
     functionName: 'allowance',
@@ -112,7 +111,7 @@ export default function SwapWidget({
     query: { enabled: !!address && direction === 'sell', refetchInterval: 15_000 },
   });
 
-  const { data: permit2Allow } = useReadContracts({
+  const { data: permit2Allow, refetch: refetchPermit2Allowance } = useReadContracts({
     contracts:
       address && direction === 'sell'
         ? [
@@ -262,35 +261,39 @@ export default function SwapWidget({
   }, [quote, slippageBps]);
 
   // ── Write functions ───────────────────────────────────────────────
-  const { writeContract, data: txHash, isPending, reset, error: writeError } =
-    useWriteContract();
-
-  const { data: receipt, isLoading: confirming } = useWaitForTransactionReceipt({
-    hash: txHash,
+  // This is a multi-step flow (up to two Permit2 approvals, then the swap
+  // itself), and each step is a genuinely distinct on-chain write with its
+  // own confirmation — so each gets its own `useTxFlow` instance rather than
+  // sharing one. Only one of the three is ever "active" at a time (the UI
+  // below only ever renders one of the three buttons), but keeping them
+  // separate means each step's status/error can't leak into another step's
+  // button label.
+  const approveErc20Flow = useTxFlow({
+    onConfirmed: useCallback(() => {
+      refetchErc20Allowance();
+    }, [refetchErc20Allowance]),
   });
 
-  const [pendingAction, setPendingAction] = useState<
-    'approve-erc20' | 'approve-permit2' | 'swap' | null
-  >(null);
+  const approvePermit2Flow = useTxFlow({
+    onConfirmed: useCallback(() => {
+      refetchPermit2Allowance();
+    }, [refetchPermit2Allowance]),
+  });
 
-  // Reset state when tx is confirmed
-  useEffect(() => {
-    if (receipt && pendingAction === 'swap') {
+  const swapFlow = useTxFlow({
+    onConfirmed: useCallback(() => {
+      // Refresh balances once the receipt actually lands, instead of the
+      // old blind 2500ms timer. Clearing the amount also collapses the
+      // debounced quote back to null via the quote effect above.
       setAmountIn('');
       refetchTokenBalance();
-    }
-    if (receipt) {
-      setTimeout(() => {
-        setPendingAction(null);
-        reset();
-      }, 2500);
-    }
-  }, [receipt, pendingAction, refetchTokenBalance, reset]);
+    }, [refetchTokenBalance]),
+  });
 
   // ── Action handlers ───────────────────────────────────────────────
   const handleApproveErc20 = () => {
-    setPendingAction('approve-erc20');
-    writeContract({
+    approveErc20Flow.reset();
+    approveErc20Flow.submit({
       address: tokenAddress,
       abi: erc20Abi,
       functionName: 'approve',
@@ -299,10 +302,10 @@ export default function SwapWidget({
   };
 
   const handleApprovePermit2 = () => {
-    setPendingAction('approve-permit2');
+    approvePermit2Flow.reset();
     // expiration: now + ~30 days (max uint48 is ~8.9M years, any sane value works)
     const expiration = Math.floor(Date.now() / 1000) + 30 * 86400;
-    writeContract({
+    approvePermit2Flow.submit({
       address: addresses.permit2,
       abi: permit2Abi,
       functionName: 'approve',
@@ -320,7 +323,7 @@ export default function SwapWidget({
       isToken0 === undefined
     )
       return;
-    setPendingAction('swap');
+    swapFlow.reset();
     const deadline = BigInt(Math.floor(Date.now() / 1000) + DEFAULT_DEADLINE_SECS);
 
     // Encode attribution as a 1-tuple PoolSwapData struct so the
@@ -340,7 +343,7 @@ export default function SwapWidget({
         minTokenOut: minOut,
         hookData,
       });
-      writeContract({
+      swapFlow.submit({
         address: addresses.universalRouter,
         abi: universalRouterAbi,
         functionName: 'execute',
@@ -358,7 +361,7 @@ export default function SwapWidget({
         recipient: address,
         hookData,
       });
-      writeContract({
+      swapFlow.submit({
         address: addresses.universalRouter,
         abi: universalRouterAbi,
         functionName: 'execute',
@@ -403,6 +406,14 @@ export default function SwapWidget({
     !needsErc20Approval &&
     !needsPermit2Approval;
 
+  // The flow instance backing whichever action is currently shown to the
+  // user — drives the visible button's pending/error state below.
+  const activeFlow = needsErc20Approval
+    ? approveErc20Flow
+    : needsPermit2Approval
+      ? approvePermit2Flow
+      : swapFlow;
+
   const swapButtonLabel = () => {
     if (poolConfigUnknown) return 'Swap disabled';
     if (!isConnected) return 'Connect wallet';
@@ -410,8 +421,8 @@ export default function SwapWidget({
     if (overBalance) return `Insufficient ${balanceLabel}`;
     if (quoting) return 'Fetching quote…';
     if (quote === null) return 'No quote available';
-    if (pendingAction === 'swap' && (isPending || confirming)) {
-      return isPending ? 'Confirm in wallet…' : 'Swapping…';
+    if (swapFlow.status === 'confirming' || swapFlow.status === 'pending') {
+      return swapFlow.status === 'confirming' ? 'Confirm in wallet…' : 'Swapping…';
     }
     return direction === 'buy' ? `Buy ${tokenSymbol}` : `Sell ${tokenSymbol}`;
   };
@@ -573,35 +584,45 @@ export default function SwapWidget({
           <button
             type="button"
             onClick={handleApproveErc20}
-            disabled={poolConfigUnknown || isPending || confirming}
+            disabled={
+              poolConfigUnknown ||
+              approveErc20Flow.status === 'confirming' ||
+              approveErc20Flow.status === 'pending'
+            }
             className="w-full rounded-lg bg-violet-600 hover:bg-violet-500 disabled:bg-zinc-700 disabled:cursor-not-allowed py-3 text-sm font-semibold"
           >
-            {pendingAction === 'approve-erc20' && (isPending || confirming)
-              ? isPending
-                ? 'Confirm in wallet…'
-                : 'Approving…'
-              : `1. Approve ${tokenSymbol}`}
+            {approveErc20Flow.status === 'confirming'
+              ? 'Confirm in wallet…'
+              : approveErc20Flow.status === 'pending'
+                ? 'Approving…'
+                : `1. Approve ${tokenSymbol}`}
           </button>
         ) : needsPermit2Approval ? (
           <button
             type="button"
             onClick={handleApprovePermit2}
-            disabled={poolConfigUnknown || isPending || confirming}
+            disabled={
+              poolConfigUnknown ||
+              approvePermit2Flow.status === 'confirming' ||
+              approvePermit2Flow.status === 'pending'
+            }
             className="w-full rounded-lg bg-violet-600 hover:bg-violet-500 disabled:bg-zinc-700 disabled:cursor-not-allowed py-3 text-sm font-semibold"
           >
-            {pendingAction === 'approve-permit2' && (isPending || confirming)
-              ? isPending
-                ? 'Confirm in wallet…'
-                : 'Approving…'
-              : '2. Approve Permit2'}
+            {approvePermit2Flow.status === 'confirming'
+              ? 'Confirm in wallet…'
+              : approvePermit2Flow.status === 'pending'
+                ? 'Approving…'
+                : '2. Approve Permit2'}
           </button>
         ) : (
           <button
             type="button"
             onClick={handleSwap}
-            disabled={!canSwap || isPending || confirming}
+            disabled={
+              !canSwap || swapFlow.status === 'confirming' || swapFlow.status === 'pending'
+            }
             className={`w-full rounded-lg py-3 text-sm font-semibold transition-colors ${
-              canSwap && !isPending && !confirming
+              canSwap && swapFlow.status !== 'confirming' && swapFlow.status !== 'pending'
                 ? direction === 'buy'
                   ? 'bg-green-600 hover:bg-green-500'
                   : 'bg-red-600 hover:bg-red-500'
@@ -613,18 +634,20 @@ export default function SwapWidget({
         )}
 
         {/* Status / errors */}
-        {writeError && (
+        {activeFlow.error && (
           <div className="rounded-lg border border-red-900 bg-red-950/30 p-3 text-xs text-red-300 max-h-32 overflow-auto">
-            <p className="font-semibold mb-1">Swap failed</p>
+            <p className="font-semibold mb-1">
+              {activeFlow === swapFlow ? 'Swap failed' : 'Approval failed'}
+            </p>
             <pre className="whitespace-pre-wrap break-all font-mono text-red-400/80">
-              {(writeError as Error).message.slice(0, 500)}
+              {activeFlow.error.message.slice(0, 500)}
             </pre>
           </div>
         )}
 
-        {receipt && pendingAction === 'swap' && (
+        {swapFlow.status === 'confirmed' && swapFlow.receipt && (
           <div className="rounded-lg border border-green-900 bg-green-950/30 p-3 text-xs text-green-300">
-            Swap confirmed in block {receipt.blockNumber.toString()}.
+            Swap confirmed in block {swapFlow.receipt.blockNumber.toString()}.
           </div>
         )}
       </div>

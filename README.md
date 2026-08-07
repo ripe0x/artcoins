@@ -147,6 +147,14 @@ listed above.
 cd ui && npm install && npm run dev
 ```
 
+Pages: deploy a new token, browse the token list, a token-detail page with
+swap, the airdrop claim page, and referrals management. See
+[ui/README.md](ui/README.md) for setup (including required/recommended env
+vars) and runtime config.
+
+Operator scripts for deploy math, address syncing, and airdrop-allowlist
+generation live in [`script-js/`](script-js/README.md).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

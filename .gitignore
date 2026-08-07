@@ -27,11 +27,15 @@ Thumbs.db
 # Node (ui/)
 ui/node_modules/
 ui/dist/
-ui/.env
 
 # Node (script-js/)
 script-js/node_modules/
-script-js/package-lock.json
+
+# script-js working artifacts (see script-js/README.md)
+script-js/data/**/candidates/
+*.bak
+*.preclose
+*.b64
 
 # IDE
 .vscode/
