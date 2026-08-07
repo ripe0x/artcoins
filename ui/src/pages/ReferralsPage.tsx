@@ -21,7 +21,7 @@ import InfoCard from '../components/InfoCard';
 import InfoRow from '../components/InfoRow';
 import CopyableAddress from '../components/CopyableAddress';
 import { getAddresses, getFactoryDeploymentBlock } from '../lib/config';
-import { hookAbi, referralPayoutAbi } from '../lib/abi';
+import { skimHookAbi, referralPayoutAbi } from '../lib/abi';
 import { fetchAllTokenCreatedEvents } from '../lib/events';
 import { buildPoolKey, computePoolId, resolveTickSpacing } from '../lib/pool';
 import { shortAddr } from '../lib/format';
@@ -87,8 +87,8 @@ export default function ReferralsPage() {
     [allEvents, tokenAddress]
   );
 
-  const { poolKey, poolId } = useMemo(() => {
-    if (!event) return { poolKey: null, poolId: null };
+  const { poolId } = useMemo(() => {
+    if (!event) return { poolId: null };
     const ts = resolveTickSpacing(
       event.tokenAddress,
       event.pairedToken,
@@ -96,7 +96,7 @@ export default function ReferralsPage() {
       event.poolId
     );
     const key = buildPoolKey(event.tokenAddress, event.pairedToken, ts, event.poolHook);
-    return { poolKey: key, poolId: computePoolId(key) };
+    return { poolId: computePoolId(key) };
   }, [event]);
 
   // 2. Read the hook's skimConfig to discover the per-pool ReferralPayout.
@@ -106,7 +106,7 @@ export default function ReferralsPage() {
         ? [
             {
               address: event.poolHook as Address,
-              abi: hookAbi,
+              abi: skimHookAbi,
               functionName: 'skimConfig',
               args: [poolId],
             },
@@ -115,22 +115,18 @@ export default function ReferralsPage() {
     query: { enabled: !!poolId && !!event },
   });
 
-  const referralPayoutAddr =
-    skimConfig?.[0]?.status === 'success'
-      ? (skimConfig[0].result as readonly [
-          number, number, number, number, number,
-          Address, Address, Address, Address, Address, Address, Address,
-        ])[9]
-      : undefined;
-  const maxReferralBps =
-    skimConfig?.[0]?.status === 'success'
-      ? (skimConfig[0].result as readonly [
-          number, number, number, number, number,
-          Address, Address, Address, Address, Address, Address, Address,
-        ])[3]
-      : undefined;
+  // skimConfig() returns (baselineSkimBps, bountyBps, maxReferralBpsOfVolume,
+  // lpFee, bountyRecipient, protocolRecipient, referralPayout, quoteToken).
+  const cfg =
+    skimConfig?.[0]?.status === 'success' ? skimConfig[0].result : undefined;
+  const maxReferralBps = cfg?.[2]; // maxReferralBpsOfVolume
+  const referralPayoutAddr = cfg?.[6]; // referralPayout
 
-  // 3. Read the connected wallet's balance + hook-held + hook-accrued amounts.
+  // 3. Read the connected wallet's balance + hook-accrued (in-tx) amount.
+  // Note: the current hook has no "held" balance or external flush/retry
+  // path — a failed forward to ReferralPayout folds into the protocol leg
+  // automatically inside `_afterSwap` (see `ReferralFoldedToProtocol`), so
+  // there is nothing here for the user to manually retry.
   const balanceContracts = useMemo(() => {
     if (!wallet || !referralPayoutAddr || !poolId || !event) return [];
     return [
@@ -142,14 +138,8 @@ export default function ReferralsPage() {
       },
       {
         address: event.poolHook as Address,
-        abi: hookAbi,
+        abi: skimHookAbi,
         functionName: 'accruedReferral' as const,
-        args: [poolId, wallet] as const,
-      },
-      {
-        address: event.poolHook as Address,
-        abi: hookAbi,
-        functionName: 'heldReferral' as const,
         args: [poolId, wallet] as const,
       },
     ];
@@ -164,10 +154,8 @@ export default function ReferralsPage() {
     balanceData?.[0]?.status === 'success' ? (balanceData[0].result as bigint) : 0n;
   const hookAccrued =
     balanceData?.[1]?.status === 'success' ? (balanceData[1].result as bigint) : 0n;
-  const hookHeld =
-    balanceData?.[2]?.status === 'success' ? (balanceData[2].result as bigint) : 0n;
 
-  // 4. Claim + flush write paths.
+  // 4. Claim write path.
   const { writeContractAsync } = useWriteContract();
   const [tx, setTx] = useState<TxState>({ kind: 'idle' });
   const waitFor =
@@ -188,26 +176,6 @@ export default function ReferralsPage() {
       // Background-refetch after the tx lands. wagmi's
       // useWaitForTransactionReceipt above will mark it confirmed; we
       // just trigger the re-read here.
-      setTimeout(() => {
-        refetchBalances();
-        setTx({ kind: 'confirmed', hash });
-      }, 1500);
-    } catch (e) {
-      setTx({ kind: 'error', message: decodeClaimError(e) });
-    }
-  };
-
-  const onFlush = async () => {
-    if (!poolKey || !wallet || !event) return;
-    setTx({ kind: 'awaitingSig' });
-    try {
-      const hash = await writeContractAsync({
-        address: event.poolHook as Address,
-        abi: hookAbi,
-        functionName: 'flushReferral',
-        args: [poolKey, wallet],
-      });
-      setTx({ kind: 'pending', hash });
       setTimeout(() => {
         refetchBalances();
         setTx({ kind: 'confirmed', hash });
@@ -253,7 +221,7 @@ export default function ReferralsPage() {
           address. The hook routes up to{' '}
           {maxReferralBps !== undefined ? (
             <strong className="text-zinc-200">
-              {(Number(maxReferralBps) / 1000).toFixed(2)}%
+              {(Number(maxReferralBps) / 100).toFixed(2)}%
             </strong>
           ) : (
             '...'
@@ -293,16 +261,6 @@ export default function ReferralsPage() {
             </span>
           }
         />
-        {hookHeld > 0n && (
-          <InfoRow
-            label="Held on hook"
-            value={
-              <span className="font-mono text-amber-300" title="A prior forward failed. Use Flush to retry.">
-                {formatEther(hookHeld)} ETH
-              </span>
-            }
-          />
-        )}
         {hookAccrued > 0n && (
           <InfoRow
             label="Accrued (in-tx, rare)"
@@ -336,17 +294,6 @@ export default function ReferralsPage() {
                 ? 'Claiming...'
                 : `Claim ${formatEther(ledgerBalance)} ETH`}
           </button>
-          {hookHeld > 0n && (
-            <button
-              type="button"
-              onClick={onFlush}
-              disabled={tx.kind === 'awaitingSig' || tx.kind === 'pending'}
-              className="rounded-xl border border-amber-600/40 bg-amber-950/20 hover:border-amber-500 hover:bg-amber-900/30 disabled:opacity-50 disabled:cursor-not-allowed px-5 py-3 text-sm font-medium text-amber-200 hover:text-white"
-              title="A prior forward failed. Flush retries it via the hook, then the balance will appear in ReferralPayout."
-            >
-              Flush held → ledger
-            </button>
-          )}
         </div>
       )}
 

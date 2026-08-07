@@ -82,7 +82,6 @@ const LAYER_TOKEN = '0x6c9c31127738cf50e1a8d3747c0b1021aeba4ede';
 const ARTTEST_TOKEN = '0x10d0d6db846581a0d1622a7b4b1c426adb44723b';
 const BURN_ROUTER = '0xa02ba69a5e0856e3101eb31d3abeefc0f6fc9bdd';
 const PROTOCOL_FEE_CONTROLLER = '0xe92e7fbbaadfe83cdd7eac813041c50d33d999e0';
-const FEE_LOCKER = '0xa8f7e33f9bac7960ab3a9780c79e3ded98edaed6';
 const DEPLOYER = '0x4fa58ffc00d973fd222d573c256eb3cc81a8569c';
 
 const DEPLOY_TXS: { name: string; hash: string }[] = [

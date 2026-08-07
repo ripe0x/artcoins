@@ -17,7 +17,8 @@ import {
 } from '../lib/config';
 import {
   tokenAbi,
-  hookAbi,
+  hookBaseAbi,
+  staticHookAbi,
   mevLinearAbi,
   lockerAbi,
   stateViewAbi,
@@ -110,16 +111,17 @@ export default function TokenDetailPage() {
       { address: event.tokenAddress, abi: tokenAbi, functionName: 'contractURI' } as const,
       { address: event.tokenAddress, abi: tokenAbi, functionName: 'isVerified' } as const,
       { address: event.tokenAddress, abi: tokenAbi, functionName: 'metadataRenderer' } as const,
-      // Hook
-      { address: event.poolHook, abi: hookAbi, functionName: 'newMaterialIsToken0', args: [event.poolId] } as const,
-      { address: event.poolHook, abi: hookAbi, functionName: 'mevModuleEnabled', args: [event.poolId] } as const,
-      { address: event.poolHook, abi: hookAbi, functionName: 'poolCreationTimestamp', args: [event.poolId] } as const,
-      { address: event.poolHook, abi: hookAbi, functionName: 'newMaterialFee', args: [event.poolId] } as const,
-      { address: event.poolHook, abi: hookAbi, functionName: 'pairedFee', args: [event.poolId] } as const,
+      // Hook base (present on every hook variant)
+      { address: event.poolHook, abi: hookBaseAbi, functionName: 'artCoinIsToken0', args: [event.poolId] } as const,
+      { address: event.poolHook, abi: hookBaseAbi, functionName: 'mevModuleEnabled', args: [event.poolId] } as const,
+      { address: event.poolHook, abi: hookBaseAbi, functionName: 'poolCreationTimestamp', args: [event.poolId] } as const,
+      // Hook static-fee-only (only present on ArtCoinsHookStaticFee; reads
+      // fail harmlessly on other hook variants, e.g. the skim-fee hook —
+      // `allowFailure: true` below means those show up as status 'failure').
+      { address: event.poolHook, abi: staticHookAbi, functionName: 'artCoinFee', args: [event.poolId] } as const,
+      { address: event.poolHook, abi: staticHookAbi, functionName: 'pairedFee', args: [event.poolId] } as const,
       // Locker
       { address: event.locker, abi: lockerAbi, functionName: 'tokenRewards', args: [event.tokenAddress] } as const,
-      // Protocol fee numerator (index 15)
-      { address: event.poolHook, abi: hookAbi, functionName: 'protocolFeeNumerator' } as const,
     ];
   }, [event]);
 
@@ -140,9 +142,19 @@ export default function TokenDetailPage() {
   const contractURI = staticData?.[6]?.result as string | undefined;
   const isVerified = staticData?.[7]?.result as boolean | undefined;
   const metadataRenderer = staticData?.[8]?.result as Address | undefined;
-  const isToken0 = staticData?.[9]?.result as boolean | undefined;
+  // `artCoinIsToken0` — only treat as a real value when the read actually
+  // succeeded. Coercing a failed/pending read to `false` would silently
+  // tell the swap widget the wrong pool direction (see SwapWidget usage
+  // below), which quotes/swaps against the wrong side of the pool.
+  const isToken0 =
+    staticData?.[9]?.status === 'success'
+      ? (staticData[9].result as boolean)
+      : undefined;
   const mevModuleEnabled = staticData?.[10]?.result as boolean | undefined;
   const poolCreationTimestamp = staticData?.[11]?.result as bigint | undefined;
+  // Static-fee-only reads: undefined (status 'failure') on non-static-fee
+  // hooks (e.g. the skim-fee hook), which is fine — formatFeeBps() and the
+  // InfoRows below already render '—' for undefined.
   const buyFee = staticData?.[12]?.result as number | undefined;
   const sellFee = staticData?.[13]?.result as number | undefined;
   const tokenRewards = staticData?.[14]?.result as
@@ -155,7 +167,6 @@ export default function TokenDetailPage() {
         positionBps: readonly number[];
       }
     | undefined;
-  const protocolFeeNumerator = staticData?.[15]?.result as bigint | undefined;
 
   // ── 4. Live MEV state (only while enabled) ────────────────────────
   const { data: mevLiveData } = useReadContracts({
@@ -377,7 +388,7 @@ export default function TokenDetailPage() {
           tokenAddress={event.tokenAddress}
           tokenSymbol={symbol ?? event.tokenSymbol}
           poolKey={poolKey}
-          newMaterialIsToken0={!!isToken0}
+          isToken0={isToken0}
           mevActive={!!mevModuleEnabled && (mevTimeRemaining ?? 0n) > 0n}
         />
       )}
@@ -524,65 +535,12 @@ export default function TokenDetailPage() {
           )}
         </InfoCard>
 
-        <InfoCard title="Fee Distribution">
-          {buyFee !== undefined && protocolFeeNumerator !== undefined && tokenRewards ? (
-            (() => {
-              // Protocol fee is protocolFeeNumerator / 1_000_000 of the LP fee
-              const protocolPct = Number(protocolFeeNumerator) / 10_000; // as %
-              const lpPct = 100 - protocolPct;
-
-              return (
-                <div className="space-y-3">
-                  <p className="text-xs text-zinc-500">
-                    Each swap pays a fee that is split between the protocol and LP reward
-                    recipients.
-                  </p>
-                  <div className="text-sm space-y-1.5">
-                    <div className="flex justify-between">
-                      <span className="text-zinc-400">Protocol (factory owner)</span>
-                      <span className="text-white">{protocolPct.toFixed(1)}% of fee</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-400">LP Reward Recipients</span>
-                      <span className="text-white">{lpPct.toFixed(1)}% of fee</span>
-                    </div>
-                  </div>
-                  {tokenRewards.rewardRecipients.length > 0 && (
-                    <div className="border-t border-zinc-800 pt-2 space-y-1">
-                      <p className="text-xs text-zinc-500 mb-1">
-                        LP share ({lpPct.toFixed(0)}%) is split among:
-                      </p>
-                      {tokenRewards.rewardRecipients.map((recipient, i) => (
-                        <div key={i} className="flex items-center justify-between text-sm">
-                          <CopyableAddress
-                            address={recipient}
-                            explorerUrl={explorerUrl(chainId, recipient)}
-                          />
-                          <span className="text-zinc-300">
-                            {tokenRewards.rewardBps[i] / 100}%
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <div className="border-t border-zinc-800 pt-2">
-                    <p className="text-xs text-zinc-500">
-                      Example: on a {formatFeeBps(buyFee)} buy fee,{' '}
-                      {((buyFee ?? 0) * Number(protocolFeeNumerator) / 1_000_000 / 10_000).toFixed(3)}% goes
-                      to protocol and{' '}
-                      {((buyFee ?? 0) * (1 - Number(protocolFeeNumerator) / 1_000_000) / 10_000).toFixed(3)}% goes
-                      to LP recipients.
-                    </p>
-                  </div>
-                </div>
-              );
-            })()
-          ) : (
-            <p className="text-sm text-zinc-500 py-2">
-              {readsLoading ? 'Loading…' : '—'}
-            </p>
-          )}
-        </InfoCard>
+        {/* "Fee Distribution" (protocol vs. LP split) previously read
+            `protocolFeeNumerator`, which does not exist on any current hook
+            (`ArtCoinsHook`, `ArtCoinsHookStaticFee`, `ArtCoinsHookSkimFee`) —
+            it only ever existed on the legacy `ArtCoinsHookV2`. There is no
+            replacement read that exposes an equivalent protocol/LP split, so
+            the card is omitted rather than showing invented numbers. */}
 
         <InfoCard title="LP Positions">
           <InfoRow

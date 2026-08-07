@@ -64,10 +64,10 @@ export default function TokensListPage() {
       {!factoryDeployed && (
         <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-10 text-center">
           <p className="text-zinc-400">
-            The factory isn't deployed on this chain yet.
+            The factory isn't configured for this chain.
           </p>
           <p className="text-sm text-zinc-600 mt-2">
-            Switch to Sepolia to see deployed tokens.
+            Switch to Ethereum Mainnet or Sepolia to see deployed tokens.
           </p>
         </div>
       )}

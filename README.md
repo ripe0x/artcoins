@@ -86,6 +86,59 @@ The factory ships `deprecated = true`; the owner flips it active before public d
 forge script script/Deploy.s.sol --rpc-url $MAINNET_RPC_URL --broadcast --verify
 ```
 
+## Deployed addresses
+
+Addresses for the stack that `ui/` targets (`script/Deploy.s.sol` — factory
+`deployToken(...)`, legacy MEV modules, vault/airdrop/dev-buy extensions).
+Source of truth: `ui/src/lib/config.ts`, derived from the Foundry broadcast
+artifacts in `broadcast/Deploy.s.sol/1/`.
+
+### Mainnet
+
+| Contract | Address |
+| --- | --- |
+| Factory | [`0xD1595A2742C392d1c109b616b4F08918D02292f9`](https://etherscan.io/address/0xD1595A2742C392d1c109b616b4F08918D02292f9) |
+| Hook | [`0xA5eA9904F2cD572c638a1eF81463BDAbEa9D28cc`](https://etherscan.io/address/0xA5eA9904F2cD572c638a1eF81463BDAbEa9D28cc) |
+| LP Locker | [`0x75BE7E95745915fD0C1761B74F3f9650ad2d1118`](https://etherscan.io/address/0x75BE7E95745915fD0C1761B74F3f9650ad2d1118) |
+| MEV Linear Fees | [`0xAe19E402420359062eE422a03589e04a52cD8C6F`](https://etherscan.io/address/0xAe19E402420359062eE422a03589e04a52cD8C6F) |
+| MEV Descending Fees | [`0x7958DE7d8C857CdD37465FB920A961B1f8F74301`](https://etherscan.io/address/0x7958DE7d8C857CdD37465FB920A961B1f8F74301) |
+| MEV Time Delay | [`0xf080D741D069B107D728B68F781843d83A0EA8Fb`](https://etherscan.io/address/0xf080D741D069B107D728B68F781843d83A0EA8Fb) |
+| Vault | [`0x84732a79e4Ec8F03063a138c7ef866a9d222C661`](https://etherscan.io/address/0x84732a79e4Ec8F03063a138c7ef866a9d222C661) |
+| Airdrop | [`0xF937dFf16a45E417951794758E77CbEd0A7F27eC`](https://etherscan.io/address/0xF937dFf16a45E417951794758E77CbEd0A7F27eC) |
+| Dev Buy | [`0xfCB6a929dB98A1D69b5F33A2f7E073cB7449cF30`](https://etherscan.io/address/0xfCB6a929dB98A1D69b5F33A2f7E073cB7449cF30) |
+| WETH | [`0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2`](https://etherscan.io/address/0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2) |
+| PoolManager (Uniswap V4) | [`0x000000000004444c5dc75cB358380D2e3dE08A90`](https://etherscan.io/address/0x000000000004444c5dc75cB358380D2e3dE08A90) |
+| StateView (Uniswap V4) | not filled in yet — see `ui/src/lib/config.ts` |
+| Quoter (Uniswap V4) | not filled in yet — see `ui/src/lib/config.ts` |
+| Universal Router | [`0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af`](https://etherscan.io/address/0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af) |
+| Permit2 | [`0x000000000022D473030F116dDEE9F6B43aC78BA3`](https://etherscan.io/address/0x000000000022D473030F116dDEE9F6B43aC78BA3) |
+
+There is also a separate, newer "V3" native-ETH-pair stack
+(`script/DeployNativeEthStack.s.sol`, deployed 2026-05-18) with its own
+`deployTokenWithProtocolBps(...)` entrypoint and no MEV modules or
+vault/airdrop/dev-buy extensions. `ui/` does not target it, so it is not
+listed above.
+
+### Sepolia
+
+| Contract | Address |
+| --- | --- |
+| Factory | [`0x3c3aEfC8Fa374589D179D43cb03e29a6B350DF7A`](https://sepolia.etherscan.io/address/0x3c3aEfC8Fa374589D179D43cb03e29a6B350DF7A) |
+| Hook | [`0x36EF2eC4c1DF5e0A07567306D721F2Bb5d4E68cc`](https://sepolia.etherscan.io/address/0x36EF2eC4c1DF5e0A07567306D721F2Bb5d4E68cc) |
+| LP Locker | [`0x6e511f2321F82559E559ce1Da0EcFDBf0E4ace62`](https://sepolia.etherscan.io/address/0x6e511f2321F82559E559ce1Da0EcFDBf0E4ace62) |
+| MEV Linear Fees | [`0x7f0AC1a505614CF21a78ed276710864C8b256b4e`](https://sepolia.etherscan.io/address/0x7f0AC1a505614CF21a78ed276710864C8b256b4e) |
+| MEV Descending Fees | [`0xb42d19d3C4fCa696e59Ed2C6eEdD4a56752EDe12`](https://sepolia.etherscan.io/address/0xb42d19d3C4fCa696e59Ed2C6eEdD4a56752EDe12) |
+| MEV Time Delay | [`0x562E8BEb37064b2A5A3f9D0Ab3AB9263ab1295ac`](https://sepolia.etherscan.io/address/0x562E8BEb37064b2A5A3f9D0Ab3AB9263ab1295ac) |
+| Vault | [`0xaF57B58c208D0D846646350fAdBba3537861F19B`](https://sepolia.etherscan.io/address/0xaF57B58c208D0D846646350fAdBba3537861F19B) |
+| Airdrop | [`0x9ad33BB054577d2b3a6B549Bf08D32814e0fBbF9`](https://sepolia.etherscan.io/address/0x9ad33BB054577d2b3a6B549Bf08D32814e0fBbF9) |
+| Dev Buy | [`0x7Be49a9cB09E2FE7Dd5484ec94Fc8F70d226649B`](https://sepolia.etherscan.io/address/0x7Be49a9cB09E2FE7Dd5484ec94Fc8F70d226649B) |
+| WETH | [`0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14`](https://sepolia.etherscan.io/address/0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14) |
+| PoolManager (Uniswap V4) | [`0xE03A1074c86CFeDd5C142C4F04F1a1536e203543`](https://sepolia.etherscan.io/address/0xE03A1074c86CFeDd5C142C4F04F1a1536e203543) |
+| StateView (Uniswap V4) | [`0xE1Dd9c3fA50EDB962E442f60DfBc432e24537E4C`](https://sepolia.etherscan.io/address/0xE1Dd9c3fA50EDB962E442f60DfBc432e24537E4C) |
+| Quoter (Uniswap V4) | [`0x61B3f2011A92d183C7dbaDBdA940a7555Ccf9227`](https://sepolia.etherscan.io/address/0x61B3f2011A92d183C7dbaDBdA940a7555Ccf9227) |
+| Universal Router | [`0x3A9D48AB9751398BbFa63ad67599Bb04e4BdF98b`](https://sepolia.etherscan.io/address/0x3A9D48AB9751398BbFa63ad67599Bb04e4BdF98b) |
+| Permit2 | [`0x000000000022D473030F116dDEE9F6B43aC78BA3`](https://sepolia.etherscan.io/address/0x000000000022D473030F116dDEE9F6B43aC78BA3) |
+
 ## UI
 
 `ui/` is a React 19 + Vite app (wagmi + RainbowKit + Tailwind) for deploying and managing tokens:

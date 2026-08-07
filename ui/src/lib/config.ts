@@ -25,18 +25,35 @@ export interface ContractAddresses {
 
 const ZERO: Address = '0x0000000000000000000000000000000000000000';
 
+// Mainnet deployment (2026-05-07, script/Deploy.s.sol run-latest.json,
+// broadcast/Deploy.s.sol/1/run-1778121239784.json) — EIP-55 strict casing
+// for viem ≥2.47. This is the "V1"-ABI stack (factory.deployToken(...),
+// legacy MEV modules + vault/airdrop/devBuy extensions) that this UI's
+// deploy flow (ReviewAndDeploy.tsx, factoryAbi.deployToken) targets. LAYER
+// (the first token) was launched against this exact factory instance —
+// see broadcast/LaunchLayer.s.sol/1/run-1778180525856.json. There is a
+// separate, newer "V3" native-ETH-pair factory stack
+// (script/DeployNativeEthStack.s.sol, mainnet 2026-05-18) with its own
+// deployTokenWithProtocolBps(...) entrypoint and no MEV modules or
+// vault/airdrop/devBuy extensions — this UI does not target it, so its
+// addresses are intentionally NOT used here.
 const MAINNET_ADDRESSES: ContractAddresses = {
-  factory: ZERO,
-  hook: ZERO,
-  locker: ZERO,
-  mevLinearFees: ZERO,
-  mevDescFees: ZERO,
-  mevTimeDelay: ZERO,
-  vault: ZERO,
-  airdrop: ZERO,
-  devBuy: ZERO,
+  factory: '0xD1595A2742C392d1c109b616b4F08918D02292f9',
+  hook: '0xA5eA9904F2cD572c638a1eF81463BDAbEa9D28cc',
+  locker: '0x75BE7E95745915fD0C1761B74F3f9650ad2d1118',
+  mevLinearFees: '0xAe19E402420359062eE422a03589e04a52cD8C6F',
+  mevDescFees: '0x7958DE7d8C857CdD37465FB920A961B1f8F74301',
+  mevTimeDelay: '0xf080D741D069B107D728B68F781843d83A0EA8Fb',
+  vault: '0x84732a79e4Ec8F03063a138c7ef866a9d222C661',
+  airdrop: '0xF937dFf16a45E417951794758E77CbEd0A7F27eC',
+  devBuy: '0xfCB6a929dB98A1D69b5F33A2f7E073cB7449cF30',
   weth: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
   poolManager: '0x000000000004444c5dc75cB358380D2e3dE08A90',
+  // Uniswap V4 StateView / Quoter mainnet deployments are NOT present
+  // anywhere in this repo (not in broadcast/, script/, or .env.example) —
+  // left as ZERO rather than guessed. Fill from Uniswap's official V4
+  // deployment docs (https://docs.uniswap.org/contracts/v4/deployments)
+  // before enabling any UI feature that reads slot0 or quotes on mainnet.
   stateView: ZERO,
   quoter: ZERO,
   universalRouter: '0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af',
@@ -76,12 +93,21 @@ export function getAddresses(chainId: number): ContractAddresses {
  * Used as the `fromBlock` for getLogs so we don't scan from genesis.
  */
 const factoryDeploymentBlocks: Record<number, bigint> = {
-  1: 0n,
+  1: 25_040_120n, // Mainnet factory deployment block (2026-05-07, broadcast/Deploy.s.sol/1/run-1778121239784.json receipt for ArtCoinsFactory 0xD1595A27...)
   11155111: 10_665_708n, // Sepolia deployment block (2026-04-15)
 };
 
 export function getFactoryDeploymentBlock(chainId: number): bigint {
-  return factoryDeploymentBlocks[chainId] ?? 0n;
+  const block = factoryDeploymentBlocks[chainId] ?? 0n;
+  const factoryAddress = addressMap[chainId]?.factory;
+  if (factoryAddress && factoryAddress !== ZERO && block === 0n) {
+    console.warn(
+      `[config] Chain ${chainId} has a non-zero factory address but factoryDeploymentBlocks[${chainId}] is 0. ` +
+        'This will cause getLogs to scan from genesis in 2000-block batches on every page load. ' +
+        'Set the real deployment block in factoryDeploymentBlocks.'
+    );
+  }
+  return block;
 }
 
 /**

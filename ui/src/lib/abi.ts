@@ -103,7 +103,7 @@ export const tokenAbi = [
   { type: 'function', name: 'isVerified', inputs: [], outputs: [{ type: 'bool' }], stateMutability: 'view' },
 ] as const;
 
-// PoolKey tuple shared by V4 calls (hookAbi + mevLinearAbi).
+// PoolKey tuple shared by V4 calls (mevLinearAbi).
 const poolKeyTuple = {
   type: 'tuple',
   components: [
@@ -115,16 +115,20 @@ const poolKeyTuple = {
   ],
 } as const;
 
-// ─── NewMaterialHookV2 / StaticFeeV2 (read-only subset) ───────────
-export const hookAbi = [
-  { type: 'function', name: 'newMaterialIsToken0', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'bool' }], stateMutability: 'view' },
+// ─── ArtCoinsHook base (read-only subset) ──────────────────────────
+// Present on every concrete hook variant (ArtCoinsHookStaticFee,
+// ArtCoinsHookSkimFee, and any future fee-strategy variant), since they
+// all inherit from the abstract `ArtCoinsHook`.
+export const hookBaseAbi = [
+  { type: 'function', name: 'artCoinIsToken0', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'bool' }], stateMutability: 'view' },
   { type: 'function', name: 'locker', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'address' }], stateMutability: 'view' },
   { type: 'function', name: 'mevModule', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'address' }], stateMutability: 'view' },
   { type: 'function', name: 'mevModuleEnabled', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'bool' }], stateMutability: 'view' },
   { type: 'function', name: 'poolCreationTimestamp', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
-  { type: 'function', name: 'newMaterialFee', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'uint24' }], stateMutability: 'view' },
-  { type: 'function', name: 'pairedFee', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'uint24' }], stateMutability: 'view' },
-  { type: 'function', name: 'protocolFeeNumerator', inputs: [], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
+] as const;
+
+// ─── ArtCoinsHookSkimFee (read-only subset) ────────────────────────
+export const skimHookAbi = [
   // Per-pool skim config; the `referralPayout` field tells us which
   // ReferralPayout instance holds balances for this pool.
   {
@@ -139,13 +143,15 @@ export const hookAbi = [
       { name: 'bountyRecipient', type: 'address' },
       { name: 'protocolRecipient', type: 'address' },
       { name: 'referralPayout', type: 'address' },
-      { name: 'permanentCollection', type: 'address' },
       { name: 'quoteToken', type: 'address' },
     ],
     stateMutability: 'view',
   },
   // Per-swap accrual within the current tx (rarely non-zero between
-  // swaps; useful only when a forward to ReferralPayout previously failed).
+  // swaps outside of `_afterSwap`, which flushes it automatically to
+  // `referralPayout` — or folds it to the protocol leg if that forward
+  // reverts. There is no separate "held" balance or external retry path
+  // on the current contract.
   {
     type: 'function',
     name: 'accruedReferral',
@@ -153,28 +159,15 @@ export const hookAbi = [
     outputs: [{ type: 'uint256' }],
     stateMutability: 'view',
   },
-  // Held amount: a previously-flushed referral that couldn't be forwarded
-  // (e.g. recipient reverted). Drainable via `flushReferral` / `retryHeldReferral`.
-  {
-    type: 'function',
-    name: 'heldReferral',
-    inputs: [{ type: 'bytes32' }, { type: 'address' }],
-    outputs: [{ type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  // Escape hatch: drain any held + freshly-accrued referral for a referrer
-  // to ReferralPayout. In normal swap traffic this is automatic in
-  // `_afterSwap` and never needs to be called externally.
-  {
-    type: 'function',
-    name: 'flushReferral',
-    inputs: [poolKeyTuple, { name: 'referrer', type: 'address' }],
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
 ] as const;
 
-// ─── NewMaterialMevLinearFees (read-only subset) ─────────────────
+// ─── ArtCoinsHookStaticFee (read-only subset) ──────────────────────
+export const staticHookAbi = [
+  { type: 'function', name: 'artCoinFee', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'uint24' }], stateMutability: 'view' },
+  { type: 'function', name: 'pairedFee', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'uint24' }], stateMutability: 'view' },
+] as const;
+
+// ─── ArtCoinsMevLinearFees (read-only subset) ─────────────────────
 export const mevLinearAbi = [
   { type: 'function', name: 'getCurrentFee', inputs: [poolKeyTuple], outputs: [{ type: 'uint24' }], stateMutability: 'view' },
   { type: 'function', name: 'getTimeRemaining', inputs: [poolKeyTuple], outputs: [{ type: 'uint256' }], stateMutability: 'view' },

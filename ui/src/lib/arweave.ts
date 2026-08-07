@@ -24,7 +24,10 @@ function walletClientToEthersProvider(walletClient: WalletClient): BrowserProvid
     name: chain.name,
   };
   // viem's transport is an EIP-1193 compatible provider; ethers can wrap it.
-  return new BrowserProvider(transport as unknown as Parameters<typeof BrowserProvider>[0], network);
+  // Use ConstructorParameters (not Parameters) since BrowserProvider is a
+  // class — `typeof BrowserProvider` is a constructor type, and only
+  // ConstructorParameters can extract argument types from that.
+  return new BrowserProvider(transport as unknown as ConstructorParameters<typeof BrowserProvider>[0], network);
 }
 
 export interface UploadResult {
@@ -67,7 +70,14 @@ export async function uploadImageToArweave(
 
   // Use `uploader.upload(buffer, { tags })` for raw data. Note: the Irys SDK
   // also supports `uploadFile()` but that API is node-only.
-  const receipt = await uploader.upload(buffer, { tags });
+  //
+  // The Irys SDK's TS types declare `upload(data: string | Buffer | Readable, ...)`,
+  // a Node-oriented signature, but there is no `Buffer` in the browser. At
+  // runtime `upload()` just forwards `data` through unchanged (see
+  // @irys/upload-core's Irys.upload -> uploader.uploadData), so handing it a
+  // Uint8Array works identically to a Buffer. Cast narrowly here rather than
+  // converting the bytes, so the exact same Uint8Array is uploaded.
+  const receipt = await uploader.upload(buffer as unknown as Buffer, { tags });
 
   const id = receipt.id;
   return {

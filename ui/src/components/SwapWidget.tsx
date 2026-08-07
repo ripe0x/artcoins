@@ -38,7 +38,13 @@ interface Props {
   tokenAddress: Address;
   tokenSymbol: string;
   poolKey: PoolKey;
-  newMaterialIsToken0: boolean;
+  /**
+   * Whether the ArtCoin is `token0` in the pool. `undefined` means the
+   * on-chain read for this either failed or hasn't resolved yet — in that
+   * case we must NOT guess (a wrong direction flag makes the widget
+   * quote/swap the wrong way), so the form is disabled instead.
+   */
+  isToken0: boolean | undefined;
   /** Is the MEV module currently active? Warn user if yes. */
   mevActive?: boolean;
 }
@@ -53,7 +59,7 @@ export default function SwapWidget({
   tokenAddress,
   tokenSymbol,
   poolKey,
-  newMaterialIsToken0,
+  isToken0,
   mevActive,
 }: Props) {
   const { address, isConnected } = useAccount();
@@ -144,6 +150,12 @@ export default function SwapWidget({
       setQuoteError(null);
       return;
     }
+    if (isToken0 === undefined) {
+      // Pool direction couldn't be verified — do not guess.
+      setQuote(null);
+      setQuoteError(null);
+      return;
+    }
     if (addresses.quoter === '0x0000000000000000000000000000000000000000') {
       setQuoteError('Quoter not configured on this chain');
       setQuote(null);
@@ -153,8 +165,7 @@ export default function SwapWidget({
     setQuoting(true);
     setQuoteError(null);
 
-    const zeroForOne =
-      direction === 'buy' ? !newMaterialIsToken0 : newMaterialIsToken0;
+    const zeroForOne = direction === 'buy' ? !isToken0 : isToken0;
 
     (async () => {
       try {
@@ -198,7 +209,7 @@ export default function SwapWidget({
     addresses.quoter,
     amountInWei,
     direction,
-    newMaterialIsToken0,
+    isToken0,
     poolKey.currency0,
     poolKey.currency1,
     poolKey.fee,
@@ -262,7 +273,7 @@ export default function SwapWidget({
 
   const referrer = useReferrer();
   const handleSwap = () => {
-    if (!address || amountInWei === 0n || quote === null) return;
+    if (!address || amountInWei === 0n || quote === null || isToken0 === undefined) return;
     setPendingAction('swap');
     const deadline = BigInt(Math.floor(Date.now() / 1000) + DEFAULT_DEADLINE_SECS);
 
@@ -276,7 +287,7 @@ export default function SwapWidget({
     if (direction === 'buy') {
       const { commands, inputs, value } = buildBuyCalldata({
         poolKey,
-        newMaterialIsToken0,
+        newMaterialIsToken0: isToken0,
         weth: addresses.weth,
         token: tokenAddress,
         ethAmount: amountInWei,
@@ -293,7 +304,7 @@ export default function SwapWidget({
     } else {
       const { commands, inputs, value } = buildSellCalldata({
         poolKey,
-        newMaterialIsToken0,
+        newMaterialIsToken0: isToken0,
         weth: addresses.weth,
         token: tokenAddress,
         tokenAmount: amountInWei,
@@ -323,7 +334,12 @@ export default function SwapWidget({
     !needsErc20Approval &&
     (permit2Amount < amountInWei || permit2Expiration < Math.floor(Date.now() / 1000));
 
+  // Pool direction (artCoinIsToken0) couldn't be verified on-chain — never
+  // guess it, since a wrong direction flag would quote/swap the wrong way.
+  const poolConfigUnknown = isToken0 === undefined;
+
   const canSwap =
+    !poolConfigUnknown &&
     isConnected &&
     amountInWei > 0n &&
     quote !== null &&
@@ -332,6 +348,7 @@ export default function SwapWidget({
     !needsPermit2Approval;
 
   const swapButtonLabel = () => {
+    if (poolConfigUnknown) return 'Swap disabled';
     if (!isConnected) return 'Connect wallet';
     if (!amountInWei) return 'Enter amount';
     if (overBalance) return `Insufficient ${balanceLabel}`;
@@ -353,13 +370,14 @@ export default function SwapWidget({
             <button
               key={d}
               type="button"
+              disabled={poolConfigUnknown}
               onClick={() => {
                 setDirection(d);
                 setAmountIn('');
                 setQuote(null);
                 setQuoteError(null);
               }}
-              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                 direction === d
                   ? d === 'buy'
                     ? 'bg-green-600 text-white'
@@ -374,6 +392,12 @@ export default function SwapWidget({
       </div>
 
       <div className="p-5 space-y-3">
+        {poolConfigUnknown && (
+          <div className="rounded-lg border border-red-900 bg-red-950/30 p-3 text-xs text-red-300">
+            This pool's configuration couldn't be verified — swapping is disabled here.
+          </div>
+        )}
+
         {mevActive && (
           <div className="rounded-lg border border-violet-600/30 bg-violet-950/20 p-3 text-xs text-violet-200">
             <strong>Anti-sniper fee active.</strong> Buy fees are currently very high. See the MEV
@@ -405,6 +429,7 @@ export default function SwapWidget({
               type="text"
               inputMode="decimal"
               placeholder="0.0"
+              disabled={poolConfigUnknown}
               value={amountIn}
               onChange={e => {
                 const v = e.target.value.replace(',', '.');
@@ -480,7 +505,7 @@ export default function SwapWidget({
           <button
             type="button"
             onClick={handleApproveErc20}
-            disabled={isPending || confirming}
+            disabled={poolConfigUnknown || isPending || confirming}
             className="w-full rounded-lg bg-violet-600 hover:bg-violet-500 disabled:bg-zinc-700 disabled:cursor-not-allowed py-3 text-sm font-semibold"
           >
             {pendingAction === 'approve-erc20' && (isPending || confirming)
@@ -493,7 +518,7 @@ export default function SwapWidget({
           <button
             type="button"
             onClick={handleApprovePermit2}
-            disabled={isPending || confirming}
+            disabled={poolConfigUnknown || isPending || confirming}
             className="w-full rounded-lg bg-violet-600 hover:bg-violet-500 disabled:bg-zinc-700 disabled:cursor-not-allowed py-3 text-sm font-semibold"
           >
             {pendingAction === 'approve-permit2' && (isPending || confirming)
