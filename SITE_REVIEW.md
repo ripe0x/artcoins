@@ -5,6 +5,21 @@ storage layers, `script-js/`, and the docs surrounding them. Findings are
 ordered by severity within each section; references are `file:line` at the
 commit this doc was added.
 
+> **Status: addressed.** Nearly everything below was implemented in the
+> commits that follow this one, tracked as issues #13-#17 and #19-#29.
+> Line references therefore describe the code *as reviewed*, not as it
+> stands now. Two items remain open:
+>
+> - **#18** — generating ABIs from Foundry artifacts, which needs
+>   `forge build` and initialized submodules. The drift it prevents was
+>   fixed by hand in #13.
+> - **#30** — mainnet has two independent factory stacks; the UI points at
+>   the one it can actually call, pending an owner decision.
+>
+> The review also understated one thing: `heldReferral` and `flushReferral`
+> (section 1.1) do not exist on any contract either, so those reads always
+> reverted. They have been removed.
+
 ---
 
 ## 1. Broken right now (correctness)
