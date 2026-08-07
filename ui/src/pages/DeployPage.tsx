@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAccount } from 'wagmi';
+import { PAGE_WIDTH_NARROW } from '../components/Layout';
 import TokenConfigForm from '../components/TokenConfigForm';
 import PoolConfigForm from '../components/PoolConfigForm';
 import AntiSniperForm from '../components/AntiSniperForm';
@@ -276,7 +277,7 @@ export default function DeployPage() {
   ];
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8 space-y-3">
+    <div className={`${PAGE_WIDTH_NARROW} py-8 space-y-3`}>
       <div className="mb-8 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Deploy token</h1>
@@ -370,6 +371,6 @@ export default function DeployPage() {
           onDeployed={clearDraft}
         />
       </StepCard>
-    </main>
+    </div>
   );
 }

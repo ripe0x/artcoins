@@ -10,15 +10,17 @@ interface State {
 }
 
 /**
- * Top-level render-error safety net. Any uncaught error thrown while
- * rendering `<App />` (a page, a hook, anything in the tree below this
- * boundary) is caught here instead of blanking the entire document.
+ * Render-error safety net. Any uncaught error thrown while rendering the
+ * subtree below a given boundary is caught here instead of blanking the
+ * document (or, for the inner boundary, the whole app).
  *
- * This only wraps `<App />` in `main.tsx` for now. A second boundary around
- * the router `<Outlet />` in `Layout.tsx` — so a single page crashing
- * doesn't take the header/nav down with it — is a deliberate follow-up:
- * `Layout.tsx` is owned by another agent concurrently, so it's out of scope
- * here.
+ * Used at two levels:
+ *  - Wraps `<App />` in `main.tsx` — the last-resort net if something
+ *    outside the router (or the inner boundary itself) blows up.
+ *  - Wraps the router `<Outlet />` in `Layout.tsx`, keyed by route pathname
+ *    — so a single page crashing shows this fallback while the header and
+ *    footer survive, and navigating away remounts the boundary (a changed
+ *    `key` resets React state) instead of leaving it stuck on the error.
  */
 export default class ErrorBoundary extends Component<Props, State> {
   state: State = { error: null };

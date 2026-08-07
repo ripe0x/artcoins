@@ -4,6 +4,7 @@ import { useAccount, useChainId, useReadContracts } from 'wagmi';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { formatEther, type Address } from 'viem';
 
+import { PAGE_WIDTH_NARROW } from '../components/Layout';
 import InfoCard from '../components/InfoCard';
 import InfoRow from '../components/InfoRow';
 import CopyableAddress from '../components/CopyableAddress';
@@ -120,7 +121,8 @@ export default function ReferralsPage() {
   // 5. UI
   if (eventsLoading || skimLoading) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-12">
+      <div className={`${PAGE_WIDTH_NARROW} py-12`}>
+        <h1 className="sr-only">Loading referral earnings…</h1>
         <div className="h-40 rounded-xl bg-zinc-900 border border-zinc-800 animate-pulse" />
       </div>
     );
@@ -128,8 +130,8 @@ export default function ReferralsPage() {
 
   if (!event) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-12 text-center">
-        <p className="text-zinc-400">Token not found.</p>
+      <div className={`${PAGE_WIDTH_NARROW} py-12 text-center`}>
+        <h1 className="text-lg font-semibold text-zinc-100 mb-2">Token not found</h1>
         <Link to="/tokens" className="mt-4 inline-block text-violet-300 hover:text-violet-200">
           ← Back to all tokens
         </Link>
@@ -138,7 +140,7 @@ export default function ReferralsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-12 space-y-6">
+    <div className={`${PAGE_WIDTH_NARROW} py-12 space-y-6`}>
       <div>
         <Link
           to={`/tokens/${event.tokenAddress}`}

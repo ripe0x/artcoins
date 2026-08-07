@@ -2,10 +2,15 @@
   "name": "new-material-coin-launcher-scripts",
   "private": true,
   "type": "module",
+  "scripts": {
+    "gen:abi": "node generate-abis.mjs",
+    "check:abi": "node generate-abis.mjs && git diff --exit-code ../ui/src/lib/abi.generated.ts"
+  },
   "dependencies": {
     "@openzeppelin/merkle-tree": "^1.0.8",
     "puppeteer": "^23.0.0",
     "sharp": "^0.33.0",
+    "solc": "0.8.26",
     "viem": "^2.47.16"
   },
   "devDependencies": {

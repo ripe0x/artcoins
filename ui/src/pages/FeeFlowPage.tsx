@@ -4,6 +4,7 @@
  * the deploy and smoke tests, not a live dashboard.
  */
 
+import { PAGE_WIDTH_WIDE } from '../components/Layout';
 import { explorerAddressUrl, explorerTxUrl } from '../lib/explorer';
 
 // This page is a fixed historical snapshot of a Sepolia rehearsal, not a
@@ -171,7 +172,7 @@ function FeeBox({
 
 export default function FeeFlowPage() {
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 space-y-6">
+    <div className={`${PAGE_WIDTH_WIDE} py-8 space-y-6`}>
       <div className="border border-amber-900 bg-amber-950/30 rounded-xl p-4 text-sm text-amber-200">
         <p className="font-semibold text-amber-300">Internal engineering record — not live data</p>
         <p className="mt-1 text-amber-200/80">

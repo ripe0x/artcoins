@@ -234,6 +234,10 @@ export default function ReviewAndDeploy({
         metadata: tokenForm.metadata,
         context: tokenForm.context,
         totalSupply,
+        // Zero = built-in default renderer; the UI doesn't currently expose
+        // choosing a custom one, and the token admin can still swap it in
+        // post-deploy via `token.setMetadataRenderer`.
+        renderer: '0x0000000000000000000000000000000000000000' as Address,
       },
       poolConfig: {
         hook: addresses.hook,
@@ -255,6 +259,12 @@ export default function ReviewAndDeploy({
       mevModuleConfig: {
         mevModule,
         mevModuleData,
+      },
+      // Zero recipient disables the deploy-time sniper-extra-fee routing
+      // path entirely; the UI doesn't currently expose configuring it.
+      sniperFeeConfig: {
+        recipient: '0x0000000000000000000000000000000000000000' as Address,
+        lockRecipient: false,
       },
       extensionConfigs,
     };

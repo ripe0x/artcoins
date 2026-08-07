@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import type { Address } from 'viem';
 
+import { PAGE_WIDTH_NARROW } from '../components/Layout';
 import InfoCard from '../components/InfoCard';
 import InfoRow from '../components/InfoRow';
 import CopyableAddress from '../components/CopyableAddress';
@@ -174,7 +175,7 @@ export default function ClaimPage() {
   // network request for it at this point.
   if (!tokenAddress) {
     return (
-      <main className="mx-auto max-w-3xl px-4 py-16 text-center">
+      <div className={`${PAGE_WIDTH_NARROW} py-16 text-center`}>
         <h1 className="text-xl font-semibold mb-2">Token not found</h1>
         <p className="text-zinc-500 text-sm mb-6">
           <span className="font-mono">{shortAddr(tokenAddressRaw)}</span> is not a valid token
@@ -183,7 +184,7 @@ export default function ClaimPage() {
         <Link to="/tokens" className="text-violet-400 hover:text-violet-300 text-sm">
           ← Back to all tokens
         </Link>
-      </main>
+      </div>
     );
   }
 
@@ -199,7 +200,7 @@ export default function ClaimPage() {
   };
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8 space-y-6">
+    <div className={`${PAGE_WIDTH_NARROW} py-8 space-y-6`}>
       <div className="text-sm text-zinc-500">
         <Link to={`/tokens/${tokenAddress}`} className="hover:text-zinc-300">
           ← Back to {symbol ?? 'token'}
@@ -399,6 +400,6 @@ export default function ClaimPage() {
           </InfoCard>
         </div>
       )}
-    </main>
+    </div>
   );
 }

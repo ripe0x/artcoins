@@ -1,5 +1,5 @@
 import { Routes, Route } from 'react-router-dom';
-import Layout from './components/Layout';
+import Layout, { PAGE_WIDTH_NARROW } from './components/Layout';
 import DeployPage from './pages/DeployPage';
 import TokensListPage from './pages/TokensListPage';
 import TokenDetailPage from './pages/TokenDetailPage';
@@ -20,7 +20,7 @@ export default function App() {
         <Route
           path="*"
           element={
-            <div className="mx-auto max-w-3xl px-4 py-16 text-center text-zinc-500">
+            <div className={`${PAGE_WIDTH_NARROW} py-16 text-center text-zinc-500`}>
               Page not found.
             </div>
           }

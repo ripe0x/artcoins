@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useChainId, usePublicClient } from 'wagmi';
 import { useQuery } from '@tanstack/react-query';
+import { PAGE_WIDTH_WIDE } from '../components/Layout';
 import TokenCard from '../components/TokenCard';
 import { fetchAllTokenCreatedEvents } from '../lib/events';
 import { getAddresses, getFactoryDeploymentBlock } from '../lib/config';
@@ -52,7 +53,7 @@ export default function TokensListPage() {
   });
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8">
+    <div className={`${PAGE_WIDTH_WIDE} py-8`}>
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">All Tokens</h1>
@@ -133,6 +134,6 @@ export default function TokensListPage() {
           )}
         </>
       )}
-    </main>
+    </div>
   );
 }

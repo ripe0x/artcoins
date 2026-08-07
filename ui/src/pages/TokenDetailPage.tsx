@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useChainId, useReadContracts } from 'wagmi';
 import type { Address, Abi } from 'viem';
 
+import { PAGE_WIDTH_DETAIL } from '../components/Layout';
 import InfoCard from '../components/InfoCard';
 import InfoRow from '../components/InfoRow';
 import CopyableAddress from '../components/CopyableAddress';
@@ -174,14 +175,21 @@ export default function TokenDetailPage() {
   const skimLpFee = skimConfigResult?.[3];
   const skimBaselineBps = skimConfigResult?.[0];
   const skimSucceeded = skimConfigResult !== undefined;
+  // `ArtCoinsLpLocker.tokenRewards` returns the locker's current on-chain
+  // `TokenRewardInfo` — NOT the deploy-time `LockerConfig` shape (which does
+  // have `tickLower`/`tickUpper`/`positionBps`; that's a different struct
+  // used only to configure the locker at deploy time). The runtime getter
+  // instead reports the underlying position(s) as `poolKey`/`positionId`/
+  // `numPositions` — there's no per-position tick-range/bps breakdown here.
   const tokenRewards = staticData?.[15]?.result as
     | {
+        token: Address;
+        poolKey: { currency0: Address; currency1: Address; fee: number; tickSpacing: number; hooks: Address };
+        positionId: bigint;
+        numPositions: bigint;
+        rewardBps: readonly number[];
         rewardAdmins: readonly Address[];
         rewardRecipients: readonly Address[];
-        rewardBps: readonly number[];
-        tickLower: readonly number[];
-        tickUpper: readonly number[];
-        positionBps: readonly number[];
       }
     | undefined;
 
@@ -313,20 +321,21 @@ export default function TokenDetailPage() {
 
   if (eventsLoading && !event) {
     return (
-      <main className="mx-auto max-w-4xl px-4 py-8 space-y-6">
+      <div className={`${PAGE_WIDTH_DETAIL} py-8 space-y-6`}>
+        <h1 className="sr-only">Loading token…</h1>
         <div className="h-8 w-48 bg-zinc-800 rounded animate-pulse" />
         <CardSkeleton />
         <div className="grid md:grid-cols-2 gap-4">
           <CardSkeleton />
           <CardSkeleton />
         </div>
-      </main>
+      </div>
     );
   }
 
   if (!event) {
     return (
-      <main className="mx-auto max-w-4xl px-4 py-16 text-center">
+      <div className={`${PAGE_WIDTH_DETAIL} py-16 text-center`}>
         <h1 className="text-xl font-semibold mb-2">Token not found</h1>
         <p className="text-zinc-500 text-sm mb-6">
           No token with address <span className="font-mono">{shortAddr(tokenAddressRaw)}</span>{' '}
@@ -338,7 +347,7 @@ export default function TokenDetailPage() {
         >
           ← Back to all tokens
         </Link>
-      </main>
+      </div>
     );
   }
 
@@ -351,7 +360,7 @@ export default function TokenDetailPage() {
   const etherscanToken = explorerAddressUrl(chainId, event.tokenAddress);
 
   return (
-    <main className="mx-auto max-w-4xl px-4 py-8 space-y-6">
+    <div className={`${PAGE_WIDTH_DETAIL} py-8 space-y-6`}>
       {/* Breadcrumb */}
       <div className="text-sm text-zinc-500">
         <Link to="/tokens" className="hover:text-zinc-300">Tokens</Link>
@@ -695,13 +704,10 @@ export default function TokenDetailPage() {
                   }
                 />
               ))}
-              {tokenRewards.tickLower.map((tl, i) => (
-                <InfoRow
-                  key={`pos-${i}`}
-                  label={`Position ${i + 1}`}
-                  value={`${tl.toLocaleString()} → ${tokenRewards.tickUpper[i].toLocaleString()} (${tokenRewards.positionBps[i] / 100}%)`}
-                />
-              ))}
+              <InfoRow
+                label="LP positions"
+                value={`${tokenRewards.numPositions.toString()} (starting at position #${tokenRewards.positionId.toString()})`}
+              />
             </>
           ) : (
             <p className="text-sm text-zinc-500 py-2">
@@ -757,6 +763,6 @@ export default function TokenDetailPage() {
           refetchStatic();
         }}
       />
-    </main>
+    </div>
   );
 }
