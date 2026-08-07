@@ -8,6 +8,7 @@ import InfoRow from '../components/InfoRow';
 import CopyableAddress from '../components/CopyableAddress';
 import SwapWidget from '../components/SwapWidget';
 import TokenMetadataModal from '../components/TokenMetadataModal';
+import TokenImage from '../components/TokenImage';
 import { getAddresses, uniswapTokenUrl, uniswapSwapUrl } from '../lib/config';
 import {
   tokenAbi,
@@ -28,11 +29,7 @@ import {
   formatTimestamp,
   formatPrice,
 } from '../lib/format';
-
-function explorerUrl(chainId: number, addr: string): string {
-  const base = chainId === 1 ? 'https://etherscan.io' : 'https://sepolia.etherscan.io';
-  return `${base}/address/${addr}`;
-}
+import { explorerAddressUrl, explorerTxUrl } from '../lib/explorer';
 
 function pairedTokenLabel(address: string, weth: string): string {
   if (address.toLowerCase() === weth.toLowerCase()) return 'WETH';
@@ -224,7 +221,7 @@ export default function TokenDetailPage() {
 
   const uniswapView = uniswapTokenUrl(chainId, event.tokenAddress);
   const uniswapSwap = uniswapSwapUrl(chainId, event.tokenAddress);
-  const etherscanToken = explorerUrl(chainId, event.tokenAddress);
+  const etherscanToken = explorerAddressUrl(chainId, event.tokenAddress);
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-8 space-y-6">
@@ -244,22 +241,14 @@ export default function TokenDetailPage() {
             aria-label="View full metadata"
             className="group relative block w-48 h-48 sm:w-56 sm:h-56 rounded-2xl border border-zinc-800 hover:border-violet-500/60 overflow-hidden bg-zinc-900 transition-colors focus:outline-none focus:ring-2 focus:ring-violet-500"
           >
-            {image ? (
-              <img
-                src={image}
-                alt={symbol ?? ''}
-                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                onError={e => {
-                  (e.currentTarget as HTMLImageElement).style.display = 'none';
-                }}
-              />
-            ) : (
-              <div className="w-full h-full bg-gradient-to-br from-violet-900/30 to-zinc-900 flex items-center justify-center">
-                <span className="font-mono text-3xl font-bold text-zinc-600">
-                  {(symbol || event.tokenSymbol || '??').slice(0, 4)}
-                </span>
-              </div>
-            )}
+            <TokenImage
+              src={image}
+              alt={symbol ?? ''}
+              symbol={symbol || event.tokenSymbol || '??'}
+              imgClassName="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+              fallbackClassName="w-full h-full bg-gradient-to-br from-violet-900/30 to-zinc-900 flex items-center justify-center"
+              monogramClassName="font-mono text-3xl font-bold text-zinc-600"
+            />
             {/* Hover overlay with "View details" hint */}
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-end justify-center pb-3 opacity-0 group-hover:opacity-100">
               <span className="text-xs font-medium text-white bg-violet-600/90 px-3 py-1.5 rounded-full backdrop-blur-sm inline-flex items-center gap-1.5">
@@ -287,7 +276,7 @@ export default function TokenDetailPage() {
           <CopyableAddress
             address={event.tokenAddress}
             short={false}
-            explorerUrl={explorerUrl(chainId, event.tokenAddress)}
+            explorerUrl={explorerAddressUrl(chainId, event.tokenAddress)}
             className="mt-1 text-zinc-400"
           />
           {description && (
@@ -386,7 +375,7 @@ export default function TokenDetailPage() {
               currentAdmin ? (
                 <CopyableAddress
                   address={currentAdmin}
-                  explorerUrl={explorerUrl(chainId, currentAdmin)}
+                  explorerUrl={explorerAddressUrl(chainId, currentAdmin)}
                 />
               ) : (
                 '—'
@@ -398,7 +387,7 @@ export default function TokenDetailPage() {
             value={
               <CopyableAddress
                 address={event.tokenAdmin}
-                explorerUrl={explorerUrl(chainId, event.tokenAdmin)}
+                explorerUrl={explorerAddressUrl(chainId, event.tokenAdmin)}
               />
             }
           />
@@ -409,7 +398,7 @@ export default function TokenDetailPage() {
               metadataRenderer !== '0x0000000000000000000000000000000000000000' ? (
                 <CopyableAddress
                   address={metadataRenderer}
-                  explorerUrl={explorerUrl(chainId, metadataRenderer)}
+                  explorerUrl={explorerAddressUrl(chainId, metadataRenderer)}
                 />
               ) : (
                 <span className="text-zinc-500">default (on-chain)</span>
@@ -441,7 +430,7 @@ export default function TokenDetailPage() {
             value={
               <CopyableAddress
                 address={event.poolHook}
-                explorerUrl={explorerUrl(chainId, event.poolHook)}
+                explorerUrl={explorerAddressUrl(chainId, event.poolHook)}
               />
             }
           />
@@ -461,7 +450,7 @@ export default function TokenDetailPage() {
             value={
               <CopyableAddress
                 address={event.mevModule}
-                explorerUrl={explorerUrl(chainId, event.mevModule)}
+                explorerUrl={explorerAddressUrl(chainId, event.mevModule)}
               />
             }
           />
@@ -503,7 +492,7 @@ export default function TokenDetailPage() {
             value={
               <CopyableAddress
                 address={event.locker}
-                explorerUrl={explorerUrl(chainId, event.locker)}
+                explorerUrl={explorerAddressUrl(chainId, event.locker)}
               />
             }
           />
@@ -517,7 +506,7 @@ export default function TokenDetailPage() {
                     <span>
                       <CopyableAddress
                         address={recipient}
-                        explorerUrl={explorerUrl(chainId, recipient)}
+                        explorerUrl={explorerAddressUrl(chainId, recipient)}
                       />{' '}
                       <span className="text-zinc-500">({tokenRewards.rewardBps[i] / 100}%)</span>
                     </span>
@@ -563,7 +552,7 @@ export default function TokenDetailPage() {
       <div className="text-center text-xs text-zinc-600">
         Deployed in{' '}
         <a
-          href={`${chainId === 1 ? 'https://etherscan.io' : 'https://sepolia.etherscan.io'}/tx/${event.transactionHash}`}
+          href={explorerTxUrl(chainId, event.transactionHash)}
           target="_blank"
           rel="noopener noreferrer"
           className="text-zinc-500 hover:text-zinc-300 underline"

@@ -4,7 +4,6 @@ import { useAccount, useChainId, useReadContracts } from 'wagmi';
 import { useQuery } from '@tanstack/react-query';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import type { Address } from 'viem';
-import { BaseError, ContractFunctionRevertedError } from 'viem';
 
 import InfoCard from '../components/InfoCard';
 import InfoRow from '../components/InfoRow';
@@ -15,44 +14,21 @@ import { useTokenEvent } from '../lib/useTokenEvent';
 import { useTxFlow } from '../lib/useTxFlow';
 import { formatSupply, formatTimestamp } from '../lib/format';
 import { findEntry, verifyProof, type AllowlistFile } from '../lib/merkle';
+import { explorerAddressUrl, explorerTxUrl } from '../lib/explorer';
+import { decodeContractError } from '../lib/decodeError';
 
-function explorerTxUrl(chainId: number, hash: `0x${string}`): string {
-  const base = chainId === 1 ? 'https://etherscan.io' : 'https://sepolia.etherscan.io';
-  return `${base}/tx/${hash}`;
-}
-
-function explorerAddrUrl(chainId: number, addr: string): string {
-  const base = chainId === 1 ? 'https://etherscan.io' : 'https://sepolia.etherscan.io';
-  return `${base}/address/${addr}`;
-}
+const CLAIM_ERROR_MESSAGES: Record<string, string> = {
+  AirdropNotUnlocked: 'The airdrop is still in its lockup period.',
+  InvalidProof: 'Merkle proof is invalid for this address.',
+  ZeroToClaim: 'Nothing is currently claimable (still vesting or already claimed).',
+  UserMaxClaimed: 'You have already claimed your full allocation.',
+  TotalMaxClaimed: 'The airdrop has been fully claimed.',
+  AdminClaimed: 'The airdrop admin has swept unclaimed tokens; claims are closed.',
+  AirdropNotCreated: 'No airdrop exists for this token.',
+};
 
 function decodeClaimError(err: unknown): string {
-  if (err instanceof BaseError) {
-    const reverted = err.walk(e => e instanceof ContractFunctionRevertedError);
-    if (reverted instanceof ContractFunctionRevertedError) {
-      const name = reverted.data?.errorName ?? reverted.reason ?? 'Reverted';
-      switch (name) {
-        case 'AirdropNotUnlocked':
-          return 'The airdrop is still in its lockup period.';
-        case 'InvalidProof':
-          return 'Merkle proof is invalid for this address.';
-        case 'ZeroToClaim':
-          return 'Nothing is currently claimable (still vesting or already claimed).';
-        case 'UserMaxClaimed':
-          return 'You have already claimed your full allocation.';
-        case 'TotalMaxClaimed':
-          return 'The airdrop has been fully claimed.';
-        case 'AdminClaimed':
-          return 'The airdrop admin has swept unclaimed tokens; claims are closed.';
-        case 'AirdropNotCreated':
-          return 'No airdrop exists for this token.';
-        default:
-          return `Reverted: ${name}`;
-      }
-    }
-    return err.shortMessage ?? err.message;
-  }
-  return err instanceof Error ? err.message : String(err);
+  return decodeContractError(err, CLAIM_ERROR_MESSAGES);
 }
 
 export default function ClaimPage() {
@@ -207,7 +183,7 @@ export default function ClaimPage() {
         </h1>
         <CopyableAddress
           address={tokenAddress}
-          explorerUrl={explorerAddrUrl(chainId, tokenAddress)}
+          explorerUrl={explorerAddressUrl(chainId, tokenAddress)}
           className="mt-1 text-zinc-400"
         />
       </div>
@@ -254,7 +230,7 @@ export default function ClaimPage() {
               <p className="font-medium text-white mb-1">Not eligible</p>
               <p className="text-zinc-400">
                 The connected address{' '}
-                <CopyableAddress address={wallet!} explorerUrl={explorerAddrUrl(chainId, wallet!)} />{' '}
+                <CopyableAddress address={wallet!} explorerUrl={explorerAddressUrl(chainId, wallet!)} />{' '}
                 is not in the allowlist for this token.
               </p>
             </div>
@@ -351,7 +327,7 @@ export default function ClaimPage() {
               value={
                 <CopyableAddress
                   address={addresses.airdrop}
-                  explorerUrl={explorerAddrUrl(chainId, addresses.airdrop)}
+                  explorerUrl={explorerAddressUrl(chainId, addresses.airdrop)}
                 />
               }
             />

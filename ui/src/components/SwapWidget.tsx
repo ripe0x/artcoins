@@ -31,6 +31,7 @@ import {
 import { useReferrer } from '../lib/useReferrer';
 import { useDebouncedValue } from '../lib/useDebouncedValue';
 import { useTxFlow } from '../lib/useTxFlow';
+import { inputClass as baseInputClass } from './formStyles';
 
 type Direction = 'buy' | 'sell';
 
@@ -61,8 +62,18 @@ const DEFAULT_DEADLINE_SECS = 60 * 10; // 10 minutes
 // balance produces a transaction that can never actually be sent.
 const BUY_GAS_RESERVE = parseEther('0.01');
 
-const inputClass =
-  'w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-base text-white placeholder-zinc-500 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500';
+// SwapWidget deliberately uses larger padding/text than the rest of the
+// forms (this is the primary trade action). Composed from the shared base
+// via targeted substitution — rather than appending `py-2.5 text-base` and
+// relying on both `py-2`/`py-2.5` and `text-sm`/`text-base` staying present
+// together, which would depend on Tailwind's generated stylesheet order to
+// resolve the conflict correctly (verified against this project's actual
+// build output: `.text-base` is emitted *before* `.text-sm` in the utilities
+// layer, so appending `text-base` after a base string containing `text-sm`
+// would silently lose — `text-sm` wins the cascade tie). Replacing in place
+// keeps this a single source of truth while producing the exact same
+// literal class string this component always rendered.
+const inputClass = baseInputClass.replace('py-2 text-sm', 'py-2.5 text-base');
 
 export default function SwapWidget({
   tokenAddress,

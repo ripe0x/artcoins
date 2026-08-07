@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ParsedContractURI } from '../lib/metadata';
+import TokenImage from './TokenImage';
 
 interface Props {
   open: boolean;
@@ -89,22 +90,14 @@ export default function TokenMetadataModal({
           <div className="grid md:grid-cols-2 gap-0">
             {/* Image side */}
             <div className="bg-gradient-to-br from-zinc-900 to-black p-6 flex items-center justify-center min-h-[320px] md:min-h-[520px] border-b md:border-b-0 md:border-r border-zinc-800">
-              {image ? (
-                <img
-                  src={image}
-                  alt={symbol}
-                  className="max-w-full max-h-[480px] rounded-xl shadow-xl object-contain"
-                  onError={e => {
-                    (e.currentTarget as HTMLImageElement).style.display = 'none';
-                  }}
-                />
-              ) : (
-                <div className="w-full aspect-square max-w-[400px] rounded-xl bg-gradient-to-br from-violet-900/30 to-zinc-900 flex items-center justify-center">
-                  <span className="font-mono text-5xl font-bold text-zinc-600">
-                    {symbol.slice(0, 4)}
-                  </span>
-                </div>
-              )}
+              <TokenImage
+                src={image}
+                alt={symbol}
+                symbol={symbol}
+                imgClassName="max-w-full max-h-[480px] rounded-xl shadow-xl object-contain"
+                fallbackClassName="w-full aspect-square max-w-[400px] rounded-xl bg-gradient-to-br from-violet-900/30 to-zinc-900 flex items-center justify-center"
+                monogramClassName="font-mono text-5xl font-bold text-zinc-600"
+              />
             </div>
 
             {/* Details side */}

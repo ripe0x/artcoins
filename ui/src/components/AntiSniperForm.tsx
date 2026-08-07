@@ -1,6 +1,5 @@
 import type { MevFormState, MevModuleType } from '../lib/types';
-
-const labelClass = 'block text-sm font-medium text-zinc-300 mb-1.5';
+import { labelClass, selectClass } from './formStyles';
 
 interface Props {
   value: MevFormState;
@@ -282,7 +281,7 @@ export default function AntiSniperForm({ value, onChange }: Props) {
             max={600}
             value={value.timeDelaySec}
             onChange={e => set('timeDelaySec', Number(e.target.value))}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500"
+            className={selectClass}
           />
           <p className="text-xs text-zinc-500 mt-1">
             Swaps will be blocked for this many seconds after token deployment.

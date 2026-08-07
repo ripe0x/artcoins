@@ -1,9 +1,7 @@
 import { useEffect } from 'react';
 import type { RewardsFormState, RewardRecipient, LpPosition } from '../lib/types';
 import { validatePositionTicks } from '../lib/validate';
-
-const inputClass =
-  'w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder-zinc-500 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500';
+import { inputClass } from './formStyles';
 
 const MAX_TICK = 887220;
 

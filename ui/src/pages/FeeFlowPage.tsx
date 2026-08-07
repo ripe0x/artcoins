@@ -4,15 +4,20 @@
  * the deploy and smoke tests, not a live dashboard.
  */
 
-const ETHERSCAN = 'https://sepolia.etherscan.io';
+import { explorerAddressUrl, explorerTxUrl } from '../lib/explorer';
+
+// This page is a fixed historical snapshot of a Sepolia rehearsal, not a
+// live view of the connected chain — every link here must always point at
+// Sepolia, so the chain id is passed explicitly rather than read from wagmi.
+const SNAPSHOT_CHAIN_ID = 11155111;
 
 type Row = { label: string; value: string; tx?: string; addr?: string; sub?: string };
 
 function txLink(hash: string) {
-  return `${ETHERSCAN}/tx/${hash}`;
+  return explorerTxUrl(SNAPSHOT_CHAIN_ID, hash);
 }
 function addrLink(addr: string) {
-  return `${ETHERSCAN}/address/${addr}`;
+  return explorerAddressUrl(SNAPSHOT_CHAIN_ID, addr);
 }
 
 function ShortAddr({ addr }: { addr: string }) {

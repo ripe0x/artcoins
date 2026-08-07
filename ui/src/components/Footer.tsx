@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useChainId } from 'wagmi';
 import { getAddresses } from '../lib/config';
+import { explorerAddressUrl } from '../lib/explorer';
 
 interface ContractLink {
   label: string;
@@ -25,10 +26,6 @@ const EXT_LINKS: ContractLink[] = [
   { label: 'Dev Buy', key: 'devBuy' },
 ];
 
-function etherscanBase(chainId: number): string {
-  return chainId === 1 ? 'https://etherscan.io' : 'https://sepolia.etherscan.io';
-}
-
 function chainName(chainId: number): string {
   if (chainId === 1) return 'Ethereum Mainnet';
   if (chainId === 11155111) return 'Sepolia';
@@ -46,7 +43,6 @@ function LinkGroup({
   chainId: number;
   addresses: ReturnType<typeof getAddresses>;
 }) {
-  const base = etherscanBase(chainId);
   return (
     <div>
       <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">
@@ -62,7 +58,7 @@ function LinkGroup({
                 <span className="text-zinc-700">{label}</span>
               ) : (
                 <a
-                  href={`${base}/address/${addr}`}
+                  href={explorerAddressUrl(chainId, addr)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-zinc-500 hover:text-zinc-200 transition-colors"

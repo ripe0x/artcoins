@@ -2,12 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAccount, useChainId, useReadContracts } from 'wagmi';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import {
-  BaseError,
-  ContractFunctionRevertedError,
-  formatEther,
-  type Address,
-} from 'viem';
+import { formatEther, type Address } from 'viem';
 
 import InfoCard from '../components/InfoCard';
 import InfoRow from '../components/InfoRow';
@@ -16,29 +11,18 @@ import { skimHookAbi, referralPayoutAbi } from '../lib/abi';
 import { useTokenEvent } from '../lib/useTokenEvent';
 import { useTxFlow } from '../lib/useTxFlow';
 import { shortAddr } from '../lib/format';
+import { explorerTxUrl } from '../lib/explorer';
+import { decodeContractError } from '../lib/decodeError';
 
-function explorerTxUrl(chainId: number, hash: `0x${string}`): string {
-  const base = chainId === 1 ? 'https://etherscan.io' : 'https://sepolia.etherscan.io';
-  return `${base}/tx/${hash}`;
-}
+const REFERRAL_CLAIM_ERROR_MESSAGES: Record<string, string> = {
+  NothingToClaim:
+    'No balance to claim — your wallet has no accrued referral fees for this pool yet.',
+  TransferFailed:
+    'Claim transfer reverted. Your balance has been reinstated; try again or check whether your address is contract-restricted.',
+};
 
 function decodeClaimError(err: unknown): string {
-  if (err instanceof BaseError) {
-    const reverted = err.walk(e => e instanceof ContractFunctionRevertedError);
-    if (reverted instanceof ContractFunctionRevertedError) {
-      const name = reverted.data?.errorName ?? reverted.reason ?? 'Reverted';
-      switch (name) {
-        case 'NothingToClaim':
-          return 'No balance to claim — your wallet has no accrued referral fees for this pool yet.';
-        case 'TransferFailed':
-          return 'Claim transfer reverted. Your balance has been reinstated; try again or check whether your address is contract-restricted.';
-        default:
-          return `Reverted: ${name}`;
-      }
-    }
-    return err.shortMessage ?? err.message;
-  }
-  return err instanceof Error ? err.message : String(err);
+  return decodeContractError(err, REFERRAL_CLAIM_ERROR_MESSAGES);
 }
 
 export default function ReferralsPage() {

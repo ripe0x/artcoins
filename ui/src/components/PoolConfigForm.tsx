@@ -1,10 +1,5 @@
 import type { PoolFormState } from '../lib/types';
-
-const inputClass =
-  'w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder-zinc-500 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500';
-const labelClass = 'block text-sm font-medium text-zinc-300 mb-1.5';
-const selectClass =
-  'w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500';
+import { inputClass, labelClass, selectClass } from './formStyles';
 
 interface Props {
   value: PoolFormState;

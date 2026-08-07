@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import type { TokenCreatedEvent } from '../lib/events';
 import { resolveImage } from '../lib/metadata';
 import { shortAddr } from '../lib/format';
+import TokenImage from './TokenImage';
 
 interface Props {
   event: TokenCreatedEvent;
@@ -16,22 +17,14 @@ export default function TokenCard({ event }: Props) {
       className="group rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden hover:border-violet-500/60 transition-colors"
     >
       <div className="aspect-square bg-zinc-800 relative overflow-hidden">
-        {image ? (
-          <img
-            src={image}
-            alt={event.tokenSymbol || event.tokenName}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-            onError={e => {
-              (e.currentTarget as HTMLImageElement).style.display = 'none';
-            }}
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-violet-900/30 to-zinc-900">
-            <span className="font-mono text-2xl font-bold text-zinc-600">
-              {(event.tokenSymbol || '??').slice(0, 4)}
-            </span>
-          </div>
-        )}
+        <TokenImage
+          src={image}
+          alt={event.tokenSymbol || event.tokenName}
+          symbol={event.tokenSymbol || '??'}
+          imgClassName="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          fallbackClassName="w-full h-full flex items-center justify-center bg-gradient-to-br from-violet-900/30 to-zinc-900"
+          monogramClassName="font-mono text-2xl font-bold text-zinc-600"
+        />
       </div>
       <div className="p-4 space-y-1">
         <div className="flex items-baseline justify-between gap-2">

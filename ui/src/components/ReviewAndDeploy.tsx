@@ -3,9 +3,11 @@ import { Link } from 'react-router-dom';
 import { useAccount, useChainId } from 'wagmi';
 import { useQueryClient } from '@tanstack/react-query';
 import { parseEther, decodeEventLog, type Address, type TransactionReceipt } from 'viem';
+import InfoRow from './InfoRow';
 import { factoryAbi } from '../lib/abi';
 import { getAddresses } from '../lib/config';
 import { useTxFlow } from '../lib/useTxFlow';
+import { explorerAddressUrl, explorerTxUrl } from '../lib/explorer';
 import {
   generateSalt,
   encodePoolData,
@@ -30,15 +32,6 @@ interface Props {
   mevForm: MevFormState;
   rewardsForm: RewardsFormState;
   extensionsForm: ExtensionsFormState;
-}
-
-function Row({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex justify-between py-1.5 border-b border-zinc-800 last:border-0">
-      <span className="text-sm text-zinc-500">{label}</span>
-      <span className="text-sm text-white text-right max-w-[60%] break-all">{value}</span>
-    </div>
-  );
 }
 
 /**
@@ -101,8 +94,6 @@ export default function ReviewAndDeploy({
   const { submit, hash: txHash, status, error: writeError } = useTxFlow({ onConfirmed });
   const isPending = status === 'confirming';
   const isConfirming = status === 'pending';
-
-  const etherscanBase = chainId === 1 ? 'https://etherscan.io' : 'https://sepolia.etherscan.io';
 
   const handleDeploy = () => {
     if (!address) return;
@@ -282,47 +273,47 @@ export default function ReviewAndDeploy({
         <div>
           <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Token</h4>
           <div className="rounded-lg border border-zinc-800 bg-zinc-800/30 px-4 py-2">
-            <Row label="Name" value={tokenForm.name || '-'} />
-            <Row label="Symbol" value={tokenForm.symbol || '-'} />
-            <Row label="Admin" value={tokenForm.admin || 'Connected wallet'} />
-            <Row label="Supply" value={Number(tokenForm.totalSupply) > 0 ? Number(tokenForm.totalSupply).toLocaleString() : 'Factory default'} />
+            <InfoRow label="Name" value={tokenForm.name || '-'} />
+            <InfoRow label="Symbol" value={tokenForm.symbol || '-'} />
+            <InfoRow label="Admin" value={tokenForm.admin || 'Connected wallet'} />
+            <InfoRow label="Supply" value={Number(tokenForm.totalSupply) > 0 ? Number(tokenForm.totalSupply).toLocaleString() : 'Factory default'} />
           </div>
         </div>
 
         <div>
           <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Pool</h4>
           <div className="rounded-lg border border-zinc-800 bg-zinc-800/30 px-4 py-2">
-            <Row label="Paired Token" value={poolForm.pairedToken === 'weth' ? 'WETH' : poolForm.customPairedToken} />
-            <Row label="Tick Spacing" value={poolForm.tickSpacing} />
-            <Row label="Starting Tick" value={poolForm.startingTick} />
-            <Row label="Buy Fee" value={`${poolForm.buyFeePercent}%`} />
-            <Row label="Sell Fee" value={`${poolForm.sellFeePercent}%`} />
+            <InfoRow label="Paired Token" value={poolForm.pairedToken === 'weth' ? 'WETH' : poolForm.customPairedToken} />
+            <InfoRow label="Tick Spacing" value={poolForm.tickSpacing} />
+            <InfoRow label="Starting Tick" value={poolForm.startingTick} />
+            <InfoRow label="Buy Fee" value={`${poolForm.buyFeePercent}%`} />
+            <InfoRow label="Sell Fee" value={`${poolForm.sellFeePercent}%`} />
           </div>
         </div>
 
         <div>
           <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">MEV Protection</h4>
           <div className="rounded-lg border border-zinc-800 bg-zinc-800/30 px-4 py-2">
-            <Row label="Module" value={mevLabel} />
+            <InfoRow label="Module" value={mevLabel} />
           </div>
         </div>
 
         <div>
           <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Rewards</h4>
           <div className="rounded-lg border border-zinc-800 bg-zinc-800/30 px-4 py-2">
-            <Row label="Mode" value={rewardsForm.mode} />
-            <Row label="Recipients" value={rewardsForm.recipients.length} />
-            <Row label="Positions" value={rewardsForm.positions.length} />
+            <InfoRow label="Mode" value={rewardsForm.mode} />
+            <InfoRow label="Recipients" value={rewardsForm.recipients.length} />
+            <InfoRow label="Positions" value={rewardsForm.positions.length} />
           </div>
         </div>
 
         <div>
           <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Extensions</h4>
           <div className="rounded-lg border border-zinc-800 bg-zinc-800/30 px-4 py-2">
-            <Row label="Vault" value={extensionsForm.vault.enabled ? `${extensionsForm.vault.allocationPercent}%` : 'Disabled'} />
-            <Row label="Airdrop" value={extensionsForm.airdrop.enabled ? `${extensionsForm.airdrop.allocationPercent}%` : 'Disabled'} />
-            <Row label="Dev Buy" value={extensionsForm.devBuy.enabled ? `${extensionsForm.devBuy.ethAmount} ETH (${extensionsForm.devBuy.allocationPercent}%)` : 'Disabled'} />
-            <Row label="Liquidity" value={`${100 - totalExtAlloc}%`} />
+            <InfoRow label="Vault" value={extensionsForm.vault.enabled ? `${extensionsForm.vault.allocationPercent}%` : 'Disabled'} />
+            <InfoRow label="Airdrop" value={extensionsForm.airdrop.enabled ? `${extensionsForm.airdrop.allocationPercent}%` : 'Disabled'} />
+            <InfoRow label="Dev Buy" value={extensionsForm.devBuy.enabled ? `${extensionsForm.devBuy.ethAmount} ETH (${extensionsForm.devBuy.allocationPercent}%)` : 'Disabled'} />
+            <InfoRow label="Liquidity" value={`${100 - totalExtAlloc}%`} />
           </div>
         </div>
       </div>
@@ -340,7 +331,7 @@ export default function ReviewAndDeploy({
               View token details
             </Link>
             <a
-              href={`${etherscanBase}/address/${deployedToken}`}
+              href={explorerAddressUrl(chainId, deployedToken)}
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm text-violet-400 hover:text-violet-300 underline"
@@ -349,7 +340,7 @@ export default function ReviewAndDeploy({
             </a>
             {txHash && (
               <a
-                href={`${etherscanBase}/tx/${txHash}`}
+                href={explorerTxUrl(chainId, txHash)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm text-violet-400 hover:text-violet-300 underline"
@@ -371,7 +362,7 @@ export default function ReviewAndDeploy({
                 Transaction submitted. Waiting for confirmation...
               </p>
               <a
-                href={`${etherscanBase}/tx/${txHash}`}
+                href={explorerTxUrl(chainId, txHash)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm text-violet-400 hover:text-violet-300 underline font-mono break-all"

@@ -1,10 +1,7 @@
 import { useEffect } from 'react';
 import type { TokenFormState } from '../lib/types';
 import ImageUploader from './ImageUploader';
-
-const inputClass =
-  'w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder-zinc-500 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500';
-const labelClass = 'block text-sm font-medium text-zinc-300 mb-1.5';
+import { inputClass, labelClass } from './formStyles';
 
 interface Props {
   value: TokenFormState;
