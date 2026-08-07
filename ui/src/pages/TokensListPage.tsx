@@ -1,8 +1,15 @@
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useChainId, usePublicClient } from 'wagmi';
 import { useQuery } from '@tanstack/react-query';
 import TokenCard from '../components/TokenCard';
 import { fetchAllTokenCreatedEvents } from '../lib/events';
 import { getAddresses, getFactoryDeploymentBlock } from '../lib/config';
+
+/** Cheap ceiling on initial render — the full list can only grow over time
+ *  as more tokens are deployed, and there's no pagination in the underlying
+ *  query, so cap the rendered cards up front and let "Show all" opt in. */
+const INITIAL_VISIBLE = 120;
 
 function LoadingSkeleton() {
   return (
@@ -24,6 +31,7 @@ export default function TokensListPage() {
   const chainId = useChainId();
   const client = usePublicClient();
   const addresses = getAddresses(chainId);
+  const [showAll, setShowAll] = useState(false);
 
   const factoryDeployed = addresses.factory !== '0x0000000000000000000000000000000000000000';
 
@@ -95,7 +103,7 @@ export default function TokensListPage() {
         <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-10 text-center">
           <p className="text-zinc-400">No tokens deployed yet.</p>
           <p className="text-sm text-zinc-600 mt-2">
-            Be the first — head to the Deploy page to launch one.
+            Be the first — <Link to="/" className="text-violet-400 hover:text-violet-300 underline">head to the deploy page</Link> to launch one.
           </p>
         </div>
       )}
@@ -103,13 +111,26 @@ export default function TokensListPage() {
       {factoryDeployed && data && data.length > 0 && (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {data.map(ev => (
+            {(showAll ? data : data.slice(0, INITIAL_VISIBLE)).map(ev => (
               <TokenCard key={ev.tokenAddress} event={ev} />
             ))}
           </div>
           <p className="mt-6 text-xs text-zinc-600 text-center">
-            {data.length} token{data.length === 1 ? '' : 's'} total
+            {showAll
+              ? `${data.length} token${data.length === 1 ? '' : 's'} total`
+              : `Showing ${Math.min(INITIAL_VISIBLE, data.length)} of ${data.length} tokens`}
           </p>
+          {!showAll && data.length > INITIAL_VISIBLE && (
+            <div className="mt-3 text-center">
+              <button
+                type="button"
+                onClick={() => setShowAll(true)}
+                className="rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-1.5 text-sm text-zinc-300 hover:text-white hover:border-zinc-600"
+              >
+                Show all
+              </button>
+            </div>
+          )}
         </>
       )}
     </main>

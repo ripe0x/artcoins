@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useChainId, useReadContracts } from 'wagmi';
-import type { Address } from 'viem';
+import type { Address, Abi } from 'viem';
 
 import InfoCard from '../components/InfoCard';
 import InfoRow from '../components/InfoRow';
@@ -14,7 +14,10 @@ import {
   tokenAbi,
   hookBaseAbi,
   staticHookAbi,
+  skimHookAbi,
   mevLinearAbi,
+  mevDescendingAbi,
+  mevTimeDelayAbi,
   lockerAbi,
   stateViewAbi,
 } from '../lib/abi';
@@ -32,9 +35,42 @@ import {
 } from '../lib/format';
 import { explorerAddressUrl, explorerTxUrl } from '../lib/explorer';
 
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+
+/**
+ * Identifies which of the `src/mev-modules/` contracts a pool's `mevModule`
+ * points to. `'unknown'` covers modules that exist on-chain but aren't in
+ * `getAddresses()` (e.g. `ArtCoinsMevSniperSteppedFees`,
+ * `ArtCoinsMevLinearSkim` — not currently offered by the deploy UI, or any
+ * future module) — there's no shared read interface across module kinds to
+ * fall back to, so those render their address and type only.
+ */
+type MevKind = 'linear' | 'descending' | 'timeDelay' | 'none' | 'unknown';
+
+const mevKindLabel: Record<MevKind, string> = {
+  linear: 'Linear decay',
+  descending: 'Descending (quadratic) decay',
+  timeDelay: 'Time delay',
+  none: 'None',
+  unknown: 'Unknown module',
+};
+
 function pairedTokenLabel(address: string, weth: string): string {
   if (address.toLowerCase() === weth.toLowerCase()) return 'WETH';
   return shortAddr(address);
+}
+
+/**
+ * `ArtCoinsHookSkimFee.skimConfig().baselineSkimBps` is denominated out of
+ * `SKIM_DENOMINATOR = 100_000` (see `src/hooks/libraries/SkimFeeConstants.sol`
+ * / `ArtCoinsHookSkimFee.sol`), NOT the `1_000_000`-denom V4 fee-pips scale
+ * that `formatFeeBps` (lib/format.ts) assumes for LP fees. Reusing
+ * `formatFeeBps` here would render a skim share ~10x too small, so this
+ * pool-specific scale gets its own formatter instead.
+ */
+function formatSkimBps(units: number | undefined): string {
+  if (units === undefined) return '—';
+  return `${(units / 1_000).toFixed(2)}%`;
 }
 
 function CardSkeleton({ height = 'h-40' }: { height?: string }) {
@@ -71,11 +107,16 @@ export default function TokenDetailPage() {
       { address: event.poolHook, abi: hookBaseAbi, functionName: 'artCoinIsToken0', args: [event.poolId] } as const,
       { address: event.poolHook, abi: hookBaseAbi, functionName: 'mevModuleEnabled', args: [event.poolId] } as const,
       { address: event.poolHook, abi: hookBaseAbi, functionName: 'poolCreationTimestamp', args: [event.poolId] } as const,
-      // Hook static-fee-only (only present on ArtCoinsHookStaticFee; reads
-      // fail harmlessly on other hook variants, e.g. the skim-fee hook —
-      // `allowFailure: true` below means those show up as status 'failure').
+      // Hook fee reads — mutually exclusive by hook family. `artCoinFee` /
+      // `pairedFee` exist only on `ArtCoinsHookStaticFee`; `skimConfig`
+      // exists only on `ArtCoinsHookSkimFee`. We don't know which family
+      // `event.poolHook` is (pools can use hooks outside the configured
+      // addresses), so both are read unconditionally and the one that
+      // resolves via `status === 'success'` below wins — `allowFailure:
+      // true` means the wrong-family read just shows up as 'failure'.
       { address: event.poolHook, abi: staticHookAbi, functionName: 'artCoinFee', args: [event.poolId] } as const,
       { address: event.poolHook, abi: staticHookAbi, functionName: 'pairedFee', args: [event.poolId] } as const,
+      { address: event.poolHook, abi: skimHookAbi, functionName: 'skimConfig', args: [event.poolId] } as const,
       // Locker
       { address: event.locker, abi: lockerAbi, functionName: 'tokenRewards', args: [event.tokenAddress] } as const,
     ];
@@ -108,12 +149,32 @@ export default function TokenDetailPage() {
       : undefined;
   const mevModuleEnabled = staticData?.[10]?.result as boolean | undefined;
   const poolCreationTimestamp = staticData?.[11]?.result as bigint | undefined;
-  // Static-fee-only reads: undefined (status 'failure') on non-static-fee
-  // hooks (e.g. the skim-fee hook), which is fine — formatFeeBps() and the
-  // InfoRows below already render '—' for undefined.
-  const buyFee = staticData?.[12]?.result as number | undefined;
-  const sellFee = staticData?.[13]?.result as number | undefined;
-  const tokenRewards = staticData?.[14]?.result as
+  // Hook-family-aware fee reads (issue #31): exactly one of these succeeds
+  // per pool, depending on which hook family it was deployed with. Selecting
+  // by `status === 'success'` (rather than by comparing `event.poolHook`
+  // against a configured hook address) means this keeps working for hooks
+  // outside the configured set.
+  const staticFeeSucceeded =
+    staticData?.[12]?.status === 'success' && staticData?.[13]?.status === 'success';
+  const buyFee = staticFeeSucceeded ? (staticData![12].result as number) : undefined;
+  const sellFee = staticFeeSucceeded ? (staticData![13].result as number) : undefined;
+  const skimConfigResult =
+    staticData?.[14]?.status === 'success'
+      ? (staticData[14].result as readonly [
+          number, // baselineSkimBps (100_000-denom bps; see `formatSkimBps`)
+          number, // bountyBps
+          number, // maxReferralBpsOfVolume
+          number, // lpFee (V4 fee-pips scale; same as `formatFeeBps`)
+          Address, // bountyRecipient
+          Address, // protocolRecipient
+          Address, // referralPayout
+          Address, // quoteToken
+        ])
+      : undefined;
+  const skimLpFee = skimConfigResult?.[3];
+  const skimBaselineBps = skimConfigResult?.[0];
+  const skimSucceeded = skimConfigResult !== undefined;
+  const tokenRewards = staticData?.[15]?.result as
     | {
         rewardAdmins: readonly Address[];
         rewardRecipients: readonly Address[];
@@ -125,42 +186,104 @@ export default function TokenDetailPage() {
     | undefined;
 
   // ── 3. Live MEV state (only while enabled) ────────────────────────
+  // Each MEV module in `src/mev-modules/` exposes a different read
+  // interface (no shared "current fee" / "time remaining" view across
+  // `ArtCoinsMevLinearFees`, `ArtCoinsMevDescendingFees`, and
+  // `ArtCoinsMevTimeDelay`), so the module's identity has to be resolved
+  // first and the reads/labels selected per kind. Unlike the hook-family
+  // detection in the Pool card, these ARE singleton infra contracts
+  // referenced by `getAddresses()` (one deployed instance per module type,
+  // not one per pool), so comparing `event.mevModule` against the
+  // configured addresses is the correct way to identify them.
+  const mevKind: MevKind = useMemo(() => {
+    if (!event) return 'unknown';
+    const m = event.mevModule.toLowerCase();
+    if (m === ZERO_ADDRESS) return 'none';
+    if (m === addresses.mevLinearFees.toLowerCase()) return 'linear';
+    if (m === addresses.mevDescFees.toLowerCase()) return 'descending';
+    if (m === addresses.mevTimeDelay.toLowerCase()) return 'timeDelay';
+    return 'unknown';
+  }, [event, addresses]);
+
+  // Explicitly widened return type: each `mevKind` branch below reads a
+  // different module ABI/function set (no shared interface — see comment
+  // above), so without this annotation TS tries to unify the branches'
+  // narrow `as const` literal types into one and fails. `useReadContracts`
+  // only needs this much to type-check the call; individual `.result`s are
+  // cast by hand below anyway.
+  const mevContracts = useMemo((): readonly {
+    address: Address;
+    abi: Abi;
+    functionName: string;
+    args?: readonly unknown[];
+  }[] => {
+    if (!event) return [];
+    if (mevKind === 'linear') {
+      if (!poolKey) return [];
+      return [
+        { address: event.mevModule, abi: mevLinearAbi, functionName: 'getCurrentFee', args: [poolKey] } as const,
+        { address: event.mevModule, abi: mevLinearAbi, functionName: 'getTimeRemaining', args: [poolKey] } as const,
+        { address: event.mevModule, abi: mevLinearAbi, functionName: 'feeConfigs', args: [event.poolId] } as const,
+      ];
+    }
+    if (mevKind === 'descending') {
+      return [
+        { address: event.mevModule, abi: mevDescendingAbi, functionName: 'getFee', args: [event.poolId] } as const,
+        { address: event.mevModule, abi: mevDescendingAbi, functionName: 'feeConfig', args: [event.poolId] } as const,
+        { address: event.mevModule, abi: mevDescendingAbi, functionName: 'poolStartTime', args: [event.poolId] } as const,
+      ];
+    }
+    if (mevKind === 'timeDelay') {
+      return [
+        { address: event.mevModule, abi: mevTimeDelayAbi, functionName: 'poolUnlockTime', args: [event.poolId] } as const,
+        { address: event.mevModule, abi: mevTimeDelayAbi, functionName: 'timeDelay', args: [] } as const,
+      ];
+    }
+    // 'none' | 'unknown': no known read interface — render the static
+    // module-type label with no live data rather than a blank card.
+    return [];
+  }, [event, poolKey, mevKind]);
+
   const { data: mevLiveData } = useReadContracts({
-    contracts:
-      event && poolKey && event.mevModule.toLowerCase() === addresses.mevLinearFees.toLowerCase()
-        ? [
-            {
-              address: event.mevModule,
-              abi: mevLinearAbi,
-              functionName: 'getCurrentFee',
-              args: [poolKey],
-            } as const,
-            {
-              address: event.mevModule,
-              abi: mevLinearAbi,
-              functionName: 'getTimeRemaining',
-              args: [poolKey],
-            } as const,
-            {
-              address: event.mevModule,
-              abi: mevLinearAbi,
-              functionName: 'feeConfigs',
-              args: [event.poolId],
-            } as const,
-          ]
-        : [],
+    contracts: mevContracts,
     allowFailure: true,
     query: {
-      enabled: !!event && !!poolKey && mevModuleEnabled === true,
+      enabled: mevContracts.length > 0 && mevModuleEnabled === true,
       refetchInterval: mevModuleEnabled ? 10_000 : false,
     },
   });
 
-  const currentMevFee = mevLiveData?.[0]?.result as number | undefined;
-  const mevTimeRemaining = mevLiveData?.[1]?.result as bigint | undefined;
-  const mevConfig = mevLiveData?.[2]?.result as
-    | readonly [number, number, number, bigint]
-    | undefined;
+  const currentMevFee =
+    mevKind === 'linear' || mevKind === 'descending'
+      ? (mevLiveData?.[0]?.result as number | undefined)
+      : undefined;
+  // Linear-fees config: (startingFee, endingFee, duration, startTime).
+  const mevConfig =
+    mevKind === 'linear'
+      ? (mevLiveData?.[2]?.result as readonly [number, number, number, bigint] | undefined)
+      : undefined;
+  // Descending-fees config: (startingFee, endingFee, secondsToDecay).
+  const descConfig =
+    mevKind === 'descending'
+      ? (mevLiveData?.[1]?.result as readonly [number, number, bigint] | undefined)
+      : undefined;
+  const descStartTime = mevKind === 'descending' ? (mevLiveData?.[2]?.result as bigint | undefined) : undefined;
+  const timeDelayUnlockAt = mevKind === 'timeDelay' ? (mevLiveData?.[0]?.result as bigint | undefined) : undefined;
+  const timeDelaySeconds = mevKind === 'timeDelay' ? (mevLiveData?.[1]?.result as bigint | undefined) : undefined;
+
+  // `ArtCoinsMevLinearFees.getTimeRemaining` is a live on-chain read; the
+  // other two modules don't expose one, so it's derived client-side from
+  // their config + a `Date.now()` snapshot — approximate (no live clock),
+  // refreshed every ~10s by the same interval driving the on-chain reads.
+  const nowSec = BigInt(Math.floor(Date.now() / 1000));
+  const mevTimeRemaining =
+    mevKind === 'linear'
+      ? (mevLiveData?.[1]?.result as bigint | undefined)
+      : mevKind === 'descending' && descConfig && descStartTime !== undefined
+      ? (descStartTime + descConfig[2] > nowSec ? descStartTime + descConfig[2] - nowSec : 0n)
+      : mevKind === 'timeDelay' && timeDelayUnlockAt !== undefined
+      ? (timeDelayUnlockAt > nowSec ? timeDelayUnlockAt - nowSec : 0n)
+      : undefined;
 
   // ── 4. Pool slot0 (sqrtPriceX96) ──────────────────────────────────
   const { data: slot0 } = useReadContracts({
@@ -344,17 +467,34 @@ export default function TokenDetailPage() {
       {/* MEV banner */}
       {mevModuleEnabled && mevTimeRemaining !== undefined && mevTimeRemaining > 0n && (
         <div className="rounded-xl border border-violet-600/40 bg-violet-950/20 p-4 flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-violet-200">Anti-sniper protection active</p>
-            <p className="text-xs text-violet-300/80 mt-1">
-              Current buy fee: <strong>{formatFeeBps(currentMevFee)}</strong>. Decaying to normal
-              fees in {formatDuration(mevTimeRemaining)}.
-            </p>
-          </div>
-          <div className="text-right">
-            <div className="text-2xl font-bold text-violet-100">{formatFeeBps(currentMevFee)}</div>
-            <div className="text-xs text-violet-300/60">{formatDuration(mevTimeRemaining)}</div>
-          </div>
+          {mevKind === 'timeDelay' ? (
+            <>
+              <div>
+                <p className="text-sm font-medium text-violet-200">Anti-sniper protection active</p>
+                <p className="text-xs text-violet-300/80 mt-1">
+                  Trading is locked. Unlocking in {formatDuration(mevTimeRemaining)}.
+                </p>
+              </div>
+              <div className="text-right">
+                <div className="text-2xl font-bold text-violet-100">Locked</div>
+                <div className="text-xs text-violet-300/60">{formatDuration(mevTimeRemaining)}</div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <p className="text-sm font-medium text-violet-200">Anti-sniper protection active</p>
+                <p className="text-xs text-violet-300/80 mt-1">
+                  Current buy fee: <strong>{formatFeeBps(currentMevFee)}</strong>. Decaying to normal
+                  fees in {formatDuration(mevTimeRemaining)}.
+                </p>
+              </div>
+              <div className="text-right">
+                <div className="text-2xl font-bold text-violet-100">{formatFeeBps(currentMevFee)}</div>
+                <div className="text-xs text-violet-300/60">{formatDuration(mevTimeRemaining)}</div>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -425,8 +565,19 @@ export default function TokenDetailPage() {
                 : 'loading…'
             }
           />
-          <InfoRow label="Buy Fee (total)" value={formatFeeBps(buyFee)} />
-          <InfoRow label="Sell Fee (total)" value={formatFeeBps(sellFee)} />
+          {staticFeeSucceeded ? (
+            <>
+              <InfoRow label="Buy Fee (total)" value={formatFeeBps(buyFee)} />
+              <InfoRow label="Sell Fee (total)" value={formatFeeBps(sellFee)} />
+            </>
+          ) : skimSucceeded ? (
+            <>
+              <InfoRow label="LP fee" value={formatFeeBps(skimLpFee)} />
+              <InfoRow label="Protocol skim" value={formatSkimBps(skimBaselineBps)} />
+            </>
+          ) : (
+            <InfoRow label="Fee" value={readsLoading ? '…' : 'Unavailable'} />
+          )}
           <InfoRow label="Starting Tick" value={event.startingTick.toLocaleString()} />
           <InfoRow label="Tick Spacing" value={tickSpacing ?? '—'} />
           <InfoRow
@@ -458,6 +609,7 @@ export default function TokenDetailPage() {
               />
             }
           />
+          <InfoRow label="Module Type" value={mevKindLabel[mevKind]} />
           <InfoRow
             label="Status"
             value={
@@ -468,6 +620,8 @@ export default function TokenDetailPage() {
                 : 'Completed / inactive'
             }
           />
+          {/* Linear decay: on-chain current fee + time remaining, plus its
+              static start/end/duration config. */}
           {mevConfig && (
             <>
               <InfoRow label="Starting Fee" value={formatFeeBps(mevConfig[0])} />
@@ -475,11 +629,35 @@ export default function TokenDetailPage() {
               <InfoRow label="Duration" value={formatDuration(mevConfig[2])} />
             </>
           )}
-          {mevModuleEnabled && currentMevFee !== undefined && (
+          {/* Descending (quadratic) decay: same shape of info, sourced from
+              `feeConfig`/`getFee` instead of `feeConfigs`/`getCurrentFee` —
+              `ArtCoinsMevDescendingFees` shares no read interface with the
+              linear module. */}
+          {descConfig && (
+            <>
+              <InfoRow label="Starting Fee" value={formatFeeBps(descConfig[0])} />
+              <InfoRow label="Ending Fee" value={formatFeeBps(descConfig[1])} />
+              <InfoRow label="Decay Duration" value={formatDuration(descConfig[2])} />
+            </>
+          )}
+          {/* Time delay: no fee at all, just a lock/unlock — surface its
+              configured delay and computed unlock time instead of a fee. */}
+          {mevKind === 'timeDelay' && timeDelaySeconds !== undefined && (
+            <InfoRow label="Delay" value={formatDuration(timeDelaySeconds)} />
+          )}
+          {mevKind === 'timeDelay' && timeDelayUnlockAt !== undefined && (
+            <InfoRow label="Unlocks At" value={formatTimestamp(timeDelayUnlockAt)} />
+          )}
+          {mevModuleEnabled && (mevKind === 'linear' || mevKind === 'descending') && currentMevFee !== undefined && (
             <InfoRow label="Current Fee" value={formatFeeBps(currentMevFee)} />
           )}
           {mevModuleEnabled && mevTimeRemaining !== undefined && (
             <InfoRow label="Time Remaining" value={formatDuration(mevTimeRemaining)} />
+          )}
+          {mevKind === 'unknown' && event.mevModule !== ZERO_ADDRESS && (
+            <p className="text-xs text-zinc-500 py-2">
+              This module isn't one of the configured types — no live fee data available.
+            </p>
           )}
         </InfoCard>
 

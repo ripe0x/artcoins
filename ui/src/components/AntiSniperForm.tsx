@@ -103,10 +103,10 @@ function FeeDecayChart({
 }
 
 const moduleOptions: { value: MevModuleType; label: string; desc: string }[] = [
-  { value: 'none', label: 'None', desc: 'No MEV protection' },
-  { value: 'linear', label: 'Linear Fees', desc: 'Recommended - linear fee decay over time' },
-  { value: 'descending', label: 'Descending Fees', desc: 'Parabolic fee decay curve' },
-  { value: 'timeDelay', label: 'Time Delay', desc: 'Block swaps for a duration after launch' },
+  { value: 'none', label: 'None', desc: 'No anti-sniper protection' },
+  { value: 'linear', label: 'Linear fees', desc: 'Recommended - linear fee decay over time' },
+  { value: 'descending', label: 'Descending fees', desc: 'Parabolic fee decay curve' },
+  { value: 'timeDelay', label: 'Time delay', desc: 'Block swaps for a duration after launch' },
 ];
 
 export default function AntiSniperForm({ value, onChange }: Props) {
@@ -115,6 +115,10 @@ export default function AntiSniperForm({ value, onChange }: Props) {
 
   return (
     <div className="space-y-5">
+      <p className="text-xs text-zinc-500">
+        Anti-sniper protection ramps down elevated fees on early swaps, so bots
+        that buy in the first blocks pay much more than everyone else.
+      </p>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {moduleOptions.map(opt => (
           <button
@@ -137,7 +141,7 @@ export default function AntiSniperForm({ value, onChange }: Props) {
         <div className="space-y-4">
           <div>
             <label htmlFor="mev-linear-start" className={labelClass}>
-              Starting Fee:{' '}
+              Starting fee:{' '}
               <span className="text-violet-400 font-semibold">{value.linearStartPercent}%</span>
             </label>
             <input
@@ -157,7 +161,7 @@ export default function AntiSniperForm({ value, onChange }: Props) {
 
           <div>
             <label htmlFor="mev-linear-end" className={labelClass}>
-              Ending Fee:{' '}
+              Ending fee:{' '}
               <span className="text-violet-400 font-semibold">{value.linearEndPercent}%</span>
             </label>
             <input
@@ -209,7 +213,7 @@ export default function AntiSniperForm({ value, onChange }: Props) {
         <div className="space-y-4">
           <div>
             <label htmlFor="mev-desc-start" className={labelClass}>
-              Starting Fee:{' '}
+              Starting fee:{' '}
               <span className="text-violet-400 font-semibold">{value.descStartPercent}%</span>
             </label>
             <input
@@ -229,7 +233,7 @@ export default function AntiSniperForm({ value, onChange }: Props) {
 
           <div>
             <label htmlFor="mev-desc-end" className={labelClass}>
-              Ending Fee:{' '}
+              Ending fee:{' '}
               <span className="text-violet-400 font-semibold">{value.descEndPercent}%</span>
             </label>
             <input
@@ -251,7 +255,9 @@ export default function AntiSniperForm({ value, onChange }: Props) {
           <div>
             <label htmlFor="mev-desc-duration" className={labelClass}>
               Duration:{' '}
-              <span className="text-violet-400 font-semibold">{value.descDurationSec}s</span>
+              <span className="text-violet-400 font-semibold">
+                {Math.round(value.descDurationSec / 60)} min
+              </span>
             </label>
             <input
               id="mev-desc-duration"

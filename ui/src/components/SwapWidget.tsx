@@ -31,6 +31,7 @@ import {
 import { useReferrer } from '../lib/useReferrer';
 import { useDebouncedValue } from '../lib/useDebouncedValue';
 import { useTxFlow } from '../lib/useTxFlow';
+import { decodeContractError } from '../lib/decodeError';
 import { inputClass as baseInputClass } from './formStyles';
 
 type Direction = 'buy' | 'sell';
@@ -53,6 +54,20 @@ interface Props {
   isToken0: boolean | undefined;
   /** Is the MEV module currently active? Warn user if yes. */
   mevActive?: boolean;
+}
+
+// Error-name -> human message for approval/swap transaction failures. Keyed
+// by viem error class name (walked out of the thrown error's `cause` chain
+// by `decodeContractError`) rather than a Solidity revert name, since these
+// are the failure modes a swapper actually hits before a revert is even
+// possible (wallet cancel, underfunded account).
+const SWAP_TX_ERROR_MESSAGES: Record<string, string> = {
+  UserRejectedRequestError: 'You rejected the request in your wallet.',
+  InsufficientFundsError: "Your wallet doesn't have enough ETH to cover this transaction.",
+};
+
+function decodeSwapTxError(err: unknown): string {
+  return decodeContractError(err, SWAP_TX_ERROR_MESSAGES);
 }
 
 const SLIPPAGE_OPTIONS = [0.5, 1, 2, 5];
@@ -238,8 +253,13 @@ export default function SwapWidget({
         setQuote(amountOut);
       } catch (e: unknown) {
         if (cancelled) return;
-        const msg = e instanceof Error ? e.message : String(e);
-        setQuoteError(msg.split('\n')[0].slice(0, 120));
+        // Quote failures are simulated reverts against the Uniswap V4
+        // Quoter — the ABI doesn't decode named errors for it, so there's
+        // nothing meaningful to map by name. Just give a plain sentence
+        // instead of the raw "The contract function ... reverted" dump.
+        setQuoteError(
+          decodeContractError(e, {}, () => 'Unable to get a quote for this trade right now.')
+        );
         setQuote(null);
       } finally {
         if (!cancelled) setQuoting(false);
@@ -479,8 +499,8 @@ export default function SwapWidget({
 
         {mevActive && (
           <div className="rounded-lg border border-violet-600/30 bg-violet-950/20 p-3 text-xs text-violet-200">
-            <strong>Anti-sniper fee active.</strong> Buy fees are currently very high. See the MEV
-            panel above for countdown.
+            <strong>Anti-sniper protection active.</strong> Buy fees are currently very high. See
+            the anti-sniper panel below for the countdown.
           </div>
         )}
 
@@ -648,13 +668,19 @@ export default function SwapWidget({
 
         {/* Status / errors */}
         {activeFlow.error && (
-          <div className="rounded-lg border border-red-900 bg-red-950/30 p-3 text-xs text-red-300 max-h-32 overflow-auto">
+          <div className="rounded-lg border border-red-900 bg-red-950/30 p-3 text-xs text-red-300">
             <p className="font-semibold mb-1">
               {activeFlow === swapFlow ? 'Swap failed' : 'Approval failed'}
             </p>
-            <pre className="whitespace-pre-wrap break-all font-mono text-red-400/80">
-              {activeFlow.error.message.slice(0, 500)}
-            </pre>
+            <p>{decodeSwapTxError(activeFlow.error)}</p>
+            <details className="mt-2">
+              <summary className="cursor-pointer text-red-400/70 hover:text-red-300">
+                Technical details
+              </summary>
+              <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-red-400/80">
+                {activeFlow.error.message.slice(0, 500)}
+              </pre>
+            </details>
           </div>
         )}
 

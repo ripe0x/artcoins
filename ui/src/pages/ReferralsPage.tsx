@@ -131,7 +131,7 @@ export default function ReferralsPage() {
       <div className="mx-auto max-w-3xl px-4 py-12 text-center">
         <p className="text-zinc-400">Token not found.</p>
         <Link to="/tokens" className="mt-4 inline-block text-violet-300 hover:text-violet-200">
-          ← All tokens
+          ← Back to all tokens
         </Link>
       </div>
     );
@@ -144,27 +144,24 @@ export default function ReferralsPage() {
           to={`/tokens/${event.tokenAddress}`}
           className="text-sm text-zinc-400 hover:text-zinc-200"
         >
-          ← {event.tokenSymbol}
+          ← Back to {event.tokenSymbol}
         </Link>
         <h1 className="mt-2 text-3xl font-bold text-zinc-100">Referral earnings</h1>
         <p className="mt-2 text-sm text-zinc-400">
-          Anyone can route swaps through this pool with an attribution{' '}
-          <code className="text-xs">hookData</code> payload naming a referrer
-          address. The hook routes up to{' '}
+          Share your referral link and earn a cut of every swap it brings in.
+          When someone trades this token through a link that includes your
+          address, up to{' '}
           {maxReferralBps !== undefined ? (
             <strong className="text-zinc-200">
               {(Number(maxReferralBps) / 100).toFixed(2)}%
             </strong>
           ) : (
-            '...'
+            '…'
           )}{' '}
-          of swap volume to that address, pulled exclusively from the protocol
-          fee leg. URL parameter <code className="text-xs">?ref=0x...</code> on
-          the swap page sets the referrer; or build your own UI and pass{' '}
-          <Link to="/" className="text-violet-300 hover:text-violet-200">
-            attribution hookData
-          </Link>{' '}
-          directly.
+          of their swap volume is routed to you automatically, pulled from the
+          protocol fee — it doesn't cost the trader anything extra. To create
+          your link, add <code className="text-xs">?ref=0x...</code> (your
+          wallet address) to this token's page URL and share it.
         </p>
       </div>
 
@@ -195,7 +192,7 @@ export default function ReferralsPage() {
         />
         {hookAccrued > 0n && (
           <InfoRow
-            label="Accrued (in-tx, rare)"
+            label="Pending (not yet claimable)"
             value={
               <span className="font-mono text-zinc-400">
                 {formatEther(hookAccrued)} ETH
@@ -221,9 +218,9 @@ export default function ReferralsPage() {
             className="flex-1 rounded-xl border border-violet-600/40 bg-violet-950/20 hover:border-violet-500 hover:bg-violet-900/30 disabled:opacity-50 disabled:cursor-not-allowed px-5 py-3 text-sm font-medium text-violet-200 hover:text-white"
           >
             {status === 'confirming'
-              ? 'Confirm in wallet...'
+              ? 'Confirm in wallet…'
               : status === 'pending'
-                ? 'Claiming...'
+                ? 'Claiming…'
                 : `Claim ${formatEther(ledgerBalance)} ETH`}
           </button>
         </div>

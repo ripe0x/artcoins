@@ -279,7 +279,7 @@ export default function DeployPage() {
     <main className="mx-auto max-w-3xl px-4 py-8 space-y-3">
       <div className="mb-8 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Deploy Token</h1>
+          <h1 className="text-2xl font-bold">Deploy token</h1>
           <p className="text-zinc-500 mt-1">
             Configure and deploy a new token through the artcoins factory.
           </p>
@@ -295,7 +295,7 @@ export default function DeployPage() {
 
       <StepCard
         step={1}
-        title="Token Configuration"
+        title="Token configuration"
         subtitle="Name, symbol, supply, and metadata"
         isOpen={openStep === 1}
         onToggle={() => toggle(1)}
@@ -306,7 +306,7 @@ export default function DeployPage() {
 
       <StepCard
         step={2}
-        title="Pool Configuration"
+        title="Pool configuration"
         subtitle="Paired token, fees, and tick settings"
         isOpen={openStep === 2}
         onToggle={() => toggle(2)}
@@ -317,8 +317,8 @@ export default function DeployPage() {
 
       <StepCard
         step={3}
-        title="Anti-Sniper / MEV Protection"
-        subtitle="Launch fee schedule to deter bots"
+        title="Anti-sniper protection"
+        subtitle="Ramps down early-swap fees to deter snipers"
         isOpen={openStep === 3}
         onToggle={() => toggle(3)}
       >
@@ -327,7 +327,7 @@ export default function DeployPage() {
 
       <StepCard
         step={4}
-        title="LP Rewards"
+        title="LP rewards"
         subtitle="Reward recipients and LP position ranges"
         isOpen={openStep === 4}
         onToggle={() => toggle(4)}
@@ -355,7 +355,7 @@ export default function DeployPage() {
 
       <StepCard
         step={6}
-        title="Review & Deploy"
+        title="Review & deploy"
         subtitle="Review configuration and deploy your token"
         isOpen={openStep === 6}
         onToggle={() => toggle(6)}

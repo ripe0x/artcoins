@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { ExtensionsFormState, VaultConfig, AirdropConfig, DevBuyConfig } from '../lib/types';
 import { inputClass, labelClass } from './formStyles';
 
@@ -43,21 +43,28 @@ function Toggle({
 }
 
 export default function ExtensionsForm({ value, onChange, connectedAddress }: Props) {
+  // Prefill vault/airdrop admin fields with the connected wallet address,
+  // once per field per address — never overwrites a value the user typed.
+  // One ref per field so clearing one after prefill doesn't re-trigger it,
+  // while still letting the effect list `value`/`onChange` as deps.
+  const prefilledVaultAdminRef = useRef<string | null>(null);
+  const prefilledAirdropAdminRef = useRef<string | null>(null);
   useEffect(() => {
-    if (connectedAddress) {
-      let changed = false;
-      const next = { ...value };
-      if (!next.vault.admin) {
-        next.vault = { ...next.vault, admin: connectedAddress };
-        changed = true;
-      }
-      if (!next.airdrop.admin) {
-        next.airdrop = { ...next.airdrop, admin: connectedAddress };
-        changed = true;
-      }
-      if (changed) onChange(next);
+    if (!connectedAddress) return;
+    let changed = false;
+    const next = { ...value };
+    if (!next.vault.admin && prefilledVaultAdminRef.current !== connectedAddress) {
+      next.vault = { ...next.vault, admin: connectedAddress };
+      prefilledVaultAdminRef.current = connectedAddress;
+      changed = true;
     }
-  }, [connectedAddress]);
+    if (!next.airdrop.admin && prefilledAirdropAdminRef.current !== connectedAddress) {
+      next.airdrop = { ...next.airdrop, admin: connectedAddress };
+      prefilledAirdropAdminRef.current = connectedAddress;
+      changed = true;
+    }
+    if (changed) onChange(next);
+  }, [connectedAddress, value, onChange]);
 
   const setVault = (patch: Partial<VaultConfig>) =>
     onChange({ ...value, vault: { ...value.vault, ...patch } });

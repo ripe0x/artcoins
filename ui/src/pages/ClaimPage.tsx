@@ -56,6 +56,10 @@ export default function ClaimPage() {
   } = useQuery<AllowlistFile>({
     queryKey: ['allowlist', tokenAddress],
     queryFn: async () => {
+      // Allowlist JSON is a static asset published per token, not generated
+      // by this page. To publish one: generate it with
+      // `script-js/build-allowlist.ts` and place the resulting file at
+      // `ui/public/allowlists/<token address>.json` (see ui/README.md).
       const res = await fetch(`/allowlists/${tokenAddress}.json`);
       if (!res.ok) throw new Error(`No allowlist found (${res.status})`);
       return (await res.json()) as AllowlistFile;
@@ -198,7 +202,7 @@ export default function ClaimPage() {
     <main className="mx-auto max-w-3xl px-4 py-8 space-y-6">
       <div className="text-sm text-zinc-500">
         <Link to={`/tokens/${tokenAddress}`} className="hover:text-zinc-300">
-          ← Back to token
+          ← Back to {symbol ?? 'token'}
         </Link>
       </div>
 
@@ -227,10 +231,7 @@ export default function ClaimPage() {
         <div className="rounded-xl border border-amber-700/40 bg-amber-950/20 p-6 text-sm text-amber-200">
           <p className="font-medium mb-1">No allowlist found</p>
           <p className="text-amber-200/70">
-            Could not load{' '}
-            <code className="font-mono text-xs">/allowlists/{tokenAddress}.json</code>. Generate
-            it with <code className="font-mono text-xs">script-js/build-allowlist.ts</code> and
-            place the resulting file in <code className="font-mono text-xs">ui/public/allowlists/</code>.
+            No airdrop allowlist has been published for this token.
           </p>
         </div>
       ) : rootMismatch ? (

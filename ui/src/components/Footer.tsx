@@ -11,19 +11,19 @@ interface ContractLink {
 const PRIMARY_LINKS: ContractLink[] = [
   { label: 'Factory', key: 'factory' },
   { label: 'Hook', key: 'hook' },
-  { label: 'LP Locker', key: 'locker' },
+  { label: 'LP locker', key: 'locker' },
 ];
 
 const MEV_LINKS: ContractLink[] = [
-  { label: 'Linear Fees', key: 'mevLinearFees' },
+  { label: 'Linear fees', key: 'mevLinearFees' },
   { label: 'Descending', key: 'mevDescFees' },
-  { label: 'Time Delay', key: 'mevTimeDelay' },
+  { label: 'Time delay', key: 'mevTimeDelay' },
 ];
 
 const EXT_LINKS: ContractLink[] = [
   { label: 'Vault', key: 'vault' },
   { label: 'Airdrop', key: 'airdrop' },
-  { label: 'Dev Buy', key: 'devBuy' },
+  { label: 'Dev buy', key: 'devBuy' },
 ];
 
 function chainName(chainId: number): string {
@@ -82,7 +82,7 @@ export default function Footer() {
     <footer className="border-t border-zinc-800 mt-10">
       <div className="mx-auto max-w-5xl px-4 py-8 grid grid-cols-2 md:grid-cols-4 gap-6 text-sm">
         <LinkGroup title="Core" links={PRIMARY_LINKS} chainId={chainId} addresses={addresses} />
-        <LinkGroup title="Anti-Sniper" links={MEV_LINKS} chainId={chainId} addresses={addresses} />
+        <LinkGroup title="Anti-sniper protection" links={MEV_LINKS} chainId={chainId} addresses={addresses} />
         <LinkGroup title="Extensions" links={EXT_LINKS} chainId={chainId} addresses={addresses} />
         <div>
           <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">

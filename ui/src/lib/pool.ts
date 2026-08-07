@@ -2,7 +2,7 @@ import type { Address } from 'viem';
 import { encodeAbiParameters, keccak256 } from 'viem';
 
 /** V4 dynamic fee sentinel (tells PoolManager the fee is set by the hook) */
-export const DYNAMIC_FEE_FLAG = 0x800000;
+const DYNAMIC_FEE_FLAG = 0x800000;
 
 export interface PoolKey {
   currency0: Address;
@@ -11,8 +11,6 @@ export interface PoolKey {
   tickSpacing: number;
   hooks: Address;
 }
-
-const zeroAddress: Address = '0x0000000000000000000000000000000000000000';
 
 /**
  * Build a V4 PoolKey for an artcoin token, sorting currencies by address.
@@ -80,9 +78,11 @@ export function resolveTickSpacing(
  * Convert V4's sqrtPriceX96 to a raw price ratio of token1 / token0.
  * Note: this is unscaled (doesn't account for decimals).
  */
-export function priceFromSqrtX96(sqrtPriceX96: bigint): number {
+function priceFromSqrtX96(sqrtPriceX96: bigint): number {
   if (sqrtPriceX96 === 0n) return 0;
-  // Use string/BigInt arithmetic to avoid precision loss for large values
+  // Approximate float conversion for display only — converts sqrtPriceX96 to
+  // a JS `number` before squaring, so this is not exact for large values.
+  // Fine for UI price display; do not use for on-chain amounts.
   const n = Number(sqrtPriceX96) / 2 ** 96;
   return n * n;
 }
@@ -101,5 +101,3 @@ export function artCoinPriceInPaired(
   // If the artcoin is token1, price = token1/token0 = artcoin/paired, so artcoin in paired = raw
   return artCoinIsToken0 ? 1 / raw : raw;
 }
-
-export { zeroAddress };

@@ -7,6 +7,7 @@ import InfoRow from './InfoRow';
 import { factoryAbi } from '../lib/abi';
 import { getAddresses } from '../lib/config';
 import { useTxFlow } from '../lib/useTxFlow';
+import { decodeContractError } from '../lib/decodeError';
 import { explorerAddressUrl, explorerTxUrl } from '../lib/explorer';
 import {
   generateSalt,
@@ -62,6 +63,19 @@ function parseDeployedTokenFromReceipt(receipt: TransactionReceipt): string | nu
     }
   }
   return null;
+}
+
+// Error-name -> human message for the deploy transaction. Keyed by viem
+// error class name, walked out of the thrown error's `cause` chain by
+// `decodeContractError` — covers the failure modes a deployer hits before a
+// contract revert is even reached (wallet cancel, underfunded account).
+const DEPLOY_ERROR_MESSAGES: Record<string, string> = {
+  UserRejectedRequestError: 'You rejected the request in your wallet.',
+  InsufficientFundsError: "Your wallet doesn't have enough ETH to cover this deployment.",
+};
+
+function decodeDeployError(err: unknown): string {
+  return decodeContractError(err, DEPLOY_ERROR_MESSAGES);
 }
 
 export default function ReviewAndDeploy({
@@ -258,10 +272,10 @@ export default function ReviewAndDeploy({
     mevForm.moduleType === 'none'
       ? 'None'
       : mevForm.moduleType === 'linear'
-        ? `Linear (${mevForm.linearStartPercent}% -> ${mevForm.linearEndPercent}% over ${mevForm.linearDurationMin}m)`
+        ? `Linear (${mevForm.linearStartPercent}% → ${mevForm.linearEndPercent}% over ${mevForm.linearDurationMin}m)`
         : mevForm.moduleType === 'descending'
-          ? `Descending (${mevForm.descStartPercent}% -> ${mevForm.descEndPercent}% over ${mevForm.descDurationSec}s)`
-          : `Time Delay (${mevForm.timeDelaySec}s)`;
+          ? `Descending (${mevForm.descStartPercent}% → ${mevForm.descEndPercent}% over ${Math.round(mevForm.descDurationSec / 60)}m)`
+          : `Time delay (${mevForm.timeDelaySec}s)`;
 
   const totalExtAlloc =
     (extensionsForm.vault.enabled ? extensionsForm.vault.allocationPercent : 0) +
@@ -287,16 +301,16 @@ export default function ReviewAndDeploy({
         <div>
           <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Pool</h4>
           <div className="rounded-lg border border-zinc-800 bg-zinc-800/30 px-4 py-2">
-            <InfoRow label="Paired Token" value={poolForm.pairedToken === 'weth' ? 'WETH' : poolForm.customPairedToken} />
-            <InfoRow label="Tick Spacing" value={poolForm.tickSpacing} />
-            <InfoRow label="Starting Tick" value={poolForm.startingTick} />
-            <InfoRow label="Buy Fee" value={`${poolForm.buyFeePercent}%`} />
-            <InfoRow label="Sell Fee" value={`${poolForm.sellFeePercent}%`} />
+            <InfoRow label="Paired token" value={poolForm.pairedToken === 'weth' ? 'WETH' : poolForm.customPairedToken} />
+            <InfoRow label="Tick spacing" value={poolForm.tickSpacing} />
+            <InfoRow label="Starting tick" value={poolForm.startingTick} />
+            <InfoRow label="Buy fee" value={`${poolForm.buyFeePercent}%`} />
+            <InfoRow label="Sell fee" value={`${poolForm.sellFeePercent}%`} />
           </div>
         </div>
 
         <div>
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">MEV Protection</h4>
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Anti-sniper protection</h4>
           <div className="rounded-lg border border-zinc-800 bg-zinc-800/30 px-4 py-2">
             <InfoRow label="Module" value={mevLabel} />
           </div>
@@ -316,7 +330,7 @@ export default function ReviewAndDeploy({
           <div className="rounded-lg border border-zinc-800 bg-zinc-800/30 px-4 py-2">
             <InfoRow label="Vault" value={extensionsForm.vault.enabled ? `${extensionsForm.vault.allocationPercent}%` : 'Disabled'} />
             <InfoRow label="Airdrop" value={extensionsForm.airdrop.enabled ? `${extensionsForm.airdrop.allocationPercent}%` : 'Disabled'} />
-            <InfoRow label="Dev Buy" value={extensionsForm.devBuy.enabled ? `${extensionsForm.devBuy.ethAmount} ETH (${extensionsForm.devBuy.allocationPercent}%)` : 'Disabled'} />
+            <InfoRow label="Dev buy" value={extensionsForm.devBuy.enabled ? `${extensionsForm.devBuy.ethAmount} ETH (${extensionsForm.devBuy.allocationPercent}%)` : 'Disabled'} />
             <InfoRow label="Liquidity" value={`${100 - totalExtAlloc}%`} />
           </div>
         </div>
@@ -325,7 +339,7 @@ export default function ReviewAndDeploy({
       {/* Deploy */}
       {deployedToken ? (
         <div className="rounded-lg border border-green-800 bg-green-900/20 p-4 space-y-2">
-          <h4 className="text-green-400 font-semibold">Token Deployed Successfully</h4>
+          <h4 className="text-green-400 font-semibold">Token deployed successfully</h4>
           <p className="text-sm text-zinc-300 font-mono break-all">{deployedToken}</p>
           <div className="flex flex-wrap gap-3">
             <Link
@@ -349,7 +363,7 @@ export default function ReviewAndDeploy({
                 rel="noopener noreferrer"
                 className="text-sm text-violet-400 hover:text-violet-300 underline"
               >
-                View Transaction
+                View transaction
               </a>
             )}
           </div>
@@ -363,7 +377,7 @@ export default function ReviewAndDeploy({
           {txHash && isConfirming && (
             <div className="rounded-lg border border-zinc-700 bg-zinc-800/50 p-4 space-y-2">
               <p className="text-sm text-zinc-300">
-                Transaction submitted. Waiting for confirmation...
+                Transaction submitted. Waiting for confirmation…
               </p>
               <a
                 href={explorerTxUrl(chainId, txHash)}
@@ -378,11 +392,15 @@ export default function ReviewAndDeploy({
 
           {writeError && (
             <div className="rounded-lg border border-red-800 bg-red-900/20 p-3">
-              <p className="text-sm text-red-400">
-                {writeError.message.length > 200
-                  ? writeError.message.slice(0, 200) + '...'
-                  : writeError.message}
-              </p>
+              <p className="text-sm text-red-400">{decodeDeployError(writeError)}</p>
+              <details className="mt-2">
+                <summary className="cursor-pointer text-xs text-red-400/70 hover:text-red-300">
+                  Technical details
+                </summary>
+                <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-red-400/80">
+                  {writeError.message.slice(0, 500)}
+                </pre>
+              </details>
             </div>
           )}
 
@@ -408,10 +426,10 @@ export default function ReviewAndDeploy({
             className="w-full rounded-xl bg-violet-600 py-3 text-base font-semibold text-white transition-colors hover:bg-violet-500 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed"
           >
             {isPending
-              ? 'Confirm in Wallet...'
+              ? 'Confirm in wallet…'
               : isConfirming
-                ? 'Confirming...'
-                : 'Deploy Token'}
+                ? 'Confirming…'
+                : 'Deploy token'}
           </button>
         </>
       )}

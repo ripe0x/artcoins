@@ -26,7 +26,14 @@ export function parseContractURI(uri: string | undefined | null): ParsedContract
   try {
     if (uri.startsWith('data:application/json;base64,')) {
       const b64 = uri.slice('data:application/json;base64,'.length);
-      const json = typeof atob === 'function' ? atob(b64) : Buffer.from(b64, 'base64').toString();
+      // UTF-8-safe decode: bare `atob` maps each byte straight to a UTF-16
+      // code unit, mangling any non-ASCII character in the on-chain JSON
+      // (emoji, accented names, etc.). Decode to raw bytes first, then
+      // interpret those bytes as UTF-8.
+      const json =
+        typeof atob === 'function'
+          ? new TextDecoder().decode(Uint8Array.from(atob(b64), c => c.charCodeAt(0)))
+          : Buffer.from(b64, 'base64').toString('utf-8');
       return JSON.parse(json) as ParsedContractURI;
     }
     if (uri.startsWith('data:application/json,')) {

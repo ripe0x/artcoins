@@ -29,7 +29,7 @@ export default function TokenCard({ event }: Props) {
       <div className="p-4 space-y-1">
         <div className="flex items-baseline justify-between gap-2">
           <h3 className="font-semibold text-white truncate">
-            {event.tokenName || 'Unnamed Token'}
+            {event.tokenName || 'Unnamed token'}
           </h3>
           <span className="text-xs font-mono text-zinc-500 flex-shrink-0">
             {event.tokenSymbol}

@@ -13,7 +13,7 @@ export default function PoolConfigForm({ value, onChange }: Props) {
   return (
     <div className="space-y-4">
       <div>
-        <label htmlFor="pool-paired-token" className={labelClass}>Paired Token</label>
+        <label htmlFor="pool-paired-token" className={labelClass}>Paired token</label>
         <select
           id="pool-paired-token"
           className={selectClass}
@@ -21,13 +21,13 @@ export default function PoolConfigForm({ value, onChange }: Props) {
           onChange={e => set('pairedToken', e.target.value)}
         >
           <option value="weth">WETH (Wrapped Ether)</option>
-          <option value="custom">Custom Address</option>
+          <option value="custom">Custom address</option>
         </select>
       </div>
 
       {value.pairedToken === 'custom' && (
         <div>
-          <label htmlFor="pool-custom-paired-token" className={labelClass}>Custom Token Address</label>
+          <label htmlFor="pool-custom-paired-token" className={labelClass}>Custom token address</label>
           <input
             id="pool-custom-paired-token"
             type="text"
@@ -41,7 +41,7 @@ export default function PoolConfigForm({ value, onChange }: Props) {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label htmlFor="pool-tick-spacing" className={labelClass}>Tick Spacing</label>
+          <label htmlFor="pool-tick-spacing" className={labelClass}>Tick spacing</label>
           <select
             id="pool-tick-spacing"
             className={selectClass}
@@ -56,7 +56,7 @@ export default function PoolConfigForm({ value, onChange }: Props) {
         </div>
 
         <div>
-          <label htmlFor="pool-starting-tick" className={labelClass}>Starting Tick</label>
+          <label htmlFor="pool-starting-tick" className={labelClass}>Starting tick</label>
           <input
             id="pool-starting-tick"
             type="number"
@@ -72,7 +72,7 @@ export default function PoolConfigForm({ value, onChange }: Props) {
 
       <div>
         <label htmlFor="pool-buy-fee" className={labelClass}>
-          Buy Fee: <span className="text-violet-400 font-semibold">{value.buyFeePercent}%</span>
+          Buy fee: <span className="text-violet-400 font-semibold">{value.buyFeePercent}%</span>
         </label>
         <input
           id="pool-buy-fee"
@@ -92,7 +92,7 @@ export default function PoolConfigForm({ value, onChange }: Props) {
 
       <div>
         <label htmlFor="pool-sell-fee" className={labelClass}>
-          Sell Fee: <span className="text-violet-400 font-semibold">{value.sellFeePercent}%</span>
+          Sell fee: <span className="text-violet-400 font-semibold">{value.sellFeePercent}%</span>
         </label>
         <input
           id="pool-sell-fee"

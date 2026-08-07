@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { TokenFormState } from '../lib/types';
 import ImageUploader from './ImageUploader';
 import { inputClass, labelClass } from './formStyles';
@@ -10,11 +10,18 @@ interface Props {
 }
 
 export default function TokenConfigForm({ value, onChange, connectedAddress }: Props) {
+  // Prefill the admin field with the connected wallet address, once per
+  // address — never overwrites a value the user typed. The ref (rather than
+  // an `[connectedAddress]`-only dep array) is what makes this safe to keep
+  // `value`/`onChange` in the dep array without looping or re-prefilling
+  // after the user clears the field.
+  const prefilledAdminRef = useRef<string | null>(null);
   useEffect(() => {
-    if (connectedAddress && !value.admin) {
+    if (connectedAddress && !value.admin && prefilledAdminRef.current !== connectedAddress) {
+      prefilledAdminRef.current = connectedAddress;
       onChange({ ...value, admin: connectedAddress });
     }
-  }, [connectedAddress]);
+  }, [connectedAddress, value, onChange]);
 
   const set = (field: keyof TokenFormState, val: string) =>
     onChange({ ...value, [field]: val });

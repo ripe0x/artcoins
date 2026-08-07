@@ -139,11 +139,3 @@ export function useReferrer(): `0x${string}` | null {
 
   return ref;
 }
-
-export function getStoredReferrer(): `0x${string}` | null {
-  return readStorage();
-}
-
-export function clearStoredReferrer(): void {
-  writeStorage(null);
-}

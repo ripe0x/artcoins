@@ -185,6 +185,29 @@ export const mevLinearAbi = [
   },
 ] as const;
 
+// ─── ArtCoinsMevDescendingFees (read-only subset) ─────────────────
+export const mevDescendingAbi = [
+  { type: 'function', name: 'getFee', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'uint24' }], stateMutability: 'view' },
+  {
+    type: 'function',
+    name: 'feeConfig',
+    inputs: [{ type: 'bytes32' }],
+    outputs: [
+      { name: 'startingFee', type: 'uint24' },
+      { name: 'endingFee', type: 'uint24' },
+      { name: 'secondsToDecay', type: 'uint256' },
+    ],
+    stateMutability: 'view',
+  },
+  { type: 'function', name: 'poolStartTime', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
+] as const;
+
+// ─── ArtCoinsMevTimeDelay (read-only subset) ──────────────────────
+export const mevTimeDelayAbi = [
+  { type: 'function', name: 'poolUnlockTime', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
+  { type: 'function', name: 'timeDelay', inputs: [], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
+] as const;
+
 // ─── ArtCoinsLpLockerMultiple (read-only subset) ───────────────
 export const lockerAbi = [
   {

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { RewardsFormState, RewardRecipient, LpPosition } from '../lib/types';
 import { validatePositionTicks } from '../lib/validate';
 import { inputClass } from './formStyles';
@@ -37,28 +37,34 @@ export default function RewardsForm({
   tickSpacing,
 }: Props) {
   // In simple mode, keep the position range synced to the starting tick.
-  // Single-sided liquidity requires tickLower >= startingTick.
+  // Single-sided liquidity requires tickLower >= startingTick. This is a
+  // pure derived-value sync (not address-defaulting), so it's safe to
+  // depend on `value`/`onChange` directly — the position-equality check
+  // already makes it a no-op once synced.
   useEffect(() => {
-    if (value.mode === 'simple') {
-      const tickLower = roundUpToSpacing(startingTick, tickSpacing);
-      const tickUpper = roundDownToSpacing(MAX_TICK, tickSpacing);
-      const r = value.recipients[0];
-      const needsRecipientUpdate =
-        connectedAddress && !r.admin && !r.recipient;
-      const needsPositionUpdate =
-        value.positions[0]?.tickLower !== tickLower ||
-        value.positions[0]?.tickUpper !== tickUpper;
-      if (needsRecipientUpdate || needsPositionUpdate) {
-        onChange({
-          ...value,
-          recipients: needsRecipientUpdate
-            ? [{ admin: connectedAddress!, recipient: connectedAddress!, bps: 10000 }]
-            : value.recipients,
-          positions: [{ tickLower, tickUpper, bps: 10000 }],
-        });
-      }
+    if (value.mode !== 'simple') return;
+    const tickLower = roundUpToSpacing(startingTick, tickSpacing);
+    const tickUpper = roundDownToSpacing(MAX_TICK, tickSpacing);
+    if (value.positions[0]?.tickLower !== tickLower || value.positions[0]?.tickUpper !== tickUpper) {
+      onChange({ ...value, positions: [{ tickLower, tickUpper, bps: 10000 }] });
     }
-  }, [connectedAddress, startingTick, tickSpacing, value.mode]);
+  }, [startingTick, tickSpacing, value, onChange]);
+
+  // Prefill the simple-mode recipient with the connected wallet address,
+  // once per address — never overwrites a value the user typed. See
+  // TokenConfigForm/ExtensionsForm for the same ref-guarded pattern.
+  const prefilledSimpleRecipientRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (value.mode !== 'simple' || !connectedAddress) return;
+    const r = value.recipients[0];
+    if (!r?.admin && !r?.recipient && prefilledSimpleRecipientRef.current !== connectedAddress) {
+      prefilledSimpleRecipientRef.current = connectedAddress;
+      onChange({
+        ...value,
+        recipients: [{ admin: connectedAddress, recipient: connectedAddress, bps: 10000 }],
+      });
+    }
+  }, [connectedAddress, value, onChange]);
 
   const setMode = (mode: 'simple' | 'advanced') => {
     if (mode === 'simple') {
