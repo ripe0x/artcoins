@@ -9,7 +9,7 @@ import {
   useWaitForTransactionReceipt,
   useWriteContract,
 } from 'wagmi';
-import { formatUnits, parseUnits, type Address, type Hex } from 'viem';
+import { formatUnits, parseEther, parseUnits, type Address, type Hex } from 'viem';
 
 import { getAddresses } from '../lib/config';
 import {
@@ -31,13 +31,19 @@ import {
   hasAnyAttribution,
 } from '../lib/attribution';
 import { useReferrer } from '../lib/useReferrer';
+import { useDebouncedValue } from '../lib/useDebouncedValue';
 
 type Direction = 'buy' | 'sell';
 
 interface Props {
   tokenAddress: Address;
   tokenSymbol: string;
-  poolKey: PoolKey;
+  /**
+   * `undefined` means the pool's real tickSpacing couldn't be matched
+   * on-chain (see `resolveTickSpacing`) — in that case we don't have a
+   * trustworthy PoolKey to quote or swap against, so the form is disabled.
+   */
+  poolKey: PoolKey | undefined;
   /**
    * Whether the ArtCoin is `token0` in the pool. `undefined` means the
    * on-chain read for this either failed or hasn't resolved yet — in that
@@ -51,6 +57,10 @@ interface Props {
 
 const SLIPPAGE_OPTIONS = [0.5, 1, 2, 5];
 const DEFAULT_DEADLINE_SECS = 60 * 10; // 10 minutes
+// Reserve kept back from the "max" buy amount so the buyer's wallet still has
+// something left to pay gas with — filling the input with the FULL ETH
+// balance produces a transaction that can never actually be sent.
+const BUY_GAS_RESERVE = parseEther('0.01');
 
 const inputClass =
   'w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-base text-white placeholder-zinc-500 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500';
@@ -139,26 +149,49 @@ export default function SwapWidget({
 
   const overBalance = amountInWei > balance;
 
+  // Debounce the amount that drives quoting so fast typing (e.g. "0.125")
+  // doesn't fire an RPC simulation per keystroke. The `cancelled` flag below
+  // still guards against a stale in-flight response clobbering a newer one
+  // (e.g. two debounced values resolving out of order) — debouncing cuts
+  // down how often requests are *started*, it doesn't replace that guard.
+  const debouncedAmountInWei = useDebouncedValue(amountInWei, 300);
+
   // ── Quote ──────────────────────────────────────────────────────────
   // Uses Uniswap V4 Quoter. The quoter function is nonpayable (not view)
   // because it uses a revert-to-return pattern internally. We use
   // simulateContract which handles this cleanly.
   useEffect(() => {
     let cancelled = false;
-    if (!client || amountInWei === 0n) {
+
+    // Every early-return branch below must reset `quoting` to false itself.
+    // If a previous run left it true (request in flight) and this run bails
+    // out before reaching setQuoting(true) again, nothing else would ever
+    // flip it back — the cleanup's `cancelled` flag suppresses the in-flight
+    // request's own `finally`, so this is the only place that can do it.
+    if (!client || debouncedAmountInWei === 0n) {
       setQuote(null);
       setQuoteError(null);
+      setQuoting(false);
+      return;
+    }
+    if (!poolKey) {
+      // Pool parameters couldn't be verified — do not attempt to quote.
+      setQuote(null);
+      setQuoteError(null);
+      setQuoting(false);
       return;
     }
     if (isToken0 === undefined) {
       // Pool direction couldn't be verified — do not guess.
       setQuote(null);
       setQuoteError(null);
+      setQuoting(false);
       return;
     }
     if (addresses.quoter === '0x0000000000000000000000000000000000000000') {
       setQuoteError('Quoter not configured on this chain');
       setQuote(null);
+      setQuoting(false);
       return;
     }
 
@@ -166,6 +199,8 @@ export default function SwapWidget({
     setQuoteError(null);
 
     const zeroForOne = direction === 'buy' ? !isToken0 : isToken0;
+    // Narrow-and-capture so the closure below keeps the non-undefined type.
+    const resolvedPoolKey = poolKey;
 
     (async () => {
       try {
@@ -176,14 +211,14 @@ export default function SwapWidget({
           args: [
             {
               poolKey: {
-                currency0: poolKey.currency0,
-                currency1: poolKey.currency1,
-                fee: poolKey.fee,
-                tickSpacing: poolKey.tickSpacing,
-                hooks: poolKey.hooks,
+                currency0: resolvedPoolKey.currency0,
+                currency1: resolvedPoolKey.currency1,
+                fee: resolvedPoolKey.fee,
+                tickSpacing: resolvedPoolKey.tickSpacing,
+                hooks: resolvedPoolKey.hooks,
               },
               zeroForOne,
-              exactAmount: amountInWei,
+              exactAmount: debouncedAmountInWei,
               hookData: '0x',
             },
           ],
@@ -204,17 +239,21 @@ export default function SwapWidget({
     return () => {
       cancelled = true;
     };
+    // Deliberately depend on poolKey's primitive fields rather than the
+    // poolKey object itself, which may be a freshly-built object on every
+    // render; the fields below cover every value the effect actually reads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     client,
     addresses.quoter,
-    amountInWei,
+    debouncedAmountInWei,
     direction,
     isToken0,
-    poolKey.currency0,
-    poolKey.currency1,
-    poolKey.fee,
-    poolKey.tickSpacing,
-    poolKey.hooks,
+    poolKey?.currency0,
+    poolKey?.currency1,
+    poolKey?.fee,
+    poolKey?.tickSpacing,
+    poolKey?.hooks,
   ]);
 
   const minOut = useMemo(() => {
@@ -273,7 +312,14 @@ export default function SwapWidget({
 
   const referrer = useReferrer();
   const handleSwap = () => {
-    if (!address || amountInWei === 0n || quote === null || isToken0 === undefined) return;
+    if (
+      !address ||
+      !poolKey ||
+      amountInWei === 0n ||
+      quote === null ||
+      isToken0 === undefined
+    )
+      return;
     setPendingAction('swap');
     const deadline = BigInt(Math.floor(Date.now() / 1000) + DEFAULT_DEADLINE_SECS);
 
@@ -334,9 +380,19 @@ export default function SwapWidget({
     !needsErc20Approval &&
     (permit2Amount < amountInWei || permit2Expiration < Math.floor(Date.now() / 1000));
 
-  // Pool direction (artCoinIsToken0) couldn't be verified on-chain — never
-  // guess it, since a wrong direction flag would quote/swap the wrong way.
-  const poolConfigUnknown = isToken0 === undefined;
+  // Single source of truth for "why is swapping disabled right now", so the
+  // pool-direction-unknown case and the pool-key-unverified case drive one
+  // banner and one set of disabled props instead of two competing paths.
+  const disabledReason: string | null = !poolKey
+    ? "This pool's parameters couldn't be verified — swapping is disabled here."
+    : isToken0 === undefined
+      ? // Pool direction (artCoinIsToken0) couldn't be verified on-chain —
+        // never guess it, since a wrong direction flag would quote/swap the
+        // wrong way.
+        "This pool's configuration couldn't be verified — swapping is disabled here."
+      : null;
+
+  const poolConfigUnknown = disabledReason !== null;
 
   const canSwap =
     !poolConfigUnknown &&
@@ -392,9 +448,9 @@ export default function SwapWidget({
       </div>
 
       <div className="p-5 space-y-3">
-        {poolConfigUnknown && (
+        {disabledReason && (
           <div className="rounded-lg border border-red-900 bg-red-950/30 p-3 text-xs text-red-300">
-            This pool's configuration couldn't be verified — swapping is disabled here.
+            {disabledReason}
           </div>
         )}
 
@@ -414,7 +470,19 @@ export default function SwapWidget({
             {isConnected && (
               <button
                 type="button"
-                onClick={() => setAmountIn(formatUnits(balance, 18))}
+                onClick={() => {
+                  // Buying spends ETH, which also has to cover gas — filling
+                  // in the full balance would leave nothing for that and the
+                  // tx could never be sent. Selling spends the ERC20 token,
+                  // which doesn't pay gas, so the full balance is fine there.
+                  const max =
+                    direction === 'buy'
+                      ? balance > BUY_GAS_RESERVE
+                        ? balance - BUY_GAS_RESERVE
+                        : 0n
+                      : balance;
+                  setAmountIn(formatUnits(max, 18));
+                }}
                 className="text-xs text-zinc-500 hover:text-zinc-300"
               >
                 Balance: {Number(formatUnits(balance, 18)).toLocaleString(undefined, {

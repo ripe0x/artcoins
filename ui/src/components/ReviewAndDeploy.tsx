@@ -13,8 +13,8 @@ import {
   encodeVaultData,
   encodeAirdropData,
   percentToFeeUnits,
-  toWei,
 } from '../lib/encode';
+import { validateDeploy } from '../lib/validate';
 import type {
   TokenFormState,
   PoolFormState,
@@ -140,9 +140,15 @@ export default function ReviewAndDeploy({
     const tickUpper: number[] = rewardsForm.positions.map(p => p.tickUpper);
     const positionBps: number[] = rewardsForm.positions.map(p => p.bps);
 
-    // Total supply
-    const supplyNum = Number(tokenForm.totalSupply);
-    const totalSupply = supplyNum > 0 ? toWei(supplyNum) : 0n;
+    // Total supply — exact bigint math. `validateDeploy` guarantees
+    // `tokenForm.totalSupply` is either empty or a digits-only string, so
+    // this never routes through `Number`/floating point (which loses
+    // precision above 2^53). Empty or "0" means "use factory default".
+    const supplyDigits = tokenForm.totalSupply.trim();
+    const totalSupply =
+      supplyDigits !== '' && BigInt(supplyDigits) > 0n
+        ? BigInt(supplyDigits) * 10n ** 18n
+        : 0n;
 
     // Extensions
     type ExtConfig = {
@@ -253,6 +259,8 @@ export default function ReviewAndDeploy({
     (extensionsForm.vault.enabled ? extensionsForm.vault.allocationPercent : 0) +
     (extensionsForm.airdrop.enabled ? extensionsForm.airdrop.allocationPercent : 0) +
     (extensionsForm.devBuy.enabled ? extensionsForm.devBuy.allocationPercent : 0);
+
+  const errors = validateDeploy({ tokenForm, poolForm, rewardsForm, extensionsForm });
 
   return (
     <div className="space-y-6">
@@ -370,10 +378,25 @@ export default function ReviewAndDeploy({
             </div>
           )}
 
+          {errors.length > 0 && (
+            <div className="rounded-lg border border-red-800 bg-red-900/20 p-3 space-y-1">
+              <p className="text-sm font-medium text-red-400">
+                Fix the following before deploying:
+              </p>
+              <ul className="list-disc pl-5 space-y-0.5">
+                {errors.map((err, i) => (
+                  <li key={i} className="text-sm text-red-400">
+                    {err}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <button
             type="button"
             onClick={handleDeploy}
-            disabled={!isConnected || isPending || isConfirming || !tokenForm.name || !tokenForm.symbol}
+            disabled={!isConnected || isPending || isConfirming || errors.length > 0}
             className="w-full rounded-xl bg-violet-600 py-3 text-base font-semibold text-white transition-colors hover:bg-violet-500 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed"
           >
             {isPending

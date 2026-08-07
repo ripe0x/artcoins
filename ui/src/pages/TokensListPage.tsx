@@ -34,7 +34,8 @@ export default function TokensListPage() {
       return fetchAllTokenCreatedEvents(
         client,
         addresses.factory,
-        getFactoryDeploymentBlock(chainId)
+        getFactoryDeploymentBlock(chainId),
+        chainId
       );
     },
     enabled: !!client && factoryDeployed,

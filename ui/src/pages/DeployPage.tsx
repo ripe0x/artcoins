@@ -6,6 +6,12 @@ import AntiSniperForm from '../components/AntiSniperForm';
 import RewardsForm from '../components/RewardsForm';
 import ExtensionsForm from '../components/ExtensionsForm';
 import ReviewAndDeploy from '../components/ReviewAndDeploy';
+import {
+  validateTokenStep,
+  validatePoolStep,
+  validateRewardsStep,
+  validateExtensionsStep,
+} from '../lib/validate';
 import type {
   TokenFormState,
   PoolFormState,
@@ -20,6 +26,7 @@ function StepCard({
   subtitle,
   isOpen,
   onToggle,
+  hasError,
   children,
 }: {
   step: number;
@@ -27,6 +34,7 @@ function StepCard({
   subtitle: string;
   isOpen: boolean;
   onToggle: () => void;
+  hasError?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -36,11 +44,22 @@ function StepCard({
         onClick={onToggle}
         className="w-full flex items-center gap-4 px-6 py-4 text-left hover:bg-zinc-800/50 transition-colors"
       >
-        <span className="flex-shrink-0 w-8 h-8 rounded-full bg-violet-600/20 text-violet-400 flex items-center justify-center text-sm font-semibold">
+        <span className="relative flex-shrink-0 w-8 h-8 rounded-full bg-violet-600/20 text-violet-400 flex items-center justify-center text-sm font-semibold">
           {step}
+          {hasError && (
+            <span
+              className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-red-500 border-2 border-zinc-900"
+              title="This step has validation errors"
+            />
+          )}
         </span>
         <div className="flex-1 min-w-0">
-          <h3 className="text-base font-semibold text-white">{title}</h3>
+          <h3 className="text-base font-semibold text-white flex items-center gap-2">
+            {title}
+            {hasError && (
+              <span className="text-xs font-medium text-red-400">Needs attention</span>
+            )}
+          </h3>
           <p className="text-sm text-zinc-500 truncate">{subtitle}</p>
         </div>
         <svg
@@ -109,6 +128,17 @@ export default function DeployPage() {
 
   const toggle = (step: number) => setOpenStep(prev => (prev === step ? 0 : step));
 
+  const tokenStepErrors = validateTokenStep(tokenForm);
+  const poolStepErrors = validatePoolStep(poolForm);
+  const rewardsStepErrors = validateRewardsStep(rewardsForm, poolForm);
+  const extensionsStepErrors = validateExtensionsStep(extensionsForm);
+  const reviewStepErrors = [
+    ...tokenStepErrors,
+    ...poolStepErrors,
+    ...rewardsStepErrors,
+    ...extensionsStepErrors,
+  ];
+
   return (
     <main className="mx-auto max-w-3xl px-4 py-8 space-y-3">
       <div className="mb-8">
@@ -124,6 +154,7 @@ export default function DeployPage() {
         subtitle="Name, symbol, supply, and metadata"
         isOpen={openStep === 1}
         onToggle={() => toggle(1)}
+        hasError={tokenStepErrors.length > 0}
       >
         <TokenConfigForm value={tokenForm} onChange={setTokenForm} connectedAddress={address} />
       </StepCard>
@@ -134,6 +165,7 @@ export default function DeployPage() {
         subtitle="Paired token, fees, and tick settings"
         isOpen={openStep === 2}
         onToggle={() => toggle(2)}
+        hasError={poolStepErrors.length > 0}
       >
         <PoolConfigForm value={poolForm} onChange={setPoolForm} />
       </StepCard>
@@ -154,6 +186,7 @@ export default function DeployPage() {
         subtitle="Reward recipients and LP position ranges"
         isOpen={openStep === 4}
         onToggle={() => toggle(4)}
+        hasError={rewardsStepErrors.length > 0}
       >
         <RewardsForm
           value={rewardsForm}
@@ -170,6 +203,7 @@ export default function DeployPage() {
         subtitle="Vault, airdrop, and dev buy allocations"
         isOpen={openStep === 5}
         onToggle={() => toggle(5)}
+        hasError={extensionsStepErrors.length > 0}
       >
         <ExtensionsForm value={extensionsForm} onChange={setExtensionsForm} connectedAddress={address} />
       </StepCard>
@@ -180,6 +214,7 @@ export default function DeployPage() {
         subtitle="Review configuration and deploy your token"
         isOpen={openStep === 6}
         onToggle={() => toggle(6)}
+        hasError={reviewStepErrors.length > 0}
       >
         <ReviewAndDeploy
           tokenForm={tokenForm}

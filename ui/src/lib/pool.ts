@@ -53,20 +53,27 @@ export function computePoolId(key: PoolKey): `0x${string}` {
  */
 const CANDIDATE_TICK_SPACINGS = [60, 10, 200, 1, 30, 100];
 
+/**
+ * Returns the tickSpacing whose derived poolId matches `expectedPoolId`, or
+ * `null` when none of the candidates match. `null` means we don't have a
+ * trustworthy PoolKey for this pool — callers must NOT substitute a fallback
+ * value; a wrong tickSpacing produces a poolKey whose poolId doesn't match
+ * the real pool, which would make a swap widget quote/swap against a
+ * nonexistent pool.
+ */
 export function resolveTickSpacing(
   token: Address,
   paired: Address,
   hooks: Address,
   expectedPoolId: `0x${string}`
-): number {
+): number | null {
   for (const ts of CANDIDATE_TICK_SPACINGS) {
     const key = buildPoolKey(token, paired, ts, hooks);
     if (computePoolId(key).toLowerCase() === expectedPoolId.toLowerCase()) {
       return ts;
     }
   }
-  // Fallback — caller should treat this as unreliable
-  return 60;
+  return null;
 }
 
 /**

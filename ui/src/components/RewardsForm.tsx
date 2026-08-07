@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import type { RewardsFormState, RewardRecipient, LpPosition } from '../lib/types';
+import { validatePositionTicks } from '../lib/validate';
 
 const inputClass =
   'w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder-zinc-500 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500';
@@ -252,10 +253,12 @@ export default function RewardsForm({
             </p>
 
             {value.positions.map((p, i) => {
-              const invalidLower = p.tickLower < startingTick;
-              const invalidSpacing =
-                p.tickLower % tickSpacing !== 0 || p.tickUpper % tickSpacing !== 0;
-              const invalidRange = p.tickLower >= p.tickUpper;
+              const { invalidLower, invalidSpacing, invalidRange } = validatePositionTicks(
+                p.tickLower,
+                p.tickUpper,
+                startingTick,
+                tickSpacing
+              );
               return (
               <div key={i} className="rounded-lg border border-zinc-700 bg-zinc-800/50 p-3 space-y-2">
                 <div className="flex items-center justify-between">

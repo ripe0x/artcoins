@@ -17,6 +17,7 @@ import InfoRow from '../components/InfoRow';
 import CopyableAddress from '../components/CopyableAddress';
 import { getAddresses } from '../lib/config';
 import { airdropAbi, tokenAbi } from '../lib/abi';
+import { useTokenEvent } from '../lib/useTokenEvent';
 import { formatSupply, formatTimestamp } from '../lib/format';
 import { findEntry, verifyProof, type AllowlistFile } from '../lib/merkle';
 
@@ -65,6 +66,11 @@ export default function ClaimPage() {
   const chainId = useChainId();
   const { address: wallet, isConnected } = useAccount();
   const addresses = getAddresses(chainId);
+
+  // TokenCreated event — used only as an instant name/symbol fallback while
+  // the direct on-chain reads below resolve (reuses the cached tokens list
+  // when navigating from a token detail page, so this is usually free).
+  const { event: tokenEvent } = useTokenEvent(tokenAddress);
 
   // Load allowlist JSON for this token from /allowlists/<token>.json
   const {
@@ -124,8 +130,8 @@ export default function ClaimPage() {
   const airdropState = reads?.[0]?.result as
     | readonly [Address, `0x${string}`, bigint, bigint, bigint, bigint, bigint, boolean]
     | undefined;
-  const symbol = reads?.[1]?.result as string | undefined;
-  const name = reads?.[2]?.result as string | undefined;
+  const symbol = (reads?.[1]?.result as string | undefined) ?? tokenEvent?.tokenSymbol;
+  const name = (reads?.[2]?.result as string | undefined) ?? tokenEvent?.tokenName;
 
   // Separate read for the per-wallet claimable amount (depends on wallet + entry).
   const { data: availableReads, refetch: refetchAvailable } = useReadContracts({

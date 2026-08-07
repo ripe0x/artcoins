@@ -3,12 +3,10 @@ import { Link, useParams } from 'react-router-dom';
 import {
   useAccount,
   useChainId,
-  usePublicClient,
   useReadContracts,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from 'wagmi';
-import { useQuery } from '@tanstack/react-query';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import {
   BaseError,
@@ -20,10 +18,8 @@ import {
 import InfoCard from '../components/InfoCard';
 import InfoRow from '../components/InfoRow';
 import CopyableAddress from '../components/CopyableAddress';
-import { getAddresses, getFactoryDeploymentBlock } from '../lib/config';
 import { skimHookAbi, referralPayoutAbi } from '../lib/abi';
-import { fetchAllTokenCreatedEvents } from '../lib/events';
-import { buildPoolKey, computePoolId, resolveTickSpacing } from '../lib/pool';
+import { useTokenEvent } from '../lib/useTokenEvent';
 import { shortAddr } from '../lib/format';
 
 function explorerTxUrl(chainId: number, hash: `0x${string}`): string {
@@ -61,43 +57,13 @@ export default function ReferralsPage() {
   const { address: tokenAddressParam } = useParams<{ address: string }>();
   const tokenAddress = (tokenAddressParam ?? '').toLowerCase() as Address;
   const chainId = useChainId();
-  const client = usePublicClient();
   const { address: wallet, isConnected } = useAccount();
-  const addresses = getAddresses(chainId);
 
-  // 1. Find the TokenCreated event so we can build the poolKey + poolId.
-  const { data: allEvents, isLoading: eventsLoading } = useQuery({
-    queryKey: ['tokens', chainId],
-    queryFn: async () => {
-      if (!client) throw new Error('No client');
-      return fetchAllTokenCreatedEvents(
-        client,
-        addresses.factory,
-        getFactoryDeploymentBlock(chainId)
-      );
-    },
-    enabled:
-      !!client &&
-      addresses.factory !== '0x0000000000000000000000000000000000000000',
-    staleTime: 60_000,
-  });
-
-  const event = useMemo(
-    () => allEvents?.find(e => e.tokenAddress.toLowerCase() === tokenAddress),
-    [allEvents, tokenAddress]
-  );
-
-  const { poolId } = useMemo(() => {
-    if (!event) return { poolId: null };
-    const ts = resolveTickSpacing(
-      event.tokenAddress,
-      event.pairedToken,
-      event.poolHook,
-      event.poolId
-    );
-    const key = buildPoolKey(event.tokenAddress, event.pairedToken, ts, event.poolHook);
-    return { poolId: computePoolId(key) };
-  }, [event]);
+  // 1. Find the TokenCreated event; poolId comes straight from the event
+  // (it's the authoritative on-chain value — no need to re-derive it via
+  // tickSpacing resolution, which can fail to match and would otherwise
+  // silently produce a poolId that doesn't correspond to the real pool).
+  const { event, poolId, isLoading: eventsLoading } = useTokenEvent(tokenAddress);
 
   // 2. Read the hook's skimConfig to discover the per-pool ReferralPayout.
   const { data: skimConfig, isLoading: skimLoading } = useReadContracts({

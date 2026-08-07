@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { useChainId, usePublicClient, useReadContracts } from 'wagmi';
-import { useQuery } from '@tanstack/react-query';
+import { useChainId, useReadContracts } from 'wagmi';
 import type { Address } from 'viem';
 
 import InfoCard from '../components/InfoCard';
@@ -9,12 +8,7 @@ import InfoRow from '../components/InfoRow';
 import CopyableAddress from '../components/CopyableAddress';
 import SwapWidget from '../components/SwapWidget';
 import TokenMetadataModal from '../components/TokenMetadataModal';
-import {
-  getAddresses,
-  getFactoryDeploymentBlock,
-  uniswapTokenUrl,
-  uniswapSwapUrl,
-} from '../lib/config';
+import { getAddresses, uniswapTokenUrl, uniswapSwapUrl } from '../lib/config';
 import {
   tokenAbi,
   hookBaseAbi,
@@ -23,13 +17,9 @@ import {
   lockerAbi,
   stateViewAbi,
 } from '../lib/abi';
-import { fetchAllTokenCreatedEvents, type TokenCreatedEvent } from '../lib/events';
+import { useTokenEvent } from '../lib/useTokenEvent';
 import { resolveImage, parseContractURI } from '../lib/metadata';
-import {
-  buildPoolKey,
-  resolveTickSpacing,
-  newMaterialPriceInPaired,
-} from '../lib/pool';
+import { newMaterialPriceInPaired } from '../lib/pool';
 import {
   shortAddr,
   formatSupply,
@@ -57,47 +47,12 @@ export default function TokenDetailPage() {
   const { address: tokenAddressParam } = useParams<{ address: string }>();
   const tokenAddress = (tokenAddressParam ?? '').toLowerCase() as Address;
   const chainId = useChainId();
-  const client = usePublicClient();
   const addresses = getAddresses(chainId);
 
-  // ── 1. Find the TokenCreated event for this address ──────────────
-  const { data: allEvents, isLoading: eventsLoading } = useQuery({
-    queryKey: ['tokens', chainId],
-    queryFn: async () => {
-      if (!client) throw new Error('No client');
-      return fetchAllTokenCreatedEvents(
-        client,
-        addresses.factory,
-        getFactoryDeploymentBlock(chainId)
-      );
-    },
-    enabled:
-      !!client &&
-      addresses.factory !== '0x0000000000000000000000000000000000000000',
-    staleTime: 60_000,
-  });
+  // ── 1. Find the TokenCreated event, derive tickSpacing + poolKey ──
+  const { event, poolKey, tickSpacing, isLoading: eventsLoading } = useTokenEvent(tokenAddress);
 
-  const event: TokenCreatedEvent | undefined = useMemo(() => {
-    if (!allEvents) return undefined;
-    return allEvents.find(e => e.tokenAddress.toLowerCase() === tokenAddress);
-  }, [allEvents, tokenAddress]);
-
-  // ── 2. Derive tickSpacing and poolKey ─────────────────────────────
-  const { tickSpacing, poolKey } = useMemo(() => {
-    if (!event) return { tickSpacing: 60, poolKey: null };
-    const ts = resolveTickSpacing(
-      event.tokenAddress,
-      event.pairedToken,
-      event.poolHook,
-      event.poolId
-    );
-    return {
-      tickSpacing: ts,
-      poolKey: buildPoolKey(event.tokenAddress, event.pairedToken, ts, event.poolHook),
-    };
-  }, [event]);
-
-  // ── 3. Multicall: token + hook + locker state ────────────────────
+  // ── 2. Multicall: token + hook + locker state ────────────────────
   const staticContracts = useMemo(() => {
     if (!event) return [];
     return [
@@ -168,7 +123,7 @@ export default function TokenDetailPage() {
       }
     | undefined;
 
-  // ── 4. Live MEV state (only while enabled) ────────────────────────
+  // ── 3. Live MEV state (only while enabled) ────────────────────────
   const { data: mevLiveData } = useReadContracts({
     contracts:
       event && poolKey && event.mevModule.toLowerCase() === addresses.mevLinearFees.toLowerCase()
@@ -206,7 +161,7 @@ export default function TokenDetailPage() {
     | readonly [number, number, number, bigint]
     | undefined;
 
-  // ── 5. Pool slot0 (sqrtPriceX96) ──────────────────────────────────
+  // ── 4. Pool slot0 (sqrtPriceX96) ──────────────────────────────────
   const { data: slot0 } = useReadContracts({
     contracts:
       event && addresses.stateView !== '0x0000000000000000000000000000000000000000'
@@ -480,7 +435,7 @@ export default function TokenDetailPage() {
           <InfoRow label="Buy Fee (total)" value={formatFeeBps(buyFee)} />
           <InfoRow label="Sell Fee (total)" value={formatFeeBps(sellFee)} />
           <InfoRow label="Starting Tick" value={event.startingTick.toLocaleString()} />
-          <InfoRow label="Tick Spacing" value={tickSpacing} />
+          <InfoRow label="Tick Spacing" value={tickSpacing ?? '—'} />
           <InfoRow
             label="Hook"
             value={
