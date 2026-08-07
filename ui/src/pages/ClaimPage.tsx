@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useAccount, useChainId, useReadContracts } from 'wagmi';
 import { useQuery } from '@tanstack/react-query';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
@@ -11,8 +11,9 @@ import CopyableAddress from '../components/CopyableAddress';
 import { getAddresses } from '../lib/config';
 import { airdropAbi, tokenAbi } from '../lib/abi';
 import { useTokenEvent } from '../lib/useTokenEvent';
+import { useAddressParam } from '../lib/useAddressParam';
 import { useTxFlow } from '../lib/useTxFlow';
-import { formatSupply, formatTimestamp } from '../lib/format';
+import { shortAddr, formatSupply, formatTimestamp } from '../lib/format';
 import { findEntry, verifyProof, type AllowlistFile } from '../lib/merkle';
 import { explorerAddressUrl, explorerTxUrl } from '../lib/explorer';
 import { decodeContractError } from '../lib/decodeError';
@@ -32,8 +33,12 @@ function decodeClaimError(err: unknown): string {
 }
 
 export default function ClaimPage() {
-  const { address: tokenAddressParam } = useParams<{ address: string }>();
-  const tokenAddress = (tokenAddressParam ?? '').toLowerCase() as Address;
+  // `address` is `undefined` for a malformed route param (e.g.
+  // `/tokens/foo/claim`). Every query below that depends on it is gated —
+  // directly or via `enabled` — on it being present, so an invalid param
+  // never fires the event fetch, the airdrop/token reads, or the
+  // `/allowlists/<token>.json` fetch.
+  const { address: tokenAddress, raw: tokenAddressRaw } = useAddressParam();
   const chainId = useChainId();
   const { address: wallet, isConnected } = useAccount();
   const addresses = getAddresses(chainId);
@@ -55,6 +60,10 @@ export default function ClaimPage() {
       if (!res.ok) throw new Error(`No allowlist found (${res.status})`);
       return (await res.json()) as AllowlistFile;
     },
+    // Previously ran unconditionally on mount, firing a request for
+    // `/allowlists/<garbage>.json` even when the route param wasn't a real
+    // address. Only fetch once we have a syntactically valid token address.
+    enabled: !!tokenAddress,
     retry: false,
     staleTime: 60_000,
   });
@@ -71,29 +80,30 @@ export default function ClaimPage() {
 
   // Read airdrop state + token metadata
   const { data: reads, refetch: refetchReads } = useReadContracts({
-    contracts: [
-      {
-        address: addresses.airdrop,
-        abi: airdropAbi,
-        functionName: 'airdrops',
-        args: [tokenAddress],
-      } as const,
-      {
-        address: tokenAddress,
-        abi: tokenAbi,
-        functionName: 'symbol',
-      } as const,
-      {
-        address: tokenAddress,
-        abi: tokenAbi,
-        functionName: 'name',
-      } as const,
-    ],
+    contracts: tokenAddress
+      ? [
+          {
+            address: addresses.airdrop,
+            abi: airdropAbi,
+            functionName: 'airdrops',
+            args: [tokenAddress],
+          } as const,
+          {
+            address: tokenAddress,
+            abi: tokenAbi,
+            functionName: 'symbol',
+          } as const,
+          {
+            address: tokenAddress,
+            abi: tokenAbi,
+            functionName: 'name',
+          } as const,
+        ]
+      : [],
     allowFailure: true,
     query: {
       enabled:
-        addresses.airdrop !== '0x0000000000000000000000000000000000000000' &&
-        tokenAddress.length === 42,
+        addresses.airdrop !== '0x0000000000000000000000000000000000000000' && !!tokenAddress,
       refetchInterval: 15_000,
     },
   });
@@ -107,7 +117,7 @@ export default function ClaimPage() {
   // Separate read for the per-wallet claimable amount (depends on wallet + entry).
   const { data: availableReads, refetch: refetchAvailable } = useReadContracts({
     contracts:
-      wallet && entry
+      wallet && entry && tokenAddress
         ? [
             {
               address: addresses.airdrop,
@@ -119,7 +129,7 @@ export default function ClaimPage() {
         : [],
     allowFailure: true,
     query: {
-      enabled: !!wallet && !!entry,
+      enabled: !!wallet && !!entry && !!tokenAddress,
       refetchInterval: 15_000,
     },
   });
@@ -152,6 +162,26 @@ export default function ClaimPage() {
   const isPending = status === 'confirming';
   const confirming = status === 'pending';
   const confirmed = status === 'confirmed';
+
+  // Invalid/malformed route param — short-circuit here, after all hooks
+  // have run (satisfying the rules of hooks) but before anything below
+  // treats `tokenAddress` as a real `Address`. Every query above was
+  // already gated on `tokenAddress` being present, so nothing has fired a
+  // network request for it at this point.
+  if (!tokenAddress) {
+    return (
+      <main className="mx-auto max-w-3xl px-4 py-16 text-center">
+        <h1 className="text-xl font-semibold mb-2">Token not found</h1>
+        <p className="text-zinc-500 text-sm mb-6">
+          <span className="font-mono">{shortAddr(tokenAddressRaw)}</span> is not a valid token
+          address.
+        </p>
+        <Link to="/tokens" className="text-violet-400 hover:text-violet-300 text-sm">
+          ← Back to all tokens
+        </Link>
+      </main>
+    );
+  }
 
   const onClaim = () => {
     if (!wallet || !entry) return;

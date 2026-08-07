@@ -20,6 +20,9 @@ function Toggle({
   return (
     <button
       type="button"
+      role="switch"
+      aria-checked={enabled}
+      aria-label={label}
       onClick={onToggle}
       className="flex items-center gap-3 w-full"
     >
@@ -87,8 +90,9 @@ export default function ExtensionsForm({ value, onChange, connectedAddress }: Pr
         {value.vault.enabled && (
           <div className="space-y-3 pl-13">
             <div>
-              <label className={labelClass}>Admin Address</label>
+              <label htmlFor="vault-admin" className={labelClass}>Admin Address</label>
               <input
+                id="vault-admin"
                 type="text"
                 className={inputClass}
                 placeholder="0x..."
@@ -97,11 +101,12 @@ export default function ExtensionsForm({ value, onChange, connectedAddress }: Pr
               />
             </div>
             <div>
-              <label className={labelClass}>
+              <label htmlFor="vault-allocation" className={labelClass}>
                 Allocation:{' '}
                 <span className="text-violet-400 font-semibold">{value.vault.allocationPercent}%</span>
               </label>
               <input
+                id="vault-allocation"
                 type="range"
                 min={1}
                 max={90}
@@ -114,10 +119,11 @@ export default function ExtensionsForm({ value, onChange, connectedAddress }: Pr
                 <span>90%</span>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <label className={labelClass}>Lockup (days)</label>
+                <label htmlFor="vault-lockup-days" className={labelClass}>Lockup (days)</label>
                 <input
+                  id="vault-lockup-days"
                   type="number"
                   className={inputClass}
                   min={7}
@@ -126,8 +132,9 @@ export default function ExtensionsForm({ value, onChange, connectedAddress }: Pr
                 />
               </div>
               <div>
-                <label className={labelClass}>Vesting (days)</label>
+                <label htmlFor="vault-vesting-days" className={labelClass}>Vesting (days)</label>
                 <input
+                  id="vault-vesting-days"
                   type="number"
                   className={inputClass}
                   min={0}
@@ -150,8 +157,9 @@ export default function ExtensionsForm({ value, onChange, connectedAddress }: Pr
         {value.airdrop.enabled && (
           <div className="space-y-3 pl-13">
             <div>
-              <label className={labelClass}>Admin Address</label>
+              <label htmlFor="airdrop-admin" className={labelClass}>Admin Address</label>
               <input
+                id="airdrop-admin"
                 type="text"
                 className={inputClass}
                 placeholder="0x..."
@@ -160,11 +168,12 @@ export default function ExtensionsForm({ value, onChange, connectedAddress }: Pr
               />
             </div>
             <div>
-              <label className={labelClass}>
+              <label htmlFor="airdrop-allocation" className={labelClass}>
                 Allocation:{' '}
                 <span className="text-violet-400 font-semibold">{value.airdrop.allocationPercent}%</span>
               </label>
               <input
+                id="airdrop-allocation"
                 type="range"
                 min={1}
                 max={90}
@@ -178,8 +187,9 @@ export default function ExtensionsForm({ value, onChange, connectedAddress }: Pr
               </div>
             </div>
             <div>
-              <label className={labelClass}>Merkle Root</label>
+              <label htmlFor="airdrop-merkle-root" className={labelClass}>Merkle Root</label>
               <input
+                id="airdrop-merkle-root"
                 type="text"
                 className={inputClass}
                 placeholder="0x..."
@@ -190,10 +200,11 @@ export default function ExtensionsForm({ value, onChange, connectedAddress }: Pr
                 32-byte merkle root for claim verification. Can be updated later via admin.
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <label className={labelClass}>Lockup (days)</label>
+                <label htmlFor="airdrop-lockup-days" className={labelClass}>Lockup (days)</label>
                 <input
+                  id="airdrop-lockup-days"
                   type="number"
                   className={inputClass}
                   min={1}
@@ -202,8 +213,9 @@ export default function ExtensionsForm({ value, onChange, connectedAddress }: Pr
                 />
               </div>
               <div>
-                <label className={labelClass}>Vesting (days)</label>
+                <label htmlFor="airdrop-vesting-days" className={labelClass}>Vesting (days)</label>
                 <input
+                  id="airdrop-vesting-days"
                   type="number"
                   className={inputClass}
                   min={0}
@@ -226,8 +238,9 @@ export default function ExtensionsForm({ value, onChange, connectedAddress }: Pr
         {value.devBuy.enabled && (
           <div className="space-y-3 pl-13">
             <div>
-              <label className={labelClass}>ETH Amount</label>
+              <label htmlFor="devbuy-eth-amount" className={labelClass}>ETH Amount</label>
               <input
+                id="devbuy-eth-amount"
                 type="text"
                 className={inputClass}
                 placeholder="0.1"
@@ -239,11 +252,12 @@ export default function ExtensionsForm({ value, onChange, connectedAddress }: Pr
               </p>
             </div>
             <div>
-              <label className={labelClass}>
+              <label htmlFor="devbuy-allocation" className={labelClass}>
                 Allocation:{' '}
                 <span className="text-violet-400 font-semibold">{value.devBuy.allocationPercent}%</span>
               </label>
               <input
+                id="devbuy-allocation"
                 type="range"
                 min={1}
                 max={90}

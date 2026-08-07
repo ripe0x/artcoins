@@ -32,6 +32,8 @@ interface Props {
   mevForm: MevFormState;
   rewardsForm: RewardsFormState;
   extensionsForm: ExtensionsFormState;
+  /** Called once the deploy transaction is confirmed on chain. */
+  onDeployed?: () => void;
 }
 
 /**
@@ -68,6 +70,7 @@ export default function ReviewAndDeploy({
   mevForm,
   rewardsForm,
   extensionsForm,
+  onDeployed,
 }: Props) {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
@@ -86,9 +89,10 @@ export default function ReviewAndDeploy({
       if (tokenAddress) {
         setDeployedToken(tokenAddress);
         queryClient.invalidateQueries({ queryKey: ['tokens', chainId] });
+        onDeployed?.();
       }
     },
-    [chainId, queryClient]
+    [chainId, queryClient, onDeployed]
   );
 
   const { submit, hash: txHash, status, error: writeError } = useTxFlow({ onConfirmed });

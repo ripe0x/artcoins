@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useAccount, useChainId, useReadContracts } from 'wagmi';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { formatEther, type Address } from 'viem';
@@ -9,6 +9,7 @@ import InfoRow from '../components/InfoRow';
 import CopyableAddress from '../components/CopyableAddress';
 import { skimHookAbi, referralPayoutAbi } from '../lib/abi';
 import { useTokenEvent } from '../lib/useTokenEvent';
+import { useAddressParam } from '../lib/useAddressParam';
 import { useTxFlow } from '../lib/useTxFlow';
 import { shortAddr } from '../lib/format';
 import { explorerTxUrl } from '../lib/explorer';
@@ -26,8 +27,11 @@ function decodeClaimError(err: unknown): string {
 }
 
 export default function ReferralsPage() {
-  const { address: tokenAddressParam } = useParams<{ address: string }>();
-  const tokenAddress = (tokenAddressParam ?? '').toLowerCase() as Address;
+  // `address` is `undefined` for a malformed route param — passed straight
+  // into `useTokenEvent`, whose query is itself disabled for an
+  // empty/undefined address, so an invalid param never fires an event
+  // fetch and falls straight through to the "not found" state below.
+  const { address: tokenAddress } = useAddressParam();
   const chainId = useChainId();
   const { address: wallet, isConnected } = useAccount();
 

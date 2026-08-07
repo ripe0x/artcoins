@@ -21,6 +21,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { getAddress, isAddress } from 'viem';
 
 const STORAGE_KEY = 'artcoins:referrer';
@@ -89,15 +90,25 @@ function writeStorage(value: `0x${string}` | null) {
   }
 }
 
+/**
+ * `useLocation()` gives us a fresh render every time react-router's history
+ * changes — including `?ref=` search-param changes, `useNavigate`
+ * push/replace calls, and browser back/forward — so we key the resolve
+ * effect on `location.search` instead of hooking History API methods
+ * ourselves. (This hook is only ever mounted inside the Router tree — its
+ * sole consumer is `SwapWidget`, rendered from `TokenDetailPage`, itself
+ * under the `<BrowserRouter>` in `main.tsx` — so `useLocation` is always
+ * valid here.)
+ */
 export function useReferrer(): `0x${string}` | null {
+  const location = useLocation();
   const [ref, setRef] = useState<`0x${string}` | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const resolve = () => {
       if (typeof window === 'undefined') return;
-      const params = new URL(window.location.href).searchParams;
-      const urlRef = normalize(params.get('ref'));
+      const urlRef = normalize(new URLSearchParams(location.search).get('ref'));
       if (urlRef) {
         writeStorage(urlRef);
         setRef(urlRef);
@@ -113,9 +124,7 @@ export function useReferrer(): `0x${string}` | null {
       setRef(runtimeDefault);
       void fetchRuntimeDefault().then((v) => {
         if (cancelled) return;
-        const live = normalize(
-          new URL(window.location.href).searchParams.get('ref'),
-        );
+        const live = normalize(new URLSearchParams(location.search).get('ref'));
         if (live || readStorage()) return;
         setRef(v);
       });
@@ -123,27 +132,10 @@ export function useReferrer(): `0x${string}` | null {
 
     resolve();
 
-    const onPop = () => resolve();
-    window.addEventListener('popstate', onPop);
-    const origPush = window.history.pushState;
-    const origReplace = window.history.replaceState;
-    window.history.pushState = function patchedPush(...args) {
-      const r = origPush.apply(this, args);
-      resolve();
-      return r;
-    };
-    window.history.replaceState = function patchedReplace(...args) {
-      const r = origReplace.apply(this, args);
-      resolve();
-      return r;
-    };
     return () => {
       cancelled = true;
-      window.removeEventListener('popstate', onPop);
-      window.history.pushState = origPush;
-      window.history.replaceState = origReplace;
     };
-  }, []);
+  }, [location.search]);
 
   return ref;
 }

@@ -21,10 +21,11 @@ export default function TokenConfigForm({ value, onChange, connectedAddress }: P
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label className={labelClass}>Token Name</label>
+          <label htmlFor="token-name" className={labelClass}>Token Name</label>
           <input
+            id="token-name"
             type="text"
             className={inputClass}
             placeholder="My Token"
@@ -33,8 +34,9 @@ export default function TokenConfigForm({ value, onChange, connectedAddress }: P
           />
         </div>
         <div>
-          <label className={labelClass}>Symbol</label>
+          <label htmlFor="token-symbol" className={labelClass}>Symbol</label>
           <input
+            id="token-symbol"
             type="text"
             className={inputClass}
             placeholder="MTK"
@@ -46,8 +48,9 @@ export default function TokenConfigForm({ value, onChange, connectedAddress }: P
       </div>
 
       <div>
-        <label className={labelClass}>Token Admin</label>
+        <label htmlFor="token-admin" className={labelClass}>Token Admin</label>
         <input
+          id="token-admin"
           type="text"
           className={inputClass}
           placeholder="0x..."
@@ -58,8 +61,9 @@ export default function TokenConfigForm({ value, onChange, connectedAddress }: P
       </div>
 
       <div>
-        <label className={labelClass}>Total Supply</label>
+        <label htmlFor="token-total-supply" className={labelClass}>Total Supply</label>
         <input
+          id="token-total-supply"
           type="text"
           className={inputClass}
           placeholder="1000000000"
@@ -81,8 +85,9 @@ export default function TokenConfigForm({ value, onChange, connectedAddress }: P
       </div>
 
       <div>
-        <label className={labelClass}>Description / Metadata</label>
+        <label htmlFor="token-metadata" className={labelClass}>Description / Metadata</label>
         <textarea
+          id="token-metadata"
           className={`${inputClass} resize-none`}
           rows={3}
           placeholder="Describe your token..."
@@ -92,8 +97,9 @@ export default function TokenConfigForm({ value, onChange, connectedAddress }: P
       </div>
 
       <div>
-        <label className={labelClass}>Context</label>
+        <label htmlFor="token-context" className={labelClass}>Context</label>
         <input
+          id="token-context"
           type="text"
           className={inputClass}
           placeholder="Optional context string"

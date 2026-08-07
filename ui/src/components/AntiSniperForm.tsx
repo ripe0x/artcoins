@@ -136,11 +136,12 @@ export default function AntiSniperForm({ value, onChange }: Props) {
       {value.moduleType === 'linear' && (
         <div className="space-y-4">
           <div>
-            <label className={labelClass}>
+            <label htmlFor="mev-linear-start" className={labelClass}>
               Starting Fee:{' '}
               <span className="text-violet-400 font-semibold">{value.linearStartPercent}%</span>
             </label>
             <input
+              id="mev-linear-start"
               type="range"
               min={1}
               max={99}
@@ -155,11 +156,12 @@ export default function AntiSniperForm({ value, onChange }: Props) {
           </div>
 
           <div>
-            <label className={labelClass}>
+            <label htmlFor="mev-linear-end" className={labelClass}>
               Ending Fee:{' '}
               <span className="text-violet-400 font-semibold">{value.linearEndPercent}%</span>
             </label>
             <input
+              id="mev-linear-end"
               type="range"
               min={0}
               max={10}
@@ -175,11 +177,12 @@ export default function AntiSniperForm({ value, onChange }: Props) {
           </div>
 
           <div>
-            <label className={labelClass}>
+            <label htmlFor="mev-linear-duration" className={labelClass}>
               Duration:{' '}
               <span className="text-violet-400 font-semibold">{value.linearDurationMin} min</span>
             </label>
             <input
+              id="mev-linear-duration"
               type="range"
               min={1}
               max={180}
@@ -205,11 +208,12 @@ export default function AntiSniperForm({ value, onChange }: Props) {
       {value.moduleType === 'descending' && (
         <div className="space-y-4">
           <div>
-            <label className={labelClass}>
+            <label htmlFor="mev-desc-start" className={labelClass}>
               Starting Fee:{' '}
               <span className="text-violet-400 font-semibold">{value.descStartPercent}%</span>
             </label>
             <input
+              id="mev-desc-start"
               type="range"
               min={1}
               max={99}
@@ -224,11 +228,12 @@ export default function AntiSniperForm({ value, onChange }: Props) {
           </div>
 
           <div>
-            <label className={labelClass}>
+            <label htmlFor="mev-desc-end" className={labelClass}>
               Ending Fee:{' '}
               <span className="text-violet-400 font-semibold">{value.descEndPercent}%</span>
             </label>
             <input
+              id="mev-desc-end"
               type="range"
               min={0}
               max={10}
@@ -244,11 +249,12 @@ export default function AntiSniperForm({ value, onChange }: Props) {
           </div>
 
           <div>
-            <label className={labelClass}>
+            <label htmlFor="mev-desc-duration" className={labelClass}>
               Duration:{' '}
               <span className="text-violet-400 font-semibold">{value.descDurationSec}s</span>
             </label>
             <input
+              id="mev-desc-duration"
               type="range"
               min={60}
               max={10800}
@@ -274,8 +280,9 @@ export default function AntiSniperForm({ value, onChange }: Props) {
 
       {value.moduleType === 'timeDelay' && (
         <div>
-          <label className={labelClass}>Delay (seconds)</label>
+          <label htmlFor="mev-time-delay" className={labelClass}>Delay (seconds)</label>
           <input
+            id="mev-time-delay"
             type="number"
             min={1}
             max={600}

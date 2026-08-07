@@ -163,7 +163,8 @@ export default function RewardsForm({
               <h4 className="text-sm font-medium text-zinc-300">
                 Reward Recipients{' '}
                 <span className={totalRecipientBps === 10000 ? 'text-green-400' : 'text-amber-400'}>
-                  ({totalRecipientBps} / 10,000 BPS)
+                  ({totalRecipientBps} / 10,000 BPS
+                  {totalRecipientBps === 10000 ? ', valid' : ' — must total 10,000'})
                 </span>
               </h4>
               <button
@@ -190,10 +191,11 @@ export default function RewardsForm({
                     </button>
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <div>
-                    <label className="text-xs text-zinc-500">Admin Address</label>
+                    <label htmlFor={`reward-recipient-admin-${i}`} className="text-xs text-zinc-500">Admin Address</label>
                     <input
+                      id={`reward-recipient-admin-${i}`}
                       type="text"
                       className={inputClass}
                       placeholder="0x..."
@@ -202,8 +204,9 @@ export default function RewardsForm({
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-zinc-500">Recipient Address</label>
+                    <label htmlFor={`reward-recipient-${i}`} className="text-xs text-zinc-500">Recipient Address</label>
                     <input
+                      id={`reward-recipient-${i}`}
                       type="text"
                       className={inputClass}
                       placeholder="0x..."
@@ -213,8 +216,9 @@ export default function RewardsForm({
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs text-zinc-500">BPS (basis points, max 10000)</label>
+                  <label htmlFor={`reward-recipient-bps-${i}`} className="text-xs text-zinc-500">BPS (basis points, max 10000)</label>
                   <input
+                    id={`reward-recipient-bps-${i}`}
                     type="number"
                     className={inputClass}
                     min={0}
@@ -232,7 +236,8 @@ export default function RewardsForm({
               <h4 className="text-sm font-medium text-zinc-300">
                 LP Positions{' '}
                 <span className={totalPositionBps === 10000 ? 'text-green-400' : 'text-amber-400'}>
-                  ({totalPositionBps} / 10,000 BPS)
+                  ({totalPositionBps} / 10,000 BPS
+                  {totalPositionBps === 10000 ? ', valid' : ' — must total 10,000'})
                 </span>
               </h4>
               <button
@@ -271,10 +276,11 @@ export default function RewardsForm({
                     </button>
                   )}
                 </div>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                   <div>
-                    <label className="text-xs text-zinc-500">Tick Lower</label>
+                    <label htmlFor={`reward-position-tick-lower-${i}`} className="text-xs text-zinc-500">Tick Lower</label>
                     <input
+                      id={`reward-position-tick-lower-${i}`}
                       type="number"
                       className={`${inputClass} ${invalidLower ? 'border-red-500' : ''}`}
                       value={p.tickLower}
@@ -282,8 +288,9 @@ export default function RewardsForm({
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-zinc-500">Tick Upper</label>
+                    <label htmlFor={`reward-position-tick-upper-${i}`} className="text-xs text-zinc-500">Tick Upper</label>
                     <input
+                      id={`reward-position-tick-upper-${i}`}
                       type="number"
                       className={inputClass}
                       value={p.tickUpper}
@@ -291,8 +298,9 @@ export default function RewardsForm({
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-zinc-500">BPS</label>
+                    <label htmlFor={`reward-position-bps-${i}`} className="text-xs text-zinc-500">BPS</label>
                     <input
+                      id={`reward-position-bps-${i}`}
                       type="number"
                       className={inputClass}
                       min={0}

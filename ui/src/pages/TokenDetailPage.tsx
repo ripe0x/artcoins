@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useChainId, useReadContracts } from 'wagmi';
 import type { Address } from 'viem';
 
@@ -19,6 +19,7 @@ import {
   stateViewAbi,
 } from '../lib/abi';
 import { useTokenEvent } from '../lib/useTokenEvent';
+import { useAddressParam } from '../lib/useAddressParam';
 import { resolveImage, parseContractURI } from '../lib/metadata';
 import { artCoinPriceInPaired } from '../lib/pool';
 import {
@@ -41,8 +42,11 @@ function CardSkeleton({ height = 'h-40' }: { height?: string }) {
 }
 
 export default function TokenDetailPage() {
-  const { address: tokenAddressParam } = useParams<{ address: string }>();
-  const tokenAddress = (tokenAddressParam ?? '').toLowerCase() as Address;
+  // `address` is `undefined` for a malformed route param (e.g. `/tokens/foo`)
+  // — passed straight into `useTokenEvent`, whose query is itself disabled
+  // for an empty/undefined address, so an invalid param never fires an
+  // event fetch and falls straight through to the "not found" state below.
+  const { address: tokenAddress, raw: tokenAddressRaw } = useAddressParam();
   const chainId = useChainId();
   const addresses = getAddresses(chainId);
 
@@ -202,8 +206,8 @@ export default function TokenDetailPage() {
       <main className="mx-auto max-w-4xl px-4 py-16 text-center">
         <h1 className="text-xl font-semibold mb-2">Token not found</h1>
         <p className="text-zinc-500 text-sm mb-6">
-          No token with address <span className="font-mono">{shortAddr(tokenAddress)}</span> was
-          found in the factory's event log.
+          No token with address <span className="font-mono">{shortAddr(tokenAddressRaw)}</span>{' '}
+          was found in the factory's event log.
         </p>
         <Link
           to="/tokens"

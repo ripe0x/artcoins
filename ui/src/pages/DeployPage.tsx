@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAccount } from 'wagmi';
 import TokenConfigForm from '../components/TokenConfigForm';
 import PoolConfigForm from '../components/PoolConfigForm';
@@ -19,6 +19,132 @@ import type {
   RewardsFormState,
   ExtensionsFormState,
 } from '../lib/types';
+
+// ── Draft persistence ───────────────────────────────────────────────────
+//
+// The deploy form can represent a nontrivial amount of configuration work
+// (a full mainnet token launch). Losing it to an accidental refresh or
+// back-navigation is hostile, so the whole form is mirrored to
+// localStorage and restored on mount.
+//
+// The storage key is itself versioned so an incompatible future shape
+// change can bump the suffix and old drafts are simply ignored rather than
+// crashing on load; `version` inside the payload is a second,
+// belt-and-suspenders check for the same thing (in case the key is ever
+// kept but the payload shape changes).
+const DRAFT_VERSION = 1;
+const DRAFT_STORAGE_KEY = `artcoins:deployDraft:v${DRAFT_VERSION}`;
+
+const DEFAULT_TOKEN_FORM: TokenFormState = {
+  name: '',
+  symbol: '',
+  admin: '',
+  totalSupply: '1000000000',
+  image: '',
+  metadata: '',
+  context: '',
+};
+
+const DEFAULT_POOL_FORM: PoolFormState = {
+  pairedToken: 'weth',
+  customPairedToken: '',
+  tickSpacing: 60,
+  startingTick: -230400,
+  buyFeePercent: 1,
+  sellFeePercent: 1,
+};
+
+const DEFAULT_MEV_FORM: MevFormState = {
+  moduleType: 'linear',
+  linearStartPercent: 99,
+  linearEndPercent: 1,
+  linearDurationMin: 69,
+  descStartPercent: 99,
+  descEndPercent: 1,
+  descDurationSec: 4140,
+  timeDelaySec: 12,
+};
+
+const DEFAULT_REWARDS_FORM: RewardsFormState = {
+  mode: 'simple',
+  recipients: [{ admin: '', recipient: '', bps: 10000 }],
+  // Single-sided liquidity: tickLower MUST be >= pool's starting tick.
+  // In simple mode we sync tickLower to poolForm.startingTick (see RewardsForm).
+  positions: [{ tickLower: -230400, tickUpper: 887220, bps: 10000 }],
+};
+
+const DEFAULT_EXTENSIONS_FORM: ExtensionsFormState = {
+  vault: { enabled: false, admin: '', allocationPercent: 10, lockupDays: 30, vestingDays: 90 },
+  airdrop: { enabled: false, admin: '', allocationPercent: 5, merkleRoot: '', lockupDays: 7, vestingDays: 30 },
+  devBuy: { enabled: false, ethAmount: '0.1', allocationPercent: 5 },
+};
+
+interface DeployDraft {
+  version: number;
+  tokenForm: TokenFormState;
+  poolForm: PoolFormState;
+  mevForm: MevFormState;
+  rewardsForm: RewardsFormState;
+  extensionsForm: ExtensionsFormState;
+}
+
+// None of the current form slices contain `bigint` values — every field in
+// lib/types.ts is a string/number/boolean, and `ReviewAndDeploy` only
+// derives bigints (totalSupply, msgValue, ...) at submit time from those
+// strings/numbers, never storing them back into form state. So a plain
+// JSON round-trip is safe today. This replacer/reviver pair guards against
+// that changing later: `JSON.stringify` throws outright on a bare bigint,
+// and a naive `String(bigint)` reviver would be unable to tell a
+// stringified bigint apart from an ordinary numeric string field.
+const BIGINT_TAG = '__bigint__';
+
+function draftReplacer(_key: string, value: unknown): unknown {
+  return typeof value === 'bigint' ? { [BIGINT_TAG]: value.toString() } : value;
+}
+
+function draftReviver(_key: string, value: unknown): unknown {
+  if (value && typeof value === 'object' && BIGINT_TAG in (value as Record<string, unknown>)) {
+    return BigInt((value as Record<string, string>)[BIGINT_TAG]);
+  }
+  return value;
+}
+
+// Parsed at most once per page load and cached here — each form slice's
+// lazy `useState` initializer reads from this instead of re-parsing
+// localStorage five separate times.
+let cachedDraft: DeployDraft | null | undefined;
+
+function loadDraft(): DeployDraft | null {
+  if (cachedDraft !== undefined) return cachedDraft;
+  try {
+    const raw = window.localStorage.getItem(DRAFT_STORAGE_KEY);
+    if (!raw) {
+      cachedDraft = null;
+      return null;
+    }
+    const parsed = JSON.parse(raw, draftReviver) as Partial<DeployDraft> | null;
+    if (!parsed || parsed.version !== DRAFT_VERSION) {
+      cachedDraft = null;
+      return null;
+    }
+    cachedDraft = parsed as DeployDraft;
+    return cachedDraft;
+  } catch {
+    // Malformed JSON, localStorage disabled (private browsing), etc. — fall
+    // back to defaults rather than crash the page.
+    cachedDraft = null;
+    return null;
+  }
+}
+
+function clearDraft() {
+  cachedDraft = null;
+  try {
+    window.localStorage.removeItem(DRAFT_STORAGE_KEY);
+  } catch {
+    // best-effort
+  }
+}
 
 function StepCard({
   step,
@@ -82,51 +208,61 @@ export default function DeployPage() {
 
   const [openStep, setOpenStep] = useState(1);
 
-  const [tokenForm, setTokenForm] = useState<TokenFormState>({
-    name: '',
-    symbol: '',
-    admin: '',
-    totalSupply: '1000000000',
-    image: '',
-    metadata: '',
-    context: '',
-  });
+  const [tokenForm, setTokenForm] = useState<TokenFormState>(
+    () => loadDraft()?.tokenForm ?? DEFAULT_TOKEN_FORM
+  );
 
-  const [poolForm, setPoolForm] = useState<PoolFormState>({
-    pairedToken: 'weth',
-    customPairedToken: '',
-    tickSpacing: 60,
-    startingTick: -230400,
-    buyFeePercent: 1,
-    sellFeePercent: 1,
-  });
+  const [poolForm, setPoolForm] = useState<PoolFormState>(
+    () => loadDraft()?.poolForm ?? DEFAULT_POOL_FORM
+  );
 
-  const [mevForm, setMevForm] = useState<MevFormState>({
-    moduleType: 'linear',
-    linearStartPercent: 99,
-    linearEndPercent: 1,
-    linearDurationMin: 69,
-    descStartPercent: 99,
-    descEndPercent: 1,
-    descDurationSec: 4140,
-    timeDelaySec: 12,
-  });
+  const [mevForm, setMevForm] = useState<MevFormState>(
+    () => loadDraft()?.mevForm ?? DEFAULT_MEV_FORM
+  );
 
-  const [rewardsForm, setRewardsForm] = useState<RewardsFormState>({
-    mode: 'simple',
-    recipients: [{ admin: '', recipient: '', bps: 10000 }],
-    // Single-sided liquidity: tickLower MUST be >= pool's starting tick.
-    // In simple mode we sync tickLower to poolForm.startingTick (see RewardsForm).
-    positions: [{ tickLower: -230400, tickUpper: 887220, bps: 10000 }],
-  });
+  const [rewardsForm, setRewardsForm] = useState<RewardsFormState>(
+    () => loadDraft()?.rewardsForm ?? DEFAULT_REWARDS_FORM
+  );
 
-  const [extensionsForm, setExtensionsForm] = useState<ExtensionsFormState>({
-    vault: { enabled: false, admin: '', allocationPercent: 10, lockupDays: 30, vestingDays: 90 },
-    airdrop: { enabled: false, admin: '', allocationPercent: 5, merkleRoot: '', lockupDays: 7, vestingDays: 30 },
-    devBuy: { enabled: false, ethAmount: '0.1', allocationPercent: 5 },
-  });
+  const [extensionsForm, setExtensionsForm] = useState<ExtensionsFormState>(
+    () => loadDraft()?.extensionsForm ?? DEFAULT_EXTENSIONS_FORM
+  );
+
+  // Mirror every change back to localStorage so a refresh or accidental
+  // back-navigation doesn't discard the in-progress configuration. The draft
+  // is cleared once a deploy confirms (see `onDeployed` below) and by the
+  // explicit reset control.
+  useEffect(() => {
+    try {
+      const draft: DeployDraft = {
+        version: DRAFT_VERSION,
+        tokenForm,
+        poolForm,
+        mevForm,
+        rewardsForm,
+        extensionsForm,
+      };
+      window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft, draftReplacer));
+    } catch {
+      // Storage may be full or disabled (private browsing) — the in-memory
+      // form still works, it just won't survive a refresh.
+    }
+  }, [tokenForm, poolForm, mevForm, rewardsForm, extensionsForm]);
 
   const toggle = (step: number) => setOpenStep(prev => (prev === step ? 0 : step));
+
+  const handleResetForm = () => {
+    if (!window.confirm('Reset all deploy form fields? This clears your saved draft and cannot be undone.')) {
+      return;
+    }
+    setTokenForm(DEFAULT_TOKEN_FORM);
+    setPoolForm(DEFAULT_POOL_FORM);
+    setMevForm(DEFAULT_MEV_FORM);
+    setRewardsForm(DEFAULT_REWARDS_FORM);
+    setExtensionsForm(DEFAULT_EXTENSIONS_FORM);
+    setOpenStep(1);
+    clearDraft();
+  };
 
   const tokenStepErrors = validateTokenStep(tokenForm);
   const poolStepErrors = validatePoolStep(poolForm);
@@ -141,11 +277,20 @@ export default function DeployPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8 space-y-3">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold">Deploy Token</h1>
-        <p className="text-zinc-500 mt-1">
-          Configure and deploy a new token through the artcoins factory.
-        </p>
+      <div className="mb-8 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Deploy Token</h1>
+          <p className="text-zinc-500 mt-1">
+            Configure and deploy a new token through the artcoins factory.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleResetForm}
+          className="flex-shrink-0 rounded-lg border border-zinc-700 hover:border-red-500/60 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:text-red-300 transition-colors"
+        >
+          Reset form
+        </button>
       </div>
 
       <StepCard
@@ -222,6 +367,7 @@ export default function DeployPage() {
           mevForm={mevForm}
           rewardsForm={rewardsForm}
           extensionsForm={extensionsForm}
+          onDeployed={clearDraft}
         />
       </StepCard>
     </main>

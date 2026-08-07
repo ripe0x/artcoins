@@ -449,6 +449,7 @@ export default function SwapWidget({
               key={d}
               type="button"
               disabled={poolConfigUnknown}
+              aria-pressed={direction === d}
               onClick={() => {
                 setDirection(d);
                 setAmountIn('');
@@ -486,7 +487,7 @@ export default function SwapWidget({
         {/* Amount in */}
         <div>
           <div className="flex items-center justify-between mb-1">
-            <label className="text-xs text-zinc-500">
+            <label htmlFor="swap-amount-in" className="text-xs text-zinc-500">
               You {direction === 'buy' ? 'pay' : 'sell'}
             </label>
             {isConnected && (
@@ -516,6 +517,7 @@ export default function SwapWidget({
           </div>
           <div className="relative">
             <input
+              id="swap-amount-in"
               type="text"
               inputMode="decimal"
               placeholder="0.0"
