@@ -144,7 +144,7 @@ export default function DeployPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold">Deploy Token</h1>
         <p className="text-zinc-500 mt-1">
-          Configure and deploy a new token through the NewMaterial factory.
+          Configure and deploy a new token through the artcoins factory.
         </p>
       </div>
 

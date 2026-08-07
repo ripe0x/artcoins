@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useChainId } from 'wagmi';
 import { getAddresses } from '../lib/config';
 
@@ -93,7 +94,7 @@ export default function Footer() {
           </h4>
           <p className="text-zinc-400">{chainName(chainId)}</p>
           <a
-            href="https://github.com"
+            href="https://github.com/ripe0x/artcoins"
             target="_blank"
             rel="noopener noreferrer"
             className="text-zinc-500 hover:text-zinc-200 transition-colors block mt-1"
@@ -101,9 +102,24 @@ export default function Footer() {
             Source on GitHub ↗
           </a>
         </div>
+        <div>
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">
+            Docs
+          </h4>
+          <ul className="space-y-1">
+            <li>
+              <Link
+                to="/fee-flow"
+                className="text-zinc-500 hover:text-zinc-200 transition-colors"
+              >
+                Sepolia fee rehearsal (dev notes)
+              </Link>
+            </li>
+          </ul>
+        </div>
       </div>
       <div className="border-t border-zinc-900 py-4 text-center text-xs text-zinc-600">
-        NewMaterial Token Launcher
+        artcoins
       </div>
     </footer>
   );

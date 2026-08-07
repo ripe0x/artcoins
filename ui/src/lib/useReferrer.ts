@@ -35,7 +35,7 @@ function fetchRuntimeDefault(): Promise<`0x${string}` | null> {
   if (runtimeFetchPromise) return runtimeFetchPromise;
   runtimeFetchPromise = (async () => {
     try {
-      const res = await fetch('/config.json', { cache: 'force-cache' });
+      const res = await fetch('/config.json', { cache: 'no-cache' });
       if (!res.ok) return null;
       const data = (await res.json()) as { defaultReferrer?: unknown };
       const raw = data?.defaultReferrer;

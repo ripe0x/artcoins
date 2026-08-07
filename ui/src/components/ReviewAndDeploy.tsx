@@ -229,7 +229,7 @@ export default function ReviewAndDeploy({
       poolConfig: {
         hook: addresses.hook,
         pairedToken,
-        tickIfToken0IsNewMaterial: poolForm.startingTick,
+        tickIfToken0IsArtCoins: poolForm.startingTick,
         tickSpacing: poolForm.tickSpacing,
         poolData,
       },

@@ -167,6 +167,15 @@ function FeeBox({
 export default function FeeFlowPage() {
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 space-y-6">
+      <div className="border border-amber-900 bg-amber-950/30 rounded-xl p-4 text-sm text-amber-200">
+        <p className="font-semibold text-amber-300">Internal engineering record — not live data</p>
+        <p className="mt-1 text-amber-200/80">
+          This page is a hardcoded, one-shot snapshot of a Sepolia rehearsal deploy and its
+          smoke tests. It does not reflect current mainnet state, does not update, and is not
+          intended for end users — it's kept for engineering reference only.
+        </p>
+      </div>
+
       <header>
         <h1 className="text-2xl font-bold text-white">Sepolia rehearsal — fee flow</h1>
         <p className="text-sm text-zinc-400 mt-1">
@@ -192,7 +201,7 @@ export default function FeeFlowPage() {
             <div className="text-sm text-zinc-100 font-medium mb-1">Pool fee</div>
             <div className="text-xs text-zinc-400">
               The fee traders pay to swap. For LAYER: <span className="text-zinc-100 font-mono">1.00%</span>.
-              Hook's <code className="text-violet-300">protocolFeeNumerator</code> is locked at <span className="text-zinc-100 font-mono">0</span> in artcoins v1, so the trader pays exactly this and nothing more.
+              Hook's <code className="text-violet-300">protocolFeeNumerator</code> was locked at <span className="text-zinc-100 font-mono">0</span> in the deployment recorded here, so the trader paid exactly this and nothing more.
             </div>
           </div>
           <div className="border border-zinc-800 rounded-lg p-3 bg-zinc-900/40">
@@ -672,7 +681,7 @@ export default function FeeFlowPage() {
       </Section>
 
       <footer className="text-xs text-zinc-500 pt-4">
-        Pre-mainnet rehearsal · Sepolia · {new Date().toISOString().slice(0, 10)}
+        Pre-mainnet rehearsal · Sepolia · 2026-04-15
       </footer>
     </div>
   );

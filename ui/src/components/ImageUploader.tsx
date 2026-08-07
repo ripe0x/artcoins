@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { useWalletClient } from 'wagmi';
+import { usePublicClient, useWalletClient } from 'wagmi';
 import { IRYS_FREE_TIER_BYTES, uploadImageToArweave } from '../lib/arweave';
 
 interface Props {
@@ -14,6 +14,7 @@ interface Props {
 type Status =
   | { kind: 'idle' }
   | { kind: 'uploading'; fileName: string; size: number }
+  | { kind: 'verifying'; fileName: string; size: number }
   | { kind: 'success'; fileName: string; size: number }
   | { kind: 'error'; message: string };
 
@@ -22,6 +23,7 @@ const MAX_UPLOAD_BYTES = MAX_FREE_BYTES; // for now, reject anything over free t
 
 export default function ImageUploader({ value, onChange, placeholder }: Props) {
   const { data: walletClient } = useWalletClient();
+  const publicClient = usePublicClient();
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -32,6 +34,13 @@ export default function ImageUploader({ value, onChange, placeholder }: Props) {
         setStatus({
           kind: 'error',
           message: 'Connect a wallet first to sign the upload.',
+        });
+        return;
+      }
+      if (!publicClient) {
+        setStatus({
+          kind: 'error',
+          message: 'No RPC client available yet — please try again in a moment.',
         });
         return;
       }
@@ -52,7 +61,9 @@ export default function ImageUploader({ value, onChange, placeholder }: Props) {
 
       setStatus({ kind: 'uploading', fileName: file.name, size: file.size });
       try {
-        const result = await uploadImageToArweave(file, walletClient);
+        const result = await uploadImageToArweave(file, walletClient, publicClient, () => {
+          setStatus({ kind: 'verifying', fileName: file.name, size: file.size });
+        });
         onChange(result.url);
         setStatus({ kind: 'success', fileName: file.name, size: file.size });
       } catch (err: unknown) {
@@ -63,7 +74,7 @@ export default function ImageUploader({ value, onChange, placeholder }: Props) {
         });
       }
     },
-    [walletClient, onChange]
+    [walletClient, publicClient, onChange]
   );
 
   const onPickClick = () => fileInputRef.current?.click();
@@ -82,7 +93,7 @@ export default function ImageUploader({ value, onChange, placeholder }: Props) {
 
   const onDragLeave = () => setDragOver(false);
 
-  const uploading = status.kind === 'uploading';
+  const uploading = status.kind === 'uploading' || status.kind === 'verifying';
 
   return (
     <div className="space-y-2">
@@ -149,7 +160,7 @@ export default function ImageUploader({ value, onChange, placeholder }: Props) {
           <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/60 backdrop-blur-sm">
             <span className="text-sm text-white flex items-center gap-2">
               <Spinner />
-              Signing &amp; uploading…
+              {status.kind === 'verifying' ? 'Verifying upload…' : 'Signing & uploading…'}
             </span>
           </div>
         )}
@@ -173,6 +184,13 @@ function StatusLine({ status }: { status: Status }) {
     return (
       <p className="text-xs text-zinc-500 mt-1">
         Uploading <span className="font-mono">{status.fileName}</span> ({formatBytes(status.size)})…
+      </p>
+    );
+  }
+  if (status.kind === 'verifying') {
+    return (
+      <p className="text-xs text-zinc-500 mt-1">
+        Verifying <span className="font-mono">{status.fileName}</span> is live on the gateway…
       </p>
     );
   }

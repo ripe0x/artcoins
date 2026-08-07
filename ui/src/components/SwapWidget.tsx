@@ -336,7 +336,7 @@ export default function SwapWidget({
     if (direction === 'buy') {
       const { commands, inputs, value } = buildBuyCalldata({
         poolKey,
-        newMaterialIsToken0: isToken0,
+        artCoinIsToken0: isToken0,
         weth: addresses.weth,
         token: tokenAddress,
         ethAmount: amountInWei,
@@ -353,7 +353,7 @@ export default function SwapWidget({
     } else {
       const { commands, inputs, value } = buildSellCalldata({
         poolKey,
-        newMaterialIsToken0: isToken0,
+        artCoinIsToken0: isToken0,
         weth: addresses.weth,
         token: tokenAddress,
         tokenAmount: amountInWei,

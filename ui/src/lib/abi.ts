@@ -19,7 +19,7 @@ export const factoryAbi = [
         { name: 'poolConfig', type: 'tuple', components: [
           { name: 'hook', type: 'address' },
           { name: 'pairedToken', type: 'address' },
-          { name: 'tickIfToken0IsNewMaterial', type: 'int24' },
+          { name: 'tickIfToken0IsArtCoins', type: 'int24' },
           { name: 'tickSpacing', type: 'int24' },
           { name: 'poolData', type: 'bytes' },
         ]},
@@ -87,7 +87,7 @@ export const factoryAbi = [
   },
 ] as const;
 
-// ─── NewMaterialToken (read-only subset) ──────────────────────────
+// ─── ArtCoinsToken (read-only subset) ──────────────────────────
 export const tokenAbi = [
   { type: 'function', name: 'name', inputs: [], outputs: [{ type: 'string' }], stateMutability: 'view' },
   { type: 'function', name: 'symbol', inputs: [], outputs: [{ type: 'string' }], stateMutability: 'view' },
@@ -185,7 +185,7 @@ export const mevLinearAbi = [
   },
 ] as const;
 
-// ─── NewMaterialLpLockerMultiple (read-only subset) ───────────────
+// ─── ArtCoinsLpLockerMultiple (read-only subset) ───────────────
 export const lockerAbi = [
   {
     type: 'function',
@@ -317,7 +317,7 @@ export const quoterAbi = [
   },
 ] as const;
 
-// ─── NewMaterialAirdropV2 ─────────────────────────────────────────
+// ─── ArtCoinsAirdropV2 ─────────────────────────────────────────
 export const airdropAbi = [
   {
     type: 'function',

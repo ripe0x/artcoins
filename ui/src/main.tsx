@@ -24,7 +24,7 @@ const alchemyKey = import.meta.env.VITE_ALCHEMY_API_KEY;
 // Overriding chain.rpcUrls alone is not enough — getDefaultConfig builds its
 // own transports and may fall back to unreliable public RPCs, producing NaN.
 const config = getDefaultConfig({
-  appName: 'NewMaterial Token Launcher',
+  appName: 'artcoins',
   projectId,
   chains: [mainnet, sepolia],
   ...(alchemyKey

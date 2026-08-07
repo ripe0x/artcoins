@@ -15,7 +15,7 @@ export interface PoolKey {
 const zeroAddress: Address = '0x0000000000000000000000000000000000000000';
 
 /**
- * Build a V4 PoolKey for a NewMaterial token, sorting currencies by address.
+ * Build a V4 PoolKey for an artcoin token, sorting currencies by address.
  */
 export function buildPoolKey(
   token: Address,
@@ -88,18 +88,18 @@ export function priceFromSqrtX96(sqrtPriceX96: bigint): number {
 }
 
 /**
- * Price of the new-material token denominated in the paired token (raw ratio).
+ * Price of the artcoin token denominated in the paired token (raw ratio).
  * Assumes both tokens have 18 decimals (true for all our deploys with WETH).
  */
-export function newMaterialPriceInPaired(
+export function artCoinPriceInPaired(
   sqrtPriceX96: bigint,
-  newMaterialIsToken0: boolean
+  artCoinIsToken0: boolean
 ): number {
   const raw = priceFromSqrtX96(sqrtPriceX96);
   if (raw === 0) return 0;
-  // If NM is token0, price = token1/token0 = paired/NM, so NM in paired = 1/raw
-  // If NM is token1, price = token1/token0 = NM/paired, so NM in paired = raw
-  return newMaterialIsToken0 ? 1 / raw : raw;
+  // If the artcoin is token0, price = token1/token0 = paired/artcoin, so artcoin in paired = 1/raw
+  // If the artcoin is token1, price = token1/token0 = artcoin/paired, so artcoin in paired = raw
+  return artCoinIsToken0 ? 1 / raw : raw;
 }
 
 export { zeroAddress };

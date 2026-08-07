@@ -119,11 +119,11 @@ function encodeV4SwapInput(params: {
 
 export interface BuildBuyArgs {
   poolKey: PoolKey;
-  /** Is NewMaterial token0? (derived from the hook) */
-  newMaterialIsToken0: boolean;
+  /** Is the artcoin token0? (derived from the hook) */
+  artCoinIsToken0: boolean;
   /** WETH address (paired token) */
   weth: Address;
-  /** Token being bought (NewMaterial) */
+  /** Token being bought (the artcoin) */
   token: Address;
   /** Amount of ETH being spent */
   ethAmount: bigint;
@@ -153,9 +153,9 @@ export function buildBuyCalldata(args: BuildBuyArgs): {
     ['0x0000000000000000000000000000000000000002', CONTRACT_BALANCE]
   );
 
-  // V4 swap: zeroForOne = true if paying token0 (WETH) for token1 (NM), false otherwise
-  // We're selling WETH → NM. So zeroForOne is true iff WETH is token0.
-  const wethIsToken0 = !args.newMaterialIsToken0;
+  // V4 swap: zeroForOne = true if paying token0 (WETH) for token1 (artcoin), false otherwise
+  // We're selling WETH → artcoin. So zeroForOne is true iff WETH is token0.
+  const wethIsToken0 = !args.artCoinIsToken0;
   const zeroForOne = wethIsToken0;
 
   const v4Input = encodeV4SwapInput({
@@ -178,7 +178,7 @@ export function buildBuyCalldata(args: BuildBuyArgs): {
 
 export interface BuildSellArgs {
   poolKey: PoolKey;
-  newMaterialIsToken0: boolean;
+  artCoinIsToken0: boolean;
   weth: Address;
   token: Address;
   /** Amount of token being sold */
@@ -204,8 +204,8 @@ export function buildSellCalldata(args: BuildSellArgs): {
 
   const commands = packBytes1([CMD_V4_SWAP, CMD_UNWRAP_WETH]);
 
-  // Selling NM for WETH. zeroForOne true iff NM is token0.
-  const zeroForOne = args.newMaterialIsToken0;
+  // Selling the artcoin for WETH. zeroForOne true iff the artcoin is token0.
+  const zeroForOne = args.artCoinIsToken0;
 
   const v4Input = encodeV4SwapInput({
     poolKey: args.poolKey,

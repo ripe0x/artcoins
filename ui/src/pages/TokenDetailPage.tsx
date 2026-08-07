@@ -19,7 +19,7 @@ import {
 } from '../lib/abi';
 import { useTokenEvent } from '../lib/useTokenEvent';
 import { resolveImage, parseContractURI } from '../lib/metadata';
-import { newMaterialPriceInPaired } from '../lib/pool';
+import { artCoinPriceInPaired } from '../lib/pool';
 import {
   shortAddr,
   formatSupply,
@@ -182,7 +182,7 @@ export default function TokenDetailPage() {
   const sqrtPriceX96 = slot0Result?.[0];
   const currentPrice =
     sqrtPriceX96 !== undefined && isToken0 !== undefined
-      ? newMaterialPriceInPaired(sqrtPriceX96, isToken0)
+      ? artCoinPriceInPaired(sqrtPriceX96, isToken0)
       : undefined;
 
   // ── Render ────────────────────────────────────────────────────────
