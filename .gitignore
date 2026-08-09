@@ -38,7 +38,9 @@ script-js/package-lock.json
 .idea/
 
 # Local Claude dev environment (per-user, not for shared history)
-.claude/
+# Exception: .claude/skills/ is shared and versioned.
+.claude/*
+!.claude/skills/
 
 # Local working scratch (logs, dryrun output, ad-hoc files)
 tmp/
