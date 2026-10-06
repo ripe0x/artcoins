@@ -8,6 +8,7 @@ import {IBurnRouterV2} from "../../src/v2/interfaces/IBurnRouterV2.sol";
 import {BurnRouterV2} from "../../src/v2/protocol-fee/BurnRouterV2.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
@@ -104,6 +105,7 @@ contract BurnRouterV2ForkTest is P1Base {
     function test_burnV2_openTab_sharesPacing() public {
         _fund(2 ether);
         OpenTabCaller caller = new OpenTabCaller(pm, router);
+        router.setOpenTabCaller(address(caller));
         caller.go();
         assertGt(caller.lastEthIn(), 0, "open tab burn ran");
         assertEq(address(router).balance > 0, true);
@@ -114,8 +116,96 @@ contract BurnRouterV2ForkTest is P1Base {
 
     function test_burnV2_openTab_outsideUnlock_reverts() public {
         _fund(2 ether);
+        router.setOpenTabCaller(address(this));
         vm.expectRevert(IPoolManager.ManagerLocked.selector);
         router.processBurnOpenTab(0);
+    }
+
+    // ── D31 open tab gate ────────────────────────────────────────────────
+
+    function test_burnV2_openTab_disabledByDefault_reverts() public {
+        _fund(2 ether);
+        assertEq(router.openTabCaller(), address(0));
+        OpenTabCaller caller = new OpenTabCaller(pm, router);
+        vm.expectRevert(BurnRouterV2.NotOpenTabCaller.selector);
+        caller.go();
+        vm.expectRevert(BurnRouterV2.NotOpenTabCaller.selector);
+        router.processBurnOpenTab(0);
+    }
+
+    function test_burnV2_openTab_setCaller_passes() public {
+        _fund(2 ether);
+        OpenTabCaller caller = new OpenTabCaller(pm, router);
+        vm.expectEmit(true, true, false, false, address(router));
+        emit BurnRouterV2.OpenTabCallerSet(address(0), address(caller));
+        router.setOpenTabCaller(address(caller));
+        caller.go();
+        assertGt(caller.lastEthIn(), 0, "gated caller burns");
+    }
+
+    function test_burnV2_openTab_otherCaller_reverts() public {
+        _fund(2 ether);
+        OpenTabCaller allowed = new OpenTabCaller(pm, router);
+        OpenTabCaller other = new OpenTabCaller(pm, router);
+        router.setOpenTabCaller(address(allowed));
+        vm.expectRevert(BurnRouterV2.NotOpenTabCaller.selector);
+        other.go();
+        vm.prank(attacker);
+        vm.expectRevert(BurnRouterV2.NotOpenTabCaller.selector);
+        router.processBurnOpenTab(0);
+
+        // owner only, and zero disables again
+        vm.prank(attacker);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
+        router.setOpenTabCaller(attacker);
+        router.setOpenTabCaller(address(0));
+        vm.expectRevert(BurnRouterV2.NotOpenTabCaller.selector);
+        allowed.go();
+    }
+
+    // ── D32 spot floor ───────────────────────────────────────────────────
+
+    function _expectedFloor(uint256 ethIn, uint256 bps) internal view returns (uint256) {
+        uint160 p = _spot();
+        uint256 step = FullMath.mulDiv(ethIn, p, 1 << 96);
+        return FullMath.mulDiv(step, p, 1 << 96) * bps / Constants.BPS;
+    }
+
+    function test_burnV2_spotFloor_bounds() public {
+        assertEq(router.spotFloorBps(), Constants.SPOT_FLOOR_BPS, "default 80%");
+        uint256 lo = Constants.SPOT_FLOOR_MIN_BPS;
+        uint256 hi = Constants.SPOT_FLOOR_MAX_BPS;
+        vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, lo - 1, lo, hi));
+        router.setSpotFloorBps(lo - 1);
+        vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, hi + 1, lo, hi));
+        router.setSpotFloorBps(hi + 1);
+        vm.expectEmit(false, false, false, true, address(router));
+        emit BurnRouterV2.SpotFloorBpsSet(Constants.SPOT_FLOOR_BPS, lo);
+        router.setSpotFloorBps(lo);
+        assertEq(router.spotFloorBps(), lo);
+        router.setSpotFloorBps(hi);
+        assertEq(router.spotFloorBps(), hi);
+
+        vm.prank(attacker);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
+        router.setSpotFloorBps(9000);
+    }
+
+    /// @notice The floor the view reports and the burn enforces uses the stored bps.
+    function test_burnV2_spotFloor_usesStoredValue() public {
+        assertEq(router.floorFor(1 ether), _expectedFloor(1 ether, Constants.SPOT_FLOOR_BPS));
+        router.setSpotFloorBps(Constants.SPOT_FLOOR_MAX_BPS);
+        assertEq(router.floorFor(1 ether), _expectedFloor(1 ether, Constants.SPOT_FLOOR_MAX_BPS));
+        router.setSpotFloorBps(Constants.SPOT_FLOOR_MIN_BPS);
+        assertEq(router.floorFor(1 ether), _expectedFloor(1 ether, Constants.SPOT_FLOOR_MIN_BPS));
+
+        // at the 95% floor a small burn (1% lp fee, tiny impact) still clears it
+        router.setSpotFloorBps(Constants.SPOT_FLOOR_MAX_BPS);
+        _fund(0.2 ether);
+        uint256 budget = router.swapBudget();
+        uint256 floor = router.floorFor(budget);
+        (, uint256 burned) = router.processBurn(0);
+        assertGe(burned, floor, "enforced floor is the stored one");
     }
 
     // ── b6 reward (LF-04) ─────────────────────────────────────────────────

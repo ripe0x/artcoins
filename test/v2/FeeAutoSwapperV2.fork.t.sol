@@ -10,6 +10,7 @@ import {IConstantsBound} from "../../src/v2/interfaces/IConstantsBound.sol";
 import {IFeeAutoSwapperV2} from "../../src/v2/interfaces/IFeeAutoSwapperV2.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 /// @title  FeeAutoSwapperV2ForkTest
@@ -323,6 +324,49 @@ contract FeeAutoSwapperV2ForkTest is P1Base {
         );
         swapper.setMaxStepIn(1);
         vm.stopPrank();
+    }
+
+    // ── D32 spot floor ───────────────────────────────────────────────────
+
+    function _expectedFloor(uint256 artIn, uint256 bps) internal view returns (uint256) {
+        uint160 p = _spot();
+        uint256 step = FullMath.mulDiv(artIn, 1 << 96, p);
+        return FullMath.mulDiv(step, 1 << 96, p) * bps / Constants.BPS;
+    }
+
+    function test_swapperV2_spotFloor_bounds() public {
+        assertEq(swapper.spotFloorBps(), Constants.SPOT_FLOOR_BPS, "default 80%");
+        uint256 lo = Constants.SPOT_FLOOR_MIN_BPS;
+        uint256 hi = Constants.SPOT_FLOOR_MAX_BPS;
+        vm.expectRevert(abi.encodeWithSelector(IFeeAutoSwapperV2.OutOfBounds.selector, lo - 1, lo, hi));
+        swapper.setSpotFloorBps(lo - 1);
+        vm.expectRevert(abi.encodeWithSelector(IFeeAutoSwapperV2.OutOfBounds.selector, hi + 1, lo, hi));
+        swapper.setSpotFloorBps(hi + 1);
+        vm.expectEmit(false, false, false, true, address(swapper));
+        emit FeeAutoSwapperV2.SpotFloorBpsSet(Constants.SPOT_FLOOR_BPS, lo);
+        swapper.setSpotFloorBps(lo);
+        assertEq(swapper.spotFloorBps(), lo);
+        swapper.setSpotFloorBps(hi);
+        assertEq(swapper.spotFloorBps(), hi);
+
+        vm.prank(attacker);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
+        swapper.setSpotFloorBps(9000);
+    }
+
+    /// @notice The floor the view reports and convert enforces uses the stored bps.
+    function test_swapperV2_spotFloor_usesStoredValue() public {
+        assertEq(swapper.floorFor(STEP), _expectedFloor(STEP, Constants.SPOT_FLOOR_BPS));
+        swapper.setSpotFloorBps(Constants.SPOT_FLOOR_MIN_BPS);
+        assertEq(swapper.floorFor(STEP), _expectedFloor(STEP, Constants.SPOT_FLOOR_MIN_BPS));
+        swapper.setSpotFloorBps(Constants.SPOT_FLOOR_MAX_BPS);
+        assertEq(swapper.floorFor(STEP), _expectedFloor(STEP, Constants.SPOT_FLOOR_MAX_BPS));
+
+        // small step at the 95% floor: 1% lp fee plus small impact clears it
+        coin.transfer(address(swapper), 1e21);
+        uint256 floor = swapper.floorFor(1e21);
+        uint256 out = swapper.convert(0);
+        assertGe(out, floor, "enforced floor is the stored one");
     }
 
     function test_swapperV2_constructor_rejectsOutOfBounds() public {
