@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import {CollectFlushKeeperV1} from "../../src/v2/keepers/CollectFlushKeeperV1.sol";
+import {RunKeeper111} from "../../script/v2/RunKeeper111.s.sol";
 import {IArtCoinsFeeLocker} from "../../src/interfaces/IArtCoinsFeeLocker.sol";
 import {IArtCoinsLpLocker} from "../../src/interfaces/IArtCoinsLpLocker.sol";
 import {IFeeAutoSwapper} from "../../src/interfaces/IFeeAutoSwapper.sol";
@@ -207,6 +208,30 @@ contract KeeperV1_111_ForkTest is Test {
         console2.log("sweep reverted", reverted);
         assertGt(succeeded, 0);
         assertGt(reverted, 0);
+    }
+
+    /// @dev the runner script's quote: spot minus slippage. Documents what slippage the live pool needs.
+    function test_keeperV1_scriptQuote_convertsAtDefaultSlippage() public onlyFork {
+        _makeFees();
+        vm.roll(block.number + 60);
+        RunKeeper111 script = new RunKeeper111();
+        uint256 snap = vm.snapshotState();
+        uint256 coinConverted;
+        for (uint256 bps = 100; bps <= 500; bps += 100) {
+            uint256 minOut = script.quoteMinOut(keeper, bps);
+            vm.prank(CALLER);
+            (,, uint256 converted) = keeper.run(true, minOut);
+            console2.log("slippage bps", bps);
+            console2.log("minOut", minOut);
+            console2.log("converted", converted);
+            if (converted > 0) {
+                coinConverted = bps;
+                break;
+            }
+            vm.revertToState(snap);
+            snap = vm.snapshotState();
+        }
+        assertGt(coinConverted, 0, "convert never met the quote up to 500 bps");
     }
 
     function test_keeperV1_nothingToFlush_noRevert() public onlyFork {

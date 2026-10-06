@@ -211,6 +211,42 @@ contract HarnessForkTest is ForkStack {
         addLiquidity(l.key, lower, upper, liq, "");
     }
 
+    // ─── known issue found while building the harness ───────────────────
+
+    /// @notice `_beforeSwap` calls `IPreSwapStream(bountyRecipient).streamForward()`
+    ///         inside try/catch once the recipient holds >= 0.01 eth. try/catch
+    ///         does not catch the caller-side extcodesize check (EOA recipient)
+    ///         nor the caller-side return-data decode (contract with a fallback
+    ///         returning nothing, e.g. a Safe), so every swap reverts from then
+    ///         on. Anyone can trigger it by sending the recipient 0.01 eth.
+    ///         This test pins CURRENT behavior; flip it when the hook is fixed.
+    function test_knownIssue_eoaBountyRecipientBricksSwaps() public onlyFork {
+        deployFreshStack();
+        LaunchParams memory p = defaultLaunchParams();
+        p.bountyRecipient = payable(makeAddr("eoaBounty"));
+        Launched memory l = launchToken(p);
+        skip(31 minutes);
+        swapExactIn(l.key, true, 0.01 ether, address(this), ""); // below threshold: ok
+        vm.deal(p.bountyRecipient, 0.01 ether); // anyone can do this
+        vm.expectRevert();
+        this.externalBuy(l, 0.01 ether);
+    }
+
+    function test_knownIssue_fallbackBountyRecipientBricksSwaps() public onlyFork {
+        deployFreshStack();
+        LaunchParams memory p = defaultLaunchParams();
+        p.bountyRecipient = payable(address(new EmptyFallback()));
+        Launched memory l = launchToken(p);
+        skip(31 minutes);
+        vm.deal(p.bountyRecipient, 0.01 ether);
+        vm.expectRevert();
+        this.externalBuy(l, 0.01 ether);
+    }
+
+    function externalBuy(Launched memory l, uint256 ethIn) external {
+        swapExactIn(l.key, true, ethIn, address(this), "");
+    }
+
     // ─── live coin 111 ──────────────────────────────────────────────────
 
     function test_live111_buySell_skimCreditedToLiveRecipients() public onlyFork {
@@ -273,4 +309,9 @@ contract HarnessForkTest is ForkStack {
         proto = baseline - bountyShare;
     }
 
+}
+
+/// @notice Contract with a payable fallback that returns no data (Safe-like).
+contract EmptyFallback {
+    fallback() external payable {}
 }

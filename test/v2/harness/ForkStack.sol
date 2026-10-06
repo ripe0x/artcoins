@@ -22,6 +22,22 @@ import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 
+/// @notice Bounty recipient stand-in for launches. Implements
+///         `IPreSwapStream` (no-op) like the live 111 bounty recipient, and
+///         accepts ETH. An EOA bounty recipient bricks the pool once it holds
+///         0.01 eth (see Harness.t.sol test_knownIssue_*), so the default
+///         launch params must use a contract.
+contract PreSwapStreamSink {
+    uint256 public calls;
+
+    function streamForward() external returns (uint256) {
+        calls++;
+        return 0;
+    }
+
+    receive() external payable {}
+}
+
 /// @title  ForkStack
 /// @notice Fresh-stack deployer and launcher on top of live mainnet v4, plus a
 ///         typed view of the live deployed stack.
@@ -187,7 +203,8 @@ abstract contract ForkStack is ForkBase {
         p.baselineSkimBps = 6000;
         p.bountyBps = 8333;
         p.maxReferralBpsOfVolume = 250;
-        p.bountyRecipient = payable(makeAddr("bountyRecipient"));
+        p.bountyRecipient = payable(address(new PreSwapStreamSink()));
+        vm.label(p.bountyRecipient, "bountyRecipient");
         p.protocolRecipient = payable(makeAddr("protocolRecipient"));
         p.referralPayout = payable(makeAddr("referralPayout"));
         p.mevModuleData = abi.encode(uint24(90_000), uint24(6000), uint32(30 minutes));

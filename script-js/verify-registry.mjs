@@ -212,8 +212,9 @@ for (const s of Object.keys(reg.stacks)) {
 }
 
 // commit staleness (warn only): src/ changed since the commit the registry was verified at
-const stale = git(`diff --name-only --diff-filter=MD ${reg.repoCommit} HEAD -- src`);
-if (stale) warn.push(`src modified since repoCommit ${reg.repoCommit.slice(0, 8)}: ${stale.split('\n').length} file(s); bytecode checks above are against the working tree`);
+const paths = new Set(C.map((c) => c.source.repoPath).filter(Boolean));
+const stale = (git(`diff --name-only --diff-filter=MD ${reg.repoCommit} HEAD -- src`) || '').split('\n').filter((f) => paths.has(f));
+if (stale.length) warn.push(`registered sources modified since repoCommit ${reg.repoCommit.slice(0, 8)}: ${stale.join(', ')}; re-run with --fill after a rebuild`);
 
 // ---------- optional: block bisect ----------
 const blockTs = async (n) => new Date(Number((await client.getBlock({ blockNumber: BigInt(n) })).timestamp) * 1000).toISOString().slice(0, 10);
