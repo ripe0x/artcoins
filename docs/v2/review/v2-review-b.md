@@ -2,7 +2,7 @@
 
 independent review of code i did not write. scope: `src/v2/FeeAutoSwapperV2.sol`, `src/v2/protocol-fee/BurnRouterV2.sol`, `src/v2/protocol-fee/ProtocolFeeControllerV2.sol`, `src/v2/extensions/**`, `src/v2/renderer/**`, their interfaces. reviewed at `c0c80b6` plus the working tree of 2026-10-06 (D31 and D32 already landed in both swapper and router). proofs run on a mainnet fork (block 26,130,269) against the real `ArtCoinsHookV2` and `ArtCoinsTokenV2`, deployed by `test/v2/mocks/HookV2ForkBase.sol`.
 
-run: `/tmp/claude-0/forge.sh test --match-path "test/v2/review-v2/b/**" --skip "test/v2/harness/**" --skip "test/v2/review/**" --skip script -vv`. result: 10 passed, 0 failed, 0 skipped (fork reachable). no extra `--skip` was needed: the hook, token and their mocks compiled. the factory is not imported.
+run: `/tmp/claude-0/forge.sh test --match-path "test/v2/review-v2/b/**" --skip "test/v2/harness/**" --skip "test/v2/review/**" --skip script --skip src/v2/ArtCoinsFactoryV2.sol --skip "test/v2/FactoryV2*" --skip "test/v2/mocks/FactoryV2*" -vv`. result at 05:06 utc: 10 passed, 0 failed, 0 skipped (fork reachable). the factory skips are needed because the in progress `ArtCoinsFactoryV2.sol:697` does not compile (`ArtCoinsDeployerV2.factory` not found); nothing here imports it. hook and token compile and are used as is (token with D34 netting, hook at HEAD).
 
 proof files:
 | file | what |
@@ -77,7 +77,7 @@ proof files:
 
 | item | why |
 |---|---|
-| D34 netting (token commit `44aa280` is docs and tests only; the hook working tree is mid edit) against the swapper, router and dev buy | in flux. re-run `test_holds_*` above once t1 and h1 land; the swapper's coin inflow and the router's take must still be covered in both modes |
+| D34 netting with several canonical flows in one tx (a keeper doing burn plus convert, an open tab caller that traded first) | single flow per tx passes on the D34 token (`test_holds_*`); multi flow not tested. by reading, each flow's grant is consumed exactly before the next, so netting has nothing to cancel |
 | factory side of extensions: exact `msgValue` forwarding, approvals of `extensionSupply`, extension order relative to `initializeMevModule`, reentrant launch through a non extension callback | factory package in progress, not imported |
 | render gas at the D30 caps | relied on r1's `test_renderV2_maxGlyphsUnderBudget` and `oversizeTokenStringsStillValid`; not re-measured |
 | V2B-05 burn router sandwich profitability | estimate only |

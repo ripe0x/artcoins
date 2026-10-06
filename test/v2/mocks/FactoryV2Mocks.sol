@@ -140,39 +140,3 @@ contract FV2RevertingReceiver {
         revert("no eth");
     }
 }
-
-/// locker stand in: pulls exactly `poolSupply` from the launcher and records
-/// the split it was handed. Used while the real v2 locker cannot place
-/// liquidity for the real v2 token (permit2 approve, see the f1 report).
-contract FV2LockerStub {
-    mapping(address => address[]) internal _recipients;
-    mapping(address => uint16[]) internal _bps;
-    mapping(address => uint256) public pulled;
-
-    function constantsHash() external pure returns (bytes32) {
-        return Constants.hash();
-    }
-
-    function placeLiquidity(
-        IArtCoinsFactoryV2.LockerConfigV2 calldata lockerConfig,
-        IArtCoinsFactoryV2.PoolConfigV2 calldata,
-        PoolKey calldata,
-        uint256 poolSupply,
-        address token
-    ) external returns (uint256) {
-        require(lockerConfig.rewardRecipients.length == lockerConfig.rewardBps.length, "arrays");
-        IERC20(token).transferFrom(msg.sender, address(this), poolSupply);
-        pulled[token] = poolSupply;
-        _recipients[token] = lockerConfig.rewardRecipients;
-        _bps[token] = lockerConfig.rewardBps;
-        return 1;
-    }
-
-    function rewardRecipients(address token) external view returns (address[] memory) {
-        return _recipients[token];
-    }
-
-    function rewardBps(address token) external view returns (uint16[] memory) {
-        return _bps[token];
-    }
-}

@@ -26,7 +26,6 @@ import {ForkBase} from "./harness/ForkBase.sol";
 import {
     FV2Extension,
     FV2HashStub,
-    FV2LockerStub,
     FV2NoErc165Module,
     FV2Payout,
     FV2RevertingReceiver,
@@ -110,10 +109,8 @@ contract FactoryV2ForkTest is ForkBase {
         escrow.addDepositor(address(realLocker), true);
         realLocker.setLauncher(address(factory), true);
         factory.setLocker(address(realLocker), true);
-        // the real locker cannot yet place liquidity for the real token (its
-        // erc20 approve to permit2 reverts on the solady token, see
-        // test_realLocker_launch). every other test runs on the stub.
-        locker = address(new FV2LockerStub());
+        // real locker (D37 skips the erc20 approve to permit2 for solady tokens)
+        locker = address(realLocker);
         mev = new ArtCoinsMevLinearSkimV2(address(hook));
         payout = new FV2Payout();
 
@@ -851,13 +848,15 @@ contract FactoryV2ForkTest is ForkBase {
         assertTrue(ArtCoinsTokenV2(t).isTaxExempt(POSITION_MANAGER));
     }
 
-    /// cross package: the real v2 locker places liquidity for the real v2 token.
-    /// fails today: the locker's `safeApprove(token, permit2, poolSupply)` hits
-    /// solady's `Permit2AllowanceIsFixedAtInfinity` on the token.
+    /// cross package (D37): the real v2 locker places liquidity for the real v2
+    /// token although solady fixes the token's Permit2 allowance at infinity.
     function test_realLocker_launch() public onlyFork {
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        c.locker.locker = address(realLocker);
+        assertEq(c.locker.locker, address(realLocker));
         address t = _deploy(alice, c);
+        IArtCoinsLpLockerV2.TokenRewardInfoV2 memory info = realLocker.tokenRewards(t);
+        assertEq(info.numPositions, 2);
+        assertEq(info.token, t);
         assertEq(realLocker.rewardRecipients(t)[1], protocolR);
         assertEq(IERC20(t).balanceOf(address(factory)), 0);
         assertEq(IERC20(t).balanceOf(address(realLocker)), 0);
@@ -1054,9 +1053,7 @@ contract FactoryV2ForkTest is ForkBase {
         assertEq(IERC20(t).totalSupply(), supply);
         assertEq(IERC20(t).balanceOf(address(factory)), 0, "factory holds no dust");
         assertEq(IERC20(t).balanceOf(team), 0, "team gets no coin");
-        assertEq(
-            FV2LockerStub(locker).pulled(t), poolSupply, "locker pulled exactly the pool supply"
-        );
+        assertEq(IERC20(t).balanceOf(locker), 0, "locker holds none");
     }
 
     // ══════════════════════════════════════════════════════════════════════

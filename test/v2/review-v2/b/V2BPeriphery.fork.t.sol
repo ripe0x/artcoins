@@ -3,7 +3,8 @@ pragma solidity ^0.8.26;
 
 // independent review v2-b: periphery against the real v2 hook on a mainnet fork.
 // run: /tmp/claude-0/forge.sh test --match-path "test/v2/review-v2/b/**" \
-//   --skip "test/v2/harness/**" --skip "test/v2/review/**" --skip script -vv
+//   --skip "test/v2/harness/**" --skip "test/v2/review/**" --skip script \
+//   --skip src/v2/ArtCoinsFactoryV2.sol --skip "test/v2/FactoryV2*" --skip "test/v2/mocks/FactoryV2*" -vv
 // tests named test_V2Bxx_* PASS when the bug is present. tests named
 // test_holds_* PASS when the claim holds.
 

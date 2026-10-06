@@ -694,7 +694,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     function setTokenDeployer(address deployer) external onlyOwner {
         if (deployer == address(0)) revert ZeroAddress();
         (bool ok, bytes memory ret) =
-            deployer.staticcall(abi.encodeCall(ArtCoinsDeployerV2.factory, ()));
+            deployer.staticcall(abi.encodeWithSignature("factory()"));
         if (!ok || ret.length != 32 || abi.decode(ret, (address)) != address(this)) {
             revert InvalidDeployer(deployer);
         }

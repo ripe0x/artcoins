@@ -6,8 +6,9 @@ pragma solidity ^0.8.26;
 // hook is the real ArtCoinsHookV2 at a mined address, the coin is the real
 // ArtCoinsTokenV2. see docs/v2/review/v2-review-a.md.
 //
-// forge runs setUp and each test as separate txs, so transient grants and the
-// hook's b1 position markers set in setUp do not leak into a test. every test
+// forge keeps transient storage across setUp and the test unless calls are
+// isolated, so the stack suites run with inline `isolate = true`: every top
+// level call is its own tx, exactly like separate mainnet txs. every test
 // asserts `pendingCanonical() == 0` first.
 
 import {Test} from "forge-std/Test.sol";
@@ -53,6 +54,7 @@ contract V2AActor is IUnlockCallback {
 
     uint8 internal constant SWAP = 1;
     uint8 internal constant MODIFY = 2;
+    uint8 internal constant TAKE_COIN = 3; // take the current positive coin delta now
 
     struct Op {
         uint8 kind;
@@ -95,6 +97,9 @@ contract V2AActor is IUnlockCallback {
                     }),
                     ""
                 );
+            } else if (o.kind == TAKE_COIN) {
+                int256 d = pm.currencyDelta(address(this), Currency.wrap(coin));
+                if (d > 0) pm.take(Currency.wrap(coin), address(this), uint256(d));
             } else {
                 pm.modifyLiquidity(
                     o.key,
@@ -251,6 +256,23 @@ abstract contract V2AStackBase is Test {
         o.salt = salt;
     }
 
+    function _takeCoin() internal pure returns (V2AActor.Op memory o) {
+        o.kind = 3;
+    }
+
+    function _four(
+        V2AActor.Op memory a,
+        V2AActor.Op memory b,
+        V2AActor.Op memory c,
+        V2AActor.Op memory d
+    ) internal pure returns (V2AActor.Op[] memory ops) {
+        ops = new V2AActor.Op[](4);
+        ops[0] = a;
+        ops[1] = b;
+        ops[2] = c;
+        ops[3] = d;
+    }
+
     function _one(V2AActor.Op memory a) internal pure returns (V2AActor.Op[] memory ops) {
         ops = new V2AActor.Op[](1);
         ops[0] = a;
@@ -361,9 +383,10 @@ contract V2A01HardTest is V2AStackBase {
         uint256 eth0 = address(attacker).balance;
         _run(
             attacker,
-            _three(
+            _four(
                 _modify(canon, -L_PARKED, PARKED_SALT),
                 _swap(side, true, -10 ether),
+                _takeCoin(), // consume the grant before the re add can net it (D34)
                 _modify(canon, L_PARKED, PARKED_SALT)
             )
         );
@@ -405,9 +428,10 @@ contract V2A01VenueTest is V2AStackBase {
         c0 = coin.balanceOf(address(attacker));
         _run(
             attacker,
-            _three(
+            _four(
                 _modify(canon, -L_PARKED, PARKED_SALT),
                 _swap(side, true, -10 ether),
+                _takeCoin(), // consume the grant before the re add can net it (D34)
                 _modify(canon, L_PARKED, PARKED_SALT)
             )
         );
