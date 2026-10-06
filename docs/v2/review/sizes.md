@@ -38,6 +38,22 @@ limits: runtime 24,576 bytes (EIP-170), initcode 49,152 bytes (EIP-3860). margin
 | no src/v2 contract over 24,576 runtime | pass: largest is ArtCoinsDeployerV2 at 21,166 (margin 3,410) |
 | no src/v2 contract over 49,152 initcode | pass: largest initcode is ArtCoinsDeployerV2 at 21,319 |
 
-## note: the ci size gate does not see the hook
+## ci size gate (fixed)
 
-`src/hooks/legacy/ArtCoinsHookV2.sol` and `src/v2/hooks/ArtCoinsHookV2.sol` share the contract name. forge keys the `--json` output by `ArtCoinsHookV2 (src/v2/hooks/ArtCoinsHookV2.sol)` when names collide. the gate step in `.github/workflows/test.yml` tests `has("ArtCoinsHookV2")`, which is false, so it prints `size gate skipped` and exits 0. the 1,024 byte rule is therefore not enforced in ci today. fix: look the key up with `keys[] | select(startswith("ArtCoinsHookV2 (src/v2"))`, or rename the legacy contract. the numbers above were checked by hand against the full json.
+`src/hooks/legacy/ArtCoinsHookV2.sol` and `src/v2/hooks/ArtCoinsHookV2.sol` share the contract name, so forge keys the `--json` output by `ArtCoinsHookV2 (src/v2/hooks/ArtCoinsHookV2.sol)`. the old gate tested `has("ArtCoinsHookV2")`, which is false, so it printed `size gate skipped` and exited 0: the 1,024 byte rule was not enforced.
+
+now (`.github/workflows/test.yml`, step `Size gate, ArtCoinsHookV2 headroom`): builds with `--json --skip "test/**" --skip script`, selects the key with `startswith("ArtCoinsHookV2") and contains("src/v2/hooks/ArtCoinsHookV2.sol")`, fails when there is not exactly one match (no more silent skip) and fails when `runtime_margin` is under 1,024 or not a number.
+
+proof, the step's shell run locally under `FOUNDRY_PROFILE=ci` with the wrapper standing in for `forge`:
+
+| case | output | exit |
+|---|---|---|
+| real | `ArtCoinsHookV2 (src/v2/hooks/ArtCoinsHookV2.sol) runtime size 16716 bytes, headroom 7860 bytes (min 1024)` | 0 |
+| min raised to 99999 | `::error::... headroom 7860 is below the 99999 byte minimum (or not a number)` | 1 |
+| path in the jq select changed to a file that does not exist | `::error::expected exactly one ArtCoinsHookV2 (src/v2/hooks/ArtCoinsHookV2.sol) entry in the size json, got: none` | 1 |
+
+the json holds exactly one key starting with `ArtCoinsHookV2` in this build, so the gate cannot match the legacy hook; a second match would fail the step by the count check.
+
+## note: compile memory
+
+a full compile of the tree in one solc process (viaIR, 140 stale files) was killed by the container oom killer at about 13.9 GB resident, twice, after about 15 minutes. locally the cache was warmed by building in batches (`forge build <paths>`), after which a full `forge test` run compiles nothing. a github runner that builds `forge build --sizes` cold compiles the same set in one process; if ci runs out of memory there, that is the cause, and the fix is a build split or a larger runner, not a code change.

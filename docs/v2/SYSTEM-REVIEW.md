@@ -382,42 +382,49 @@ pin: `FORK_BLOCK` 26130269. prefix for each command: `/tmp/claude-0/forge.sh tes
 
 | group | command | total | pass | fail | skip |
 |---|---|---|---|---|---|
-| v2 harness (`test/v2/harness`) | `--match-path "test/v2/harness/**" --skip "test/v2/review/**" --skip script -vv` | tbd | tbd | tbd | tbd |
-| v2 integration (`test/v2/integration`, i1, fork) | `--match-path "test/v2/integration/**" --skip script -vv`. on disk at writing: `TaxModesV2.fork.t.sol`, `TreasuryMocksV2.fork.t.sol` (helpers `IntegrationV2Base.sol`, `mocks/I1Mocks.sol`). i1 was still adding files, so re list the directory | tbd | tbd | tbd | tbd |
-| v2 constants and interfaces | `--match-path test/v2/ConstantsV2.t.sol -vv` | tbd | tbd | tbd | tbd |
-| v2 escrow | `--match-path test/v2/EscrowV2.t.sol -vv` | tbd | tbd | tbd | tbd |
-| v2 fee delivery | `--match-path test/v2/FeeDelivery.t.sol -vv` | tbd | tbd | tbd | tbd |
-| v2 mev linear skim | `--match-path test/v2/MevLinearSkimV2.t.sol -vv` | tbd | tbd | tbd | tbd |
-| v2 renderers | `--match-path test/v2/RendererV2.t.sol -vv` | tbd | tbd | tbd | tbd |
-| v2 extensions | `--match-path test/v2/ExtensionsV2.t.sol -vv` | tbd | tbd | tbd | tbd |
-| v2 dev buy (fork) | `--match-path test/v2/DevBuyV2.fork.t.sol -vv` | tbd | tbd | tbd | tbd |
-| v2 token unit (t1) | `--match-path test/v2/TokenV2.t.sol -vv` | tbd | tbd | tbd | tbd |
-| v2 token fork (t1) | `--match-path test/v2/TokenV2.fork.t.sol -vv` | tbd | tbd | tbd | tbd |
-| v2 hook (h1, fork) | `--match-path test/v2/HookV2.fork.t.sol -vv` | tbd | tbd | tbd | tbd |
-| v2 hook regressions (p1, fork) | `--match-path test/v2/p1/P1HookRegression.fork.t.sol -vv` | tbd | tbd | tbd | tbd |
-| v2 locker (l1, fork) | `--match-path test/v2/LockerV2.fork.t.sol -vv` | tbd | tbd | tbd | tbd |
-| v2 swapper (p1, fork) | `--match-path test/v2/FeeAutoSwapperV2.fork.t.sol -vv` | tbd | tbd | tbd | tbd |
-| v2 burn router (p1, fork) | `--match-path test/v2/BurnRouterV2.fork.t.sol -vv` | tbd | tbd | tbd | tbd |
-| v2 protocol fee controller (p1) | `--match-path test/v2/ProtocolFeeControllerV2.t.sol -vv` | tbd | tbd | tbd | tbd |
-| v2 factory (f1, fork) | `--match-path test/v2/FactoryV2.fork.t.sol -vv` | tbd | tbd | tbd | tbd |
-| v2 keeper for 111 (fork) | `--match-path test/v2/KeeperV1_111.fork.t.sol -vv` | tbd | tbd | tbd | tbd |
-| v2 generic keeper | `--match-path test/v2/KeeperV2.t.sol -vv` | tbd | tbd | tbd | tbd |
-| v2 deploy script (s1, fork) | `FOUNDRY_PROFILE=ci ... --match-path test/v2/DeployV2Stack.fork.t.sol --fork-url $MAINNET_RPC_URL -vv` | tbd | tbd | tbd | tbd |
-| v2 review (v1 proofs): hooks and mev | `--match-path "test/v2/review/hooks-mev/**" --skip "test/v2/harness/**" --skip script -vv` | tbd | tbd | tbd | tbd |
-| v2 review (v1 proofs): factory and token | `--match-path "test/v2/review/factory-token/**" --skip "test/v2/harness/**" --skip script -vv` | tbd | tbd | tbd | tbd |
-| v2 review (v1 proofs): locker and fees | `--match-path "test/v2/review/locker-fees/**" --skip "test/v2/harness/**" --skip script -vv` | tbd | tbd | tbd | tbd |
-| v2 review (v1 proofs): extensions and renderers | `--match-path "test/v2/review/extensions-renderers/**" --skip "test/v2/harness/**" --skip script -vv` | tbd | tbd | tbd | tbd |
-| v2 review second pass, regressions: a (token, locker, escrow) | `--match-path "test/v2/review-v2/a/**" --skip "test/v2/harness/**" --skip "test/v2/review/**" --skip script -vv` | tbd | tbd | tbd | tbd |
-| v2 review second pass, regressions: b (periphery, extensions) | `--match-path "test/v2/review-v2/b/**" --skip "test/v2/harness/**" --skip "test/v2/review/**" --skip script -vv` | tbd | tbd | tbd | tbd |
-| v2 review second pass, regressions: hook | `--match-path "test/v2/review-v2/hook/**" --skip "test/v2/harness/**" --skip "test/v2/review/**" --skip script -vv` | tbd | tbd | tbd | tbd |
-| v2 review second pass, regressions: factory | `--match-path "test/v2/review-v2/factory/**" --skip "test/v2/harness/**" --skip "test/v2/review/**" --skip script -vv` | tbd | tbd | tbd | tbd |
-| v1 skim hook fork suite | `--fork-url $MAINNET_RPC_URL --fork-block-number 26130269 --fork-retries 8 --fork-retry-backoff 2000 --match-path test/ArtCoinsHookSkimFeeForkTest.t.sol -vv` (review run: 13 of 13) | tbd | tbd | tbd | tbd |
-| v1 launch rehearsal fork suite | same flags, `--match-path test/MainnetLaunchRehearsalForkTest.t.sol` (review run: 10 of 11, burn cadence floor) | tbd | tbd | tbd | tbd |
-| v1 fork suite, as ci `fork-tests` | `forge test --no-match-contract "AutoBurnOpenTab\|DeployConversionLockerAndWire" --fork-url $MAINNET_RPC_URL --fork-block-number 26130269 --fork-retries 8 --fork-retry-backoff 2000` (hygiene-fixes: 4 known red v1 burn router floor tests, `review-proofs` run apart) | tbd | tbd | tbd | tbd |
-| v1 no fork suite, as ci `check` | `SKIP_FORK_TESTS=true MAINNET_RPC_URL=http://127.0.0.1:9 forge test --no-match-contract "AutoBurnOpenTab\|DeployConversionLockerAndWire"` under `FOUNDRY_PROFILE=ci` (hygiene run: 565 pass, 143 skipped) | tbd | tbd | tbd | tbd |
-| size gate | `FOUNDRY_PROFILE=ci /tmp/claude-0/forge.sh build --sizes --skip test --skip script` (all 10 v2 contracts under 24,576, hook and locker at least 1,024 bytes of headroom) | tbd | tbd | tbd | tbd |
-| registry verify | `node script-js/verify-registry.mjs` (review run: 56 contracts, 2 coins, 0 drift) and `cd script-js && npm run check:addresses` | tbd | tbd | tbd | tbd |
-| ui `npm test` | `npm ci --ignore-scripts && npm test` in `ui/` (`test/*.test.ts`: curve, encodeV2, launchRules, security, swap). also `npm run build`, `npm run lint`, `npm run check:abi`, `npm run smoke` (u1 run: build and lint green) | tbd | tbd | tbd | tbd |
+| v2 harness (`test/v2/harness`) | `--match-path "test/v2/harness/**" --skip "test/v2/review/**" --skip script -vv` | 8 | 8 | 0 | 0 |
+| v2 integration (`test/v2/integration`, i1, fork) | `--match-path "test/v2/integration/**" --skip script -vv`. five files: `FeeFlowV2`, `SkimRefundReferralV2`, `TaxModesV2` (2 contracts), `TreasuryMocksV2` (all `.fork.t.sol`; helpers `IntegrationV2Base.sol`, `mocks/I1Mocks.sol`) | 23 | 23 | 0 | 0 |
+| v2 integration, top level (`IntegrationV2.fork.t.sol`) | `--match-path test/v2/IntegrationV2.fork.t.sol --skip script -vv` | 5 | 5 | 0 | 0 |
+| v2 constants and interfaces | `--match-path test/v2/ConstantsV2.t.sol -vv` | 6 | 6 | 0 | 0 |
+| v2 escrow | `--match-path test/v2/EscrowV2.t.sol -vv` | 17 | 17 | 0 | 0 |
+| v2 fee delivery | `--match-path test/v2/FeeDelivery.t.sol -vv` | 13 | 13 | 0 | 0 |
+| v2 mev linear skim | `--match-path test/v2/MevLinearSkimV2.t.sol -vv` | 25 | 25 | 0 | 0 |
+| v2 renderers | `--match-path test/v2/RendererV2.t.sol -vv` | 23 | 23 | 0 | 0 |
+| v2 extensions | `--match-path test/v2/ExtensionsV2.t.sol -vv` | 45 | 45 | 0 | 0 |
+| v2 dev buy (fork) | `--match-path test/v2/DevBuyV2.fork.t.sol -vv` | 13 | 13 | 0 | 0 |
+| v2 token unit (t1) | `--match-path test/v2/TokenV2.t.sol -vv` | 58 | 58 | 0 | 0 |
+| v2 token fork (t1) | `--match-path test/v2/TokenV2.fork.t.sol -vv` | 5 | 5 | 0 | 0 |
+| v2 hook (h1, fork) | `--match-path test/v2/HookV2.fork.t.sol -vv` | 65 | 65 | 0 | 0 |
+| v2 hook regressions (p1, fork) | `--match-path test/v2/p1/P1HookRegression.fork.t.sol -vv` | 7 | 7 | 0 | 0 |
+| v2 locker (l1, fork) | `--match-path test/v2/LockerV2.fork.t.sol -vv` | 25 | 25 | 0 | 0 |
+| v2 swapper (p1, fork) | `--match-path test/v2/FeeAutoSwapperV2.fork.t.sol -vv` | 26 | 26 | 0 | 0 |
+| v2 burn router (p1, fork) | `--match-path test/v2/BurnRouterV2.fork.t.sol -vv` | 24 | 24 | 0 | 0 |
+| v2 protocol fee controller (p1) | `--match-path test/v2/ProtocolFeeControllerV2.t.sol -vv` | 15 | 15 | 0 | 0 |
+| v2 factory (f1, fork) | `--match-path test/v2/FactoryV2.fork.t.sol -vv` | 34 | 34 | 0 | 0 |
+| v2 keeper for 111 (fork) | `--match-path test/v2/KeeperV1_111.fork.t.sol -vv` | 8 | 8 | 0 | 0 |
+| v2 generic keeper | `--match-path test/v2/KeeperV2.t.sol -vv` | 33 | 33 | 0 | 0 |
+| v2 deploy script (s1, fork) | `FOUNDRY_PROFILE=ci ... --match-path test/v2/DeployV2Stack.fork.t.sol --fork-url $MAINNET_RPC_URL -vv` | 6 | 6 | 0 | 0 |
+| v2 review (v1 proofs): hooks and mev | `--match-path "test/v2/review/hooks-mev/**" --skip "test/v2/harness/**" --skip script -vv` | 22 | 22 | 0 | 0 |
+| v2 review (v1 proofs): factory and token | `--match-path "test/v2/review/factory-token/**" --skip "test/v2/harness/**" --skip script -vv` | 16 | 16 | 0 | 0 |
+| v2 review (v1 proofs): locker and fees | `--match-path "test/v2/review/locker-fees/**" --skip "test/v2/harness/**" --skip script -vv` | 13 | 13 | 0 | 0 |
+| v2 review (v1 proofs): extensions and renderers | `--match-path "test/v2/review/extensions-renderers/**" --skip "test/v2/harness/**" --skip script -vv` | 19 | 19 | 0 | 0 |
+| v2 review second pass, regressions: a (token, locker, escrow) | `--match-path "test/v2/review-v2/a/**" --skip "test/v2/harness/**" --skip "test/v2/review/**" --skip script -vv` | 4 | 4 | 0 | 0 |
+| v2 review second pass, regressions: b (periphery, extensions) | `--match-path "test/v2/review-v2/b/**" --skip "test/v2/harness/**" --skip "test/v2/review/**" --skip script -vv` | 10 | 10 | 0 | 0 |
+| v2 review second pass, regressions: hook | `--match-path "test/v2/review-v2/hook/**" --skip "test/v2/harness/**" --skip "test/v2/review/**" --skip script -vv` | 5 | 5 | 0 | 0 |
+| v2 review second pass, regressions: factory | `--match-path "test/v2/review-v2/factory/**" --skip "test/v2/harness/**" --skip "test/v2/review/**" --skip script -vv` | 5 | 5 | 0 | 0 |
+| v1 skim hook fork suite | `--fork-url $MAINNET_RPC_URL --fork-block-number 26130269 --fork-retries 8 --fork-retry-backoff 2000 --match-path test/ArtCoinsHookSkimFeeForkTest.t.sol -vv` (review run: 13 of 13) | 13 | 13 | 0 | 0 |
+| v1 launch rehearsal fork suite | same flags, `--match-path test/MainnetLaunchRehearsalForkTest.t.sol` (review run: 10 of 11, burn cadence floor) | 11 | 10 | 1 | 0 |
+| v1 and v2 fork suites, as ci `fork-tests` | the `Run fork tests` step of `.github/workflows/test.yml`, verbatim, with `FOUNDRY_PROFILE=ci FOUNDRY_INVARIANT_RUNS=16 FOUNDRY_INVARIANT_DEPTH=50` and `--fork-url $MAINNET_RPC_URL --fork-block-number 26130269 --fork-retries 8 --fork-retry-backoff 2000`. 25 v1 suites (149 tests) plus the v2 fork suites (249 tests). the 4 failures are the known v1 state mismatches: `BurnRouterForkTest` x2, `MainnetLaunchRehearsalForkTest.test_rehearsal_s06_highSuccess_burnCadence`, `EOAPermit2SwapForkTest.test_rehearsal_s06_highSuccess_burnCadence`, all `InsufficientLayerOut`. skips: 3 v1 tests (fork state gated) | 398 | 391 | 4 | 3 |
+| v1 no fork suite, as ci `check` (`Run Forge tests`) | `SKIP_FORK_TESTS=true MAINNET_RPC_URL=http://127.0.0.1:9 forge test --no-match-contract "AutoBurnOpenTab\|DeployConversionLockerAndWire" --no-match-path "test/v2/**" -vvv` under `FOUNDRY_PROFILE=ci` (66 suites; the 143 skips are fork gated tests that run in the fork job) | 708 | 565 | 0 | 143 |
+| v2 unit suites, as ci `check` (`Run v2 unit suites (no fork)`) | `SKIP_FORK_TESTS=true MAINNET_RPC_URL=http://127.0.0.1:9 forge test --match-path "test/v2/**" --match-contract "^(EscrowV2Test\|FeeDeliveryTest\|TokenV2Test\|ConstantsV2Test\|MevLinearSkimV2Test\|KeeperV2Test\|ProtocolFeeControllerV2Test\|RendererV2Test\|AirdropV2Test\|VaultV2Test)$" -vvv`, 10 suites | 235 | 235 | 0 | 0 |
+| review proofs, as ci `review-proofs` | the `Run review proofs` step verbatim (`--match-path "test/v2/{review,review-v2}/**"` with the fork flags), 24 suites: 70 v1 proofs plus 24 second pass regressions | 94 | 94 | 0 | 0 |
+| size gate | the `Size gate` step of `test.yml` run locally (`FOUNDRY_PROFILE=ci forge build --sizes --json --skip "test/**" --skip script`, then the jq): `ArtCoinsHookV2 (src/v2/hooks/ArtCoinsHookV2.sol)` 16,716 bytes, headroom 7,860, min 1,024. forced min 99999 exits 1, missing key exits 1. all v2 contracts under 24,576 (largest `ArtCoinsDeployerV2` 21,166). see `review/sizes.md` | 1 | 1 | 0 | 0 |
+| registry verify | `node script-js/verify-registry.mjs` (68 contract rows, 2 coins) and `cd script-js && npm run check:addresses` (4 of 4 ok). code, owner, state and wiring checks all ok, coins ok. 13 fail are the bytecode compare of legacy and open stack contracts against the local `foundry-out`, which this run left at the ci profile (runs 200) while those were deployed at 20,000: an artifact of the local build, not chain drift. all 9 current stack contracts with local artifacts verify. rerun after a default profile build to clear | 70 | 57 | 13 | 0 |
+| ui `npm test` | `npm test` in `ui/` (`node --test test/*.test.ts`), run as is with the existing `node_modules`. build, lint, `check:abi` and `smoke` not rerun here | 51 | 51 | 0 | 0 |
+| **total, v2 tree only** | one invocation, `FOUNDRY_PROFILE=ci ... forge test --match-path "test/v2/**" --fork-url ... --no-match-contract "^(<10 unit suites>)$"` (343 pass, 44 suites, 265 s) plus the 10 unit suites without a fork (235 pass). 578 = the sum of every v2 group row above | 578 | 578 | 0 | 0 |
+| **total, all ci test steps** | check `Run Forge tests` + `Run v2 unit suites` + `fork-tests` + `review-proofs`. skips in `check` are fork gated tests that execute in `fork-tests`, so unique tests are fewer than 1,435 | 1435 | 1285 | 4 | 146 |
+
+how the numbers were taken: the fork group counts are the per suite results of one invocation over the whole v2 tree (the ci fork job flags, plus the review paths), not of one invocation per group; a group command above gives the same counts for its suites. the ci rows are the exact commands extracted from `.github/workflows/test.yml` and run with the job env. date 2026-10-06, foundry 1.7.1, solc 0.8.26, fork block 26,130,269. detail and logs notes in `docs/v2/review/test-run.md`. the only failures are the 4 known v1 burn cadence mismatches and the 13 local bytecode compares in the registry row (both explained in the rows).
 
 ## 9. v2 second pass
 

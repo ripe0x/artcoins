@@ -61,20 +61,24 @@ jobs:
         # The hook only fits EIP-170 (24,576 bytes) at the ci / tune profile
         # (optimizer_runs 200). Fail when it has under 1,024 bytes of runtime
         # headroom so a small edit cannot silently push it over the limit.
+        # `src/hooks/legacy/ArtCoinsHookV2.sol` and `src/v2/hooks/ArtCoinsHookV2.sol`
+        # share a contract name, so forge keys the json by
+        # `ArtCoinsHookV2 (src/v2/hooks/ArtCoinsHookV2.sol)`. Match on the prefix
+        # and the v2 path, and fail (never skip) when the key is missing or ambiguous.
         run: |
           set -euo pipefail
           MIN_HEADROOM=1024
-          forge build --sizes --json > sizes.json
-          name=ArtCoinsHookV2
-          if ! jq -e --arg n "$name" 'has($n)' sizes.json > /dev/null; then
-            echo "::notice::$name not in the build output; size gate skipped"
-            exit 0
+          forge build --sizes --json --skip "test/**" --skip script > sizes.json
+          keys=$(jq -r 'keys[] | select(startswith("ArtCoinsHookV2") and contains("src/v2/hooks/ArtCoinsHookV2.sol"))' sizes.json)
+          if [ "$(printf '%s\n' "$keys" | grep -c .)" -ne 1 ]; then
+            echo "::error::expected exactly one ArtCoinsHookV2 (src/v2/hooks/ArtCoinsHookV2.sol) entry in the size json, got: ${keys:-none}"
+            exit 1
           fi
-          size=$(jq -r --arg n "$name" '.[$n].runtime_size' sizes.json)
-          margin=$(jq -r --arg n "$name" '.[$n].runtime_margin' sizes.json)
-          echo "$name runtime size $size bytes, headroom $margin bytes (min $MIN_HEADROOM)"
-          if [ "$margin" -lt "$MIN_HEADROOM" ]; then
-            echo "::error::$name has only $margin bytes of EIP-170 headroom (min $MIN_HEADROOM)"
+          size=$(jq -r --arg k "$keys" '.[$k].runtime_size' sizes.json)
+          margin=$(jq -r --arg k "$keys" '.[$k].runtime_margin' sizes.json)
+          echo "$keys runtime size $size bytes, headroom $margin bytes (min $MIN_HEADROOM)"
+          if ! [ "$margin" -ge "$MIN_HEADROOM" ] 2>/dev/null; then
+            echo "::error::$keys headroom $margin is below the $MIN_HEADROOM byte minimum (or not a number)"
             exit 1
           fi
 
@@ -82,7 +86,17 @@ jobs:
         # Deterministic, network free suite. Two suites call `vm.createSelectFork`
         # unconditionally and are excluded; run them locally with a fork url when
         # needed. Everything else that needs a fork skips and shows as skipped.
-        run: forge test --no-match-contract "AutoBurnOpenTab|DeployConversionLockerAndWire" -vvv
+        # The whole v2 tree is left to the next step and the fork jobs: its review
+        # proofs fork in setUp and would fail without a network.
+        run: forge test --no-match-contract "AutoBurnOpenTab|DeployConversionLockerAndWire" --no-match-path "test/v2/**" -vvv
+
+      - name: Run v2 unit suites (no fork)
+        # The v2 suites that need no fork. They run here and nowhere else: the
+        # fork job excludes exactly this list by name (`--no-match-contract`),
+        # because under a global `--fork-url` the test contract address and
+        # balances come from mainnet state and these suites fail. Keep the two
+        # lists in sync. (Extension tests live in AirdropV2Test and VaultV2Test.)
+        run: forge test --match-path "test/v2/**" --match-contract "^(EscrowV2Test|FeeDeliveryTest|TokenV2Test|ConstantsV2Test|MevLinearSkimV2Test|KeeperV2Test|ProtocolFeeControllerV2Test|RendererV2Test|AirdropV2Test|VaultV2Test)$" -vvv
 
   # ---------------------------------------------------------------------------
   # Fork job: the fork gated suites and test/v2 against a pinned mainnet block.
@@ -132,14 +146,15 @@ jobs:
         # mainnet state). Paths: every `*Fork*` file, the onlyFork gated
         # suites without Fork in the name, and the v2 tree minus the review
         # proofs (own job below). Plain unit contracts that share a file with a
-        # fork contract are excluded by name. `--fork-url` forks every test at
-        # the pinned block (cached after the first read); retries and backoff
+        # fork contract are excluded by name, and so are the v2 unit suites that
+        # run in the no network job (same list as its `Run v2 unit suites`
+        # step). `--fork-url` forks every test at the pinned block (cached after the first read); retries and backoff
         # ride out 429s from the public gateway.
         run: >
           forge test
           --match-path "test/{*Fork*.t.sol,Integration.t.sol,BurnRouter.t.sol,ArtCoinsFactory.t.sol,FeeAutoSwapper.invariants.t.sol,FeeAutoSwapperAuditFixes.t.sol,FeeAutoSwapperLayerRetrofit.t.sol,HookMevDecodeTolerance.t.sol,HookProtocolFeeNumeratorZero.t.sol,LLOnchainRenderer.AnimationHtml.t.sol,LaunchStressSims.t.sol,LpPresetCompareTest.t.sol,LpTierWalkthroughTest.t.sol,ArtCoinsUniv4EthDevBuy.t.sol,v2/**}"
           --no-match-path "test/v2/{review,review-v2}/**"
-          --no-match-contract "AutoBurnOpenTab|DeployConversionLockerAndWire|^BurnRouterTest$|^ArtCoinsFactoryTest$"
+          --no-match-contract "AutoBurnOpenTab|DeployConversionLockerAndWire|^BurnRouterTest$|^ArtCoinsFactoryTest$|^(EscrowV2Test|FeeDeliveryTest|TokenV2Test|ConstantsV2Test|MevLinearSkimV2Test|KeeperV2Test|ProtocolFeeControllerV2Test|RendererV2Test|AirdropV2Test|VaultV2Test)$"
           --fork-url "$MAINNET_RPC_URL"
           --fork-block-number "$FORK_BLOCK"
           --fork-retries 8

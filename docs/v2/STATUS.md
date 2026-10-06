@@ -17,10 +17,10 @@ running log for the unattended v2 session. a restarted session should read this 
 | # | job | state | notes |
 |---|---|---|---|
 | 1 | deployment registry | done. registry verified on chain; readme, AGENTS.md, ui config, 32 scripts and script-js read from the registry via generated Addresses.sol / deployments.generated.ts; 27 wrong or stale sites fixed (docs/v2/review/address-wiring.md). |
-| 2 | full system review | area reviews done; ci hygiene fixes applied (no fork suite: 565 pass, 143 skipped; fork run: 691 pass, 13 fail of which 4 are v1 state mismatches at the pinned block and 9 are unit suites polluted by a global fork url, ci fork job being scoped); SYSTEM-REVIEW.md draft written, status column to be updated after v2 reviews | |
-| 3 | v2 contracts + fixes | not started | |
-| 4 | ops runbook | docs/v2/RUNBOOK.md written: 10 owner actions simulated with cast call --from (all succeed today), v2 rollout order and public gate list. needs a final pass once DeployV2Stack exists (constructor args). | |
-| 5 | pull request + report | draft pr open: https://github.com/ripe0x/artcoins/pull/34 (body replaced at the end) | |
+| 2 | full system review | done. docs/v2/SYSTEM-REVIEW.md: 8 area reviews with 70 v1 proof tests, a v2 second pass (4 reviews, 38 findings, all resolved or accepted), ci hygiene fixed | |
+| 3 | v2 contracts + fixes | done on the branch, not deployed. src/v2: factory, deployer, token, hook, locker, escrow, fee delivery, mev module, swapper, burn router, fee controller, airdrop, vault, dev buy, renderers, two keepers, constants. 578 v2 tests green. | |
+| 4 | ops runbook | done. docs/v2/RUNBOOK.md: 10 owner actions simulated with cast (all succeed today), v2 rollout order matching script/v2/DeployV2Lib.sol, 14 gate public checklist | |
+| 5 | pull request + report | done: https://github.com/ripe0x/artcoins/pull/34 (draft) | |
 
 ## wave 1 (running in parallel, started 02:10 utc)
 
@@ -52,11 +52,24 @@ wave 2 plan was: v2 implementation packages from DESIGN.md, registry wiring into
 | review a: token, locker, escrow, mev, keepers | docs/v2/review/v2-review-a.md, test/v2/review-v2/a/ | done: 1 high (liquidity round trips manufacture grants; fixed by D46), 1 medium (arbitrary exempt contracts; fixed by D47), 3 low |
 | review b: periphery, extensions, renderers | docs/v2/review/v2-review-b.md, test/v2/review-v2/b/ | done: 2 medium (burn router floor counts refunds; swapper sandwich; fixed by D39, D40) |
 | review hook | docs/v2/review/v2-review-hook.md, test/v2/review-v2/hook/ | done: 1 high (recipient code runs during the swap; fixed by D41, pushes with 2,300 gas and no probe), 1 medium (HARD add then remove; fixed by D43/D46), 4 low |
-| review factory | docs/v2/review/v2-review-factory.md | running |
-| fixes in progress | h1 (D41..D46), p1 (D39, D40), t1 (D47, D48), f1 (D47), k1 (D49) | running |
-| s1 deploy script | script/v2/DeployV2Lib.sol, DeployV2Stack.s.sol, LaunchV2Coin.s.sol, verify-v2.sh, README.md, test/v2/DeployV2Stack.fork.t.sol | done: fork dry run passes every post deploy check (30 txs, ~29.5m gas); 5 tests pass |
-| i1 integration | test/v2/IntegrationV2.fork.t.sol | after s1 and the fixes |
+| review factory | docs/v2/review/v2-review-factory.md | done: 1 medium (referrals drain the protocol leg; fixed by D52), 3 low (D53, D54, D55) |
+| fixes | every medium and above from the v2 reviews is fixed and covered by a regression; the review proofs are flipped to regressions (test/v2/review-v2, 24 pass) |
+| s1 deploy script | script/v2/DeployV2Lib.sol, DeployV2Stack.s.sol, LaunchV2Coin.s.sol, verify-v2.sh, README.md, test/v2/DeployV2Stack.fork.t.sol | done: fork dry run passes every post deploy check (30 txs, ~29.5m gas) |
+| i1 integration | test/v2/integration/**, test/v2/IntegrationV2.fork.t.sol | done: 28 tests, every treasury shape, both tax modes, fee flow balanced to the wei |
 
 ## how to run tests
 
-see bottom of this file once the test layout is settled.
+all commands assume `source .env` with `MAINNET_RPC_URL` (tenderly public gateway works) and forge 1.7.1. full numbers and the exact ci commands are in docs/v2/review/test-run.md.
+
+| group | command | result |
+|---|---|---|
+| whole v2 tree, fork | `FOUNDRY_PROFILE=ci forge test --match-path "test/v2/**" --fork-url $MAINNET_RPC_URL --fork-block-number 26130269 --fork-retries 8 --fork-retry-backoff 2000` | 343 pass |
+| v2 unit suites, no fork | `forge test --match-path "test/v2/**" --match-contract "^(EscrowV2Test|FeeDeliveryTest|TokenV2Test|ConstantsV2Test|MevLinearSkimV2Test|KeeperV2Test|ProtocolFeeControllerV2Test|RendererV2Test|AirdropV2Test|VaultV2Test)$"` | 235 pass |
+| v1 suites, no fork (ci `check`) | see .github/workflows/test.yml | 565 pass, 143 skipped (fork gated) |
+| v1 + v2 fork suites (ci `fork-tests`) | see test.yml | 391 pass, 4 known v1 failures (burn router floor at the pinned block) |
+| review proofs (v1 bugs + flipped v2 proofs) | `forge test --match-path "test/v2/{review,review-v2}/**" --fork-url ...` | 94 pass |
+| sizes | `FOUNDRY_PROFILE=ci forge build --sizes --skip "test/**" --skip script` | hook 16,716 bytes, headroom 7,860; every v2 contract under 24,576 |
+| ui | `cd ui && npm ci && npm test && npm run build && npm run lint` | 51 pass, build and lint green |
+| registry | `node script-js/verify-registry.mjs` | 56 contracts, 2 coins, 0 drift (bytecode compare needs artifacts built at the stack's profile) |
+
+note: a cold full tree compile of the stale v1 test set can reach ~14 gb of solc memory; warm the cache in batches (`forge build <paths>`) on small machines.
