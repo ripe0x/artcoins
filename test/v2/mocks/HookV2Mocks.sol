@@ -84,13 +84,18 @@ contract HV2EmptyFallback {
     fallback() external payable {}
 }
 
-/// returns a huge returndata blob for any call with data; accepts plain eth.
+/// answers any call with data with 100kb of returndata (fits under the stream
+/// gas cap, so the call succeeds and the blob is offered to the caller);
+/// accepts plain eth. `bombs` counts successful bomb calls.
 contract HV2ReturnBomb {
+    uint256 public bombs;
+
     receive() external payable {}
 
     fallback() external payable {
+        bombs++;
         assembly {
-            return(0, 1000000)
+            return(0, 100000)
         }
     }
 }

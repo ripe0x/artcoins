@@ -25,7 +25,6 @@ import {
 } from "./mocks/HookV2Mocks.sol";
 
 import {Constants} from "../../src/Constants.sol";
-import {PCAttribution, PCSwapData} from "../../src/hooks/interfaces/IArtCoinsHookSkimFee.sol";
 import {IArtCoinsHook} from "../../src/interfaces/IArtCoinsHook.sol";
 import {ArtCoinsTokenV2} from "../../src/v2/ArtCoinsTokenV2.sol";
 import {HookCalldata} from "../../src/v2/hooks/libraries/HookCalldata.sol";
@@ -121,6 +120,7 @@ contract HookV2ForkTest is HookV2ForkBase {
     }
 
     function test_swap_bountyReturnBomb_bounded() public onlyFork {
+        uint256 refGas = _refSwapGas();
         HV2ReturnBomb r = new HV2ReturnBomb();
         vm.deal(address(r), 1 ether);
         PoolKey memory key = _launchSimple(address(r));
@@ -128,25 +128,30 @@ contract HookV2ForkTest is HookV2ForkBase {
         uint256 g0 = gasleft();
         _swap(key, true, -1 ether, 0, "");
         uint256 used = g0 - gasleft();
-        // probe capped at preSwapStreamGas, returndata never copied
-        assertLt(used, 600_000, "return bomb bounded");
+        // probe capped at preSwapStreamGas, 100kb of returndata never copied
+        assertLt(used, refGas + hook.globals().preSwapStreamGas + 10_000, "return bomb bounded");
+        assertEq(r.bombs(), 2, "probe succeeded and offered the blob twice");
         (uint256 bounty,) = _legs((1 ether * BASELINE) / D, BASELINE);
-        assertGe(address(r).balance, 1 ether + bounty);
+        assertGe(address(r).balance, 1 ether + bounty, "pushed");
     }
 
-    function test_swap_bountyGasBurner_bounded() public onlyFork {
-        // reference: same swap with an eoa recipient
+    /// gas of a warm 1 eth exact in buy on a pool whose bounty recipient is an eoa.
+    function _refSwapGas() internal returns (uint256) {
         PoolKey memory ref = _launchSimple(bountyEoa);
         _swap(ref, true, -0.1 ether, 0, "");
         uint256 g0 = gasleft();
         _swap(ref, true, -1 ether, 0, "");
-        uint256 refGas = g0 - gasleft();
+        return g0 - gasleft();
+    }
+
+    function test_swap_bountyGasBurner_bounded() public onlyFork {
+        uint256 refGas = _refSwapGas();
 
         HV2GasBurner r = new HV2GasBurner();
         vm.deal(address(r), 1 ether);
         PoolKey memory key = _launchSimple(address(r));
         _swap(key, true, -0.1 ether, 0, "");
-        g0 = gasleft();
+        uint256 g0 = gasleft();
         _swap(key, true, -1 ether, 0, "");
         uint256 used = g0 - gasleft();
 
@@ -580,8 +585,6 @@ contract HookV2ForkTest is HookV2ForkBase {
         // trader paid paid = r + charged at the PoolManager, refund comes back via escrow
         uint256 refund = _escrowed(address(swapRouter));
         assertEq(int256(ext.lastAmount0()), int256(d.amount0()) + int256(refund));
-        (bytes memory inner) = abi.decode(abi.decode(hd, (IArtCoinsHook.PoolSwapData)).poolExtensionSwapData, (bytes));
-        inner; // shape check only
         assertEq(
             keccak256(ext.lastData()),
             keccak256(abi.decode(hd, (IArtCoinsHook.PoolSwapData)).poolExtensionSwapData)

@@ -124,3 +124,22 @@ keeper properties tested: holds no eth or coin after a run, caller gets locker r
 | end recipient | 0x8C72… forwards eth on, so its balance is not asserted |
 | rpc | `MAINNET_RPC_URL`, default tenderly gateway; tests skip when unreachable or `SKIP_FORK_TESTS=true` |
 | size | `CollectFlushKeeperV1.sol` is 136 lines (imports, natspec and gas constants included), about 100 lines of code |
+
+## v2 keeper (ArtCoinsKeeperV2)
+
+generic, for any v2 art coin. `src/v2/keepers/ArtCoinsKeeperV2.sol`, tests `test/v2/KeeperV2.t.sol` (mocks `test/v2/mocks/KeeperMock*.sol`). spec: DESIGN d8 generic column.
+
+| item | detail |
+|---|---|
+| entry | `collectAndForward(token, doConvert, minOut)`, permissionless, no owner, one immutable (`factory`) |
+| art coin check | `factory.deploymentInfo(token)`; reverts `NotArtCoin(token)` when the record token does not match or the locker is zero |
+| steps | 1 `locker.collectRewards(token)`. then for each distinct locker reward recipient that answers erc165 `supportsInterface(type(IFeeAutoSwapperV2).interfaceId) == 1`: 2 `flushPaired()`, 3 `convert(minOut)` only when `doConvert`. 4 forward all eth and coin balance to `msg.sender` |
+| non swapper recipients | skipped (eoa, no erc165, reverts, wrong answer, wide return, gas burner). probe is a 30k gas staticcall copying one word |
+| gas floor | explicit gas per step, same pattern as v1: collect 900k, flush 150k, convert 400k, probe 30k, plus 50k margin and the 63/64 rule. a shortfall reverts `InsufficientGas(step)` (1 collect, 2 flush, 3 convert, 4 probe), never skips |
+| swallowed failures | a revert with data inside collect, flush or convert (nothing accrued, `NothingToFlush`, convert too early) is swallowed so one idle slot does not block the rest. an empty revert inside a capped step is treated as out of gas and reverts `InsufficientGas` |
+| funds | holds nothing: balance (eth and coin, including donations) leaves in the same call. caller that rejects eth reverts `EthTransferFailed` |
+| reentry | `ReentrancyGuardTransient`, a swapper that reenters the keeper is rejected |
+| extra | `preview(token)` view: swapper count, accrued paired and coin, next convertible block. uncollected lp fees are not readable via the locker interface |
+| gas figures | v1 measurements with room added. re measure on the v2 stack when the fork harness is ready |
+
+tests (31): happy path (`test_keeperV2_collectAndForward_swapperRecipient`), non art coin and mismatched or zero locker records revert, non erc165 recipients skipped, duplicates serviced once, convert only when asked, swallowed step failures, low gas reverts for steps 1 to 4, a gas sweep from 100k to 2.5m proving every run either completes all steps or reverts `InsufficientGas` with state untouched, keeper holds nothing (with donations), reentrancy, preview, no owner. fork test against live v2 contracts is not written (no v2 stack on chain yet).
