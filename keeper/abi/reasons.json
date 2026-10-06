@@ -1,0 +1,425 @@
+[
+  {
+    "type": "error",
+    "name": "AlreadyConvertedThisBlock",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AlreadyFinalized",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AlreadyInitialized",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BadDelta",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BelowMinThreshold",
+    "inputs": [
+      {
+        "name": "wethBalance",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "minThreshold",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "BlockedToken",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "BurnShareTooLow",
+    "inputs": [
+      {
+        "name": "burnBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "minBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "CannotRescue",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ConstantsMismatch",
+    "inputs": [
+      {
+        "name": "module",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ConvertTooEarly",
+    "inputs": [
+      {
+        "name": "nextBlock",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "EthTransferFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ExcessInputSpent",
+    "inputs": [
+      {
+        "name": "spent",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "requested",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InsufficientEthBalance",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InsufficientLayerOut",
+    "inputs": [
+      {
+        "name": "layerOut",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "requiredMinLayerOut",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InsufficientOutput",
+    "inputs": [
+      {
+        "name": "received",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "minOut",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidEndRecipient",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidPoolKey",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidSplit",
+    "inputs": [
+      {
+        "name": "treasuryBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "burnBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "rewardsBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidWeth",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "LayerTokenMismatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MinLayerOutBelowFloor",
+    "inputs": [
+      {
+        "name": "suppliedMinLayerOut",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "requiredMinLayerOut",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "MinOutBelowFloor",
+    "inputs": [
+      {
+        "name": "minOut",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "floor",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "MinThresholdTooLow",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NativeSendFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NoFeesToClaim",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotDeployer",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotFinalized",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NothingToBurn",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NothingToConvert",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NothingToFlush",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NothingToProcess",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotInitialized",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotPoolManager",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OnlyPoolManager",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OutOfBounds",
+    "inputs": [
+      {
+        "name": "value",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "lo",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "hi",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "OwnableInvalidOwner",
+    "inputs": [
+      {
+        "name": "owner",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "OwnableUnauthorizedAccount",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ReentrancyGuardReentrantCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RewardsReceiverNotSet",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RewardsShareTooHigh",
+    "inputs": [
+      {
+        "name": "rewardsBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "maxBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "SafeERC20FailedOperation",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "SlippageFloorNotSet",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TreasuryShareTooLow",
+    "inputs": [
+      {
+        "name": "treasuryBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "minBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "Unauthorized",
+    "inputs": []
+  },
+  {
+    "name": "V4TooLittleReceived",
+    "type": "error",
+    "inputs": [
+      {
+        "type": "uint256",
+        "name": "minAmountOutReceived"
+      },
+      {
+        "type": "uint256",
+        "name": "amountReceived"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ZeroAddress",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroAddress",
+    "inputs": [
+      {
+        "name": "field",
+        "type": "string",
+        "internalType": "string"
+      }
+    ]
+  }
+]
