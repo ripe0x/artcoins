@@ -20,7 +20,7 @@ running log for the unattended v2 session. a restarted session should read this 
 | 2 | full system review | in progress | |
 | 3 | v2 contracts + fixes | not started | |
 | 4 | ops runbook | not started | |
-| 5 | pull request + report | not started | |
+| 5 | pull request + report | draft pr open: https://github.com/ripe0x/artcoins/pull/34 (body replaced at the end) | |
 
 ## wave 1 (running in parallel, started 02:10 utc)
 
