@@ -176,7 +176,13 @@ jobs:
       - name: Run Forge build (v2 package suites)
         run: forge build --skip "test/v2/review/**" --skip "test/v2/review-v2/**" --skip "test/v2/integration/**" --skip "test/[A-Za-z]*.t.sol" --skip "test/legacy/**" --skip "test/mocks/**"
 
-      - name: Run Forge build (v2 integration and review suites)
+      - name: Run Forge build (v2 review proofs, v1 bugs)
+        run: forge build --skip "test/v2/review-v2/**" --skip "test/v2/integration/**"
+
+      - name: Run Forge build (v2 review proofs, second pass)
+        run: forge build --skip "test/v2/integration/**"
+
+      - name: Run Forge build (v2 integration suites)
         run: forge build
 
       - name: Run fork tests
