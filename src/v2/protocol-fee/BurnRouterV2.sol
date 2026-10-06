@@ -37,7 +37,7 @@ interface IBurnableCoin {
 ///         - keeper reward is `min(consumed * KEEPER_REWARD_BPS / BPS, CAP)`
 ///           on the eth the swap actually consumed, reserved before the swap
 ///           and paid after it.
-///         - output must clear the caller's `minOut` and `SPOT_FLOOR_BPS` of
+///         - output must clear the caller's `minOut` and `spotFloorBps` of
 ///           the spot implied output for the eth consumed; `floorFor` exposes
 ///           the identical computation.
 ///         - native eth quote, no weth. hook skim refunds (b3) credited to this
@@ -61,7 +61,14 @@ contract BurnRouterV2 is
     /// @notice The swap returned a delta with an unexpected sign or size.
     error BadDelta();
 
+    /// @notice D31: `processBurnOpenTab` caller is not `openTabCaller`.
+    error NotOpenTabCaller();
+
     event KeeperRewardFailed(address indexed caller, uint256 amount);
+    /// @notice D31: owner set the only address allowed to call `processBurnOpenTab`.
+    event OpenTabCallerSet(address indexed oldCaller, address indexed newCaller);
+    /// @notice D32: owner moved the output floor (bps of the spot implied output).
+    event SpotFloorBpsSet(uint256 oldBps, uint256 newBps);
 
     /// @notice Gas forwarded on the keeper reward push (no returndata copied).
     uint256 public constant KEEPER_GAS = 50_000;
@@ -81,6 +88,11 @@ contract BurnRouterV2 is
     uint16 public maxImpactBps;
     /// @inheritdoc IBurnRouterV2
     uint96 public minProcessThreshold;
+    /// @notice D32: output floor in bps of the spot implied output, owner
+    ///         tunable within [SPOT_FLOOR_MIN_BPS, SPOT_FLOOR_MAX_BPS].
+    uint16 internal _spotFloorBps;
+    /// @notice D31: the only caller of `processBurnOpenTab`; zero disables it.
+    address public openTabCaller;
 
     constructor(address owner_, address poolManager_, address feeEscrow_) Ownable(owner_) {
         if (poolManager_ == address(0) || feeEscrow_ == address(0)) revert ZeroAddress();
@@ -88,8 +100,10 @@ contract BurnRouterV2 is
         feeEscrow = feeEscrow_;
         maxImpactBps = Constants.BURN_IMPACT_DEFAULT;
         minProcessThreshold = DEFAULT_MIN_PROCESS_THRESHOLD;
+        _spotFloorBps = uint16(Constants.SPOT_FLOOR_BPS);
         emit MaxImpactBpsSet(0, Constants.BURN_IMPACT_DEFAULT);
         emit MinProcessThresholdSet(0, DEFAULT_MIN_PROCESS_THRESHOLD);
+        emit SpotFloorBpsSet(0, Constants.SPOT_FLOOR_BPS);
     }
 
     /// @notice Burn budget arrives as plain eth (fee controller, escrow refunds,
@@ -130,8 +144,9 @@ contract BurnRouterV2 is
     }
 
     /// @inheritdoc IBurnRouterV2
-    /// @dev Must run while the PoolManager is unlocked by someone else (a pool
-    ///      extension); otherwise the PoolManager reverts `ManagerLocked`.
+    /// @dev D31: only `openTabCaller` (owner set, default none). Must run
+    ///      while that caller holds the PoolManager unlock; otherwise the
+    ///      PoolManager reverts `ManagerLocked`.
     ///      Shares `lastBurnBlock` with `processBurn`, so an outer caller that
     ///      moves the price cannot repeat the burn in the same block.
     function processBurnOpenTab(uint256 minOut)
@@ -139,6 +154,7 @@ contract BurnRouterV2 is
         nonReentrant
         returns (uint256 ethIn, uint256 burned)
     {
+        if (msg.sender != openTabCaller || msg.sender == address(0)) revert NotOpenTabCaller();
         (uint256 budget, uint160 spot, uint256 coinBefore) = _preflight();
         uint256 coinOut;
         (ethIn, coinOut) = _swapAndSettle(budget, spot);
@@ -172,6 +188,11 @@ contract BurnRouterV2 is
         if (coin == address(0)) return 0;
         (uint160 spot,,,) = poolManager.getSlot0(_poolKey.toId());
         return _spotFloor(ethIn, spot);
+    }
+
+    /// @notice D32: current output floor in bps.
+    function spotFloorBps() external view returns (uint256) {
+        return _spotFloorBps;
     }
 
     /// @notice Keeper reward for `consumed` eth.
@@ -213,6 +234,21 @@ contract BurnRouterV2 is
         }
         emit MinProcessThresholdSet(minProcessThreshold, threshold);
         minProcessThreshold = threshold;
+    }
+
+    /// @notice D31: sets the only `processBurnOpenTab` caller; zero disables it.
+    function setOpenTabCaller(address caller) external onlyOwner {
+        emit OpenTabCallerSet(openTabCaller, caller);
+        openTabCaller = caller;
+    }
+
+    /// @notice D32: sets the output floor within Constants bounds.
+    function setSpotFloorBps(uint256 bps) external onlyOwner {
+        if (bps < Constants.SPOT_FLOOR_MIN_BPS || bps > Constants.SPOT_FLOOR_MAX_BPS) {
+            revert OutOfBounds(bps, Constants.SPOT_FLOOR_MIN_BPS, Constants.SPOT_FLOOR_MAX_BPS);
+        }
+        emit SpotFloorBpsSet(_spotFloorBps, bps);
+        _spotFloorBps = uint16(bps);
     }
 
     /// @inheritdoc IBurnRouterV2
@@ -325,11 +361,11 @@ contract BurnRouterV2 is
     }
 
     /// @dev Expected coin (currency1) for `ethIn` (currency0) at spot, times
-    ///      `SPOT_FLOOR_BPS`. price = token1 per token0.
-    function _spotFloor(uint256 ethIn, uint160 sqrtPriceX96) internal pure returns (uint256) {
+    ///      `spotFloorBps`. price = token1 per token0.
+    function _spotFloor(uint256 ethIn, uint160 sqrtPriceX96) internal view returns (uint256) {
         if (ethIn == 0 || sqrtPriceX96 == 0) return 0;
         uint256 step = FullMath.mulDiv(ethIn, sqrtPriceX96, 1 << 96);
         uint256 expected = FullMath.mulDiv(step, sqrtPriceX96, 1 << 96);
-        return (expected * Constants.SPOT_FLOOR_BPS) / Constants.BPS;
+        return (expected * _spotFloorBps) / Constants.BPS;
     }
 }

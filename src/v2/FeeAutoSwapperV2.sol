@@ -67,6 +67,9 @@ contract FeeAutoSwapperV2 is
     /// @notice `unlockCallback` caller is not the PoolManager.
     error NotPoolManager();
 
+    /// @notice D32: owner moved the output floor (bps of the spot implied output).
+    event SpotFloorBpsSet(uint256 oldBps, uint256 newBps);
+
     /// @notice Constructor parameter bundle.
     /// @dev `artCoin` may be zero; the deployer then binds it via `setup`.
     struct Config {
@@ -109,6 +112,9 @@ contract FeeAutoSwapperV2 is
     uint256 public maxStepIn;
     /// @notice Block of the last successful `convert`.
     uint256 public lastConvertBlock;
+    /// @notice Output floor in bps of the spot implied output (D32), owner
+    ///         tunable within [SPOT_FLOOR_MIN_BPS, SPOT_FLOOR_MAX_BPS].
+    uint256 public spotFloorBps;
 
     constructor(Config memory c) Ownable(c.owner) {
         if (c.poolManager == address(0)) revert ZeroAddress("poolManager");
@@ -132,9 +138,11 @@ contract FeeAutoSwapperV2 is
         maxSlippageBps = c.maxSlippageBps;
         minBlocksBetweenConverts = c.minBlocksBetweenConverts;
         maxStepIn = c.maxStepIn;
+        spotFloorBps = Constants.SPOT_FLOOR_BPS;
         emit MaxSlippageBpsSet(0, c.maxSlippageBps);
         emit MinBlocksBetweenConvertsSet(0, c.minBlocksBetweenConverts);
         emit MaxStepInSet(0, c.maxStepIn);
+        emit SpotFloorBpsSet(0, Constants.SPOT_FLOOR_BPS);
 
         // b5: a third party can no longer push escrowed fees into this contract.
         IArtCoinsFeeEscrowV2(c.feeEscrow).setSelfClaimOnly(true);
@@ -173,7 +181,7 @@ contract FeeAutoSwapperV2 is
     /// @dev Guards, all against the pre swap spot: the swap's price limit caps
     ///      the move at `maxSlippageBps` (a binding limit partial fills, the
     ///      rest waits for the next call); the output must clear both the
-    ///      caller's `minOut` and `SPOT_FLOOR_BPS` of the spot implied output
+    ///      caller's `minOut` and `spotFloorBps` of the spot implied output
     ///      for the input actually consumed. Pacing (`minBlocksBetweenConverts`)
     ///      stops looping the limit within a block. Same tx spot manipulation
     ///      is bounded by the limit and pacing, not prevented; keepers should
@@ -330,6 +338,15 @@ contract FeeAutoSwapperV2 is
         maxStepIn = maxIn;
     }
 
+    /// @notice D32: sets the output floor within Constants bounds.
+    function setSpotFloorBps(uint256 bps) external onlyOwner {
+        if (bps < Constants.SPOT_FLOOR_MIN_BPS || bps > Constants.SPOT_FLOOR_MAX_BPS) {
+            revert OutOfBounds(bps, Constants.SPOT_FLOOR_MIN_BPS, Constants.SPOT_FLOOR_MAX_BPS);
+        }
+        emit SpotFloorBpsSet(spotFloorBps, bps);
+        spotFloorBps = bps;
+    }
+
     /// @inheritdoc IFeeAutoSwapperV2
     /// @dev Native eth (the paired currency) and the art coin are owed to
     ///      `endRecipient` and can never be rescued. Before `setup` nothing can
@@ -387,13 +404,13 @@ contract FeeAutoSwapperV2 is
     }
 
     /// @dev Expected eth for `artIn` coin (currency1) at spot, times
-    ///      `SPOT_FLOOR_BPS`. price = token1 per token0, so eth = artIn / price.
+    ///      `spotFloorBps`. price = token1 per token0, so eth = artIn / price.
     ///      Two mulDivs avoid overflow at extreme prices.
-    function _spotFloor(uint256 artIn, uint160 sqrtPriceX96) internal pure returns (uint256) {
+    function _spotFloor(uint256 artIn, uint160 sqrtPriceX96) internal view returns (uint256) {
         if (artIn == 0 || sqrtPriceX96 == 0) return 0;
         uint256 step = FullMath.mulDiv(artIn, 1 << 96, sqrtPriceX96);
         uint256 expected = FullMath.mulDiv(step, 1 << 96, sqrtPriceX96);
-        return (expected * Constants.SPOT_FLOOR_BPS) / Constants.BPS;
+        return (expected * spotFloorBps) / Constants.BPS;
     }
 
     function _checkSlippage(uint256 bps) internal pure {
