@@ -100,6 +100,18 @@ this is still not a formal audit; two independent passes by subagents with proof
 
 docs/v2/CREDITS-ENGINE-INTERFACE.md. in short: `streamForward` is never called; fees arrive by a 2,300 gas push or sit in the escrow for anyone to `claim(treasury, 0)`; coin side rewards need a `FeeAutoSwapperV2` slot registered as an escrow depositor; the treasury must be on the exempt allowlist if it is to hold the coin untaxed; the referral payout is the escrow; pools are native eth only.
 
+
+## addendum after the morning review (wave 4)
+
+| item | result |
+|---|---|
+| github ci | green on the branch head: `CI` (no network batches, fork tests, review proofs, ui) and `Registry`. the earlier red was the no network job compiling 431 files in one process; builds and v1 tests now run in batches |
+| weth aware LAYER keeper | `src/v2/keepers/CollectFlushKeeperLayer.sol`, 11 fork tests, `script/v2/RunKeeperLayer.s.sol`, RUNBOOK action 2b. the LAYER path has no stranding shape and the legacy hook collects on every swap, so LAYER's LF-01 exposure is one swap's fee |
+| registry verifier | profile aware bytecode compare (default / ci / ci+ipfs). 0 drift. 18 rows stay "mismatch" honestly: the repo's history starts 2026-06-13, after every stack went live, so the deployed source of the older contracts is not in git |
+| ui | first real browser run on an anvil fork (playwright, `cd ui && npm run test:e2e`, 19/19): 111 buy and sell, LAYER weth buy and sell, v2 launch after `setDeprecated(false)`, referral attribution and claim, v2 airdrop claims. six bugs it found are fixed (LAYER not tradeable, sell above balance, browser clock deadlines, stale referral copy, v2 notice wording, 111 contractURI gas) |
+| scripts | S-01 wiring script: renounce is opt in behind `CONFIRM_RENOUNCE=1`, refuses non current stacks |
+| still yours | runbook actions 1 to 5 today (now with action 2b for the LAYER keeper), decisions D7 / D41 / D46 / D58, the credits engine bundle check, external review of the hook and HARD token, secrets for ci (`MAINNET_RPC_URL`, `ETHERSCAN_API_KEY`), then the deploy steps 5 to 8 |
+
 ## next steps between this branch and a mainnet deploy
 
 | step | what |
