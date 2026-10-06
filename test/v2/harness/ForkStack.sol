@@ -7,7 +7,9 @@ import {LaunchDefaults} from "../../../script/LaunchDefaults.sol";
 import {ArtCoinsFactory} from "../../../src/ArtCoinsFactory.sol";
 import {ArtCoinsFeeEscrow} from "../../../src/ArtCoinsFeeEscrow.sol";
 import {ArtCoinsHookSkimFee} from "../../../src/hooks/ArtCoinsHookSkimFee.sol";
-import {ArtCoinsPoolExtensionAllowlist} from "../../../src/hooks/ArtCoinsPoolExtensionAllowlist.sol";
+import {
+    ArtCoinsPoolExtensionAllowlist
+} from "../../../src/hooks/ArtCoinsPoolExtensionAllowlist.sol";
 import {IArtCoinsHookSkimFee} from "../../../src/hooks/interfaces/IArtCoinsHookSkimFee.sol";
 import {IArtCoinsFactory} from "../../../src/interfaces/IArtCoinsFactory.sol";
 import {IArtCoinsHook} from "../../../src/interfaces/IArtCoinsHook.sol";
@@ -147,18 +149,27 @@ abstract contract ForkStack is ForkBase {
         s.poolExtAllowlist = new ArtCoinsPoolExtensionAllowlist(s.owner);
         {
             bytes memory ctorArgs = abi.encode(
-                POOL_MANAGER, address(s.factory), address(s.poolExtAllowlist), WETH, address(s.escrow)
+                POOL_MANAGER,
+                address(s.factory),
+                address(s.poolExtAllowlist),
+                WETH,
+                address(s.escrow)
             );
             (address mined, bytes32 salt) = HookMiner.find(
                 address(this), SKIM_HOOK_FLAGS, type(ArtCoinsHookSkimFee).creationCode, ctorArgs
             );
             s.hook = new ArtCoinsHookSkimFee{salt: salt}(
-                POOL_MANAGER, address(s.factory), address(s.poolExtAllowlist), WETH, address(s.escrow)
+                POOL_MANAGER,
+                address(s.factory),
+                address(s.poolExtAllowlist),
+                WETH,
+                address(s.escrow)
             );
             require(address(s.hook) == mined, "ForkStack: hook address mismatch");
         }
-        s.locker =
-            new ArtCoinsLpLocker(s.owner, address(s.factory), address(s.escrow), POSITION_MANAGER, PERMIT2);
+        s.locker = new ArtCoinsLpLocker(
+            s.owner, address(s.factory), address(s.escrow), POSITION_MANAGER, PERMIT2
+        );
         s.mev = new ArtCoinsMevLinearSkim();
 
         // DeployV1Stack.deployStack wiring, same order.

@@ -6,12 +6,15 @@ pragma solidity ^0.8.26;
 
 import {Test} from "forge-std/Test.sol";
 
-import {HMBudgetRouter} from "./TaxBudget.t.sol";
-import {IArtCoinsHookSkimFee, PCAttribution, PCSwapData} from
-    "../../../../src/hooks/interfaces/IArtCoinsHookSkimFee.sol";
+import {ArtCoinsHookSkimFee} from "../../../../src/hooks/ArtCoinsHookSkimFee.sol";
+import {
+    IArtCoinsHookSkimFee,
+    PCAttribution,
+    PCSwapData
+} from "../../../../src/hooks/interfaces/IArtCoinsHookSkimFee.sol";
 import {IArtCoinsFeeEscrow} from "../../../../src/interfaces/IArtCoinsFeeEscrow.sol";
 import {IArtCoinsHook} from "../../../../src/interfaces/IArtCoinsHook.sol";
-import {ArtCoinsHookSkimFee} from "../../../../src/hooks/ArtCoinsHookSkimFee.sol";
+import {HMBudgetRouter} from "./TaxBudget.t.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
@@ -50,7 +53,8 @@ contract LiveStackTest is Test {
     address internal referralPayout;
 
     function setUp() public {
-        string memory url = vm.envOr("MAINNET_RPC_URL", string("https://mainnet.gateway.tenderly.co"));
+        string memory url =
+            vm.envOr("MAINNET_RPC_URL", string("https://mainnet.gateway.tenderly.co"));
         try vm.createSelectFork(url) {
             live = true;
         } catch {
@@ -66,7 +70,7 @@ contract LiveStackTest is Test {
         (,,,,, protocolR, referralPayout,) = IArtCoinsHookSkimFee(HOOK).skimConfig(canon.toId());
         swapRouter = new PoolSwapTest(PM);
         liqRouter = new PoolModifyLiquidityTest(PM);
-        vm.deal(address(this), 1_000 ether);
+        vm.deal(address(this), 1000 ether);
     }
 
     receive() external payable {}
@@ -82,14 +86,19 @@ contract LiveStackTest is Test {
         if (limit == 0) limit = z ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1;
         swapRouter.swap{value: v}(
             k,
-            IPoolManager.SwapParams({zeroForOne: z, amountSpecified: amt, sqrtPriceLimitX96: limit}),
+            IPoolManager.SwapParams({
+                zeroForOne: z, amountSpecified: amt, sqrtPriceLimitX96: limit
+            }),
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
             hd
         );
     }
 
     function test_live_canonicalPoolKeyMatches() public onlyLive {
-        assertEq(PoolId.unwrap(canon.toId()), 0xf860d8f4896aed6cc1c68d234ba728680902f0ae43a459fbee6f6baa8036f795);
+        assertEq(
+            PoolId.unwrap(canon.toId()),
+            0xf860d8f4896aed6cc1c68d234ba728680902f0ae43a459fbee6f6baa8036f795
+        );
         assertTrue(ArtCoinsHookSkimFee(payable(HOOK)).locker(canon.toId()) != address(0));
     }
 
@@ -110,13 +119,18 @@ contract LiveStackTest is Test {
             })
         );
         bytes memory pd = abi.encode(
-            IArtCoinsHook.PoolInitializationData({extension: address(0), extensionData: "", feeData: fd})
+            IArtCoinsHook.PoolInitializationData({
+                extension: address(0), extensionData: "", feeData: fd
+            })
         );
         vm.prank(attacker);
-        PoolKey memory fake = IArtCoinsHook(HOOK).initializePoolOpen(COIN, address(0), -167_800, 10, pd);
+        PoolKey memory fake =
+            IArtCoinsHook(HOOK).initializePoolOpen(COIN, address(0), -167_800, 10, pd);
         assertEq(address(fake.hooks), HOOK);
         assertEq(Currency.unwrap(fake.currency1), COIN);
-        assertTrue(IArtCoinsHookSkimFee(HOOK).poolTaxEnabled(fake.toId()), "even flagged tax-enabled");
+        assertTrue(
+            IArtCoinsHookSkimFee(HOOK).poolTaxEnabled(fake.toId()), "even flagged tax-enabled"
+        );
         assertEq(ArtCoinsHookSkimFee(payable(HOOK)).locker(fake.toId()), address(0));
     }
 
@@ -144,16 +158,25 @@ contract LiveStackTest is Test {
     function test_bug_H13_live_selfReferralRebate() public onlyLive {
         PCSwapData memory inner = PCSwapData({
             attribution: PCAttribution({
-                sourceId: bytes32(0), referrer: address(this), campaignId: bytes16(0), referralBps: 250
+                sourceId: bytes32(0),
+                referrer: address(this),
+                campaignId: bytes16(0),
+                referralBps: 250
             }),
             extensionPayload: ""
         });
         bytes memory hd = abi.encode(
-            IArtCoinsHook.PoolSwapData({mevModuleSwapData: "", poolExtensionSwapData: abi.encode(inner)})
+            IArtCoinsHook.PoolSwapData({
+                mevModuleSwapData: "", poolExtensionSwapData: abi.encode(inner)
+            })
         );
         uint256 b0 = referralPayout.balance;
         _swap(canon, true, -1 ether, 0, hd, 1 ether);
-        assertEq(referralPayout.balance - b0, 0.0025 ether, "0.25% of volume rebated to the swapper's own referral slot");
+        assertEq(
+            referralPayout.balance - b0,
+            0.0025 ether,
+            "0.25% of volume rebated to the swapper's own referral slot"
+        );
     }
 
     /// H14 live: same-unlock add+remove on coin 111's canonical pool mints a
@@ -175,12 +198,16 @@ contract LiveStackTest is Test {
         {
             uint160 sa = TickMath.getSqrtPriceAtTick(t60 - 6000);
             uint160 sb = TickMath.getSqrtPriceAtTick(t60 + 6000);
-            uint128 L = LiquidityAmounts.getLiquidityForAmounts(sqrtP, sa, sb, 2 ether, pct * 9 / 10);
+            uint128 L =
+                LiquidityAmounts.getLiquidityForAmounts(sqrtP, sa, sb, 2 ether, pct * 9 / 10);
             IERC20(COIN).approve(address(liqRouter), type(uint256).max);
             liqRouter.modifyLiquidity{value: 3 ether}(
                 side,
                 IPoolManager.ModifyLiquidityParams({
-                    tickLower: t60 - 6000, tickUpper: t60 + 6000, liquidityDelta: int256(uint256(L)), salt: 0
+                    tickLower: t60 - 6000,
+                    tickUpper: t60 + 6000,
+                    liquidityDelta: int256(uint256(L)),
+                    salt: 0
                 }),
                 ""
             );

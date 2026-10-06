@@ -7,8 +7,8 @@ pragma solidity ^0.8.26;
 import {Test, console2} from "forge-std/Test.sol";
 
 import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
-import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {Base64 as SBase64} from "solady/utils/Base64.sol";
@@ -23,13 +23,13 @@ import {
 import {
     LiquidityLayerSpriteRenderer
 } from "../../../../src/extensions/LiquidityLayerSpriteRenderer.sol";
+import {IMetadataRenderer} from "../../../../src/interfaces/IMetadataRenderer.sol";
 import {
     HTMLRequest,
     HTMLTag,
     IScriptyBuilderV2,
     IScriptyStorageV2
 } from "../../../../src/interfaces/IScripty.sol";
-import {IMetadataRenderer} from "../../../../src/interfaces/IMetadataRenderer.sol";
 import {DefaultMetadataRenderer} from "../../../../src/renderer/DefaultMetadataRenderer.sol";
 import {DynamicBlockRenderer} from "../../../../src/renderer/DynamicBlockRenderer.sol";
 import {ExampleOnChainRenderer} from "../../../../src/renderer/ExampleOnChainRenderer.sol";
@@ -170,7 +170,9 @@ contract RenderersReviewTest is Test {
 
     function _longString(uint256 n, bytes1 c) internal pure returns (string memory) {
         bytes memory b = new bytes(n);
-        for (uint256 i = 0; i < n; i++) b[i] = c;
+        for (uint256 i = 0; i < n; i++) {
+            b[i] = c;
+        }
         return string(b);
     }
 
@@ -209,7 +211,9 @@ contract RenderersReviewTest is Test {
         // "a" + 11 x U+20AC (3 bytes each) = 34 bytes; cut at 30 bytes leaves
         // a dangling 2-byte prefix (0xE2 0x82) of the 10th euro sign.
         string memory n = "a";
-        for (uint256 i = 0; i < 11; i++) n = string.concat(n, unicode"€");
+        for (uint256 i = 0; i < 11; i++) {
+            n = string.concat(n, unicode"€");
+        }
         tok.set(n, "S", "d", "i");
         string memory svg = _svg(r);
         assertTrue(LibString.contains(svg, string(abi.encodePacked(hex"e282", "</text>"))));

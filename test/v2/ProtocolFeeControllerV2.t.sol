@@ -7,6 +7,7 @@ import {P1Coin, P1Rejector, P1Sink, P1Stray} from "./p1/P1Base.sol";
 
 import {Constants} from "../../src/Constants.sol";
 import {ArtCoinsFeeEscrowV2} from "../../src/v2/ArtCoinsFeeEscrowV2.sol";
+import {IArtCoinsFeeEscrowV2} from "../../src/v2/interfaces/IArtCoinsFeeEscrowV2.sol";
 import {IProtocolFeeControllerV2} from "../../src/v2/interfaces/IProtocolFeeControllerV2.sol";
 import {ProtocolFeeControllerV2} from "../../src/v2/protocol-fee/ProtocolFeeControllerV2.sol";
 
@@ -67,13 +68,18 @@ contract ProtocolFeeControllerV2Test is Test {
     }
 
     function testFuzz_pfcV2_nativeSplit_sumsToTotal(uint96 total, uint16 bps) public {
-        bps = uint16(bound(bps, Constants.PFC_MIN_TREASURY_BPS, Constants.BPS - Constants.PFC_MIN_BURN_BPS));
+        bps = uint16(
+            bound(bps, Constants.PFC_MIN_TREASURY_BPS, Constants.BPS - Constants.PFC_MIN_BURN_BPS)
+        );
         vm.assume(total > 0);
         pfc.setSplit(bps);
         vm.deal(address(pfc), total);
         pfc.processFees(address(0));
         assertEq(address(treasury).balance + address(router).balance, total);
-        assertGe(address(treasury).balance, uint256(total) * Constants.PFC_MIN_TREASURY_BPS / Constants.BPS);
+        assertGe(
+            address(treasury).balance,
+            uint256(total) * Constants.PFC_MIN_TREASURY_BPS / Constants.BPS
+        );
     }
 
     function test_pfcV2_receive_withGas_splitsImmediately() public {
@@ -100,7 +106,7 @@ contract ProtocolFeeControllerV2Test is Test {
         (bool ok,) = address(p).call{value: 1 ether, gas: 2_000_000}("");
         assertTrue(ok, "receive swallowed the failed split");
         assertEq(address(p).balance, 1 ether, "held for retry");
-        vm.expectRevert(ArtCoinsFeeEscrowV2.NotDepositor.selector);
+        vm.expectRevert(IArtCoinsFeeEscrowV2.NotDepositor.selector);
         p.processFees(address(0));
     }
 
@@ -167,14 +173,20 @@ contract ProtocolFeeControllerV2Test is Test {
         uint16 minT = Constants.PFC_MIN_TREASURY_BPS;
         uint16 minB = Constants.PFC_MIN_BURN_BPS;
         vm.expectRevert(
-            abi.encodeWithSelector(IProtocolFeeControllerV2.TreasuryShareTooLow.selector, minT - 1, minT)
+            abi.encodeWithSelector(
+                IProtocolFeeControllerV2.TreasuryShareTooLow.selector, minT - 1, minT
+            )
         );
         pfc.setSplit(minT - 1);
         vm.expectRevert(
-            abi.encodeWithSelector(IProtocolFeeControllerV2.BurnShareTooLow.selector, minB - 1, minB)
+            abi.encodeWithSelector(
+                IProtocolFeeControllerV2.BurnShareTooLow.selector, minB - 1, minB
+            )
         );
         pfc.setSplit(uint16(Constants.BPS - minB + 1));
-        vm.expectRevert(abi.encodeWithSelector(IProtocolFeeControllerV2.BurnShareTooLow.selector, 0, minB));
+        vm.expectRevert(
+            abi.encodeWithSelector(IProtocolFeeControllerV2.BurnShareTooLow.selector, 0, minB)
+        );
         pfc.setSplit(10_001);
 
         pfc.setSplit(minT);
@@ -189,7 +201,9 @@ contract ProtocolFeeControllerV2Test is Test {
         _deploy(address(treasury), address(router), 100);
 
         vm.prank(attacker);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
+        );
         pfc.setSplit(5000);
     }
 
@@ -206,9 +220,13 @@ contract ProtocolFeeControllerV2Test is Test {
         assertEq(pfc.treasury(), attacker);
 
         vm.startPrank(attacker);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
+        );
         pfc.setTreasury(attacker);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
+        );
         pfc.setBurnRouter(attacker);
         vm.stopPrank();
     }
@@ -225,7 +243,9 @@ contract ProtocolFeeControllerV2Test is Test {
         vm.expectRevert(IProtocolFeeControllerV2.ZeroAddress.selector);
         pfc.rescue(address(0), address(0), 0);
         vm.prank(attacker);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
+        );
         pfc.rescue(address(0), attacker, 0);
     }
 

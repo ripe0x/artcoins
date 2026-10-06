@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {HMEmptyFallback, HMEthSink, HMRejecter, HMReferralPayout, HooksMevBase, HMArt} from "./HooksMevBase.sol";
+import {
+    HMArt,
+    HMEmptyFallback,
+    HMEthSink,
+    HMReferralPayout,
+    HMRejecter,
+    HooksMevBase
+} from "./HooksMevBase.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
 /// H1 / H2 / H3: recipient-side behaviour that reverts every swap on a skim pool.
@@ -17,7 +24,10 @@ contract SkimDeliveryTest is HooksMevBase {
 
     function _pool(address bounty, address referralPayout) internal returns (PoolKey memory key) {
         key = _skimPool(
-            address(art), _skimFeeData(5000, 5000, 1000, bounty, referralPayout), address(0x10C), address(0)
+            address(art),
+            _skimFeeData(5000, 5000, 1000, bounty, referralPayout),
+            address(0x10C),
+            address(0)
         );
         _addLiquidity(key, -6000, 6000, 1000 ether);
     }

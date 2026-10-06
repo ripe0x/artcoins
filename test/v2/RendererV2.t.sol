@@ -74,6 +74,11 @@ contract RendererV2Test is Test {
 
     // ─── helpers ───────────────────────────────────────────────────────
 
+    /// @dev raw bytes as a string (solidity rejects invalid utf8 in `string(hex"..")`).
+    function _s(bytes memory b) internal pure returns (string memory) {
+        return string(b);
+    }
+
     function _all() internal view returns (IMetadataRenderer[4] memory rs) {
         rs = [
             IMetadataRenderer(address(def)),
@@ -84,11 +89,19 @@ contract RendererV2Test is Test {
     }
 
     function _svgRenderers() internal view returns (IMetadataRenderer[3] memory rs) {
-        rs = [IMetadataRenderer(address(dyn)), IMetadataRenderer(address(ex)), IMetadataRenderer(address(sprite))];
+        rs = [
+            IMetadataRenderer(address(dyn)),
+            IMetadataRenderer(address(ex)),
+            IMetadataRenderer(address(sprite))
+        ];
     }
 
     /// @dev strict: the prefix must match and the base64 must round trip.
-    function _decode(string memory uri, string memory prefix) internal pure returns (string memory) {
+    function _decode(string memory uri, string memory prefix)
+        internal
+        pure
+        returns (string memory)
+    {
         assertTrue(LibString.startsWith(uri, prefix), "missing data uri prefix");
         string memory b64 = LibString.slice(uri, bytes(prefix).length);
         bytes memory raw = Base64.decode(b64);
@@ -233,7 +246,7 @@ contract RendererV2Test is Test {
     }
 
     /// @dev full structural check of every renderer's output for the current `tok`.
-    function _checkAll() internal view {
+    function _checkAll() internal {
         IMetadataRenderer[4] memory rs = _all();
         for (uint256 i = 0; i < rs.length; i++) {
             string memory json = _json(rs[i], address(tok));
@@ -252,6 +265,9 @@ contract RendererV2Test is Test {
             );
             vm.parseJsonString(json, ".image");
         }
+        // the sprite draws an <image> only when the cleaned url is non empty.
+        bool hasImage = bytes(SvgText.cleanOrEmpty(tok.imageUrl(), SvgText.URL_MAX)).length != 0;
+        benign.set("Benign", "BEN", "plain description", hasImage ? "ipfs://bafy" : "");
         IMetadataRenderer[3] memory sv = _svgRenderers();
         for (uint256 i = 0; i < sv.length; i++) {
             string memory svg = _svg(sv[i], address(tok));
@@ -287,7 +303,9 @@ contract RendererV2Test is Test {
         string memory dsvg = _svg(dyn, address(tok));
         assertTrue(_contains(dsvg, "&lt;/text&gt;&lt;script&gt;alert(1)&lt;/"), "dyn name escaped");
         string memory esvg = _svg(ex, address(tok));
-        assertTrue(_contains(esvg, "&lt;/text&gt;&lt;script&gt;alert(1)&lt;/"), "example name escaped");
+        assertTrue(
+            _contains(esvg, "&lt;/text&gt;&lt;script&gt;alert(1)&lt;/"), "example name escaped"
+        );
         // attribute value (sprite href)
         string memory ssvg = _svg(sprite, address(tok));
         assertTrue(
@@ -315,14 +333,18 @@ contract RendererV2Test is Test {
         string memory svg = _svg(dyn, address(tok));
         assertFalse(_contains(svg, '<image href="//x.i"/>'), "markup injected");
         assertFalse(_contains(svg, "</text></text>"), "extra close");
-        assertTrue(_contains(svg, "&lt;/text&gt;&lt;image href=&quot;//x.i&quot;/&gt;"), "not escaped");
+        assertTrue(
+            _contains(svg, "&lt;/text&gt;&lt;image href=&quot;//x.i&quot;/&gt;"), "not escaped"
+        );
     }
 
     function test_renderV2_R1_exampleNameCannotInjectMarkup() public {
         tok.set(SVG_PAYLOAD, "SYM", "d", "i");
         string memory svg = _svg(ex, address(tok));
         assertFalse(_contains(svg, '<image href="//x.i"/>'), "markup injected");
-        assertTrue(_contains(svg, "&lt;/text&gt;&lt;image href=&quot;//x.i&quot;/&gt;"), "not escaped");
+        assertTrue(
+            _contains(svg, "&lt;/text&gt;&lt;image href=&quot;//x.i&quot;/&gt;"), "not escaped"
+        );
     }
 
     function test_renderV2_R1_ampersandSymbolKeepsXmlValid() public {
@@ -432,23 +454,26 @@ contract RendererV2Test is Test {
         // emoji that fits whole is kept: 26 ascii + emoji = 30 bytes.
         tok.set(string.concat(_rep("a", 26), unicode"😀"), "S", "d", "i");
         dsvg = _svg(dyn, address(tok));
-        assertTrue(_contains(dsvg, string.concat(">", _rep("a", 26), unicode"😀", "</text>")), "whole emoji dropped");
+        assertTrue(
+            _contains(dsvg, string.concat(">", _rep("a", 26), unicode"😀", "</text>")),
+            "whole emoji dropped"
+        );
     }
 
     function test_renderV2_cleanReplacesInvalidAndControl() public pure {
-        assertEq(SvgText.clean(string(hex"c080"), 99), "??", "overlong");
-        assertEq(SvgText.clean(string(hex"eda080"), 99), "???", "surrogate");
-        assertEq(SvgText.clean(string(hex"f4908080"), 99), "????", "above 10ffff");
-        assertEq(SvgText.clean(string(hex"f5"), 99), "?", "bad lead");
-        assertEq(SvgText.clean(string(hex"80"), 99), "?", "stray continuation");
-        assertEq(SvgText.clean(string(hex"41e282"), 99), "A??", "truncated tail");
-        assertEq(SvgText.clean(string(hex"efbfbe"), 99), "?", "u+fffe");
-        assertEq(SvgText.clean(string(hex"efbfbf"), 99), "?", "u+ffff");
-        assertEq(SvgText.clean(string(hex"c285"), 99), " ", "c1 control");
-        assertEq(SvgText.clean(string(hex"c2a0"), 99), string(hex"c2a0"), "nbsp kept");
-        assertEq(SvgText.clean(string(hex"610a0b0d097f00"), 99), "a      ", "c0 and del");
-        assertEq(SvgText.clean(string(hex"f09f9880"), 99), string(hex"f09f9880"), "emoji kept");
-        assertEq(SvgText.clean(string(hex"f48fbfbf"), 99), string(hex"f48fbfbf"), "u+10ffff kept");
+        assertEq(SvgText.clean(_s(hex"c080"), 99), "??", "overlong");
+        assertEq(SvgText.clean(_s(hex"eda080"), 99), "???", "surrogate");
+        assertEq(SvgText.clean(_s(hex"f4908080"), 99), "????", "above 10ffff");
+        assertEq(SvgText.clean(_s(hex"f5"), 99), "?", "bad lead");
+        assertEq(SvgText.clean(_s(hex"80"), 99), "?", "stray continuation");
+        assertEq(SvgText.clean(_s(hex"41e282"), 99), "A??", "truncated tail");
+        assertEq(SvgText.clean(_s(hex"efbfbe"), 99), "?", "u+fffe");
+        assertEq(SvgText.clean(_s(hex"efbfbf"), 99), "?", "u+ffff");
+        assertEq(SvgText.clean(_s(hex"c285"), 99), " ", "c1 control");
+        assertEq(SvgText.clean(_s(hex"c2a0"), 99), _s(hex"c2a0"), "nbsp kept");
+        assertEq(SvgText.clean(_s(hex"610a0b0d097f00"), 99), "a      ", "c0 and del");
+        assertEq(SvgText.clean(_s(hex"f09f9880"), 99), _s(hex"f09f9880"), "emoji kept");
+        assertEq(SvgText.clean(_s(hex"f48fbfbf"), 99), _s(hex"f48fbfbf"), "u+10ffff kept");
         assertEq(SvgText.clean("", 99), "");
         assertEq(SvgText.clean("abc", 0), "");
         assertEq(SvgText.cleanOrEmpty("abcd", 3), "", "over cap dropped");
@@ -505,8 +530,8 @@ contract RendererV2Test is Test {
             "\n",
             unicode"😀",
             unicode"€",
-            string(hex"ff"),
-            string(hex"e282"),
+            _s(hex"ff"),
+            _s(hex"e282"),
             "&amp;",
             "{\"a\":[",
             "a"
@@ -528,7 +553,7 @@ contract RendererV2Test is Test {
     }
 
     function test_renderV2_controlAndInvalidBytesYieldValidOutput() public {
-        tok.set(string(hex"610a0d0900ff41c0"), string(hex"0180"), string(hex"e282"), string(hex"eda080"));
+        tok.set(_s(hex"610a0d0900ff41c0"), _s(hex"0180"), _s(hex"e282"), _s(hex"eda080"));
         _checkAll();
         tok.set(string(abi.encodePacked("a", hex"0a", "b")), "s", "d", "i");
         string memory svg = _svg(ex, address(tok));
@@ -544,34 +569,55 @@ contract RendererV2Test is Test {
         len = bytes(out).length;
     }
 
+    function _measureAll(string memory tag, bool assertCold) internal returns (uint256 worst) {
+        IMetadataRenderer[4] memory rs = _all();
+        for (uint256 i = 0; i < rs.length; i++) {
+            (uint256 g, uint256 l) = _gas(rs[i]);
+            console2.log(tag, "renderer", i);
+            console2.log("  warm gas", g);
+            console2.log("  bytes", l);
+            assertLt(g, Constants.RENDER_GAS_BUDGET, "warm over budget");
+            if (g > worst) worst = g;
+            // cold: the token's own storage priced at cold sload (the token pays
+            // this on every read, whatever the renderer does with the result).
+            vm.cool(address(tok));
+            (g, l) = _gas(rs[i]);
+            console2.log("  cold gas", g);
+            if (assertCold) assertLt(g, Constants.RENDER_GAS_BUDGET, "cold over budget");
+        }
+    }
+
+    /// @dev worst case at the sizes the renderers accept: every field at its
+    ///      `SvgText` cap made of the worst expanding json char, both glyph layers
+    ///      at `Constants.MAX_GLYPHS`. Warm and cold must fit `RENDER_GAS_BUDGET`.
     function test_renderV2_maxGlyphsUnderBudget() public {
         counter.set(type(uint128).max, type(uint128).max);
-        // every field 24KB of the worst expanding json char; image exactly at the url cap.
-        string memory big = _rep('"', 24_000);
-        string memory edge = _rep('"', SvgText.URL_MAX);
-        string[2] memory imgs = [big, edge];
-        IMetadataRenderer[4] memory rs = _all();
-        uint256 worst;
-        for (uint256 k = 0; k < imgs.length; k++) {
-            tok.set(big, big, big, imgs[k]);
-            for (uint256 i = 0; i < rs.length; i++) {
-                (uint256 g, uint256 l) = _gas(rs[i]);
-                console2.log("renderer / gas / bytes (warm)", i, g);
-                console2.log("  bytes", l);
-                assertLt(g, Constants.RENDER_GAS_BUDGET, "warm over budget");
-                if (g > worst) worst = g;
-                // cold: the token's own storage reads priced at cold sload.
-                vm.cool(address(tok));
-                (g, l) = _gas(rs[i]);
-                console2.log("  gas (cold token storage)", g);
-                assertLt(g, Constants.RENDER_GAS_BUDGET, "cold over budget");
-            }
-        }
-        console2.log("worst warm gas", worst);
+        tok.set(
+            _rep('"', SvgText.NAME_MAX),
+            _rep('"', SvgText.SYMBOL_MAX),
+            _rep('"', SvgText.DESC_MAX),
+            _rep('"', SvgText.URL_MAX)
+        );
+        uint256 worst = _measureAll("caps", true);
+        console2.log("worst gas at caps", worst);
         // the sprite caps both glyph layers at Constants.MAX_GLYPHS.
         string memory svg = _svg(sprite, address(tok));
         assertEq(_count(svg, "+"), Constants.MAX_GLYPHS, "plus glyph count");
         assertEq(Constants.MAX_GLYPHS, sprite.MAX_GLYPHS());
+    }
+
+    /// @dev the token does not bound its strings, so also feed 24KB per field (the
+    ///      v1 review worst case). The renderer's own work stays under budget
+    ///      (warm). Cold is logged only: the token's sloads for 4 x 24KB cost about
+    ///      6M gas by themselves, which no renderer can avoid.
+    function test_renderV2_oversizeTokenStringsUnderBudgetWarm() public {
+        counter.set(type(uint128).max, type(uint128).max);
+        string memory big = _rep('"', 24_000);
+        tok.set(big, big, big, big);
+        _measureAll("24kb", false);
+        string memory edge = _rep('"', SvgText.URL_MAX);
+        tok.set(big, big, big, edge);
+        _measureAll("24kb+urlcap", false);
     }
 
     function test_renderV2_spriteGlyphCountsFollowCounterAndCap() public {
@@ -583,7 +629,9 @@ contract RendererV2Test is Test {
         counter.set(1000, 7);
         svg = _svg(sprite, address(tok));
         assertEq(_count(svg, "+"), Constants.MAX_GLYPHS);
-        assertEq(bytes(vm.parseJsonString(_json(sprite, address(tok)), ".description")).length > 0, true);
+        assertEq(
+            bytes(vm.parseJsonString(_json(sprite, address(tok)), ".description")).length > 0, true
+        );
         assertEq(
             vm.parseJsonString(_json(sprite, address(tok)), ".description"), "Buys: 1000 | Sells: 7"
         );

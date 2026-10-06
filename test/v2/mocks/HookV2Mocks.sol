@@ -4,10 +4,13 @@ pragma solidity ^0.8.26;
 // test only stand ins for the v2 hook suite.
 
 import {Constants} from "../../../src/Constants.sol";
-import {IReferralPayoutForHook} from "../../../src/v2/interfaces/IReferralPayoutForHook.sol";
 import {IArtCoinsPoolExtension} from "../../../src/hooks/interfaces/IArtCoinsPoolExtension.sol";
+import {IReferralPayoutForHook} from "../../../src/v2/interfaces/IReferralPayoutForHook.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
+import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
@@ -166,5 +169,91 @@ contract HV2Extension is IArtCoinsPoolExtension {
 
     function supportsInterface(bytes4) external pure returns (bool) {
         return true;
+    }
+}
+
+interface IHV2Erc20 {
+    function transfer(address to, uint256 amount) external returns (bool);
+}
+
+/// liquidity actions inside ONE unlock (H14 / b1 shapes). holds its own eth
+/// and coin, settles what it owes, sends any credit to `owner`.
+/// modes: 0 add then remove, 1 remove then add, 2 add only, 3 remove only
+/// (liq 0 = fee collect).
+contract HV2AddRemoveRouter is IUnlockCallback {
+    using TransientStateLibrary for IPoolManager;
+
+    uint8 public constant ADD_REMOVE = 0;
+    uint8 public constant REMOVE_ADD = 1;
+    uint8 public constant ADD = 2;
+    uint8 public constant REMOVE = 3;
+
+    IPoolManager public immutable pm;
+    address public immutable owner;
+    /// credit sent to `owner` per currency in the last run.
+    uint256 public lastTake0;
+    uint256 public lastTake1;
+
+    constructor(IPoolManager pm_) {
+        pm = pm_;
+        owner = msg.sender;
+    }
+
+    receive() external payable {}
+
+    function run(PoolKey calldata key, int24 lo, int24 hi, uint256 liq, bytes32 salt, uint8 mode)
+        external
+    {
+        lastTake0 = 0;
+        lastTake1 = 0;
+        pm.unlock(abi.encode(key, lo, hi, liq, salt, mode));
+    }
+
+    function unlockCallback(bytes calldata raw) external returns (bytes memory) {
+        require(msg.sender == address(pm), "pm");
+        (PoolKey memory key, int24 lo, int24 hi, uint256 liq, bytes32 salt, uint8 mode) =
+            abi.decode(raw, (PoolKey, int24, int24, uint256, bytes32, uint8));
+        int256 l = int256(liq);
+        if (mode == ADD_REMOVE) {
+            _modify(key, lo, hi, l, salt);
+            _modify(key, lo, hi, -l, salt);
+        } else if (mode == REMOVE_ADD) {
+            _modify(key, lo, hi, -l, salt);
+            _modify(key, lo, hi, l, salt);
+        } else if (mode == ADD) {
+            _modify(key, lo, hi, l, salt);
+        } else {
+            _modify(key, lo, hi, -l, salt);
+        }
+        lastTake0 = _close(key.currency0);
+        lastTake1 = _close(key.currency1);
+        return "";
+    }
+
+    function _modify(PoolKey memory key, int24 lo, int24 hi, int256 l, bytes32 salt) private {
+        pm.modifyLiquidity(
+            key,
+            IPoolManager.ModifyLiquidityParams({
+                tickLower: lo, tickUpper: hi, liquidityDelta: l, salt: salt
+            }),
+            ""
+        );
+    }
+
+    function _close(Currency c) private returns (uint256 taken) {
+        int256 d = pm.currencyDelta(address(this), c);
+        if (d < 0) {
+            uint256 owe = uint256(-d);
+            if (c.isAddressZero()) {
+                pm.settle{value: owe}();
+            } else {
+                pm.sync(c);
+                IHV2Erc20(Currency.unwrap(c)).transfer(address(pm), owe);
+                pm.settle();
+            }
+        } else if (d > 0) {
+            taken = uint256(d);
+            pm.take(c, owner, taken);
+        }
     }
 }

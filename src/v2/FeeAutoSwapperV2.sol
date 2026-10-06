@@ -9,8 +9,8 @@ import {FeeDelivery} from "./libraries/FeeDelivery.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
@@ -192,13 +192,17 @@ contract FeeAutoSwapperV2 is
         (uint160 preSqrtPriceX96,,,) = poolManager.getSlot0(_key(coin).toId());
         lastConvertBlock = block.number;
 
-        (uint256 received, uint256 actualIn) =
-            abi.decode(poolManager.unlock(abi.encode(amountIn, preSqrtPriceX96)), (uint256, uint256));
+        (uint256 received, uint256 actualIn) = abi.decode(
+            poolManager.unlock(abi.encode(amountIn, preSqrtPriceX96)), (uint256, uint256)
+        );
         if (actualIn > amountIn) revert ExcessInputSpent(actualIn, amountIn);
         if (received < minOut) revert InsufficientOutput(received, minOut);
         uint256 floor = _spotFloor(actualIn, preSqrtPriceX96);
         if (received < floor) revert MinOutBelowFloor(received, floor);
 
+        // the hook refunds over charged skim on a price limited fill to the
+        // swap sender (this contract) via the escrow; forward it now too.
+        _claimEscrowed(address(0));
         (uint256 toRecipient, uint256 toKeeper) = _forwardAll(_reward(received));
         emit Converted(msg.sender, actualIn, received, toRecipient, toKeeper);
         return received;
@@ -227,9 +231,8 @@ contract FeeAutoSwapperV2 is
         // price. limit = spot * sqrt(1 + bps / BPS), rounded down, so the
         // realized price move never exceeds `maxSlippageBps` (the v1 linear
         // approximation overshot by bps^2 / 4).
-        uint256 factor = FixedPointMathLib.sqrt(
-            (Constants.BPS + maxSlippageBps) * 1e36 / Constants.BPS
-        );
+        uint256 factor =
+            FixedPointMathLib.sqrt((Constants.BPS + maxSlippageBps) * 1e36 / Constants.BPS);
         uint256 c = FullMath.mulDiv(uint256(spot), factor, 1e18);
         uint160 limit =
             c >= uint256(TickMath.MAX_SQRT_PRICE) ? TickMath.MAX_SQRT_PRICE - 1 : uint160(c);
@@ -279,7 +282,9 @@ contract FeeAutoSwapperV2 is
 
     /// @inheritdoc IFeeAutoSwapperV2
     function accruedPaired() external view returns (uint256) {
-        return address(this).balance + IArtCoinsFeeEscrowV2(feeEscrow).balances(address(this), address(0));
+        return
+            address(this).balance
+                + IArtCoinsFeeEscrowV2(feeEscrow).balances(address(this), address(0));
     }
 
     /// @notice The output floor `convert` enforces for `artIn` consumed at the
@@ -398,7 +403,8 @@ contract FeeAutoSwapperV2 is
     }
 
     function _checkMinBlocks(uint256 blocks) internal pure {
-        if (blocks < Constants.SWAPPER_MIN_BLOCKS_MIN || blocks > Constants.SWAPPER_MIN_BLOCKS_MAX) {
+        if (blocks < Constants.SWAPPER_MIN_BLOCKS_MIN || blocks > Constants.SWAPPER_MIN_BLOCKS_MAX)
+        {
             revert OutOfBounds(
                 blocks, Constants.SWAPPER_MIN_BLOCKS_MIN, Constants.SWAPPER_MIN_BLOCKS_MAX
             );

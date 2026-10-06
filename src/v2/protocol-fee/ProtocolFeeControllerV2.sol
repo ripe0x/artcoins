@@ -183,7 +183,9 @@ contract ProtocolFeeControllerV2 is
         assembly ("memory-safe") {
             mstore(0x00, sel)
             let ok := staticcall(g, r, 0x00, 0x04, 0x00, 0x20)
-            if and(ok, gt(returndatasize(), 0x1f)) { c := and(mload(0x00), 0xffffffffffffffffffffffffffffffffffffffff) }
+            if and(ok, gt(returndatasize(), 0x1f)) {
+                c := and(mload(0x00), 0xffffffffffffffffffffffffffffffffffffffff)
+            }
         }
     }
 }

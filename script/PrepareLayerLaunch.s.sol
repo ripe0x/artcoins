@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+// targets superseded stack legacy (LAYER); current stack is 0x4959… (Addresses.CURRENT_FACTORY).
+// Mainnet runs are refused unless ALLOW_SUPERSEDED=1.
+
 import {Script, console2} from "forge-std/Script.sol";
 
 import {BurnRouter} from "../src/protocol-fee/BurnRouter.sol";
@@ -11,6 +14,8 @@ import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
+import {Addresses} from "./Addresses.sol";
+
 /// @title PrepareLayerLaunch
 /// @notice Pre-initializes BurnRouter for the predicted LAYER token/pool so
 ///         the scheduled `LaunchLayer` broadcast can skip router setup and go
@@ -19,7 +24,15 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 ///      used for `LaunchLayer.s.sol`, because the predicted token address is
 ///      derived from the deployer/token admin.
 contract PrepareLayerLaunch is Script {
+    /// @dev Mainnet runs are refused unless ALLOW_SUPERSEDED=1 (superseded stack legacy (LAYER)).
+    function _requireSupersededAllowed() internal view {
+        if (block.chainid == Addresses.CHAIN_ID && vm.envOr("ALLOW_SUPERSEDED", uint256(0)) != 1) {
+            revert("targets a superseded stack; set ALLOW_SUPERSEDED=1 to run on mainnet");
+        }
+    }
+
     function run() public {
+        _requireSupersededAllowed();
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(pk);
         address factory = vm.envAddress("FACTORY");
@@ -54,9 +67,7 @@ contract PrepareLayerLaunch is Script {
 
         vm.startBroadcast(pk);
         // Sandwich protection is the hardcoded impact cap — no EMA gate, no knob.
-        router.initialize(
-            predictedLayer, weth, predictedPoolKey, 0x000000000004444c5dc75cB358380D2e3dE08A90
-        );
+        router.initialize(predictedLayer, weth, predictedPoolKey, Addresses.POOL_MANAGER);
         vm.stopBroadcast();
 
         _verifyInitialized(router, predictedLayer, predictedPoolKey);
@@ -101,13 +112,13 @@ contract PrepareLayerLaunch is Script {
     }
 
     function _weth() internal view returns (address) {
-        if (block.chainid == 1) return 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+        if (block.chainid == 1) return Addresses.WETH;
         if (block.chainid == 11_155_111) return 0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14;
         revert("unsupported chain");
     }
 
     function _universalRouter() internal view returns (address) {
-        if (block.chainid == 1) return 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af;
+        if (block.chainid == 1) return Addresses.UNIVERSAL_ROUTER;
         if (block.chainid == 11_155_111) return 0x3A9D48AB9751398BbFa63ad67599Bb04e4BdF98b;
         revert("unsupported chain");
     }

@@ -52,7 +52,8 @@ contract LiveForkReviewTest is Test {
     bool internal forked;
 
     function setUp() public {
-        string memory rpc = vm.envOr("MAINNET_RPC_URL", string("https://mainnet.gateway.tenderly.co"));
+        string memory rpc =
+            vm.envOr("MAINNET_RPC_URL", string("https://mainnet.gateway.tenderly.co"));
         try vm.createSelectFork(rpc, FORK_BLOCK) {
             forked = true;
         } catch {
@@ -79,9 +80,8 @@ contract LiveForkReviewTest is Test {
             PoolId id = k.toId();
             int24 lo = info.tickLower();
             int24 hi = info.tickUpper();
-            (uint128 liq, uint256 last0, uint256 last1) = IPoolManager(PM).getPositionInfo(
-                id, address(posm), lo, hi, bytes32(first + i)
-            );
+            (uint128 liq, uint256 last0, uint256 last1) =
+                IPoolManager(PM).getPositionInfo(id, address(posm), lo, hi, bytes32(first + i));
             (uint256 g0, uint256 g1) = IPoolManager(PM).getFeeGrowthInside(id, lo, hi);
             unchecked {
                 f0 += FullMath.mulDiv(g0 - last0, liq, FixedPoint128.Q128);

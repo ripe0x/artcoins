@@ -12,7 +12,10 @@ import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {IPositionManager} from "@uniswap/v4-periphery/src/interfaces/IPositionManager.sol";
-import {PositionInfo, PositionInfoLibrary} from "@uniswap/v4-periphery/src/libraries/PositionInfoLibrary.sol";
+import {
+    PositionInfo,
+    PositionInfoLibrary
+} from "@uniswap/v4-periphery/src/libraries/PositionInfoLibrary.sol";
 
 interface ILockerPositionManager {
     function positionManager() external view returns (IPositionManager);
@@ -29,7 +32,8 @@ contract CollectFlushKeeperV1 {
     using PoolIdLibrary for PoolKey;
     using PositionInfoLibrary for PositionInfo;
 
-    IPoolManager internal constant POOL_MANAGER = IPoolManager(0x000000000004444c5dc75cB358380D2e3dE08A90);
+    IPoolManager internal constant POOL_MANAGER =
+        IPoolManager(0x000000000004444c5dc75cB358380D2e3dE08A90);
 
     IArtCoinsLpLocker public immutable locker;
     address public immutable token;
@@ -123,7 +127,8 @@ contract CollectFlushKeeperV1 {
         PoolId pid = info.poolKey.toId();
         for (uint256 i; i < info.numPositions; ++i) {
             PositionInfo p = pm.positionInfo(info.positionId + i);
-            (uint256 g0, uint256 g1) = POOL_MANAGER.getFeeGrowthInside(pid, p.tickLower(), p.tickUpper());
+            (uint256 g0, uint256 g1) =
+                POOL_MANAGER.getFeeGrowthInside(pid, p.tickLower(), p.tickUpper());
             (uint128 liq, uint256 l0, uint256 l1) = POOL_MANAGER.getPositionInfo(
                 pid, address(pm), p.tickLower(), p.tickUpper(), bytes32(info.positionId + i)
             );

@@ -34,7 +34,7 @@ library SvgText {
     /// @dev json `symbol` field.
     uint256 internal constant SYMBOL_MAX = 64;
     /// @dev json description / metadata field.
-    uint256 internal constant DESC_MAX = 4_096;
+    uint256 internal constant DESC_MAX = 4096;
     /// @dev image, external and animation urls. Longer values are dropped, not
     ///      truncated: a cut url points at the wrong thing.
     uint256 internal constant URL_MAX = 16_384;
@@ -65,11 +65,7 @@ library SvgText {
     }
 
     /// @notice `""` when `s` is longer than `maxBytes`, else `clean(s, maxBytes)`.
-    function cleanOrEmpty(string memory s, uint256 maxBytes)
-        internal
-        pure
-        returns (string memory)
-    {
+    function cleanOrEmpty(string memory s, uint256 maxBytes) internal pure returns (string memory) {
         if (bytes(s).length > maxBytes) return "";
         return clean(s, maxBytes);
     }
@@ -125,7 +121,9 @@ library SvgText {
                                 n := 3
                                 kind := 0
                                 // U+FFFE, U+FFFF
-                                if and(eq(c, 0xef), and(eq(b1, 0xbf), gt(b2, 0xbd))) { kind := 2 }
+                                if and(eq(c, 0xef), and(eq(b1, 0xbf), gt(b2, 0xbd))) {
+                                    kind := 2
+                                }
                             }
                         }
                     }

@@ -13,6 +13,8 @@ import {ArtCoinsMevLinearSkim} from "../src/mev-modules/ArtCoinsMevLinearSkim.so
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 
+import {Addresses} from "./Addresses.sol";
+
 /// @title  DeployV1Stack
 /// @notice One-shot deploy of the artcoins v1 stack that the
 ///         `permanent-collection` Phase 2 launch consumes. Replaces the
@@ -80,16 +82,16 @@ import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 ///     --fork-url https://gateway.tenderly.co/public/mainnet -vv
 contract DeployV1Stack is Script {
     // ── canonical Ethereum mainnet infrastructure ─────────────────────────
-    address constant POOL_MANAGER = 0x000000000004444c5dc75cB358380D2e3dE08A90;
-    address constant POSITION_MANAGER = 0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e;
-    address constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-    address constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
+    address constant POOL_MANAGER = Addresses.POOL_MANAGER;
+    address constant POSITION_MANAGER = Addresses.POSITION_MANAGER;
+    address constant WETH = Addresses.WETH;
+    address constant PERMIT2 = Addresses.PERMIT2;
 
     /// @dev Canonical CREATE2 deployer proxy used by `forge script --broadcast`
     ///      when it rewrites `new Contract{salt:}(...)`. HookMiner must mine
     ///      against this address so the on-chain deploy lands at the mined
     ///      address.
-    address constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
+    address constant CREATE2_DEPLOYER = Addresses.CREATE2_DEPLOYER;
 
     /// @notice Bag of every address produced by `deployStack`. Returned to the
     ///         caller so both `run()` (logging) and the fork test (assertions)

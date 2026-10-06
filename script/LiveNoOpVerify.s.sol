@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+// targets superseded stack legacy (LAYER); current stack is 0x4959… (Addresses.CURRENT_FACTORY).
+// Mainnet runs are refused unless ALLOW_SUPERSEDED=1.
+
 import {Script, console2} from "forge-std/Script.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -13,6 +16,8 @@ import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {IWETH9} from "@uniswap/v4-periphery/src/interfaces/external/IWETH9.sol";
 
+import {Addresses} from "./Addresses.sol";
+
 interface IExt {
     function counts(PoolId) external view returns (uint128 buys, uint128 sells);
 }
@@ -23,13 +28,21 @@ interface IExt {
 contract LiveNoOpVerify is Script {
     using PoolIdLibrary for PoolKey;
 
-    address constant LAYER = 0xb7287e4A5b605aB92A8589C62af8A4ebD347E6c9;
-    address constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-    address constant HOOK = 0xA5eA9904F2cD572c638a1eF81463BDAbEa9D28cc;
-    address constant POOL_MANAGER = 0x000000000004444c5dc75cB358380D2e3dE08A90;
-    address constant EXT = 0x38d03af54ba9F80c3476B3D3B3a6415A399303f7;
+    address constant LAYER = Addresses.COIN_LAYER;
+    address constant WETH = Addresses.WETH;
+    address constant HOOK = Addresses.LEGACY_HOOK;
+    address constant POOL_MANAGER = Addresses.POOL_MANAGER;
+    address constant EXT = Addresses.LEGACY_AUTOFORWARD_EXTENSION;
+
+    /// @dev Drives the legacy stack (LAYER). On mainnet it refuses to run unless ALLOW_SUPERSEDED=1.
+    function _requireSupersededAllowed() internal view {
+        if (block.chainid == Addresses.CHAIN_ID && vm.envOr("ALLOW_SUPERSEDED", uint256(0)) != 1) {
+            revert("targets superseded stack legacy; set ALLOW_SUPERSEDED=1 to run on mainnet");
+        }
+    }
 
     function run() external {
+        _requireSupersededAllowed();
         PoolKey memory pk = PoolKey({
             currency0: Currency.wrap(LAYER),
             currency1: Currency.wrap(WETH),

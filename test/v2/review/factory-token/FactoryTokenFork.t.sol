@@ -58,16 +58,15 @@ contract FTForkRouter is IUnlockCallback {
         Args memory a = abi.decode(raw, (Args));
         if (a.mode == 0) {
             pm.modifyLiquidity(
-                a.key,
-                IPoolManager.ModifyLiquidityParams(a.lo, a.hi, int256(a.liq), bytes32(0)),
-                ""
+                a.key, IPoolManager.ModifyLiquidityParams(a.lo, a.hi, int256(a.liq), bytes32(0)), ""
             );
             _settleOwed();
             return abi.encode(uint256(0));
         }
         if (a.liq != 0) {
-            IPoolManager.ModifyLiquidityParams memory p =
-                IPoolManager.ModifyLiquidityParams(a.canonLo, a.canonHi, int256(a.liq), bytes32("ft"));
+            IPoolManager.ModifyLiquidityParams memory p = IPoolManager.ModifyLiquidityParams(
+                a.canonLo, a.canonHi, int256(a.liq), bytes32("ft")
+            );
             pm.modifyLiquidity(a.canon, p, "");
             p.liquidityDelta = -int256(a.liq);
             pm.modifyLiquidity(a.canon, p, "");
@@ -132,7 +131,9 @@ contract FactoryTokenForkTest is Test {
         canon = PoolKey(
             Currency.wrap(address(0)), Currency.wrap(COIN_111), 0x800000, 200, IHooks(LIVE_HOOK)
         );
-        side = PoolKey(Currency.wrap(address(0)), Currency.wrap(COIN_111), 3000, 60, IHooks(address(0)));
+        side = PoolKey(
+            Currency.wrap(address(0)), Currency.wrap(COIN_111), 3000, 60, IHooks(address(0))
+        );
     }
 
     function _alignDown(int24 t, int24 s) internal pure returns (int24) {
@@ -223,7 +224,9 @@ contract FactoryTokenForkTest is Test {
                     extension: address(0),
                     extensionData: "",
                     feeData: abi.encode(
-                        IArtCoinsHookStaticFee.PoolStaticConfigVars({artCoinFee: 10_000, pairedFee: 10_000})
+                        IArtCoinsHookStaticFee.PoolStaticConfigVars({
+                            artCoinFee: 10_000, pairedFee: 10_000
+                        })
                     )
                 })
             )

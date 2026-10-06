@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {HMArt, HooksMevBase} from "./HooksMevBase.sol";
 import {ArtCoinsMevLinearFees} from "../../../../src/mev-modules/ArtCoinsMevLinearFees.sol";
 import {ArtCoinsMevLinearSkim} from "../../../../src/mev-modules/ArtCoinsMevLinearSkim.sol";
-import {ArtCoinsMevSniperSteppedFees} from
-    "../../../../src/mev-modules/ArtCoinsMevSniperSteppedFees.sol";
+import {
+    ArtCoinsMevSniperSteppedFees
+} from "../../../../src/mev-modules/ArtCoinsMevSniperSteppedFees.sol";
+import {HMArt, HooksMevBase} from "./HooksMevBase.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
@@ -27,7 +28,8 @@ contract SniperAndModulesTest is HooksMevBase {
         key = _staticPool(address(art), 10_000, 10_000, address(mod));
         staticHook.factorySetSniperFeeRecipient(key, sniperR, false);
         _addLiquidity(key, -6000, 6000, 1000 ether);
-        ArtCoinsMevSniperSteppedFees.Step[] memory steps = new ArtCoinsMevSniperSteppedFees.Step[](1);
+        ArtCoinsMevSniperSteppedFees.Step[] memory steps =
+            new ArtCoinsMevSniperSteppedFees.Step[](1);
         steps[0] = ArtCoinsMevSniperSteppedFees.Step({durationSec: 900, feePpm: 500_000});
         staticHook.initializeMevModule(key, abi.encode(steps, uint24(10_000)));
         vm.warp(block.timestamp + 1);
@@ -55,7 +57,9 @@ contract SniperAndModulesTest is HooksMevBase {
 
         emit log_named_uint("eth cost exact-in ", costIn);
         emit log_named_uint("eth cost exact-out", costOut);
-        assertLt(costOut, costIn * 80 / 100, "exact-output is >20% cheaper during the sniper window");
+        assertLt(
+            costOut, costIn * 80 / 100, "exact-output is >20% cheaper during the sniper window"
+        );
     }
 
     /// H7: exact-input sniper extra is charged on |amountSpecified| in

@@ -2,8 +2,8 @@
 pragma solidity ^0.8.26;
 
 import {Constants} from "../../Constants.sol";
-import {IArtCoinsFactoryV2} from "../interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsExtensionV2} from "../interfaces/IArtCoinsExtensionV2.sol";
+import {IArtCoinsFactoryV2} from "../interfaces/IArtCoinsFactoryV2.sol";
 import {IConstantsBound} from "../interfaces/IConstantsBound.sol";
 import {IArtCoinsVaultV2} from "./interfaces/IArtCoinsVaultV2.sol";
 
@@ -93,7 +93,9 @@ contract ArtCoinsVaultV2 is ReentrancyGuard, IArtCoinsVaultV2 {
 
         IERC20(token).safeTransferFrom(msg.sender, address(this), extensionSupply);
 
-        emit AllocationCreated(token, extensionIndex, beneficiary, extensionSupply, lockupEnd, vestingEnd);
+        emit AllocationCreated(
+            token, extensionIndex, beneficiary, extensionSupply, lockupEnd, vestingEnd
+        );
     }
 
     /// @inheritdoc IArtCoinsVaultV2

@@ -7,7 +7,10 @@ pragma solidity ^0.8.26;
 ///         recipient, and forwards keeper rewards to the caller. Holds nothing.
 interface IArtCoinsKeeperV2 {
     event KeeperRun(
-        address indexed caller, address indexed token, uint256 nativeForwarded, uint256 coinForwarded
+        address indexed caller,
+        address indexed token,
+        uint256 nativeForwarded,
+        uint256 coinForwarded
     );
 
     error NotArtCoin(address token);

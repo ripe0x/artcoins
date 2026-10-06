@@ -176,6 +176,20 @@ contract FeeAutoSwapperV2ForkTest is P1Base {
         assertEq(escrow.balances(address(swapper), address(coin)), 0);
     }
 
+    /// @notice Skim refunds land in the escrow for the swap sender (the
+    ///         swapper); convert claims and forwards them in the same call.
+    function test_swapperV2_convert_forwardsEscrowedEth_rewardOnOutputOnly() public {
+        coin.transfer(address(swapper), STEP);
+        escrow.storeFeesNative{value: 0.4 ether}(address(swapper));
+        vm.prank(keeper);
+        uint256 out = swapper.convert(0);
+        assertEq(keeper.balance, _reward(out), "reward on swap output only");
+        assertEq(address(end).balance, out + 0.4 ether - _reward(out));
+        assertEq(escrow.balances(address(swapper), address(0)), 0, "refund forwarded");
+        assertEq(swapper.accruedPaired(), 0);
+        assertEq(address(swapper).balance, 0, "invariant");
+    }
+
     function test_swapperV2_convert_honoursMinOut() public {
         coin.transfer(address(swapper), STEP);
         vm.expectPartialRevert(IFeeAutoSwapperV2.InsufficientOutput.selector);
@@ -249,7 +263,9 @@ contract FeeAutoSwapperV2ForkTest is P1Base {
         assertEq(stray.balanceOf(to), 5e18);
 
         vm.prank(attacker);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
+        );
         swapper.rescue(address(stray), attacker, 0);
     }
 
@@ -258,9 +274,13 @@ contract FeeAutoSwapperV2ForkTest is P1Base {
     function test_swapperV2_tunables_bounded() public {
         uint256 lo = Constants.SWAPPER_SLIPPAGE_MIN;
         uint256 hi = Constants.SWAPPER_SLIPPAGE_MAX;
-        vm.expectRevert(abi.encodeWithSelector(IFeeAutoSwapperV2.OutOfBounds.selector, lo - 1, lo, hi));
+        vm.expectRevert(
+            abi.encodeWithSelector(IFeeAutoSwapperV2.OutOfBounds.selector, lo - 1, lo, hi)
+        );
         swapper.setMaxSlippageBps(lo - 1);
-        vm.expectRevert(abi.encodeWithSelector(IFeeAutoSwapperV2.OutOfBounds.selector, hi + 1, lo, hi));
+        vm.expectRevert(
+            abi.encodeWithSelector(IFeeAutoSwapperV2.OutOfBounds.selector, hi + 1, lo, hi)
+        );
         swapper.setMaxSlippageBps(hi + 1);
         swapper.setMaxSlippageBps(lo);
         swapper.setMaxSlippageBps(hi);
@@ -268,9 +288,13 @@ contract FeeAutoSwapperV2ForkTest is P1Base {
 
         lo = Constants.SWAPPER_MIN_BLOCKS_MIN;
         hi = Constants.SWAPPER_MIN_BLOCKS_MAX;
-        vm.expectRevert(abi.encodeWithSelector(IFeeAutoSwapperV2.OutOfBounds.selector, lo - 1, lo, hi));
+        vm.expectRevert(
+            abi.encodeWithSelector(IFeeAutoSwapperV2.OutOfBounds.selector, lo - 1, lo, hi)
+        );
         swapper.setMinBlocksBetweenConverts(lo - 1);
-        vm.expectRevert(abi.encodeWithSelector(IFeeAutoSwapperV2.OutOfBounds.selector, hi + 1, lo, hi));
+        vm.expectRevert(
+            abi.encodeWithSelector(IFeeAutoSwapperV2.OutOfBounds.selector, hi + 1, lo, hi)
+        );
         swapper.setMinBlocksBetweenConverts(hi + 1);
         swapper.setMinBlocksBetweenConverts(hi);
         assertEq(swapper.minBlocksBetweenConverts(), hi);
@@ -278,17 +302,25 @@ contract FeeAutoSwapperV2ForkTest is P1Base {
         hi = uint256(uint128(type(int128).max));
         vm.expectRevert(abi.encodeWithSelector(IFeeAutoSwapperV2.OutOfBounds.selector, 0, 1, hi));
         swapper.setMaxStepIn(0);
-        vm.expectRevert(abi.encodeWithSelector(IFeeAutoSwapperV2.OutOfBounds.selector, hi + 1, 1, hi));
+        vm.expectRevert(
+            abi.encodeWithSelector(IFeeAutoSwapperV2.OutOfBounds.selector, hi + 1, 1, hi)
+        );
         swapper.setMaxStepIn(hi + 1);
         swapper.setMaxStepIn(hi);
         assertEq(swapper.maxStepIn(), hi);
 
         vm.startPrank(attacker);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
+        );
         swapper.setMaxSlippageBps(100);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
+        );
         swapper.setMinBlocksBetweenConverts(10);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
+        );
         swapper.setMaxStepIn(1);
         vm.stopPrank();
     }

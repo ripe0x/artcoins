@@ -2,15 +2,15 @@
 pragma solidity ^0.8.26;
 
 import {Constants} from "../../Constants.sol";
-import {IArtCoinsFactoryV2} from "../interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsExtensionV2} from "../interfaces/IArtCoinsExtensionV2.sol";
+import {IArtCoinsFactoryV2} from "../interfaces/IArtCoinsFactoryV2.sol";
 import {IConstantsBound} from "../interfaces/IConstantsBound.sol";
 import {IArtCoinsAirdropV2} from "./interfaces/IArtCoinsAirdropV2.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {MerkleProof} from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {MerkleProof} from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
@@ -29,7 +29,7 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 ///         - A3: the sweep recipient must be nonzero and is fixed; the sweep
 ///           itself is permissionless and only ever pays that recipient.
 ///         - leaves are double hashed exactly as OpenZeppelin's
-///           StandardMerkleTree (`@openzeppelin/merkle-tree`), types
+///           StandardMerkleTree (the openzeppelin merkle-tree js package), types
 ///           `["address","uint256"]`, so a leaf cannot collide with an inner node.
 ///         - A4: claimed amounts are tracked per leaf, not per address, so an
 ///           address with two leaves is paid both. The cap that the total
@@ -85,8 +85,10 @@ contract ArtCoinsAirdropV2 is ReentrancyGuard, IArtCoinsAirdropV2 {
         (address sweepRecipient, bytes32 root, uint256 lockup, uint256 vesting) =
             abi.decode(e.extensionData, (address, bytes32, uint256, uint256));
         if (root == bytes32(0)) revert InvalidMerkleRoot();
-        if (sweepRecipient == address(0) || sweepRecipient == token || sweepRecipient == address(this))
-        {
+        if (
+            sweepRecipient == address(0) || sweepRecipient == token
+                || sweepRecipient == address(this)
+        ) {
             revert ZeroSweepRecipient();
         }
         if (lockup > MAX_DURATION || vesting > MAX_DURATION) revert DurationTooLong();
@@ -107,7 +109,14 @@ contract ArtCoinsAirdropV2 is ReentrancyGuard, IArtCoinsAirdropV2 {
         IERC20(token).safeTransferFrom(msg.sender, address(this), extensionSupply);
 
         emit AirdropCreated(
-            token, extensionIndex, sweepRecipient, root, extensionSupply, lockupEnd, vestingEnd, sweepTime
+            token,
+            extensionIndex,
+            sweepRecipient,
+            root,
+            extensionSupply,
+            lockupEnd,
+            vestingEnd,
+            sweepTime
         );
     }
 

@@ -113,12 +113,14 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         _checkConstants(hook);
 
         _validateRewards(lockerConfig.rewardRecipients, lockerConfig.rewardBps);
-        uint256 numPositions = _validatePositions(lockerConfig, poolConfig.tickIfToken0IsArtCoin, poolKey.tickSpacing);
+        uint256 numPositions =
+            _validatePositions(lockerConfig, poolConfig.tickIfToken0IsArtCoin, poolKey.tickSpacing);
 
         uint256 balBefore = SafeTransferLib.balanceOf(token, address(this));
         SafeTransferLib.safeTransferFrom(token, msg.sender, address(this), poolSupply);
 
-        positionId = _mint(lockerConfig, poolConfig.tickIfToken0IsArtCoin, poolKey, poolSupply, token);
+        positionId =
+            _mint(lockerConfig, poolConfig.tickIfToken0IsArtCoin, poolKey, poolSupply, token);
 
         // rounding dust (and any shortfall from a taxed pull) never stays here
         uint256 balAfter = SafeTransferLib.balanceOf(token, address(this));
@@ -232,14 +234,23 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
             // amount0Max 0: if the pool price is not the configured start the
             // mint needs eth and reverts.
             params[i] = abi.encode(
-                poolKey, tickLower, tickUpper, liquidity, uint128(0), uint128(amount1), address(this), bytes("")
+                poolKey,
+                tickLower,
+                tickUpper,
+                liquidity,
+                uint128(0),
+                uint128(amount1),
+                address(this),
+                bytes("")
             );
         }
         actions[n] = bytes1(uint8(Actions.SETTLE_PAIR));
         params[n] = abi.encode(poolKey.currency0, poolKey.currency1);
 
         SafeTransferLib.safeApprove(token, address(permit2), poolSupply);
-        permit2.approve(token, address(positionManager), uint160(poolSupply), uint48(block.timestamp));
+        permit2.approve(
+            token, address(positionManager), uint160(poolSupply), uint48(block.timestamp)
+        );
 
         positionId = positionManager.nextTokenId();
         positionManager.modifyLiquidities(abi.encode(actions, params), block.timestamp);

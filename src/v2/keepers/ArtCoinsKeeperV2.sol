@@ -5,8 +5,8 @@ import {IArtCoinsFactoryV2} from "../interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsKeeperV2} from "../interfaces/IArtCoinsKeeperV2.sol";
 import {IArtCoinsLpLockerV2} from "../interfaces/IArtCoinsLpLockerV2.sol";
 import {IFeeAutoSwapperV2} from "../interfaces/IFeeAutoSwapperV2.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 /// @title  ArtCoinsKeeperV2
 /// @notice Permissionless, stateless, ownerless keeper for any v2 art coin. One call collects the coin's locker
@@ -72,13 +72,15 @@ contract ArtCoinsKeeperV2 is IArtCoinsKeeperV2, ReentrancyGuardTransient {
             address r = recipients[i];
             if (_seenBefore(recipients, i) || !_isSwapper(r)) continue;
 
-            (, uint256 flushed) = _step(
-                STEP_FLUSH, r, abi.encodeCall(IFeeAutoSwapperV2.flushPaired, ()), FLUSH_GAS
-            );
+            (, uint256 flushed) =
+                _step(STEP_FLUSH, r, abi.encodeCall(IFeeAutoSwapperV2.flushPaired, ()), FLUSH_GAS);
             uint256 converted;
             if (doConvert) {
                 (, converted) = _step(
-                    STEP_CONVERT, r, abi.encodeCall(IFeeAutoSwapperV2.convert, (minOut)), CONVERT_GAS
+                    STEP_CONVERT,
+                    r,
+                    abi.encodeCall(IFeeAutoSwapperV2.convert, (minOut)),
+                    CONVERT_GAS
                 );
             }
             emit SwapperServiced(token, r, flushed, converted);
@@ -124,7 +126,9 @@ contract ArtCoinsKeeperV2 is IArtCoinsKeeperV2, ReentrancyGuardTransient {
                 accruedArtCoin += c;
             } catch {}
             try IFeeAutoSwapperV2(r).nextConvertibleBlock() returns (uint256 b) {
-                if (nextConvertibleBlock == 0 || b < nextConvertibleBlock) nextConvertibleBlock = b;
+                if (nextConvertibleBlock == 0 || b < nextConvertibleBlock) {
+                    nextConvertibleBlock = b;
+                }
             } catch {}
         }
     }

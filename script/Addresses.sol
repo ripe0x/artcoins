@@ -34,7 +34,7 @@ library Addresses {
     address internal constant CURRENT_PAYOUT = 0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4;
     address internal constant CURRENT_POOL_EXTENSION_ALLOWLIST =
         0xd6D5fb5CfE386d0eB73a09cba5d190beb802e6E8;
-    uint256 internal constant CURRENT_FACTORY_DEPLOY_BLOCK = 25260062;
+    uint256 internal constant CURRENT_FACTORY_DEPLOY_BLOCK = 25_260_062;
 
     // OPEN stack (superseded): open stack (native eth, static fee), factory deployed 2026-05-19
     address internal constant OPEN_FACTORY = 0xF051cd4C4F3F36F9f24d8a19d60Ee8F84FC6793e;
@@ -44,7 +44,7 @@ library Addresses {
     address internal constant OPEN_ALLOWLIST = 0xd6D5fb5CfE386d0eB73a09cba5d190beb802e6E8;
     address internal constant OPEN_BURN_ROUTER = 0xE60046ee745B235109C10d322A1cbDB3c029De43;
     address internal constant OPEN_BURN_ROUTER_V0 = 0x9304a81965Ef3F7A092bd9eFd8c2fFc411E5F34d;
-    uint256 internal constant OPEN_FACTORY_DEPLOY_BLOCK = 25125708;
+    uint256 internal constant OPEN_FACTORY_DEPLOY_BLOCK = 25_125_708;
 
     // LEGACY stack (legacy): legacy stack (LAYER), factory deployed 2026-05-07
     address internal constant LEGACY_FACTORY = 0xD1595A2742C392d1c109b616b4F08918D02292f9;
@@ -73,7 +73,7 @@ library Addresses {
     address internal constant LEGACY_BURN_ROUTER = 0x2eDBdF011768d8cd4Ef537658b41440900C52000;
     address internal constant LEGACY_PROTOCOL_FEE_CONTROLLER =
         0x5fDc39756A64A84518ef00CB6a0ED46971e00A60;
-    uint256 internal constant LEGACY_FACTORY_DEPLOY_BLOCK = 25040120;
+    uint256 internal constant LEGACY_FACTORY_DEPLOY_BLOCK = 25_040_120;
 
     // coins
     /// @dev Liquidity Layer, legacy stack

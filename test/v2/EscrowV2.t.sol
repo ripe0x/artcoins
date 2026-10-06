@@ -37,7 +37,7 @@ contract EscrowV2Test is Test {
         escrow.addDepositor(plain, false);
         vm.stopPrank();
         vm.deal(core, 100 ether);
-        token.mint(core, 1_000e18);
+        token.mint(core, 1000e18);
         vm.prank(core);
         token.approve(address(escrow), type(uint256).max);
     }
@@ -196,7 +196,9 @@ contract EscrowV2Test is Test {
 
     function test_escrowV2_depositorAdmin_onlyOwner() public {
         vm.prank(griefer);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, griefer));
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, griefer)
+        );
         escrow.addDepositor(griefer, false);
         vm.prank(owner);
         vm.expectRevert(IArtCoinsFeeEscrowV2.ZeroAddress.selector);
@@ -230,7 +232,9 @@ contract EscrowV2Test is Test {
         );
         escrow.rescue(address(0), owner, 0.5 ether + 1);
         vm.expectRevert(
-            abi.encodeWithSelector(IArtCoinsFeeEscrowV2.RescueExceedsExcess.selector, 2e18 + 1, 2e18)
+            abi.encodeWithSelector(
+                IArtCoinsFeeEscrowV2.RescueExceedsExcess.selector, 2e18 + 1, 2e18
+            )
         );
         escrow.rescue(address(token), owner, 2e18 + 1);
 
@@ -255,7 +259,9 @@ contract EscrowV2Test is Test {
         );
         escrow.rescue(address(0), owner, 1);
         vm.prank(griefer);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, griefer));
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, griefer)
+        );
         escrow.rescue(address(0), griefer, 0);
     }
 

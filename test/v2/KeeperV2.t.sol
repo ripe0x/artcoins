@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {ArtCoinsKeeperV2} from "../../src/v2/keepers/ArtCoinsKeeperV2.sol";
 import {IArtCoinsKeeperV2} from "../../src/v2/interfaces/IArtCoinsKeeperV2.sol";
 import {IFeeAutoSwapperV2} from "../../src/v2/interfaces/IFeeAutoSwapperV2.sol";
+import {ArtCoinsKeeperV2} from "../../src/v2/keepers/ArtCoinsKeeperV2.sol";
 import {KeeperMockCoin} from "./mocks/KeeperMockCoin.sol";
 import {KeeperMockFactory} from "./mocks/KeeperMockFactory.sol";
 import {KeeperMockLocker} from "./mocks/KeeperMockLocker.sol";
@@ -42,7 +42,10 @@ contract KeeperV2Test is Test {
     address internal caller = address(0xBEEF);
 
     event KeeperRun(
-        address indexed caller, address indexed token, uint256 nativeForwarded, uint256 coinForwarded
+        address indexed caller,
+        address indexed token,
+        uint256 nativeForwarded,
+        uint256 coinForwarded
     );
     event SwapperServiced(
         address indexed token, address indexed swapper, uint256 flushed, uint256 converted
@@ -291,18 +294,22 @@ contract KeeperV2Test is Test {
     }
 
     function test_keeperV2_lowGas_convertStep_reverts() public {
-        swapper.setBurn(400_000, 0); // flush consumes what the convert floor needs
+        // collect and flush burn what the convert floor (about 477k) needs, but leave the flush floor intact
+        locker.setBurn(600_000);
+        swapper.setBurn(100_000, 0);
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(ArtCoinsKeeperV2.InsufficientGas.selector, uint8(3)));
-        keeper.collectAndForward{gas: 1_000_000}(address(coin), true, 0);
+        keeper.collectAndForward{gas: 1_100_000}(address(coin), true, 0);
+        assertEq(locker.collectCalls(), 0, "reverted run left state");
     }
 
     function test_keeperV2_lowGas_convertSkippedFloorNotAppliedWhenNotConverting() public {
         // same gas as the convert step test, but doConvert false: no convert floor, run completes
-        swapper.setBurn(400_000, 0);
+        locker.setBurn(600_000);
+        swapper.setBurn(100_000, 0);
         swapper.set(0.1 ether, 0, 0, 0);
         vm.prank(caller);
-        keeper.collectAndForward{gas: 1_000_000}(address(coin), false, 0);
+        keeper.collectAndForward{gas: 1_100_000}(address(coin), false, 0);
         assertEq(swapper.flushCalls(), 1);
         assertEq(caller.balance, 0.1 ether);
     }
@@ -312,8 +319,7 @@ contract KeeperV2Test is Test {
         // recipient with a starved stipend and calling it "not a swapper"
         locker.setBurn(900_000);
         vm.prank(caller);
-        (bool ok, bytes memory ret) = address(keeper)
-        .call{gas: 985_000}(
+        (bool ok, bytes memory ret) = address(keeper).call{gas: 985_000}(
             abi.encodeCall(IArtCoinsKeeperV2.collectAndForward, (address(coin), true, 0))
         );
         assertFalse(ok);
@@ -337,8 +343,7 @@ contract KeeperV2Test is Test {
             swapper.resetCalls();
             locker.setRewards(0.01 ether, 1e18);
             vm.prank(caller);
-            (bool ok, bytes memory ret) = address(keeper)
-            .call{gas: g}(
+            (bool ok, bytes memory ret) = address(keeper).call{gas: g}(
                 abi.encodeCall(IArtCoinsKeeperV2.collectAndForward, (address(coin), true, 77))
             );
             if (ok) {
@@ -354,7 +359,9 @@ contract KeeperV2Test is Test {
                 assembly {
                     sel := mload(add(ret, 0x20))
                 }
-                assertEq(sel, ArtCoinsKeeperV2.InsufficientGas.selector, "failed for another reason");
+                assertEq(
+                    sel, ArtCoinsKeeperV2.InsufficientGas.selector, "failed for another reason"
+                );
                 assertEq(locker.collectCalls(), 0, "reverted run left state");
             }
             assertEq(address(keeper).balance, 0);

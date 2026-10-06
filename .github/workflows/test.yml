@@ -141,10 +141,11 @@ jobs:
     name: ui build and lint
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # TODO UI-18 (docs/v2/review/ui.md): `tsc -b` fails today (5 errors) and
-    # eslint reports 1 error, so this job is red on a clean checkout. It runs
-    # on every push so the failures stay visible. Remove continue-on-error as
-    # soon as the ui builds, then make the job required.
+    # TODO UI-03 (docs/v2/review/ui.md): the ui does not build clean today
+    # (stale abi, `tsc -b` errors, eslint errors), so this job is expected to
+    # be red on a clean checkout. It runs on every push so the failures stay
+    # visible. Remove continue-on-error once the ui builds, then make the job
+    # required.
     continue-on-error: true
     permissions:
       contents: read

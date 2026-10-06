@@ -10,16 +10,17 @@ pragma solidity ^0.8.26;
 import {Test} from "forge-std/Test.sol";
 
 import {Constants} from "../../../src/Constants.sol";
-import {ArtCoinsPoolExtensionAllowlist} from
-    "../../../src/hooks/ArtCoinsPoolExtensionAllowlist.sol";
+import {
+    ArtCoinsPoolExtensionAllowlist
+} from "../../../src/hooks/ArtCoinsPoolExtensionAllowlist.sol";
+import {PCAttribution, PCSwapData} from "../../../src/hooks/interfaces/IArtCoinsHookSkimFee.sol";
+import {IArtCoinsHook} from "../../../src/interfaces/IArtCoinsHook.sol";
 import {ArtCoinsFeeEscrowV2} from "../../../src/v2/ArtCoinsFeeEscrowV2.sol";
 import {ArtCoinsTokenV2} from "../../../src/v2/ArtCoinsTokenV2.sol";
 import {ArtCoinsHookV2} from "../../../src/v2/hooks/ArtCoinsHookV2.sol";
 import {IArtCoinsFactoryV2} from "../../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsHookV2} from "../../../src/v2/interfaces/IArtCoinsHookV2.sol";
 import {ArtCoinsMevLinearSkimV2} from "../../../src/v2/mev-modules/ArtCoinsMevLinearSkimV2.sol";
-import {PCAttribution, PCSwapData} from "../../../src/hooks/interfaces/IArtCoinsHookSkimFee.sol";
-import {IArtCoinsHook} from "../../../src/interfaces/IArtCoinsHook.sol";
 import {HV2ConstantsStub, HV2ReferralPayout} from "./HookV2Mocks.sol";
 
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
@@ -202,7 +203,7 @@ abstract contract HookV2ForkBase is Test {
     // ─── actions ─────────────────────────────────────────────────────────
 
     function _modify(PoolKey memory key, int24 lo, int24 hi, int256 liq, bytes32 salt) internal {
-        liqRouter.modifyLiquidity{value: liq > 0 ? 2_000 ether : 0}(
+        liqRouter.modifyLiquidity{value: liq > 0 ? 2000 ether : 0}(
             key,
             IPoolManager.ModifyLiquidityParams({
                 tickLower: lo, tickUpper: hi, liquidityDelta: liq, salt: salt
@@ -211,12 +212,17 @@ abstract contract HookV2ForkBase is Test {
         );
     }
 
-    function _swap(PoolKey memory key, bool zeroForOne, int256 amount, uint160 limit, bytes memory hd)
-        internal
-        returns (BalanceDelta d)
-    {
-        if (limit == 0) limit = zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1;
-        d = swapRouter.swap{value: 1_000 ether}(
+    function _swap(
+        PoolKey memory key,
+        bool zeroForOne,
+        int256 amount,
+        uint160 limit,
+        bytes memory hd
+    ) internal returns (BalanceDelta d) {
+        if (limit == 0) {
+            limit = zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1;
+        }
+        d = swapRouter.swap{value: 1000 ether}(
             key,
             IPoolManager.SwapParams({
                 zeroForOne: zeroForOne, amountSpecified: amount, sqrtPriceLimitX96: limit
@@ -237,12 +243,17 @@ abstract contract HookV2ForkBase is Test {
     function _attribution(address referrer, uint24 bps) internal pure returns (bytes memory) {
         PCSwapData memory inner = PCSwapData({
             attribution: PCAttribution({
-                sourceId: bytes32("src"), referrer: referrer, campaignId: bytes16("cmp"), referralBps: bps
+                sourceId: bytes32("src"),
+                referrer: referrer,
+                campaignId: bytes16("cmp"),
+                referralBps: bps
             }),
             extensionPayload: hex"c0ffee"
         });
         return abi.encode(
-            IArtCoinsHook.PoolSwapData({mevModuleSwapData: "", poolExtensionSwapData: abi.encode(inner)})
+            IArtCoinsHook.PoolSwapData({
+                mevModuleSwapData: "", poolExtensionSwapData: abi.encode(inner)
+            })
         );
     }
 

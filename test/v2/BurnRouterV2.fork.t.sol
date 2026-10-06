@@ -178,7 +178,9 @@ contract BurnRouterV2ForkTest is P1Base {
     function test_burnV2_threshold_bounds() public {
         _fund(0.005 ether);
         vm.expectRevert(
-            abi.encodeWithSelector(IBurnRouterV2.BelowMinThreshold.selector, 0.005 ether, 0.01 ether)
+            abi.encodeWithSelector(
+                IBurnRouterV2.BelowMinThreshold.selector, 0.005 ether, 0.01 ether
+            )
         );
         router.processBurn(0);
 
@@ -195,7 +197,9 @@ contract BurnRouterV2ForkTest is P1Base {
         router.processBurn(0);
 
         vm.prank(attacker);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
+        );
         router.setMinProcessThreshold(1 ether);
     }
 
@@ -216,7 +220,9 @@ contract BurnRouterV2ForkTest is P1Base {
         assertLe(_priceMoveBps(pre, _spot()), hi, "max impact respected");
 
         vm.prank(attacker);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
+        );
         router.setMaxImpactBps(100);
     }
 
@@ -241,7 +247,9 @@ contract BurnRouterV2ForkTest is P1Base {
         r.initialize(address(coin), bad);
 
         vm.prank(attacker);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
+        );
         r.initialize(address(coin), key);
 
         r.initialize(address(coin), key);
@@ -278,8 +286,21 @@ contract BurnRouterV2ForkTest is P1Base {
         assertEq(stray.balanceOf(keeper), 3e18);
 
         vm.prank(attacker);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
+        );
         router.rescue(address(stray), attacker, 0);
+    }
+
+    /// @notice View accuracy: the budget counts escrow refunds the burn claims first.
+    function test_burnV2_swapBudget_includesPendingRefund() public {
+        assertEq(router.swapBudget(), 0, "below threshold");
+        escrow.storeFeesNative{value: 0.3 ether}(address(router));
+        _fund(0.2 ether);
+        uint256 budget = router.swapBudget();
+        assertEq(budget, 0.5 ether - router.rewardFor(0.5 ether));
+        (uint256 ethIn,) = router.processBurn(router.floorFor(budget));
+        assertEq(ethIn, budget, "view matches the burn");
     }
 
     function test_burnV2_unlockCallback_onlyPoolManager() public {

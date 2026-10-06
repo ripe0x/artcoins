@@ -98,7 +98,8 @@ contract ArtCoinsUniv4EthDevBuyV2 is ReentrancyGuard, IUnlockCallback, IArtCoins
         ) revert InvalidPoolKey();
 
         (uint256 spent, uint256 out) = abi.decode(
-            poolManager.unlock(abi.encode(poolKey, msg.value, recipient, minOut)), (uint256, uint256)
+            poolManager.unlock(abi.encode(poolKey, msg.value, recipient, minOut)),
+            (uint256, uint256)
         );
 
         uint256 refunded = msg.value - spent;
@@ -159,7 +160,8 @@ contract ArtCoinsUniv4EthDevBuyV2 is ReentrancyGuard, IUnlockCallback, IArtCoins
         try IArtCoinsHookV2(hook).globals() returns (IArtCoinsHookV2.HookGlobals memory g) {
             if (g.feeEscrow.code.length == 0) return;
             try IArtCoinsFeeEscrowV2(g.feeEscrow)
-                .claimTo(address(this), address(0), payable(refundRecipient)) {} catch {}
+                .claimTo(address(this), address(0), payable(refundRecipient)) {}
+                catch {}
         } catch {}
     }
 }

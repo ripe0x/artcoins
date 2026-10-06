@@ -138,7 +138,7 @@ function solidity() {
     const st = reg.stacks[sid];
     L.push(`    // ${id} stack (${st.status}): ${st.label}, factory deployed ${st.deployedAt}`);
     for (const [n, c] of entries) L.push(decl(`${id}_${n}`, cs(c.address)));
-    L.push(`    uint256 internal constant ${id}_FACTORY_DEPLOY_BLOCK = ${contract(sid, 'ArtCoinsFactory').deployBlock};`);
+    L.push(`    uint256 internal constant ${id}_FACTORY_DEPLOY_BLOCK = ${String(contract(sid, 'ArtCoinsFactory').deployBlock).replace(/\B(?=(\d{3})+(?!\d))/g, '_')};`);
     L.push('');
   }
   L.push('    // coins');

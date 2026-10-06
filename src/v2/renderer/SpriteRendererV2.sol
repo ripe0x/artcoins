@@ -167,7 +167,11 @@ contract SpriteRendererV2 is IMetadataRenderer {
 
     function _animationUrl(address token) internal view returns (string memory) {
         return string.concat(
-            animationUrlBase, "/", LibString.toString(block.chainid), "/", LibString.toHexString(token)
+            animationUrlBase,
+            "/",
+            LibString.toString(block.chainid),
+            "/",
+            LibString.toHexString(token)
         );
     }
 }

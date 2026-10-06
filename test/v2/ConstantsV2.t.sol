@@ -35,10 +35,10 @@ contract ConstantsV2Test is Test {
                 uint24(100_000), // MAX_LP_FEE
                 uint24(90_000), // MAX_SKIM_BPS
                 uint24(10_000), // MAX_BASELINE_SKIM_BPS
-                uint24(1_000), // MAX_REFERRAL_CAP_OF_VOLUME
-                uint16(9_999), // MAX_BOUNTY_BPS
+                uint24(1000), // MAX_REFERRAL_CAP_OF_VOLUME
+                uint16(9999), // MAX_BOUNTY_BPS
                 uint32(60), // MIN_MEV_WINDOW
-                uint32(4_140), // DEFAULT_MEV_WINDOW
+                uint32(4140), // DEFAULT_MEV_WINDOW
                 uint32(10_800), // MAX_MEV_WINDOW
                 uint24(68_690) // DEFAULT_START_SKIM_BPS
             )
@@ -62,12 +62,12 @@ contract ConstantsV2Test is Test {
                 uint256(1e27), // DEFAULT_TOKEN_SUPPLY
                 uint256(1e18), // MIN_TOKEN_SUPPLY
                 uint256(10), // MAX_EXTENSIONS
-                uint16(9_000), // MAX_EXTENSION_BPS
-                uint16(3_000), // MAX_PROTOCOL_FEE_BPS
+                uint16(9000), // MAX_EXTENSION_BPS
+                uint16(3000), // MAX_PROTOCOL_FEE_BPS
                 uint8(0), // TAX_MODE_NONE
                 uint8(1), // TAX_MODE_VENUE
                 uint8(2), // TAX_MODE_HARD
-                uint16(2_000), // TAX_BPS_ABSOLUTE_MAX
+                uint16(2000), // TAX_BPS_ABSOLUTE_MAX
                 uint256(32), // MAX_TAX_VENUES
                 uint256(16), // MAX_TAX_EXEMPT
                 address(0x000000000000000000000000000000000000dEaD) // DEAD
@@ -77,7 +77,7 @@ contract ConstantsV2Test is Test {
             abi.encode(
                 uint256(50), // KEEPER_REWARD_BPS
                 uint256(1e16), // KEEPER_REWARD_CAP
-                uint256(8_000) // SPOT_FLOOR_BPS
+                uint256(8000) // SPOT_FLOOR_BPS
             )
         );
         return keccak256(abi.encode(pool, delivery, launch, keeper));
@@ -103,8 +103,8 @@ contract ConstantsV2Test is Test {
         assertEq(Constants.MAX_LP_FEE, 100_000);
         assertEq(Constants.MAX_SKIM_BPS, 90_000);
         assertEq(Constants.MAX_BASELINE_SKIM_BPS, 10_000);
-        assertEq(Constants.MAX_REFERRAL_CAP_OF_VOLUME, 1_000);
-        assertEq(Constants.MAX_BOUNTY_BPS, 9_999);
+        assertEq(Constants.MAX_REFERRAL_CAP_OF_VOLUME, 1000);
+        assertEq(Constants.MAX_BOUNTY_BPS, 9999);
         assertEq(Constants.PUSH_GAS_MIN, 10_000);
         assertEq(Constants.PUSH_GAS_DEFAULT, 50_000);
         assertEq(Constants.PUSH_GAS_MAX, 150_000);
@@ -125,32 +125,32 @@ contract ConstantsV2Test is Test {
         assertEq(Constants.DEFAULT_TOKEN_SUPPLY, 1_000_000_000e18);
         assertEq(Constants.MIN_TOKEN_SUPPLY, 1e18);
         assertEq(Constants.MAX_EXTENSIONS, 10);
-        assertEq(Constants.MAX_EXTENSION_BPS, 9_000);
-        assertEq(Constants.MAX_PROTOCOL_FEE_BPS, 3_000);
+        assertEq(Constants.MAX_EXTENSION_BPS, 9000);
+        assertEq(Constants.MAX_PROTOCOL_FEE_BPS, 3000);
         assertEq(Constants.MAX_DEPLOY_FEE, 1 ether);
         assertEq(Constants.TAX_MODE_NONE, 0);
         assertEq(Constants.TAX_MODE_VENUE, 1);
         assertEq(Constants.TAX_MODE_HARD, 2);
-        assertEq(Constants.TAX_BPS_ABSOLUTE_MAX, 2_000);
+        assertEq(Constants.TAX_BPS_ABSOLUTE_MAX, 2000);
         assertEq(Constants.MAX_TAX_VENUES, 32);
         assertEq(Constants.MAX_TAX_EXEMPT, 16);
         assertEq(Constants.DEAD, 0x000000000000000000000000000000000000dEaD);
         assertEq(Constants.KEEPER_REWARD_BPS, 50);
         assertEq(Constants.KEEPER_REWARD_CAP, 0.01 ether);
-        assertEq(Constants.SPOT_FLOOR_BPS, 8_000);
+        assertEq(Constants.SPOT_FLOOR_BPS, 8000);
         assertEq(Constants.SWAPPER_SLIPPAGE_MIN, 50);
-        assertEq(Constants.SWAPPER_SLIPPAGE_MAX, 1_000);
+        assertEq(Constants.SWAPPER_SLIPPAGE_MAX, 1000);
         assertEq(Constants.SWAPPER_MIN_BLOCKS_MIN, 1);
         assertEq(Constants.SWAPPER_MIN_BLOCKS_MAX, 50_400);
         assertEq(Constants.BURN_IMPACT_MIN, 25);
         assertEq(Constants.BURN_IMPACT_DEFAULT, 100);
         assertEq(Constants.BURN_IMPACT_MAX, 300);
         assertEq(Constants.BURN_THRESHOLD_FLOOR, 0.001 ether);
-        assertEq(Constants.PFC_MIN_TREASURY_BPS, 4_000);
-        assertEq(Constants.PFC_MIN_BURN_BPS, 1_000);
+        assertEq(Constants.PFC_MIN_TREASURY_BPS, 4000);
+        assertEq(Constants.PFC_MIN_BURN_BPS, 1000);
         assertEq(Constants.MAX_GLYPHS, 256);
         assertEq(Constants.RENDER_GAS_BUDGET, 8_000_000);
-        assertEq(Constants.HOOK_SIZE_HEADROOM_MIN, 1_024);
+        assertEq(Constants.HOOK_SIZE_HEADROOM_MIN, 1024);
         assertEq(Constants.LEG_BOUNTY, 0);
         assertEq(Constants.LEG_PROTOCOL, 1);
         assertEq(Constants.LEG_REFERRAL, 2);
@@ -186,7 +186,9 @@ contract ConstantsV2Test is Test {
         assertLe(Constants.LOCKER_KEEPER_BPS_MAX, Constants.BPS);
         assertLe(Constants.KEEPER_REWARD_BPS, Constants.BPS);
         assertLe(Constants.SPOT_FLOOR_BPS, Constants.BPS);
-        assertLe(uint256(Constants.PFC_MIN_TREASURY_BPS) + Constants.PFC_MIN_BURN_BPS, Constants.BPS);
+        assertLe(
+            uint256(Constants.PFC_MIN_TREASURY_BPS) + Constants.PFC_MIN_BURN_BPS, Constants.BPS
+        );
         assertLt(Constants.BURN_IMPACT_MAX, Constants.BPS);
         // tax modes distinct and ordered
         assertLt(Constants.TAX_MODE_NONE, Constants.TAX_MODE_VENUE);

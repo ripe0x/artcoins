@@ -9,7 +9,6 @@ import {IArtCoinsFactoryV2} from "../../src/v2/interfaces/IArtCoinsFactoryV2.sol
 import {IArtCoinsLpLockerV2} from "../../src/v2/interfaces/IArtCoinsLpLockerV2.sol";
 import {IConstantsBound} from "../../src/v2/interfaces/IConstantsBound.sol";
 import {ArtCoinsLpLockerV2} from "../../src/v2/lp-lockers/ArtCoinsLpLockerV2.sol";
-import {ForkBase} from "./harness/ForkBase.sol";
 import {
     BlockingToken,
     GasBurner,
@@ -17,6 +16,7 @@ import {
     PayableRecipient,
     RevertingRecipient
 } from "./FeeDelivery.t.sol";
+import {ForkBase} from "./harness/ForkBase.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
@@ -86,7 +86,14 @@ contract UnlockAttacker is IUnlockCallback {
         bytes memory actions = abi.encodePacked(uint8(Actions.MINT_POSITION));
         bytes[] memory params = new bytes[](1);
         params[0] = abi.encode(
-            key, lo, hi, uint256(1e18), type(uint128).max, type(uint128).max, address(this), bytes("")
+            key,
+            lo,
+            hi,
+            uint256(1e18),
+            type(uint128).max,
+            type(uint128).max,
+            address(this),
+            bytes("")
         );
         // unpaid: leaves a debt on the PositionManager inside this unlock
         posm.modifyLiquiditiesWithoutUnlock(actions, params);
@@ -94,7 +101,11 @@ contract UnlockAttacker is IUnlockCallback {
         return "";
     }
 
-    function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
+    function onERC721Received(address, address, uint256, bytes calldata)
+        external
+        pure
+        returns (bytes4)
+    {
         return this.onERC721Received.selector;
     }
 }
@@ -225,12 +236,24 @@ contract LockerV2ForkTest is ForkBase {
     /// @dev Buy then sell so both currencies accrue lp fees.
     function _trade(PoolKey memory key) internal {
         swapExactIn(key, true, 2 ether, address(this), "");
-        swapExactIn(key, false, IERC20(Currency.unwrap(key.currency1)).balanceOf(address(this)) / 4, address(this), "");
+        swapExactIn(
+            key,
+            false,
+            IERC20(Currency.unwrap(key.currency1)).balanceOf(address(this)) / 4,
+            address(this),
+            ""
+        );
     }
 
     function _three()
         internal
-        returns (address[] memory r, uint16[] memory b, PayableRecipient p, RevertingRecipient rv, GasBurner g)
+        returns (
+            address[] memory r,
+            uint16[] memory b,
+            PayableRecipient p,
+            RevertingRecipient rv,
+            GasBurner g
+        )
     {
         p = new PayableRecipient();
         rv = new RevertingRecipient();
@@ -240,9 +263,9 @@ contract LockerV2ForkTest is ForkBase {
         r[1] = address(rv);
         r[2] = address(g);
         b = new uint16[](3);
-        b[0] = 5_000;
-        b[1] = 3_000;
-        b[2] = 2_000;
+        b[0] = 5000;
+        b[1] = 3000;
+        b[2] = 2000;
     }
 
     // ── no fork unit tests (validation) ───────────────────────────────────
@@ -254,7 +277,9 @@ contract LockerV2ForkTest is ForkBase {
     ) internal {
         vm.prank(launcher);
         vm.expectRevert(err);
-        locker.placeLiquidity(lc, _poolConfig(address(key.hooks)), key, SUPPLY, Currency.unwrap(key.currency1));
+        locker.placeLiquidity(
+            lc, _poolConfig(address(key.hooks)), key, SUPPLY, Currency.unwrap(key.currency1)
+        );
     }
 
     function test_lockerV2_constantsHash() public view {
@@ -288,8 +313,8 @@ contract LockerV2ForkTest is ForkBase {
         r[0] = address(1);
         r[1] = address(2);
         uint16[] memory b = new uint16[](2);
-        b[0] = 5_000;
-        b[1] = 4_999;
+        b[0] = 5000;
+        b[1] = 4999;
         _expectPlaceRevert(
             _lockerConfig(r, b, 1),
             _key(address(0xC01), hook),
@@ -310,9 +335,9 @@ contract LockerV2ForkTest is ForkBase {
         uint16[] memory b = new uint16[](n);
         for (uint256 i; i < n; ++i) {
             r[i] = address(uint160(i + 1));
-            b[i] = 1_000;
+            b[i] = 1000;
         }
-        b[0] = uint16(10_000 - 1_000 * (n - 1));
+        b[0] = uint16(10_000 - 1000 * (n - 1));
         _expectPlaceRevert(
             _lockerConfig(r, b, 1),
             _key(address(0xC01), hook),
@@ -351,23 +376,31 @@ contract LockerV2ForkTest is ForkBase {
         lc.positionBps[1] = 0;
         lc.positionBps[0] = 10_000;
         _expectPlaceRevert(
-            lc, _key(address(0xC01), hook), abi.encodeWithSelector(IArtCoinsLpLockerV2.InvalidPositionBps.selector)
+            lc,
+            _key(address(0xC01), hook),
+            abi.encodeWithSelector(IArtCoinsLpLockerV2.InvalidPositionBps.selector)
         );
         lc = _lockerConfig(r, b, 1);
         lc.tickLower[0] = START - SPACING; // below the start: needs eth
         _expectPlaceRevert(
             lc,
             _key(address(0xC01), hook),
-            abi.encodeWithSelector(IArtCoinsLpLockerV2.InvalidTickRange.selector, START - SPACING, int24(-120_000))
+            abi.encodeWithSelector(
+                IArtCoinsLpLockerV2.InvalidTickRange.selector, START - SPACING, int24(-120_000)
+            )
         );
         lc = _lockerConfig(r, b, 1);
         lc.tickUpper = new int24[](0);
         _expectPlaceRevert(
-            lc, _key(address(0xC01), hook), abi.encodeWithSelector(IArtCoinsLpLockerV2.MismatchedPositionArrays.selector)
+            lc,
+            _key(address(0xC01), hook),
+            abi.encodeWithSelector(IArtCoinsLpLockerV2.MismatchedPositionArrays.selector)
         );
         lc = _lockerConfig(r, b, 0);
         _expectPlaceRevert(
-            lc, _key(address(0xC01), hook), abi.encodeWithSelector(IArtCoinsLpLockerV2.InvalidPositionBps.selector)
+            lc,
+            _key(address(0xC01), hook),
+            abi.encodeWithSelector(IArtCoinsLpLockerV2.InvalidPositionBps.selector)
         );
     }
 
@@ -377,7 +410,9 @@ contract LockerV2ForkTest is ForkBase {
         // not native paired (D17)
         PoolKey memory key = _key(address(0xC01), hook);
         key.currency0 = Currency.wrap(WETH);
-        _expectPlaceRevert(lc, key, abi.encodeWithSelector(ArtCoinsLpLockerV2.UnsupportedPoolKey.selector));
+        _expectPlaceRevert(
+            lc, key, abi.encodeWithSelector(ArtCoinsLpLockerV2.UnsupportedPoolKey.selector)
+        );
         // hook with a different constants set
         address wrong = _etchHook(address(new WrongHashHook()));
         _expectPlaceRevert(
@@ -390,25 +425,35 @@ contract LockerV2ForkTest is ForkBase {
     function test_lockerV2_ownerSetters_bounded() public {
         vm.startPrank(owner);
         vm.expectRevert(
-            abi.encodeWithSelector(IArtCoinsLpLockerV2.KeeperRewardBpsOutOfBounds.selector, 201, 200)
+            abi.encodeWithSelector(
+                IArtCoinsLpLockerV2.KeeperRewardBpsOutOfBounds.selector, 201, 200
+            )
         );
         locker.setKeeperRewardBps(201);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IArtCoinsLpLockerV2.KeeperRewardCapOutOfBounds.selector, 0.05 ether + 1, 0.001 ether, 0.05 ether
+                IArtCoinsLpLockerV2.KeeperRewardCapOutOfBounds.selector,
+                0.05 ether + 1,
+                0.001 ether,
+                0.05 ether
             )
         );
         locker.setKeeperRewardCap(0.05 ether + 1);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IArtCoinsLpLockerV2.KeeperRewardCapOutOfBounds.selector, 0.001 ether - 1, 0.001 ether, 0.05 ether
+                IArtCoinsLpLockerV2.KeeperRewardCapOutOfBounds.selector,
+                0.001 ether - 1,
+                0.001 ether,
+                0.05 ether
             )
         );
         locker.setKeeperRewardCap(0.001 ether - 1);
         locker.setKeeperRewardBps(200);
         locker.setKeeperRewardCap(0.05 ether);
         // escrow must share the constants set
-        vm.expectRevert(abi.encodeWithSelector(IConstantsBound.ConstantsMismatch.selector, address(0xBEEF)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IConstantsBound.ConstantsMismatch.selector, address(0xBEEF))
+        );
         locker.setFeeEscrow(address(0xBEEF));
         ArtCoinsFeeEscrowV2 e2 = new ArtCoinsFeeEscrowV2(owner);
         locker.setFeeEscrow(address(e2));
@@ -426,9 +471,12 @@ contract LockerV2ForkTest is ForkBase {
         vm.prank(address(0xBAD));
         vm.expectRevert();
         locker.rescue(address(t), address(0xBAD), 5e18);
+        address posm = address(locker.positionManager());
         vm.startPrank(owner);
         vm.expectRevert(ArtCoinsLpLockerV2.RescueForbidden.selector);
-        locker.rescue(address(locker.positionManager()), owner, 1);
+        locker.rescue(posm, owner, 1);
+        vm.expectRevert(IArtCoinsLpLockerV2.ZeroAddress.selector);
+        locker.rescue(address(t), address(0), 1);
         locker.rescue(address(t), owner, 5e18);
         vm.stopPrank();
         assertEq(t.balanceOf(owner), 5e18);
@@ -448,19 +496,28 @@ contract LockerV2ForkTest is ForkBase {
         IArtCoinsLpLockerV2.TokenRewardInfoV2 memory info = locker.tokenRewards(address(coin));
         assertEq(info.numPositions, 3);
         assertEq(info.rewardRecipients.length, 3);
-        assertEq(locker.rewardBps(address(coin))[1], 3_000);
+        assertEq(locker.rewardBps(address(coin))[1], 3000);
         assertEq(locker.rewardRecipients(address(coin))[2], r[2]);
         // locker owns the nfts, holds no coin
         for (uint256 i; i < 3; ++i) {
             assertEq(IERC721Like(POSITION_MANAGER).ownerOf(info.positionId + i), address(locker));
         }
         assertEq(coin.balanceOf(address(locker)), 0);
-        assertGt(readLiquidity(_key(address(coin), hook)), 0);
+        // every position holds liquidity; all sit at or below the start price
+        // (coin only), so none is active until the first buy
+        for (uint256 i; i < 3; ++i) {
+            assertGt(
+                IPositionManager(POSITION_MANAGER).getPositionLiquidity(info.positionId + i), 0
+            );
+        }
+        assertEq(readLiquidity(_key(address(coin), hook)), 0);
         // second placement for the same coin reverts
         IArtCoinsFactoryV2.LockerConfigV2 memory lc = _lockerConfig(r, b, 1);
         vm.prank(launcher);
         vm.expectRevert(IArtCoinsLpLockerV2.TokenAlreadyHasRewards.selector);
-        locker.placeLiquidity(lc, _poolConfig(hook), _key(address(coin), hook), SUPPLY, address(coin));
+        locker.placeLiquidity(
+            lc, _poolConfig(hook), _key(address(coin), hook), SUPPLY, address(coin)
+        );
     }
 
     function test_lockerV2_place_maxPositions() public onlyFork {
@@ -496,7 +553,13 @@ contract LockerV2ForkTest is ForkBase {
 
     function test_lockerV2_collect_revertingRecipient_noRevert() public onlyFork {
         MockToken coin = _newCoin();
-        (address[] memory r, uint16[] memory b, PayableRecipient p, RevertingRecipient rv, GasBurner g) = _three();
+        (
+            address[] memory r,
+            uint16[] memory b,
+            PayableRecipient p,
+            RevertingRecipient rv,
+            GasBurner g
+        ) = _three();
         PoolKey memory key = _launch(address(coin), r, b, 3);
         _trade(key);
         vm.prank(owner);
@@ -507,15 +570,16 @@ contract LockerV2ForkTest is ForkBase {
         (uint256 got0, uint256 got1) = _collected(vm.getRecordedLogs());
 
         // payable pushed, reverting and gas burner escrowed, no wei lost
-        assertEq(p.received(), got0 * 5_000 / 10_000);
-        assertEq(escrow.balances(address(rv), address(0)), got0 * 3_000 / 10_000);
+        assertEq(p.received(), got0 * 5000 / 10_000);
+        assertEq(escrow.balances(address(rv), address(0)), got0 * 3000 / 10_000);
         assertEq(address(rv).balance, 0);
-        uint256 burnerShare = got0 - got0 * 5_000 / 10_000 - got0 * 3_000 / 10_000;
+        uint256 burnerShare = got0 - got0 * 5000 / 10_000 - got0 * 3000 / 10_000;
         assertEq(escrow.balances(address(g), address(0)), burnerShare);
         assertEq(p.received() + escrow.totalOwed(address(0)), got0);
         // coin side: plain transfers succeed for every recipient
         assertEq(
-            coin.balanceOf(address(p)) + coin.balanceOf(address(rv)) + coin.balanceOf(address(g)), got1
+            coin.balanceOf(address(p)) + coin.balanceOf(address(rv)) + coin.balanceOf(address(g)),
+            got1
         );
         assertEq(address(locker).balance, 0);
         assertEq(coin.balanceOf(address(locker)), 0);
@@ -531,7 +595,10 @@ contract LockerV2ForkTest is ForkBase {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool sawEscrowed;
         for (uint256 i; i < logs.length; ++i) {
-            if (logs[i].topics[0] == IArtCoinsLpLockerV2.RewardDelivered.selector && logs[i].topics[2] == bytes32(0)) {
+            if (
+                logs[i].topics[0] == IArtCoinsLpLockerV2.RewardDelivered.selector
+                    && logs[i].topics[2] == bytes32(0)
+            ) {
                 (, bool escrowed) = abi.decode(logs[i].data, (uint256, bool));
                 sawEscrowed = escrowed;
             }
@@ -624,10 +691,15 @@ contract LockerV2ForkTest is ForkBase {
         (address[] memory r, uint16[] memory b) = _one(address(p));
         PoolKey memory key = _launch(address(coin), r, b, 1);
         _trade(key);
-        UnlockAttacker attacker =
-            new UnlockAttacker(IPoolManager(POOL_MANAGER), IPositionManager(POSITION_MANAGER), locker);
+        UnlockAttacker attacker = new UnlockAttacker(
+            IPoolManager(POOL_MANAGER), IPositionManager(POSITION_MANAGER), locker
+        );
         vm.expectRevert(ArtCoinsLpLockerV2.PoolManagerUnlocked.selector);
         attacker.attack(key, address(coin), 100_000, 120_000);
+        // the v1 open tab entry point does not exist
+        (bool ok,) = address(locker)
+            .call(abi.encodeWithSignature("collectRewardsWithoutUnlock(address)", address(coin)));
+        assertFalse(ok);
         // fees still collectable by the honest path
         locker.collectRewards(address(coin));
         assertGt(p.received(), 0);

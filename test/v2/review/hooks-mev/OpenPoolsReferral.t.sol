@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {HMArt, HMEthSink, HMReferralPayout, HooksMevBase} from "./HooksMevBase.sol";
-import {IArtCoinsPoolExtension} from "../../../../src/hooks/interfaces/IArtCoinsPoolExtension.sol";
 import {IArtCoinsHookSkimFee} from "../../../../src/hooks/interfaces/IArtCoinsHookSkimFee.sol";
+import {IArtCoinsPoolExtension} from "../../../../src/hooks/interfaces/IArtCoinsPoolExtension.sol";
+import {HMArt, HMEthSink, HMReferralPayout, HooksMevBase} from "./HooksMevBase.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
@@ -74,7 +74,8 @@ contract OpenPoolsReferralTest is HooksMevBase {
             })
         );
         vm.prank(attacker);
-        PoolKey memory fake = skimHook.initializePoolOpen(address(art), address(0), 0, 10, _poolData(fd));
+        PoolKey memory fake =
+            skimHook.initializePoolOpen(address(art), address(0), 0, 10, _poolData(fd));
 
         assertEq(address(fake.hooks), address(skimHook), "same hook");
         assertEq(Currency.unwrap(fake.currency1), address(art), "same coin");
@@ -103,7 +104,8 @@ contract OpenPoolsReferralTest is HooksMevBase {
 
         bytes memory fd = _skimFeeData(0, 0, 0, attacker, attacker);
         vm.startPrank(attacker);
-        PoolKey memory k = skimHook.initializePoolOpen(address(own), address(0), 0, 60, _poolData(fd));
+        PoolKey memory k =
+            skimHook.initializePoolOpen(address(own), address(0), 0, 60, _poolData(fd));
         skimHook.setPoolExtension(k, address(ext), "");
         vm.stopPrank();
         assertEq(skimHook.poolExtension(k.toId()), address(ext));
@@ -131,13 +133,18 @@ contract OpenPoolsReferralTest is HooksMevBase {
         HMReferralPayout payout = new HMReferralPayout();
         HMEthSink bounty = new HMEthSink();
         PoolKey memory key = _skimPool(
-            address(art), _skimFeeData(5000, 5000, 1000, address(bounty), address(payout)), address(0x10C), address(0)
+            address(art),
+            _skimFeeData(5000, 5000, 1000, address(bounty), address(payout)),
+            address(0x10C),
+            address(0)
         );
         _addLiquidity(key, -6000, 6000, 1000 ether);
 
         _swap(key, true, -1 ether, 0, _attributionData(address(this), 1000), 1 ether);
         assertEq(payout.credited(address(this)), 0.01 ether, "swapper rebated 1% of volume");
-        assertEq(escrow.feesToClaim(protocolR, address(0)), 0.015 ether, "protocol leg 0.025 -> 0.015");
+        assertEq(
+            escrow.feesToClaim(protocolR, address(0)), 0.015 ether, "protocol leg 0.025 -> 0.015"
+        );
         assertEq(address(bounty).balance, 0.025 ether, "bounty untouched");
     }
 }

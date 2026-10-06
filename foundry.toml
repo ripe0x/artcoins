@@ -30,11 +30,10 @@ tab_width = 4
 
 
 # [profile.tune] — used exclusively for forge script DeployV1Stack.s.sol.
-# The hook bytecode MUST be < 24,576 bytes (EIP-170). Calibrated runs that
-# keep it under the ceiling while maximising gas efficiency on the swap hot
-# path.  At optimizer_runs = 200 + viaIR the hook lands at ~24,547 bytes
-# (29 bytes of headroom). Raising runs above ~210 blows the limit; lowering
-# below 100 costs a few hundred gas per swap with no meaningful size benefit.
+# The hook bytecode MUST be < 24,576 bytes (EIP-170). Measured at
+# optimizer_runs = 200 + viaIR: v1 ArtCoinsHookSkimFee 20,558 bytes, v2
+# ArtCoinsHookV2 (src/v2/hooks) 16,355 bytes (8,221 bytes headroom).
+# Rule: ci fails under 1,024 bytes headroom at runs 200.
 [profile.tune]
 viaIR = true
 optimizer = true
@@ -47,11 +46,9 @@ stackAllocation = true
 
 # [profile.ci] — used by the GitHub Actions "Foundry project" job
 # (the workflow sets FOUNDRY_PROFILE=ci). Mirrors [profile.tune] so that
-# `forge build --sizes` validates the runtime bytecode we actually ship:
-# the size-critical contracts (ArtCoinsHookSkimFee, ArtCoinsLpLocker) only fit
-# under EIP-170 (24,576 bytes) at
-# optimizer_runs = 200. Building CI at the default 20,000 runs overflows the
-# limit and fails the size check on a configuration that is never deployed.
+# `forge build --sizes` validates the runtime bytecode we actually ship.
+# Measured at runs 200: v2 ArtCoinsHookV2 (src/v2/hooks) 16,355 bytes, 8,221
+# bytes headroom. Rule: ci fails under 1,024 bytes headroom at runs 200.
 # Keep these settings in sync with [profile.tune].
 [profile.ci]
 viaIR = true

@@ -10,9 +10,7 @@ import {IArtCoinsFactory} from "../../../../src/interfaces/IArtCoinsFactory.sol"
 import {IArtCoinsFeeLocker} from "../../../../src/interfaces/IArtCoinsFeeLocker.sol";
 import {TaxConfig, TaxVenue} from "../../../../src/interfaces/IArtCoinsTaxable.sol";
 
-import {
-    FTEscrowFeeOwner, FTMockExtension, FTMockHook, FTMockLocker
-} from "./FactoryTokenMocks.sol";
+import {FTEscrowFeeOwner, FTMockExtension, FTMockHook, FTMockLocker} from "./FactoryTokenMocks.sol";
 
 /// @title  FactoryTokenReview
 /// @notice proof tests for docs/v2/review/contracts-factory-token.md. every
@@ -30,9 +28,11 @@ contract FactoryTokenReviewTest is Test {
     address constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     address constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
     address constant UNIV2_FACTORY = 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f;
-    bytes32 constant UNIV2_INIT = 0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f;
+    bytes32 constant UNIV2_INIT =
+        0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f;
     address constant UNIV3_FACTORY = 0x1F98431c8aD98523631AE4a59f267346ea31F984;
-    bytes32 constant UNIV3_INIT = 0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54;
+    bytes32 constant UNIV3_INIT =
+        0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54;
 
     address owner = makeAddr("owner");
     address team = makeAddr("team");
@@ -119,22 +119,42 @@ contract FactoryTokenReviewTest is Test {
             kind: 1, factory: UNIV2_FACTORY, initCodeHash: UNIV2_INIT, counterToken: WETH, v3Fee: 0
         });
         tc.venues[1] = TaxVenue({
-            kind: 2, factory: UNIV3_FACTORY, initCodeHash: UNIV3_INIT, counterToken: WETH, v3Fee: 3000
+            kind: 2,
+            factory: UNIV3_FACTORY,
+            initCodeHash: UNIV3_INIT,
+            counterToken: WETH,
+            v3Fee: 3000
         });
     }
 
     function _v2(address tok, address counter) internal pure returns (address) {
         (address t0, address t1) = tok < counter ? (tok, counter) : (counter, tok);
-        return address(uint160(uint256(keccak256(abi.encodePacked(
-            hex"ff", UNIV2_FACTORY, keccak256(abi.encodePacked(t0, t1)), UNIV2_INIT
-        )))));
+        return address(
+            uint160(
+                uint256(
+                    keccak256(
+                        abi.encodePacked(
+                            hex"ff", UNIV2_FACTORY, keccak256(abi.encodePacked(t0, t1)), UNIV2_INIT
+                        )
+                    )
+                )
+            )
+        );
     }
 
     function _v3(address tok, address counter, uint24 fee) internal pure returns (address) {
         (address t0, address t1) = tok < counter ? (tok, counter) : (counter, tok);
-        return address(uint160(uint256(keccak256(abi.encodePacked(
-            hex"ff", UNIV3_FACTORY, keccak256(abi.encode(t0, t1, fee)), UNIV3_INIT
-        )))));
+        return address(
+            uint160(
+                uint256(
+                    keccak256(
+                        abi.encodePacked(
+                            hex"ff", UNIV3_FACTORY, keccak256(abi.encode(t0, t1, fee)), UNIV3_INIT
+                        )
+                    )
+                )
+            )
+        );
     }
 
     function _directTaxed(address sink, uint16 bps) internal returns (ArtCoinsToken t) {

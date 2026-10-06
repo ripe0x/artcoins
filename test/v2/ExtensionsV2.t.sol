@@ -14,8 +14,8 @@ import {IConstantsBound} from "../../src/v2/interfaces/IConstantsBound.sol";
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
 contract ExtMockCoin is ERC20 {
@@ -135,7 +135,13 @@ contract AirdropV2Test is ExtBase {
 
     function _launch(bytes memory data, uint256 idx, uint256 value) internal {
         stub.launch{value: value}(
-            address(air), address(coin), _one(_entry(address(air), 0, 1000, data)), emptyKey, address(0), SUPPLY, 0
+            address(air),
+            address(coin),
+            _one(_entry(address(air), 0, 1000, data)),
+            emptyKey,
+            address(0),
+            SUPPLY,
+            0
         );
         idx; // single entry launches always use index 0
     }
@@ -248,7 +254,8 @@ contract AirdropV2Test is ExtBase {
 
     function test_A1_twoTranchesInOneLaunchAreIndependent() public {
         (bytes32 root2, bytes32 la2, bytes32 lb2) = _tree(alice, 7e18, bob, 9e18);
-        IArtCoinsFactoryV2.ExtensionConfigV2[] memory e = new IArtCoinsFactoryV2.ExtensionConfigV2[](2);
+        IArtCoinsFactoryV2.ExtensionConfigV2[] memory e =
+            new IArtCoinsFactoryV2.ExtensionConfigV2[](2);
         e[0] = _entry(address(air), 0, 1000, _data(sweeper, root, LOCK, VEST));
         e[1] = _entry(address(air), 0, 500, _data(makeAddr("sweeper2"), root2, 0, 0));
         stub.launch(address(air), address(coin), e, emptyKey, address(0), 600e18, 0);
@@ -363,7 +370,9 @@ contract AirdropV2Test is ExtBase {
         // so an attacker would need an (address, amount) pair whose single hash is the root.
         // The double hash makes that infeasible; assert the root itself cannot be proven with no proof
         vm.expectRevert(IArtCoinsAirdropV2.InvalidProof.selector);
-        air.claim(address(coin), 0, address(uint160(uint256(root))), uint256(root), new bytes32[](0));
+        air.claim(
+            address(coin), 0, address(uint160(uint256(root))), uint256(root), new bytes32[](0)
+        );
     }
 
     // ── A4: two leaves for one address ────────────────────────────────────
@@ -371,7 +380,8 @@ contract AirdropV2Test is ExtBase {
     function test_A4_twoLeavesForOneAddressBothPaid() public {
         bytes32 l1 = keccak256(bytes.concat(keccak256(abi.encode(alice, uint256(100e18)))));
         bytes32 l2 = keccak256(bytes.concat(keccak256(abi.encode(alice, uint256(50e18)))));
-        bytes32 r = l1 < l2 ? keccak256(abi.encodePacked(l1, l2)) : keccak256(abi.encodePacked(l2, l1));
+        bytes32 r =
+            l1 < l2 ? keccak256(abi.encodePacked(l1, l2)) : keccak256(abi.encodePacked(l2, l1));
         _launch(_data(sweeper, r, 0, 0), 0, 0);
         bytes32[] memory p1 = new bytes32[](1);
         p1[0] = l2;
@@ -408,10 +418,14 @@ contract AirdropV2Test is ExtBase {
             abi.encodeWithSignature("setMerkleRoot(address,bytes32)", address(coin), newRoot),
             abi.encodeWithSignature("updateAdmin(address,address)", address(coin), address(this)),
             abi.encodeWithSignature("adminClaim(address,address)", address(coin), address(this)),
-            abi.encodeWithSignature("setSweepRecipient(address,address)", address(coin), address(this)),
+            abi.encodeWithSignature(
+                "setSweepRecipient(address,address)", address(coin), address(this)
+            ),
             abi.encodeWithSignature("transferOwnership(address)", address(this)),
             abi.encodeWithSignature("owner()"),
-            abi.encodeWithSignature("rescue(address,address,uint256)", address(coin), address(this), 1)
+            abi.encodeWithSignature(
+                "rescue(address,address,uint256)", address(coin), address(this), 1
+            )
         ];
         // an attacker that is also the sweep recipient, a day after the lockup, with zero claims
         vm.warp(T0 + LOCK + 2 days);
@@ -473,7 +487,8 @@ contract AirdropV2Test is ExtBase {
 
     function test_sweep_onlyOwnTrancheFunds() public {
         // two tranches share the token balance; sweeping one leaves the other whole
-        IArtCoinsFactoryV2.ExtensionConfigV2[] memory e = new IArtCoinsFactoryV2.ExtensionConfigV2[](2);
+        IArtCoinsFactoryV2.ExtensionConfigV2[] memory e =
+            new IArtCoinsFactoryV2.ExtensionConfigV2[](2);
         e[0] = _entry(address(air), 0, 1000, _data(sweeper, root, 0, 0));
         e[1] = _entry(address(air), 0, 500, _data(makeAddr("s2"), root, 5 days, 0));
         stub.launch(address(air), address(coin), e, emptyKey, address(0), 600e18, 0);
@@ -515,7 +530,9 @@ contract AirdropV2Test is ExtBase {
         assertLe(coin.balanceOf(alice), amtA);
         assertLe(coin.balanceOf(bob), amtB);
         assertLe(coin.balanceOf(alice) + coin.balanceOf(bob), SUPPLY);
-        assertEq(air.tranche(address(coin), 0).totalClaimed, coin.balanceOf(alice) + coin.balanceOf(bob));
+        assertEq(
+            air.tranche(address(coin), 0).totalClaimed, coin.balanceOf(alice) + coin.balanceOf(bob)
+        );
     }
 }
 
@@ -538,7 +555,13 @@ contract VaultV2Test is ExtBase {
 
     function _launch(bytes memory data) internal {
         stub.launch(
-            address(vault), address(coin), _one(_entry(address(vault), 0, 2000, data)), emptyKey, address(0), SUPPLY, 0
+            address(vault),
+            address(coin),
+            _one(_entry(address(vault), 0, 2000, data)),
+            emptyKey,
+            address(0),
+            SUPPLY,
+            0
         );
     }
 
@@ -687,8 +710,12 @@ contract VaultV2Test is ExtBase {
     function test_noAdminOrEarlyUnlockFunctionExists() public {
         _launch(_data(ben, LOCK, VEST));
         bytes[6] memory calls = [
-            abi.encodeWithSignature("editAllocationAdmin(address,address)", address(coin), address(this)),
-            abi.encodeWithSignature("setBeneficiary(address,address)", address(coin), address(this)),
+            abi.encodeWithSignature(
+                "editAllocationAdmin(address,address)", address(coin), address(this)
+            ),
+            abi.encodeWithSignature(
+                "setBeneficiary(address,address)", address(coin), address(this)
+            ),
             abi.encodeWithSignature("unlock(address)", address(coin)),
             abi.encodeWithSignature("emergencyWithdraw(address)", address(coin)),
             abi.encodeWithSignature("transferOwnership(address)", address(this)),

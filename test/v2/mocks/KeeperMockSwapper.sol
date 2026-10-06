@@ -33,9 +33,12 @@ contract KeeperMockSwapper is IERC165 {
         return id == type(IERC165).interfaceId || id == type(IFeeAutoSwapperV2).interfaceId;
     }
 
-    function set(uint256 flushReward_, uint256 convertReward_, uint256 flushOut_, uint256 convertOut_)
-        external
-    {
+    function set(
+        uint256 flushReward_,
+        uint256 convertReward_,
+        uint256 flushOut_,
+        uint256 convertOut_
+    ) external {
         flushReward = flushReward_;
         convertReward = convertReward_;
         flushOut = flushOut_;

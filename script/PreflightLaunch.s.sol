@@ -1,11 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+// checks the LAYER launch inputs, which target superseded stack legacy; current stack is 0x4959…
+// (Addresses.CURRENT_FACTORY). Read only, never broadcasts, so it has no ALLOW_SUPERSEDED guard.
+
 import {Script, console2} from "forge-std/Script.sol";
 
 import {ArtCoinsFactory} from "../src/legacy/ArtCoinsFactory.sol";
 import {BurnRouter} from "../src/protocol-fee/BurnRouter.sol";
 import {ProtocolFeeController} from "../src/protocol-fee/ProtocolFeeController.sol";
+
+import {Addresses} from "./Addresses.sol";
 
 interface IHookView {
     function protocolFeeNumerator() external view returns (uint256);
@@ -38,10 +43,10 @@ interface ILayerRendererView {
 ///   forge script script/PreflightLaunch.s.sol --rpc-url $SEPOLIA_RPC_URL
 contract PreflightLaunch is Script {
     // Mainnet WETH + infra
-    address constant MAINNET_WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-    address constant MAINNET_POOL_MANAGER = 0x000000000004444c5dc75cB358380D2e3dE08A90;
-    address constant MAINNET_POSITION_MANAGER = 0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e;
-    address constant MAINNET_UNIVERSAL_ROUTER = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af;
+    address constant MAINNET_WETH = Addresses.WETH;
+    address constant MAINNET_POOL_MANAGER = Addresses.POOL_MANAGER;
+    address constant MAINNET_POSITION_MANAGER = Addresses.POSITION_MANAGER;
+    address constant MAINNET_UNIVERSAL_ROUTER = Addresses.UNIVERSAL_ROUTER;
     // Sepolia WETH + infra
     address constant SEPOLIA_WETH = 0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14;
     address constant SEPOLIA_POOL_MANAGER = 0xE03A1074c86CFeDd5C142C4F04F1a1536e203543;
@@ -159,7 +164,7 @@ contract PreflightLaunch is Script {
         _checkHasCode(pm, "PoolManager");
         _checkHasCode(posm, "PositionManager");
         _checkHasCode(ur, "UniversalRouter");
-        _checkHasCode(0x000000000022D473030F116dDEE9F6B43aC78BA3, "Permit2");
+        _checkHasCode(Addresses.PERMIT2, "Permit2");
         console2.log("");
     }
 

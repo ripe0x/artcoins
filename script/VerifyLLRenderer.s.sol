@@ -16,6 +16,8 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
+import {Addresses} from "./Addresses.sol";
+
 /// @notice Stub minimal token for renderer testing.
 contract MinimalRenderableToken {
     string public name;
@@ -48,8 +50,8 @@ contract MinimalRenderableToken {
 ///     LL_DESCRIPTION       description string
 ///     LL_OUT_HTML_PATH     output filesystem path for the assembled HTML
 contract VerifyLLRenderer is Script {
-    address constant SCRIPTY_BUILDER = 0xD7587F110E08F4D120A231bA97d3B577A81Df022;
-    address constant SCRIPTY_STORAGE = 0xbD11994aABB55Da86DC246EBB17C1Be0af5b7699;
+    address constant SCRIPTY_BUILDER = Addresses.SCRIPTY_BUILDER;
+    address constant SCRIPTY_STORAGE = Addresses.SCRIPTY_STORAGE;
 
     function run() public {
         uint256 pk = vm.envUint("PRIVATE_KEY");

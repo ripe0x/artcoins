@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+// targets superseded stack legacy (LAYER); current stack is 0x4959… (Addresses.CURRENT_FACTORY).
+// Mainnet runs are refused unless ALLOW_SUPERSEDED=1.
+
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {Script, console2} from "forge-std/Script.sol";
+
+import {Addresses} from "./Addresses.sol";
 
 interface IWETH9 {
     function deposit() external payable;
@@ -36,16 +41,24 @@ interface IBurnRouter {
 ///         factory. Buys TEST, sells TEST, then walks the protocol-fee path
 ///         all the way to LAYER burns.
 contract TraceTestTokenFees is Script {
-    address constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-    address constant POOL_MANAGER = 0x000000000004444c5dc75cB358380D2e3dE08A90;
-    address constant LAYER = 0xb7287e4A5b605aB92A8589C62af8A4ebD347E6c9;
-    address constant PFC = 0x5fDc39756A64A84518ef00CB6a0ED46971e00A60;
-    address constant BURN_ROUTER = 0x2eDBdF011768d8cd4Ef537658b41440900C52000;
-    address constant HOOK = 0xA5eA9904F2cD572c638a1eF81463BDAbEa9D28cc;
+    address constant WETH = Addresses.WETH;
+    address constant POOL_MANAGER = Addresses.POOL_MANAGER;
+    address constant LAYER = Addresses.COIN_LAYER;
+    address constant PFC = Addresses.LEGACY_PROTOCOL_FEE_CONTROLLER;
+    address constant BURN_ROUTER = Addresses.LEGACY_BURN_ROUTER;
+    address constant HOOK = Addresses.LEGACY_HOOK;
     int24 constant TICK_SPACING = 200;
     uint24 constant DYNAMIC_FEE = 0x800000;
 
+    /// @dev Drives the legacy stack (LAYER). On mainnet it refuses to run unless ALLOW_SUPERSEDED=1.
+    function _requireSupersededAllowed() internal view {
+        if (block.chainid == Addresses.CHAIN_ID && vm.envOr("ALLOW_SUPERSEDED", uint256(0)) != 1) {
+            revert("targets superseded stack legacy; set ALLOW_SUPERSEDED=1 to run on mainnet");
+        }
+    }
+
     function run() public {
+        _requireSupersededAllowed();
         address token = vm.envAddress("TEST_TOKEN");
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address trader = vm.addr(pk);

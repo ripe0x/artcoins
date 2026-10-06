@@ -9,6 +9,7 @@ import {IConstantsBound} from "../interfaces/IConstantsBound.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
@@ -102,7 +103,8 @@ contract BurnRouterV2 is
     function initialize(address coin_, PoolKey calldata key) external onlyOwner {
         if (coin != address(0)) revert AlreadyInitialized();
         if (coin_ == address(0)) revert ZeroAddress();
-        if (Currency.unwrap(key.currency0) != address(0) || Currency.unwrap(key.currency1) != coin_) {
+        if (Currency.unwrap(key.currency0) != address(0) || Currency.unwrap(key.currency1) != coin_)
+        {
             revert InvalidPoolKey();
         }
         (uint160 spot,,,) = poolManager.getSlot0(key.toId());
@@ -178,10 +180,13 @@ contract BurnRouterV2 is
         if (reward > Constants.KEEPER_REWARD_CAP) reward = Constants.KEEPER_REWARD_CAP;
     }
 
-    /// @notice What the next burn would offer the pool: `balance` minus the
-    ///         reward reserve, excluding pending escrow refunds.
+    /// @notice What the next burn would offer the pool: balance plus pending
+    ///         escrow refunds (claimed first by every burn) minus the reward
+    ///         reserve. Zero when below `minProcessThreshold`.
     function swapBudget() external view returns (uint256) {
-        uint256 bal = address(this).balance;
+        uint256 bal = address(this).balance
+            + IArtCoinsFeeEscrowV2(feeEscrow).balances(address(this), address(0));
+        if (bal < minProcessThreshold) return 0;
         return bal - rewardFor(bal);
     }
 
@@ -249,15 +254,19 @@ contract BurnRouterV2 is
         } catch {}
     }
 
-    /// @dev Exact input eth (currency0) to coin (currency1), price limit
-    ///      `maxImpactBps` below spot. sqrt(1 - x) ~ 1 - x/2, and
-    ///      (1 - x/2)^2 >= 1 - x, so the realized move is at most `maxImpactBps`.
+    /// @dev Exact input eth (currency0) to coin (currency1). Buying the coin
+    ///      lowers the price (coin per eth falls), so the limit is
+    ///      spot / sqrt(1 + bps / BPS), rounded up: pre / post <= 1 + bps / BPS,
+    ///      which also bounds post / pre >= 1 - bps / BPS. The v1 linear
+    ///      `spot * (1 - x / 2)` let pre / post reach 1 + x + x^2 (LF-03, LF-09).
     ///      Must run inside an unlock. Settles exactly the eth consumed.
     function _swapAndSettle(uint256 budget, uint160 spot)
         internal
         returns (uint256 ethIn, uint256 coinOut)
     {
-        uint256 c = (uint256(spot) * (20_000 - maxImpactBps)) / 20_000;
+        uint256 factor =
+            FixedPointMathLib.sqrt((Constants.BPS + maxImpactBps) * 1e36 / Constants.BPS);
+        uint256 c = FullMath.mulDivRoundingUp(uint256(spot), 1e18, factor);
         uint160 limit =
             c <= uint256(TickMath.MIN_SQRT_PRICE) ? TickMath.MIN_SQRT_PRICE + 1 : uint160(c);
 

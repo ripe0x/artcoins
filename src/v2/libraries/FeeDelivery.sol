@@ -50,14 +50,13 @@ library FeeDelivery {
             mstore(0x00, 0)
             let ok := call(gas(), token, 0, m, 0x44, 0x00, 0x20)
             // ok and (returned true, or returned nothing from a contract)
-            pushed :=
-                and(
-                    ok,
-                    or(
-                        and(eq(mload(0x00), 1), gt(returndatasize(), 0x1f)),
-                        and(iszero(returndatasize()), gt(extcodesize(token), 0))
-                    )
+            pushed := and(
+                ok,
+                or(
+                    and(eq(mload(0x00), 1), gt(returndatasize(), 0x1f)),
+                    and(iszero(returndatasize()), gt(extcodesize(token), 0))
                 )
+            )
         }
         if (!pushed) {
             SafeTransferLib.safeApproveWithRetry(token, escrow, amount);

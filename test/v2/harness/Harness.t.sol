@@ -19,7 +19,16 @@ interface ISkimConfigView {
     function skimConfig(PoolId)
         external
         view
-        returns (uint24, uint16, uint24, uint24, address payable, address payable, address payable, address);
+        returns (
+            uint24,
+            uint16,
+            uint24,
+            uint24,
+            address payable,
+            address payable,
+            address payable,
+            address
+        );
 }
 
 interface IMevSkimView {
@@ -82,7 +91,9 @@ contract HarnessForkTest is ForkStack {
         assertEq(s.factory.teamFeeRecipient(), s.owner, "teamFeeRecipient == owner (live too)");
         assertEq(live.teamFeeRecipient(), LIVE_OWNER, "live teamFeeRecipient == owner");
         assertFalse(s.factory.deprecated(), "fresh un-deprecated");
-        assertEq(s.locker.keeperRewardBps(), ArtCoinsLpLocker(payable(LIVE_LOCKER)).keeperRewardBps());
+        assertEq(
+            s.locker.keeperRewardBps(), ArtCoinsLpLocker(payable(LIVE_LOCKER)).keeperRewardBps()
+        );
         assertEq(
             uint160(address(s.hook)) & Hooks.ALL_HOOK_MASK,
             uint160(LIVE_HOOK) & Hooks.ALL_HOOK_MASK,
@@ -127,9 +138,12 @@ contract HarnessForkTest is ForkStack {
         _collectAndClaim(l, p);
     }
 
-    function _buyAndCheckLegs(Launched memory l, LiveSkim memory c, uint256 ethIn, string memory tag)
-        internal
-    {
+    function _buyAndCheckLegs(
+        Launched memory l,
+        LiveSkim memory c,
+        uint256 ethIn,
+        string memory tag
+    ) internal {
         uint256 bBefore = c.bountyR.balance;
         uint256 eBefore = stack.escrow.availableFees(c.protoR, address(0));
         (, uint256 got) = swapExactIn(l.key, true, ethIn, address(this), "");
@@ -207,7 +221,9 @@ contract HarnessForkTest is ForkStack {
         assertEq(d.amount1(), 0, "no token needed above tick");
     }
 
-    function externalAddLiquidity(Launched memory l, int24 lower, int24 upper, uint128 liq) external {
+    function externalAddLiquidity(Launched memory l, int24 lower, int24 upper, uint128 liq)
+        external
+    {
         addLiquidity(l.key, lower, upper, liq, "");
     }
 
@@ -308,7 +324,6 @@ contract HarnessForkTest is ForkStack {
         bounty = bountyShare + (total - baseline);
         proto = baseline - bountyShare;
     }
-
 }
 
 /// @notice Contract with a payable fallback that returns no data (Safe-like).

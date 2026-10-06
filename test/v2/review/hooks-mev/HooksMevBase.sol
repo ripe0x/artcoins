@@ -15,8 +15,9 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ArtCoinsFeeEscrow} from "../../../../src/ArtCoinsFeeEscrow.sol";
 import {ArtCoinsHookSkimFee} from "../../../../src/hooks/ArtCoinsHookSkimFee.sol";
 import {ArtCoinsHookStaticFee} from "../../../../src/hooks/ArtCoinsHookStaticFee.sol";
-import {ArtCoinsPoolExtensionAllowlist} from
-    "../../../../src/hooks/ArtCoinsPoolExtensionAllowlist.sol";
+import {
+    ArtCoinsPoolExtensionAllowlist
+} from "../../../../src/hooks/ArtCoinsPoolExtensionAllowlist.sol";
 import {
     IArtCoinsHookSkimFee,
     IReferralPayoutForHook,
@@ -196,7 +197,7 @@ abstract contract HooksMevBase is Test {
     }
 
     function _addLiquidity(PoolKey memory key, int24 lower, int24 upper, uint256 liq) internal {
-        liqRouter.modifyLiquidity{value: 2_000 ether}(
+        liqRouter.modifyLiquidity{value: 2000 ether}(
             key,
             IPoolManager.ModifyLiquidityParams({
                 tickLower: lower, tickUpper: upper, liquidityDelta: int256(liq), salt: 0

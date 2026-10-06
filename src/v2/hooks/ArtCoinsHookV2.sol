@@ -3,8 +3,9 @@ pragma solidity ^0.8.26;
 
 import {Constants} from "../../Constants.sol";
 import {IArtCoinsPoolExtension} from "../../hooks/interfaces/IArtCoinsPoolExtension.sol";
-import {IArtCoinsPoolExtensionAllowlist} from
-    "../../hooks/interfaces/IArtCoinsPoolExtensionAllowlist.sol";
+import {
+    IArtCoinsPoolExtensionAllowlist
+} from "../../hooks/interfaces/IArtCoinsPoolExtensionAllowlist.sol";
 import {IPreSwapStream} from "../../interfaces/IPreSwapStream.sol";
 import {IArtCoinsFeeEscrowV2} from "../interfaces/IArtCoinsFeeEscrowV2.sol";
 import {IArtCoinsHookV2} from "../interfaces/IArtCoinsHookV2.sol";
@@ -77,9 +78,14 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     uint256 private constant _EXTENSION_GAS = 2_000_000;
 
     /// @dev Transient: skim minted in `beforeSwap` on a quote specified swap.
-    bytes32 private constant _SKIM_SLOT = keccak256("artcoins.hookV2.skim");
+    ///      keccak256("artcoins.hookV2.skim") (a literal: inline assembly
+    ///      accepts number constants only).
+    uint256 private constant _SKIM_SLOT =
+        0x7aee84292610e1817940dfa3b53a7600205e6137c5ca860d9c51840e6feafea5;
     /// @dev Transient: `(amountToSwap << 32) | skimBps` for that swap.
-    bytes32 private constant _REQ_SLOT = keccak256("artcoins.hookV2.requested");
+    ///      keccak256("artcoins.hookV2.requested").
+    uint256 private constant _REQ_SLOT =
+        0x1ed2782058d87e2c0cc971c5cc47936f85ed6b62abd4c00f9ad4c24ce7f27f87;
     /// @dev Transient position marker tag (b1).
     bytes32 private constant _POS_TAG = keccak256("artcoins.hookV2.positionAdded");
 
@@ -236,7 +242,8 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         PoolInfo storage info = _info[pid];
         if (block.timestamp < uint256(info.createdAt) + Constants.MAX_MEV_WINDOW) {
             address module = info.mevModule;
-            if (module != address(0) && _started[pid] && block.timestamp < _windowEnd(module, pid)) {
+            if (module != address(0) && _started[pid] && block.timestamp < _windowEnd(module, pid))
+            {
                 revert MevWindowActive();
             }
         }
@@ -394,7 +401,9 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
             }
         }
 
-        _runExtension(key, pid, sender, params, toBalanceDelta(int128(q - int256(skim)), delta.amount1()), ext);
+        _runExtension(
+            key, pid, sender, params, toBalanceDelta(int128(q - int256(skim)), delta.amount1()), ext
+        );
         return (BaseHook.afterSwap.selector, ret);
     }
 
@@ -565,7 +574,9 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     }
 
     function _i128(uint256 x) private pure returns (int128) {
-        if (x > uint128(type(int128).max)) revert ParamOutOfBounds(x, 0, uint128(type(int128).max));
+        if (x > uint128(type(int128).max)) {
+            revert ParamOutOfBounds(x, 0, uint128(type(int128).max));
+        }
         return int128(int256(x));
     }
 

@@ -122,11 +122,13 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
         CanonicalPool memory canon,
         address launcher_
     ) {
-        if (t.tokenAdmin == address(0) || launcher_ == address(0)) revert ZeroAddress();
+        if (t.tokenAdmin == address(0) || launcher_ == address(0)) {
+            revert ZeroAddress();
+        }
         if (t.renderer != address(0) && t.renderer.code.length == 0) revert InvalidRenderer();
-        if (
-            canon.hook == address(0) || canon.poolManager == address(0) || canon.tickSpacing <= 0
-        ) revert TaxConfigInvalid();
+        if (canon.hook == address(0) || canon.poolManager == address(0) || canon.tickSpacing <= 0) {
+            revert TaxConfigInvalid();
+        }
 
         _name = t.name;
         _symbol = t.symbol;
@@ -200,12 +202,18 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
         _mint(launcher_, supply);
     }
 
+    /// @dev Exempt entries must be contracts that exist at launch (the
+    ///      locker, a position manager), never this token, and at most
+    ///      MAX_TAX_EXEMPT. An externally owned account cannot be exempted, so
+    ///      a deployer cannot list its own wallet and buy untaxed (FT-07).
     function _initExempt(address[] memory exempt) private {
         uint256 n = exempt.length;
         if (n > Constants.MAX_TAX_EXEMPT) revert TaxConfigInvalid();
         for (uint256 i; i < n; ++i) {
             address a = exempt[i];
-            if (a == address(0) || _taxExempt[a]) revert TaxConfigInvalid();
+            if (a == address(this) || a.code.length == 0 || _taxExempt[a]) {
+                revert TaxConfigInvalid();
+            }
             _taxExempt[a] = true;
             _exemptList.push(a);
             emit TaxExemptSet(a);
@@ -245,11 +253,7 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
         return true;
     }
 
-    function transferFrom(address from, address to, uint256 amount)
-        public
-        override
-        returns (bool)
-    {
+    function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
         _spendAllowance(from, msg.sender, amount);
         _route(from, to, amount);
         return true;
@@ -353,7 +357,11 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
     }
 
     /// @notice Remaining same tx allowances. VENUE: (budget, 0, 0). HARD: (0, out, in).
-    function pendingCanonical() external view returns (uint256 budget, uint256 flowOut, uint256 flowIn) {
+    function pendingCanonical()
+        external
+        view
+        returns (uint256 budget, uint256 flowOut, uint256 flowIn)
+    {
         return (_tload(_BUDGET_SLOT), _tload(_FLOW_OUT_SLOT), _tload(_FLOW_IN_SLOT));
     }
 

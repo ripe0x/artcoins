@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {CollectFlushKeeperV1} from "../../src/v2/keepers/CollectFlushKeeperV1.sol";
 import {RunKeeper111} from "../../script/v2/RunKeeper111.s.sol";
 import {IArtCoinsFeeLocker} from "../../src/interfaces/IArtCoinsFeeLocker.sol";
 import {IArtCoinsLpLocker} from "../../src/interfaces/IArtCoinsLpLocker.sol";
 import {IFeeAutoSwapper} from "../../src/interfaces/IFeeAutoSwapper.sol";
+import {CollectFlushKeeperV1} from "../../src/v2/keepers/CollectFlushKeeperV1.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
@@ -57,8 +57,10 @@ contract KeeperV1_111_ForkTest is Test {
 
     function setUp() public {
         if (vm.envOr("SKIP_FORK_TESTS", false)) return;
-        string memory rpc = vm.envOr("MAINNET_RPC_URL", string("https://mainnet.gateway.tenderly.co"));
-        try vm.createSelectFork(rpc, vm.envOr("FORK_BLOCK", FORK_BLOCK)) {} catch {
+        string memory rpc =
+            vm.envOr("MAINNET_RPC_URL", string("https://mainnet.gateway.tenderly.co"));
+        try vm.createSelectFork(rpc, vm.envOr("FORK_BLOCK", FORK_BLOCK)) {}
+        catch {
             console2.log("fork unavailable: tests skipped");
             return;
         }
@@ -93,7 +95,9 @@ contract KeeperV1_111_ForkTest is Test {
             IPoolManager.SwapParams({
                 zeroForOne: zeroForOne,
                 amountSpecified: -int256(amountIn),
-                sqrtPriceLimitX96: zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
+                sqrtPriceLimitX96: zeroForOne
+                    ? TickMath.MIN_SQRT_PRICE + 1
+                    : TickMath.MAX_SQRT_PRICE - 1
             }),
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
             ""
@@ -126,7 +130,8 @@ contract KeeperV1_111_ForkTest is Test {
         _setLockerReward50();
         vm.roll(block.number + 60); // clears minBlocksBetweenConverts (also true at the pin)
 
-        (uint256 hint, uint256 hintCoin, uint256 escrowedBefore, uint256 stranded,) = keeper.preview();
+        (uint256 hint, uint256 hintCoin, uint256 escrowedBefore, uint256 stranded,) =
+            keeper.preview();
         assertGt(hint, 0, "preview sees uncollected eth fees");
         assertGt(hintCoin, 0, "preview sees uncollected coin fees");
         assertEq(stranded, 0);
@@ -157,9 +162,11 @@ contract KeeperV1_111_ForkTest is Test {
         uint256 swapperRewards = ISwapperV1(SWAPPER).totalKeeperRewards() - rewardsBefore;
         uint256 lockerReward = hint - collected;
         assertGt(CALLER.balance, callerBefore, "caller got rewards");
-        assertApproxEqAbs(CALLER.balance - callerBefore, swapperRewards + lockerReward, 200, "caller reward sum");
+        assertApproxEqAbs(
+            CALLER.balance - callerBefore, swapperRewards + lockerReward, 200, "caller reward sum"
+        );
         // preview after the run: nothing escrowed, nothing stranded
-        (, , uint256 e2, uint256 s2,) = keeper.preview();
+        (,, uint256 e2, uint256 s2,) = keeper.preview();
         assertEq(e2, 0);
         assertEq(s2, 0);
     }
@@ -191,10 +198,11 @@ contract KeeperV1_111_ForkTest is Test {
         uint256 reverted;
         uint256 succeeded;
         for (uint256 limit = 1_300_000; limit >= 300_000; limit -= 25_000) {
-            (bool ok, bytes memory ret) =
-                address(keeper).call{gas: limit}(abi.encodeCall(CollectFlushKeeperV1.run, (true, 0)));
+            (bool ok, bytes memory ret) = address(keeper).call{gas: limit}(
+                abi.encodeCall(CollectFlushKeeperV1.run, (true, 0))
+            );
             if (ok) {
-                (, , uint256 converted) = abi.decode(ret, (uint256, uint256, uint256));
+                (,, uint256 converted) = abi.decode(ret, (uint256, uint256, uint256));
                 assertGt(converted, 0, "succeeded without converting");
                 assertEq(address(SWAPPER).balance, 0);
                 ++succeeded;
@@ -270,7 +278,7 @@ contract KeeperV1_111_ForkTest is Test {
         assertEq(address(SWAPPER).balance, escrowed, "stranded eth untouched by flush and convert");
         assertEq(address(keeper).balance, 0);
 
-        (, , , uint256 swapperPaired,) = keeper.preview();
+        (,,, uint256 swapperPaired,) = keeper.preview();
         assertEq(swapperPaired, escrowed, "preview exposes the stranded amount");
     }
 }

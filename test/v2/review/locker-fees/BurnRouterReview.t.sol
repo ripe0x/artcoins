@@ -60,7 +60,9 @@ contract BurnSandwich is IUnlockCallback {
             IPoolManager.SwapParams({
                 zeroForOne: wethIs0,
                 amountSpecified: -int256(frontRun),
-                sqrtPriceLimitX96: wethIs0 ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
+                sqrtPriceLimitX96: wethIs0
+                    ? TickMath.MIN_SQRT_PRICE + 1
+                    : TickMath.MAX_SQRT_PRICE - 1
             }),
             ""
         );
@@ -83,7 +85,9 @@ contract BurnSandwich is IUnlockCallback {
             IPoolManager.SwapParams({
                 zeroForOne: !wethIs0,
                 amountSpecified: -int256(layerGot),
-                sqrtPriceLimitX96: wethIs0 ? TickMath.MAX_SQRT_PRICE - 1 : TickMath.MIN_SQRT_PRICE + 1
+                sqrtPriceLimitX96: wethIs0
+                    ? TickMath.MAX_SQRT_PRICE - 1
+                    : TickMath.MIN_SQRT_PRICE + 1
             }),
             ""
         );
@@ -147,7 +151,7 @@ contract BurnRouterReviewTest is Test {
         });
         pm.initialize(key, uint160(1) << 96); // 1 LAYER = 1 WETH
         liq = new PoolModifyLiquidityTest(IPoolManager(address(pm)));
-        vm.deal(address(this), 1_000 ether);
+        vm.deal(address(this), 1000 ether);
         weth.deposit{value: 500 ether}();
         layer.mint(address(this), 500 ether);
         weth.approve(address(liq), type(uint256).max);

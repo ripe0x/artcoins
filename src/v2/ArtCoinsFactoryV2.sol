@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import {Constants} from "../Constants.sol";
+import {ArtCoinsTokenV2} from "./ArtCoinsTokenV2.sol";
 import {IArtCoinsExtensionV2} from "./interfaces/IArtCoinsExtensionV2.sol";
 import {IArtCoinsFactoryV2} from "./interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsHookV2} from "./interfaces/IArtCoinsHookV2.sol";
@@ -9,14 +10,13 @@ import {IArtCoinsLpLockerV2} from "./interfaces/IArtCoinsLpLockerV2.sol";
 import {IArtCoinsMevSkimV2} from "./interfaces/IArtCoinsMevSkimV2.sol";
 import {IArtCoinsTokenV2} from "./interfaces/IArtCoinsTokenV2.sol";
 import {IConstantsBound} from "./interfaces/IConstantsBound.sol";
-import {ArtCoinsTokenV2} from "./ArtCoinsTokenV2.sol";
 import {ArtCoinsDeployerV2} from "./utils/ArtCoinsDeployerV2.sol";
 
 import {Ownable, Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
@@ -47,8 +47,9 @@ interface IHookPoolManager {
 ///            protocol slot appended; the locker must pull exactly the pool supply.
 ///         8. extensions: each gets exactly its own `msgValue` and its own
 ///            supply share, and must pull exactly that share.
-///         9. `hook.initializeMevModule` (after extensions, as v1: a launch
-///            extension such as a dev buy is the deployer's own action).
+///         9. `hook.initializeMevModule`, always (after extensions, as v1: a
+///            launch extension such as a dev buy is the deployer's own action;
+///            the call also runs the pool extension's post locker setup).
 ///         10. `TokenCreatedV2` with the full config; deploy fee pushed to
 ///            `teamFeeRecipient`; excess eth refunded to the sender.
 ///
@@ -241,10 +242,16 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         _placeLiquidity(c, poolKey, poolSupply, token, protocolBps);
         _runExtensions(c, poolKey, token, supply);
 
-        if (c.mev.module != address(0)) {
-            IArtCoinsHookV2(c.pool.hook)
-                .initializeMevModule(poolKey, abi.encode(c.mev.startingSkimBps, c.mev.windowSeconds));
-        }
+        // always called: it also runs the pool extension's post locker setup
+        // and arms the hook's per pool `started` flag. Empty config when there
+        // is no module (the hook skips the module call).
+        IArtCoinsHookV2(c.pool.hook)
+            .initializeMevModule(
+                poolKey,
+                c.mev.module == address(0)
+                    ? bytes("")
+                    : abi.encode(c.mev.startingSkimBps, c.mev.windowSeconds)
+            );
 
         emit TokenCreatedV2(
             msg.sender,
@@ -291,6 +298,8 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         ) revert FeeConfigOutOfBounds();
         uint256 maxBounty = Constants.BPS - minProtocolSkimShareBps;
         if (maxBounty > Constants.MAX_BOUNTY_BPS) maxBounty = Constants.MAX_BOUNTY_BPS;
+        // casting to uint16 is safe: maxBounty <= MAX_BOUNTY_BPS (9999)
+        // forge-lint: disable-next-line(unsafe-typecast)
         if (f.bountyBps > maxBounty) revert BountyBpsTooHigh(f.bountyBps, uint16(maxBounty));
     }
 
@@ -368,8 +377,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         } else {
             revert InvalidTaxConfig();
         }
-        if (t.exempt.length > Constants.MAX_TAX_EXEMPT || t.venues.length > Constants.MAX_TAX_VENUES)
-        {
+        if (
+            t.exempt.length > Constants.MAX_TAX_EXEMPT || t.venues.length > Constants.MAX_TAX_VENUES
+        ) {
             revert InvalidTaxConfig();
         }
         for (uint256 i; i < t.exempt.length; ++i) {
@@ -502,7 +512,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
             if (coin.allowance(address(this), e.extension) != 0) {
                 coin.forceApprove(e.extension, 0);
             }
-            if (before - coin.balanceOf(address(this)) != share) revert SupplyNotPulled(e.extension);
+            if (before - coin.balanceOf(address(this)) != share) {
+                revert SupplyNotPulled(e.extension);
+            }
             emit ExtensionTriggered(token, e.extension, share, e.msgValue);
         }
     }
@@ -667,8 +679,11 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         revert RenounceDisabled();
     }
 
+    /// @dev A target with no code, a reverting answer or a short answer is a mismatch.
     function _checkConstants(address target) internal view {
-        if (IConstantsBound(target).constantsHash() != Constants.hash()) {
+        (bool ok, bytes memory ret) =
+            target.staticcall(abi.encodeCall(IConstantsBound.constantsHash, ()));
+        if (!ok || ret.length != 32 || abi.decode(ret, (bytes32)) != Constants.hash()) {
             revert ConstantsMismatch(target);
         }
     }

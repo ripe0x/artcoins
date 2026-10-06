@@ -108,7 +108,8 @@ contract LpLockerReviewTest is Test {
         );
         escrow = new ArtCoinsFeeEscrow(owner);
         // this test contract plays the factory
-        locker = new ArtCoinsLpLocker(owner, address(this), address(escrow), address(posm), address(p2));
+        locker =
+            new ArtCoinsLpLocker(owner, address(this), address(escrow), address(posm), address(p2));
         vm.prank(owner);
         escrow.addDepositor(address(locker));
 
@@ -223,8 +224,7 @@ contract LpLockerReviewTest is Test {
         assertEq(honest0, f0, "on-chain fee read matches honest collect (eth)");
         assertEq(honest1, f1, "on-chain fee read matches honest collect (coin)");
 
-        LockerFeeThief thief =
-            new LockerFeeThief(IPoolManager(address(pm)), posm, locker);
+        LockerFeeThief thief = new LockerFeeThief(IPoolManager(address(pm)), posm, locker);
         address attacker = makeAddr("attacker");
         vm.prank(attacker);
         thief.attack(key, address(coin), f0, f1);

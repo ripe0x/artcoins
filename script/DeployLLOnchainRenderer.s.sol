@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+// targets superseded stack legacy (LAYER); current stack is 0x4959… (Addresses.CURRENT_FACTORY).
+// Mainnet runs are refused unless ALLOW_SUPERSEDED=1.
+
 import {Script, console2} from "forge-std/Script.sol";
 
 import {
@@ -8,6 +11,8 @@ import {
 } from "../src/extensions/LiquidityLayerCounterPoolExtension.sol";
 import {LiquidityLayerOnchainRenderer} from "../src/extensions/LiquidityLayerOnchainRenderer.sol";
 import {IScriptyBuilderV2, IScriptyStorageV2} from "../src/interfaces/IScripty.sol";
+
+import {Addresses} from "./Addresses.sol";
 
 /// @notice Uploads the LL sketch + Mona Lisa to ScriptyStorageV2 (canonical
 ///         deployment, same on all chains we use), then deploys the
@@ -35,10 +40,18 @@ import {IScriptyBuilderV2, IScriptyStorageV2} from "../src/interfaces/IScripty.s
 /// the name is taken by a different owner, the script aborts and asks for a
 /// version bump.
 contract DeployLLOnchainRenderer is Script {
-    address constant SCRIPTY_BUILDER = 0xD7587F110E08F4D120A231bA97d3B577A81Df022;
-    address constant SCRIPTY_STORAGE = 0xbD11994aABB55Da86DC246EBB17C1Be0af5b7699;
+    address constant SCRIPTY_BUILDER = Addresses.SCRIPTY_BUILDER;
+    address constant SCRIPTY_STORAGE = Addresses.SCRIPTY_STORAGE;
+
+    /// @dev Mainnet runs are refused unless ALLOW_SUPERSEDED=1 (superseded stack legacy (LAYER)).
+    function _requireSupersededAllowed() internal view {
+        if (block.chainid == Addresses.CHAIN_ID && vm.envOr("ALLOW_SUPERSEDED", uint256(0)) != 1) {
+            revert("targets a superseded stack; set ALLOW_SUPERSEDED=1 to run on mainnet");
+        }
+    }
 
     function run() public {
+        _requireSupersededAllowed();
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(pk);
         address counter = vm.envAddress("LL_COUNTER");

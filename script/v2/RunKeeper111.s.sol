@@ -30,7 +30,6 @@ contract DeployKeeper111 is Script {
 ///         Nothing is sent unless `--broadcast` is passed. Give the tx at least 1.2M gas (the keeper reverts
 ///         on a gas shortfall rather than skipping a step).
 contract RunKeeper111 is Script {
-
     receive() external payable {}
 
     function run() external {
@@ -47,14 +46,19 @@ contract RunKeeper111 is Script {
         console2.log("collected", collected);
         console2.log("flushed", flushed);
         console2.log("converted", converted);
-        if (converted == 0) console2.log("convert skipped (min blocks, nothing to convert or minOut not met)");
+        if (converted == 0) {
+            console2.log("convert skipped (min blocks, nothing to convert or minOut not met)");
+        }
     }
 
     /// @notice minOut for `convert`: simulate the whole run at the current state (state reverted after) with
     ///         minOut 0, take the eth the swap would return, subtract `slippageBps`. A spot quote is not used:
     ///         the live pool's dynamic fee, skim and coin tax put realized output several percent under spot.
     ///         Returns 0 when the simulation converts nothing (min blocks not elapsed, no coin).
-    function quoteMinOut(CollectFlushKeeperV1 keeper, uint256 slippageBps) public returns (uint256) {
+    function quoteMinOut(CollectFlushKeeperV1 keeper, uint256 slippageBps)
+        public
+        returns (uint256)
+    {
         uint256 snap = vm.snapshotState();
         (,, uint256 simulated) = keeper.run(true, 0);
         vm.revertToState(snap);

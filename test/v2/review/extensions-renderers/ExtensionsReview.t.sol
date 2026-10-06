@@ -8,8 +8,8 @@ pragma solidity ^0.8.26;
 import {Test} from "forge-std/Test.sol";
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
@@ -243,8 +243,9 @@ contract ExtensionsReviewTest is Test {
         });
         vm.startPrank(hook);
         ext.initializePreLockerSetup(nativePk, false, "");
-        IPoolManager.SwapParams memory sp =
-            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: -1e18, sqrtPriceLimitX96: 0});
+        IPoolManager.SwapParams memory sp = IPoolManager.SwapParams({
+            zeroForOne: true, amountSpecified: -1e18, sqrtPriceLimitX96: 0
+        });
         // pipeline does IERC20(address(0)).balanceOf(pfc) outside any try:
         // the whole afterSwap reverts, rolling back the counter write too.
         vm.expectRevert();

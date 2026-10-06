@@ -194,7 +194,9 @@ abstract contract ForkBase is Test {
         IPoolManager.SwapParams memory sp = IPoolManager.SwapParams({
             zeroForOne: zeroForOne,
             amountSpecified: -int256(amountIn),
-            sqrtPriceLimitX96: zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
+            sqrtPriceLimitX96: zeroForOne
+                ? TickMath.MIN_SQRT_PRICE + 1
+                : TickMath.MAX_SQRT_PRICE - 1
         });
         PoolSwapTest.TestSettings memory ts =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
@@ -249,7 +251,9 @@ abstract contract ForkBase is Test {
         uint160 sqrtA = TickMath.getSqrtPriceAtTick(tickLower);
         uint160 sqrtB = TickMath.getSqrtPriceAtTick(tickUpper);
         if (sqrtP < sqrtB) {
-            value = SqrtPriceMath.getAmount0Delta(sqrtP > sqrtA ? sqrtP : sqrtA, sqrtB, liquidity, true) + 1;
+            value = SqrtPriceMath.getAmount0Delta(
+                sqrtP > sqrtA ? sqrtP : sqrtA, sqrtB, liquidity, true
+            ) + 1;
         }
         if (address(this).balance < value) vm.deal(address(this), value);
     }

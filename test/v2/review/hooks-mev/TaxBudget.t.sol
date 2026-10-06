@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {HMEthSink, HMReferralPayout, HooksMevBase} from "./HooksMevBase.sol";
 import {ArtCoinsToken} from "../../../../src/ArtCoinsToken.sol";
 import {TaxConfig, TaxVenue} from "../../../../src/interfaces/IArtCoinsTaxable.sol";
+import {HMEthSink, HMReferralPayout, HooksMevBase} from "./HooksMevBase.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
@@ -12,8 +12,8 @@ import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockC
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
-import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
 /// in one unlock: add then remove liquidity on the CANONICAL pool (net zero,
 /// flash accounted, attests the removed PCT as exemption budget), then buy on
@@ -93,7 +93,9 @@ contract TaxBudgetTest is HooksMevBase {
             exempt: new address[](0),
             venues: new TaxVenue[](0)
         });
-        tok = new ArtCoinsToken("P", "P", 1_000_000_000 ether, address(this), "", "", "", address(0), tc);
+        tok = new ArtCoinsToken(
+            "P", "P", 1_000_000_000 ether, address(this), "", "", "", address(0), tc
+        );
         tok.approve(address(liqRouter), type(uint256).max);
         tok.approve(address(swapRouter), type(uint256).max);
 
@@ -133,7 +135,9 @@ contract TaxBudgetTest is HooksMevBase {
                 liq: 100 ether,
                 lower: -1200,
                 upper: -600,
-                ethIn: 1 ether, to: buyer, doBudget: doBudget
+                ethIn: 1 ether,
+                to: buyer,
+                doBudget: doBudget
             })
         );
         received = tok.balanceOf(buyer) - b0;

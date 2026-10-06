@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+// targets superseded stack legacy (LAYER); current stack is 0x4959… (Addresses.CURRENT_FACTORY).
+// Mainnet runs are refused unless ALLOW_SUPERSEDED=1.
+
 import {Script, console2} from "forge-std/Script.sol";
 
 import {LiquidityLayerOnchainRenderer} from "../src/extensions/LiquidityLayerOnchainRenderer.sol";
 import {IScriptyStorageV2} from "../src/interfaces/IScripty.sol";
+
+import {Addresses} from "./Addresses.sol";
 
 /// @notice Upload a new Mona Lisa asset into ScriptyStorageV2 and point the
 ///         renderer at it. Used to swap the canvas backdrop without
@@ -21,9 +26,17 @@ import {IScriptyStorageV2} from "../src/interfaces/IScripty.sol";
 /// continue to addChunk; addChunk reverts NotContentOwner if owned by someone
 /// else, in which case bump MONA_NEW_NAME).
 contract SwapMonaAsset is Script {
-    address constant SCRIPTY_STORAGE = 0xbD11994aABB55Da86DC246EBB17C1Be0af5b7699;
+    address constant SCRIPTY_STORAGE = Addresses.SCRIPTY_STORAGE;
+
+    /// @dev Mainnet runs are refused unless ALLOW_SUPERSEDED=1 (superseded stack legacy (LAYER)).
+    function _requireSupersededAllowed() internal view {
+        if (block.chainid == Addresses.CHAIN_ID && vm.envOr("ALLOW_SUPERSEDED", uint256(0)) != 1) {
+            revert("targets a superseded stack; set ALLOW_SUPERSEDED=1 to run on mainnet");
+        }
+    }
 
     function run() public {
+        _requireSupersededAllowed();
         uint256 pk = vm.envUint("PRIVATE_KEY");
         LiquidityLayerOnchainRenderer renderer =
             LiquidityLayerOnchainRenderer(vm.envAddress("RENDERER"));

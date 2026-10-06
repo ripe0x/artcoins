@@ -16,7 +16,7 @@ running log for the unattended v2 session. a restarted session should read this 
 
 | # | job | state | notes |
 |---|---|---|---|
-| 1 | deployment registry | registry done; wiring readme/ui/scripts in progress | |
+| 1 | deployment registry | done. registry verified on chain; readme, AGENTS.md, ui config, 32 scripts and script-js read from the registry via generated Addresses.sol / deployments.generated.ts; 27 wrong or stale sites fixed (docs/v2/review/address-wiring.md). |
 | 2 | full system review | in progress | |
 | 3 | v2 contracts + fixes | not started | |
 | 4 | ops runbook | docs/v2/RUNBOOK.md written: 10 owner actions simulated with cast call --from (all succeed today), v2 rollout order and public gate list. needs a final pass once DeployV2Stack exists (constructor args). | |
