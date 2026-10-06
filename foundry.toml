@@ -32,7 +32,7 @@ tab_width = 4
 # [profile.tune] — used exclusively for forge script DeployV1Stack.s.sol.
 # The hook bytecode MUST be < 24,576 bytes (EIP-170). Measured at
 # optimizer_runs = 200 + viaIR: v1 ArtCoinsHookSkimFee 20,558 bytes, v2
-# ArtCoinsHookV2 (src/v2/hooks) 16,355 bytes (8,221 bytes headroom).
+# ArtCoinsHookV2 (src/v2/hooks) 16,230 bytes (8,346 bytes headroom).
 # Rule: ci fails under 1,024 bytes headroom at runs 200.
 [profile.tune]
 viaIR = true
@@ -47,7 +47,7 @@ stackAllocation = true
 # [profile.ci] — used by the GitHub Actions "Foundry project" job
 # (the workflow sets FOUNDRY_PROFILE=ci). Mirrors [profile.tune] so that
 # `forge build --sizes` validates the runtime bytecode we actually ship.
-# Measured at runs 200: v2 ArtCoinsHookV2 (src/v2/hooks) 16,355 bytes, 8,221
+# Measured at runs 200: v2 ArtCoinsHookV2 (src/v2/hooks) 16,230 bytes, 8,346
 # bytes headroom. Rule: ci fails under 1,024 bytes headroom at runs 200.
 # Keep these settings in sync with [profile.tune].
 [profile.ci]

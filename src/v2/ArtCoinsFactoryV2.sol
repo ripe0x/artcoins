@@ -288,6 +288,10 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         returns (uint256 extensionsSupply, uint256 extensionsValue)
     {
         if (c.token.tokenAdmin == address(0)) revert ZeroAddress();
+        // mirrors the token constructor so the revert is clear (not DeployFailed)
+        if (c.token.renderer != address(0) && c.token.renderer.code.length == 0) {
+            revert IArtCoinsTokenV2.InvalidRenderer();
+        }
         _validateStrings(c.token);
         if (!enabledHooks[c.pool.hook]) revert HookNotEnabled();
         if (protocolRecipient == address(0) || referralPayout == address(0)) revert ZeroAddress();
@@ -406,9 +410,31 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         ) {
             revert InvalidTaxConfig();
         }
-        // mirrors the token (FT-07): exempt entries are contracts that exist at launch
-        for (uint256 i; i < t.exempt.length; ++i) {
-            if (t.exempt[i].code.length == 0) revert InvalidTaxConfig();
+        // mirrors the token (FT-07): exempt entries are contracts that exist at
+        // launch (so never the token itself) and appear once.
+        uint256 n = t.exempt.length;
+        for (uint256 i; i < n; ++i) {
+            address a = t.exempt[i];
+            if (a.code.length == 0) revert InvalidTaxConfig();
+            for (uint256 j; j < i; ++j) {
+                if (t.exempt[j] == a) revert InvalidTaxConfig();
+            }
+        }
+        // mirrors `TaxVenues.derive` and the token's duplicate check: a known
+        // kind, a nonzero pair factory, and no two entries deriving the same
+        // pool (kind 1 ignores v3Fee). Bounded: n <= MAX_TAX_VENUES.
+        n = t.venues.length;
+        bytes32[] memory keys = new bytes32[](n);
+        for (uint256 i; i < n; ++i) {
+            TaxVenue calldata v = t.venues[i];
+            if ((v.kind != 1 && v.kind != 2) || v.factory == address(0)) revert InvalidTaxConfig();
+            bytes32 k = keccak256(
+                abi.encode(v.kind, v.factory, v.initCodeHash, v.counterToken, v.kind == 2 ? v.v3Fee : 0)
+            );
+            for (uint256 j; j < i; ++j) {
+                if (keys[j] == k) revert InvalidTaxConfig();
+            }
+            keys[i] = k;
         }
     }
 

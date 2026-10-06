@@ -25,6 +25,7 @@ import {ForkBase} from "./harness/ForkBase.sol";
 import {
     FV2Extension,
     FV2HashStub,
+    FV2LockerStub,
     FV2NoErc165Module,
     FV2Payout,
     FV2RevertingReceiver,
@@ -62,7 +63,9 @@ contract FactoryV2ForkTest is ForkBase {
     ArtCoinsFactoryV2 internal factory;
     ArtCoinsFeeEscrowV2 internal escrow;
     ArtCoinsHookV2 internal hook;
-    ArtCoinsLpLockerV2 internal locker;
+    /// @dev the locker launches go through (stub by default, see setUp).
+    address internal locker;
+    ArtCoinsLpLockerV2 internal realLocker;
     ArtCoinsMevLinearSkimV2 internal mev;
     FV2Payout internal payout;
 
@@ -91,17 +94,23 @@ contract FactoryV2ForkTest is ForkBase {
             IPoolManager(POOL_MANAGER), address(this), address(escrow), address(allowlist)
         );
         require(address(hook) == at, "miner mismatch");
-        locker = new ArtCoinsLpLockerV2(address(this), POSITION_MANAGER, PERMIT2, address(escrow));
+        realLocker =
+            new ArtCoinsLpLockerV2(address(this), POSITION_MANAGER, PERMIT2, address(escrow));
         escrow.addDepositor(address(hook), true);
-        escrow.addDepositor(address(locker), true);
+        escrow.addDepositor(address(realLocker), true);
+        realLocker.setLauncher(address(factory), true);
+        factory.setLocker(address(realLocker), true);
+        // the real locker cannot yet place liquidity for the real token (its
+        // erc20 approve to permit2 reverts on the solady token, see
+        // test_realLocker_launch). every other test runs on the stub.
+        locker = address(new FV2LockerStub());
         mev = new ArtCoinsMevLinearSkimV2(address(hook));
         payout = new FV2Payout();
 
         hook.setLauncher(address(factory), true);
-        locker.setLauncher(address(factory), true);
 
         factory.setHook(address(hook), true);
-        factory.setLocker(address(locker), true);
+        factory.setLocker(locker, true);
         factory.setMevModule(address(mev), true);
         factory.setEscrow(address(escrow), true);
         factory.setProtocolRecipient(protocolR);
@@ -133,7 +142,7 @@ contract FactoryV2ForkTest is ForkBase {
             bountyRecipient: bounty
         });
 
-        c.locker.locker = address(locker);
+        c.locker.locker = locker;
         c.locker.rewardRecipients = new address[](1);
         c.locker.rewardRecipients[0] = project;
         c.locker.rewardBps = new uint16[](1);
@@ -204,7 +213,7 @@ contract FactoryV2ForkTest is ForkBase {
         IArtCoinsFactoryV2.DeploymentInfoV2 memory info = factory.deploymentInfo(token);
         assertEq(info.token, token);
         assertEq(info.hook, address(hook));
-        assertEq(info.locker, address(locker));
+        assertEq(info.locker, locker);
         assertEq(info.mevModule, address(mev));
         assertEq(PoolId.unwrap(info.poolId), ArtCoinsTokenV2(token).canonicalPoolId());
         assertEq(info.launchedAt, block.timestamp);
@@ -241,7 +250,7 @@ contract FactoryV2ForkTest is ForkBase {
         // the victim's launch is neither blocked nor captured
         address v = _deploy(alice, c);
         assertEq(v, victimPredicted, "victim lands at its predicted address");
-        assertEq(locker.rewardRecipients(v)[0], project);
+        assertEq(IArtCoinsLpLockerV2(locker).rewardRecipients(v)[0], project);
         assertEq(ArtCoinsTokenV2(v).admin(), admin);
     }
 
@@ -402,7 +411,7 @@ contract FactoryV2ForkTest is ForkBase {
         assertEq(p.launcher, address(factory), "hook launcher");
         assertTrue(hook.isOfficialPool(info.poolId));
         assertEq(p.token, token);
-        assertEq(p.locker, address(locker));
+        assertEq(p.locker, locker);
         assertEq(p.mevModule, address(mev));
         // injected recipients
         IArtCoinsHookV2.SkimConfig memory s = hook.skimConfig(info.poolId);
@@ -500,8 +509,8 @@ contract FactoryV2ForkTest is ForkBase {
     function test_protocolBps_ownerOnlyOverride() public onlyFork {
         // public path always appends the default protocol slot
         address t = _deploy(alice, _cfg());
-        address[] memory r = locker.rewardRecipients(t);
-        uint16[] memory b = locker.rewardBps(t);
+        address[] memory r = IArtCoinsLpLockerV2(locker).rewardRecipients(t);
+        uint16[] memory b = IArtCoinsLpLockerV2(locker).rewardBps(t);
         assertEq(r.length, 2);
         assertEq(r[0], project);
         assertEq(b[0], 10_000 - PROTOCOL_BPS);
@@ -521,7 +530,7 @@ contract FactoryV2ForkTest is ForkBase {
 
         // owner with 0: no protocol slot
         address t0 = factory.deployTokenAsOwner{value: FEE}(c, 0);
-        r = locker.rewardRecipients(t0);
+        r = IArtCoinsLpLockerV2(locker).rewardRecipients(t0);
         assertEq(r.length, 1);
         assertEq(r[0], project);
 
@@ -532,7 +541,7 @@ contract FactoryV2ForkTest is ForkBase {
         // owner at the cap
         c.locker.rewardBps[0] = 10_000 - Constants.MAX_PROTOCOL_FEE_BPS;
         address t3 = factory.deployTokenAsOwner{value: FEE}(c, Constants.MAX_PROTOCOL_FEE_BPS);
-        b = locker.rewardBps(t3);
+        b = IArtCoinsLpLockerV2(locker).rewardBps(t3);
         assertEq(b[1], Constants.MAX_PROTOCOL_FEE_BPS);
 
         // the event carries the bps used
@@ -757,6 +766,64 @@ contract FactoryV2ForkTest is ForkBase {
         hook.initializeMevModule(_key(t), "");
     }
 
+    /// the factory mirrors the token constructor so a bad config fails with a clear error
+    function test_tokenCtorRules_mirroredUpFront() public onlyFork {
+        // renderer without code
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
+        c.token.renderer = makeAddr("noCode");
+        _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsTokenV2.InvalidRenderer.selector));
+
+        c = _cfg();
+        c.tax.mode = Constants.TAX_MODE_VENUE;
+        c.tax.taxBps = 1000;
+        c.tax.taxBpsMax = 2000;
+        c.tax.taxSink = Constants.DEAD;
+        // duplicate exempt
+        c.tax.exempt = new address[](2);
+        c.tax.exempt[0] = POSITION_MANAGER;
+        c.tax.exempt[1] = POSITION_MANAGER;
+        _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidTaxConfig.selector));
+        c.tax.exempt = new address[](0);
+
+        // venue: unknown kind, zero factory, duplicate derivation
+        c.tax.venues = new IArtCoinsFactoryV2.TaxVenue[](1);
+        c.tax.venues[0] = IArtCoinsFactoryV2.TaxVenue({
+            kind: 3, factory: address(0x5C69), initCodeHash: bytes32(uint256(1)), counterToken: WETH, v3Fee: 0
+        });
+        _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidTaxConfig.selector));
+        c.tax.venues[0].kind = 1;
+        c.tax.venues[0].factory = address(0);
+        _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidTaxConfig.selector));
+        c.tax.venues = new IArtCoinsFactoryV2.TaxVenue[](2);
+        c.tax.venues[0] = IArtCoinsFactoryV2.TaxVenue({
+            kind: 1, factory: address(0x5C69), initCodeHash: bytes32(uint256(1)), counterToken: WETH, v3Fee: 0
+        });
+        // v3Fee is ignored by a v2 style derivation: same pool
+        c.tax.venues[1] = IArtCoinsFactoryV2.TaxVenue({
+            kind: 1, factory: address(0x5C69), initCodeHash: bytes32(uint256(1)), counterToken: WETH, v3Fee: 3000
+        });
+        _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidTaxConfig.selector));
+
+        // distinct venues launch, and the token lists them
+        c.tax.venues[1].kind = 2;
+        c.tax.exempt = new address[](1);
+        c.tax.exempt[0] = POSITION_MANAGER;
+        address t = _deploy(alice, c);
+        assertTrue(ArtCoinsTokenV2(t).isTaxExempt(POSITION_MANAGER));
+    }
+
+    /// cross package: the real v2 locker places liquidity for the real v2 token.
+    /// fails today: the locker's `safeApprove(token, permit2, poolSupply)` hits
+    /// solady's `Permit2AllowanceIsFixedAtInfinity` on the token.
+    function test_realLocker_launch() public onlyFork {
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
+        c.locker.locker = address(realLocker);
+        address t = _deploy(alice, c);
+        assertEq(realLocker.rewardRecipients(t)[1], protocolR);
+        assertEq(IERC20(t).balanceOf(address(factory)), 0);
+        assertEq(IERC20(t).balanceOf(address(realLocker)), 0);
+    }
+
     /// D30: string caps are checked before any deploy work, same error as the token.
     function test_tokenStrings_capPasses_capPlusOneReverts() public onlyFork {
         ArtCoinsTokenV2 ref = ArtCoinsTokenV2(_deploy(alice, _cfg()));
@@ -905,7 +972,7 @@ contract FactoryV2ForkTest is ForkBase {
         assertEq(IERC20(t).totalSupply(), supply);
         assertEq(IERC20(t).balanceOf(address(factory)), 0, "factory holds no dust");
         assertEq(IERC20(t).balanceOf(team), 0, "team gets no coin");
-        assertEq(IERC20(t).balanceOf(address(locker)), 0, "locker holds none");
+        assertEq(FV2LockerStub(locker).pulled(t), poolSupply, "locker pulled exactly the pool supply");
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -951,15 +1018,17 @@ contract FactoryV2ForkTest is ForkBase {
             _cfg(), abi.encodeWithSelector(IArtCoinsFactoryV2.MevModuleNotEnabled.selector)
         );
         factory.setMevModule(address(mev), true);
-        factory.setLocker(address(locker), false);
+        factory.setLocker(locker, false);
         _expectRevertDeploy(_cfg(), abi.encodeWithSelector(IArtCoinsFactoryV2.LockerNotEnabled.selector));
-        factory.setLocker(address(locker), true);
+        factory.setLocker(locker, true);
         factory.setHook(address(hook), false);
         _expectRevertDeploy(_cfg(), abi.encodeWithSelector(IArtCoinsFactoryV2.HookNotEnabled.selector));
     }
 
     function test_owner_setterBounds() public {
-        assertTrue(factory.deprecated(), "ships deprecated");
+        assertTrue(
+            new ArtCoinsFactoryV2(address(this), POOL_MANAGER, 0, 0).deprecated(), "ships deprecated"
+        );
         assertEq(factory.owner(), address(this));
 
         vm.expectRevert(IArtCoinsFactoryV2.DeployFeeTooHigh.selector);

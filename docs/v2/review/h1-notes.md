@@ -2,7 +2,7 @@
 
 files: `src/v2/hooks/ArtCoinsHookV2.sol`, `src/v2/hooks/libraries/HookCalldata.sol`, `test/v2/HookV2.fork.t.sol`, `test/v2/mocks/HookV2ForkBase.sol`, `test/v2/mocks/HookV2Mocks.sol`.
 
-size at the ci profile (runs 200): see the report and the foundry.toml comment. one contract, no cold module (D14).
+size at the ci profile (runs 200): 16,230 bytes runtime, 8,346 bytes headroom. one contract, no cold module (D14). note: `src/hooks/legacy/ArtCoinsHookV2.sol` has the same contract name; scripts and `forge verify-contract` must use the path qualified name.
 
 ## review findings (contracts-hooks-mev.md)
 
@@ -32,3 +32,12 @@ size at the ci profile (runs 200): see the report and the foundry.toml comment. 
 | VENUE: canonical buy then sell back in one unlock attests the buy | weaker H14 variant, costs two skims plus lp fees (about 13% at 111's config vs 15% tax) | token side netting as above |
 | bounty recipient can front run a swap from inside the probe (150k gas, PoolManager unlocked) | v1 had it uncapped; recipient is frozen at launch and chosen by the launcher | accept; swapper's price limit protects |
 | HARD: increase then decrease of the same position in one tx reverts at take when it nets coin out | conservative b1 rule | accept, document for integrators |
+
+## bugs found by the suite and fixed in this package
+
+| bug | effect | fix |
+|---|---|---|
+| module reads `and(staticcall(..), gt(returndatasize(), n))`: yul evaluates arguments right to left, so `returndatasize()` read the PREVIOUS call | anti sniper skim and add lock silently fell back to the baseline (fail open) | bind the call result first |
+| redundant erc6909 mint in `beforeSwap` and burn in `afterSwap` | gas only | removed; the hook's specified delta is booked after `afterSwap`, `take` nets it |
+| `setFeeEscrow` accepted an escrow that does not list the hook as core depositor | every failed push would revert swaps | additive error `EscrowNotCoreDepositor(address)` |
+| add to an existing position netting coin out (fees > principal) got no grant | HARD: revert at take; VENUE: fee income taxed | `_afterAddLiquidity` attests or grants net coin out |
