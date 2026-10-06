@@ -125,12 +125,14 @@ function build(vs) {
     if (r.status !== 0) { console.error(`build ${v.id} failed (exit ${r.status})`); process.exit(2); }
   }
 }
-// variants the registry needs: the declared one of every checked contract; with a null profile on a source (a
-// mismatch, or discovery) every variant, because any of them could match.
+// variants --build builds: the declared one of every checked contract, plus the three standard variants when a source has
+// no recorded profile (a mismatch: any of them could match), plus all four under --discover (default/ipfs only matches
+// something deployed by forge with metadata on at the default profile; nothing in the registry does today).
 if (flag('--build') && flag('--no-build')) { console.error('--build and --no-build are exclusive'); process.exit(1); }
 {
   const src = reg.contracts.filter((c) => c.status !== 'planned' && c.source.repoPath);
-  const need = DISCOVER || src.some((c) => !variantOf(c.source)) ? VARIANTS : VARIANTS.filter((v) => src.some((c) => variantOf(c.source) === v));
+  const std = VARIANTS.slice(0, 3);
+  const need = DISCOVER ? VARIANTS : VARIANTS.filter((v) => src.some((c) => variantOf(c.source) === v) || (std.includes(v) && src.some((c) => !variantOf(c.source))));
   if (flag('--build')) build(need);
 }
 function stripCbor(b) { // trailing solidity metadata: cbor map + 2 byte length
@@ -161,11 +163,13 @@ function tryVariant(v, rp, code) {
   return { ok: false, v, ...best };
 }
 // with a recorded profile only that variant counts (the others are tried for the diagnostic only); with none (or
-// --discover) every variant counts and the first match, in VARIANTS order, is the answer.
+// --discover) every variant counts and the first match (ipfs variants first if the chain code carries an ipfs hash) is the answer.
 function bytecode(c, code) {
   const rp = c.source.repoPath; if (!rp) return { m: 'unverified', d: 'no repoPath' };
   const decl = variantOf(c.source); const strict = decl && !DISCOVER;
-  const out = VARIANTS.map((v) => tryVariant(v, rp, code)).filter(Boolean);
+  // chain code that carries an ipfs metadata hash was deployed with metadata on: prefer the ipfs variants in discovery, the none variants otherwise
+  const meta = metaAt(Buffer.from(code.slice(2), 'hex')).length > 0; const rank = (v) => ((v.metadata === 'ipfs') === meta ? 0 : 1);
+  const out = [...VARIANTS].sort((a, b) => rank(a) - rank(b)).map((v) => tryVariant(v, rp, code)).filter(Boolean);
   const hit = (strict ? out.filter((x) => x.v === decl) : out).find((x) => x.ok);
   if (hit) { const alt = strict ? out.filter((x) => x.ok && x.v !== decl).map((x) => x.v.id) : []; return { m: 'verified', v: hit.v, d: `${hit.v.id} runs=${hit.a.runs}${alt.length ? ` (also matches ${alt.join(',')})` : ''}` }; }
   const pool = strict ? out.filter((x) => x.v === decl) : out;
@@ -233,7 +237,7 @@ for (let i = 0; i < C.length; i++) {
   if (now === 'unchecked') { vnow = variantOf(c.source); warn.push(`${who}: UNCHECKED, ${bc.d} (registry says ${reg_})`); if (flag('--require-artifacts') && reg_ !== 'unverified') fail(who, 'artifact present', 'yes', 'missing'); now = reg_; }
   else if (now === 'mismatch' && reg_ === 'verified' && missingDirs.length) { warn.push(`${who}: UNCHECKED, artifact dir(s) missing: ${[...new Set(missingDirs)].join(',')}`); now = reg_; vnow = variantOf(c.source); }
   if (now !== reg_) fail(who, 'bytecodeMatch', reg_, `${now} (${bc.d})`);
-  row.prof = now === 'verified' ? vnow?.id ?? '?' : now === 'unverified' ? '-' : 'none';
+  row.prof = now === 'verified' ? vnow?.id ?? '?' : '-';
   drift.match.set(c, { m: now, d: bc.d, v: now === 'verified' ? vnow : null });
   for (const p of plan.filter((x) => x.c === c)) {
     const label = p.kind;
@@ -302,7 +306,9 @@ if (flag('--update-blocks')) {
 
 // ---------- fill ----------
 for (const b of badDirs) warn.push('bad artifact dir ' + b);
-const setSource = (c, m) => { c.source.bytecodeMatch = m.m; c.source.commit = m.m === 'unverified' ? null : git('rev-parse HEAD'); c.source.profile = m.v?.profile ?? null; c.source.metadata = m.v?.metadata ?? null; };
+const setSource = (c, m) => {
+  c.source.bytecodeMatch = m.m; c.source.commit = m.m === 'unverified' ? null : git('rev-parse HEAD'); const keep = m.m === 'mismatch' && c.source.profile; // a mismatch keeps a profile recorded by hand (proven by a scratch build of the deployed source)
+  c.source.profile = keep ? c.source.profile : m.v?.profile ?? null; c.source.metadata = keep ? c.source.metadata : m.v?.metadata ?? null; };
 if (flag('--fill-source')) { // source fields only, nothing else in the registry moves
   for (const [c, m] of drift.match) setSource(c, m);
   fs.writeFileSync(FILE, JSON.stringify(reg, null, 2) + '\n'); console.log(`filled source fields of ${FILE}`);

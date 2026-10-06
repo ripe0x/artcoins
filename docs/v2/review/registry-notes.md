@@ -459,3 +459,83 @@ negative tests run against edited copies: a flipped factory `state`, a wrong loc
 | unverified source | permanent-collection contracts, scripty chunks and `PoolSwapTest` helpers have `repoPath` null so they are `unverified` by design |
 | escrow and router state | `state` is `unknown` for roles with no on-chain enabled flag |
 | call budget | batched json rpc over the tenderly gateway (no 429 left unhandled), about 85 blockscout calls (address pages plus 17 pages of the owner's tx history), 2 etherscan calls, both refused |
+
+## profile aware bytecode compare (verify-registry.mjs, added after the 13 mismatch report)
+
+cause of the report: the local `foundry-out` had been built at the `ci` profile (runs 200) while the legacy and open stacks were deployed at the default profile (runs 20,000), and the current stack only matches at `ci` with ipfs metadata. one artifact set cannot serve both, so the verifier now keeps one out dir per build variant and every registry contract records which variant it was deployed with.
+
+| item | detail |
+|---|---|
+| registry fields | `source.profile` (`default` or `ci`) and `source.metadata` (`none` or `ipfs`), both null for `unverified` sources and for a mismatch whose variant is unknown. a `verified` entry must have both. `deployments/v2.template.json` (planned stacks) may omit them |
+| out dirs | `foundry-out-default` (runs 20000, no metadata), `foundry-out-ci` (runs 200, no metadata), `foundry-out-ci-ipfs` (ci plus `FOUNDRY_BYTECODE_HASH=ipfs FOUNDRY_CBOR_METADATA=true`), `foundry-out-default-ipfs` (only tried under `--discover`, matches nothing today) |
+| build | `FOUNDRY_PROFILE=<p> forge build --skip "test/**" --skip script -o foundry-out-<tag> --cache-path cache/<tag>`. no `--extra-output-files` needed: forge artifacts already carry `metadata.settings`, which the verifier reads. env `FORGE` overrides the binary (here `/tmp/claude-0/forge.sh`) |
+| flags | `--build` runs the builds for the variants the registry needs, `--no-build` (default) uses the dirs as they are, `--discover` ignores the recorded variant and tries all, `--fill-source` writes only `source.{commit,bytecodeMatch,profile,metadata}` (it implies discover). `--fill` does the same plus the old fields |
+| compare | exact bytes modulo immutables, library link slots and metadata hashes. a recorded variant is the only one that counts; the others are tried for a hint (`matches X instead of the recorded Y`). chain code that carries an ipfs hash prefers the ipfs variants, so the current stack records `ci/ipfs`; an artifact built without metadata is compared against chain code with its cbor trailer stripped (as before) |
+| guard | a dir built with other settings than its name says (wrong runs or bytecodeHash) is rejected with a warning and its contracts are UNCHECKED, so a stale `foundry-out` can no longer produce silent mismatches. `--require-artifacts` fails on UNCHECKED |
+| report | new `profile` column, `bytecode by profile: ...` totals and one `MISMATCH` line per mismatch with the first differing offset |
+| ci | `.github/workflows/registry.yml` builds default, ci and ci-ipfs (all with the skips above) and runs `verify-registry.mjs --no-build --require-artifacts`. `script-js` has `npm run verify:registry` and `verify:registry:build` |
+
+run: `source /tmp/claude-0/env.sh; NODE_USE_ENV_PROXY=1 FORGE=/tmp/claude-0/forge.sh node script-js/verify-registry.mjs --build --require-artifacts` (first run builds three variants, about 1.5 minutes each cold, seconds warm). exit 0, `ok: 56 contracts, 2 coins, 0 drift, 0 warning(s)`, `bytecode by profile: mismatch=18 default/none=13 ci/ipfs=9`.
+
+### result
+
+the registry statuses did not change: the same 22 verified, 18 mismatch and 16 unverified entries as before. the profile was never the whole story. the 13 legacy and open mismatches stay mismatches under the right profile (default), because head source differs from what was deployed. what changed is that each verified contract now names its variant and each mismatch is classified below. 0 mismatches was not reachable: the repo history starts on 2026-06-13, after all three stacks were deployed (2026-05-07, 2026-05-19, 2026-06-06), so the deployed source of the older contracts cannot be rebuilt from git.
+
+| stack | contract | address | result | first diff (offset, chain bytes vs nearest artifact) |
+|---|---|---|---|---|
+| legacy | ArtCoinsDeployer | 0xbb0F4d97 | mismatch | @2 chain 12530 vs default/none 16811 |
+| legacy | ArtCoinsFeeLocker | 0x1143db09 | verified default/none | - |
+| legacy | ArtCoinsFactory | 0xD1595A27 | mismatch | @1252 chain 13804 vs default/none 13804 |
+| legacy | ArtCoinsPoolExtensionAllowlist | 0xDD06Ba83 | verified default/none | - |
+| legacy | ArtCoinsHookStaticFeeV2 | 0xA5eA9904 | mismatch | @33 chain 21202 vs default/none 21162 |
+| legacy | ArtCoinsLpLockerMultiple | 0x75BE7E95 | verified default/none | - |
+| legacy | ArtCoinsMevTimeDelay | 0xf080D741 | mismatch | @358 chain 1208 vs default/none 1262 |
+| legacy | ArtCoinsMevDescendingFees | 0x7958DE7d | mismatch | @163 chain 3677 vs default/none 3731 |
+| legacy | ArtCoinsMevLinearFees | 0xAe19E402 | mismatch | @218 chain 2831 vs default/none 2880 |
+| legacy | ArtCoinsMevSniperSteppedFees | 0x1AB013eb | mismatch | @194 chain 3988 vs default/none 4037 |
+| legacy | ArtCoinsVault | 0x84732a79 | verified default/none | - |
+| legacy | ArtCoinsAirdropV2 | 0xF937dFf1 | verified default/none | - |
+| legacy | BurnExtension | 0x034d6bAb | verified default/none | - |
+| legacy | ArtCoinsUniv4EthDevBuy | 0xfCB6a929 | mismatch | @36 chain 6904 vs default/none 6934 |
+| legacy | DefaultMetadataRenderer | 0x7dBfF015 | mismatch | @180 chain 2429 vs default/none 1952 |
+| legacy | LiquidityLayerCounterPoolExtension | 0xc4a1E947 | verified default/none | - |
+| legacy | LiquidityLayerOnchainRenderer | 0x93bDB246 | mismatch | @945 chain 14193 vs default/none 13930 |
+| legacy | BurnRouter | 0x2eDBdF01 | verified default/none | - |
+| legacy | ProtocolFeeController | 0x5fDc3975 | verified default/none | - |
+| legacy | ArtCoinsToken | 0xb7287e4A | mismatch | @34 chain 9147 vs ci/none 8283 |
+| legacy | LiquidityLayerAutoForwardExtension | 0x38d03af5 | verified default/none | - |
+| legacy | LiquidityLayerOnchainRenderer | 0x0572C175 | mismatch | @945 chain 14193 vs default/none 13930 |
+| open | ArtCoinsFactory | 0xF051cd4C | mismatch | @44 chain 13926 vs ci/none 12608 |
+| open | ArtCoinsPoolExtensionAllowlist | 0xd6D5fb5C | verified default/none | - |
+| open | ArtCoinsFeeEscrow | 0xDD1b8C9C | verified default/none | - |
+| open | ArtCoinsLpLocker | 0xd914c864 | mismatch | @1972 chain 18504 vs default/none 18504 |
+| open | BurnRouter | 0x9304a819 | mismatch | @2 chain 9247 vs default/none 10374 |
+| open | ArtCoinsHookStaticFee | 0xAAd673ea | mismatch | @41 chain 21302 vs default/none 18959 |
+| open | BurnRouter | 0xE60046ee | mismatch | @2 chain 11038 vs default/none 10374 |
+| current | ArtCoinsDeployer | 0x92584B32 | verified ci/ipfs | - |
+| current | SkimFeeInitLib | 0x115510a7 | verified ci/ipfs | - |
+| current | ArtCoinsFactory | 0x49596c37 | verified ci/ipfs | - |
+| current | ArtCoinsFeeEscrow | 0x75596897 | verified ci/ipfs | - |
+| current | ArtCoinsHookSkimFee | 0x636c0502 | verified ci/ipfs | - |
+| current | ArtCoinsMevLinearSkim | 0xb038D597 | verified ci/ipfs | - |
+| current | ProtocolFeeController | 0xd8C63401 | verified ci/ipfs | - |
+| current | ArtCoinsLpLocker | 0x866ea3Dc | verified ci/ipfs | - |
+| current | FeeAutoSwapper | 0xeBD9B74A | mismatch | @45 chain 11086 vs ci/ipfs 7990 |
+| current | ArtCoinsToken | 0x61C9d89f | verified ci/ipfs | - |
+| current | BurnRouter | 0x0EB22955 | verified default/none | - |
+
+`unverified` entries (16: scriptyChunks, PoolSwapTest helpers, permanent-collection contracts, PassThroughWallet and others with no `repoPath`) are not compared and have null profile fields.
+
+### the 18 mismatches, explained
+
+| class | contracts | evidence |
+|---|---|---|
+| default profile proven, source drift identified | open ArtCoinsLpLocker 0xd914c864 | 2 differing bytes at 1972 and 11648 (`0x0c` vs `0x0e`). deployed `MAX_LP_POSITIONS` was 12, head has 14. a scratch copy of `src` with the constant set to 12, built at default/none, matches the chain code with 0 differing bytes. recorded `profile default, metadata none` with `mismatch` (the verifier keeps a hand recorded profile on a mismatch) |
+| default profile, small source drift | legacy ArtCoinsFactory (same length 13804, 28 bytes in 3 ranges), legacy ArtCoinsHookStaticFeeV2 (21202 vs 21162), legacy MEV modules x4 (within about 50 bytes), legacy ArtCoinsUniv4EthDevBuy (6904 vs 6934), legacy LiquidityLayerOnchainRenderer x2 (14193 vs 13930) | default/none is the closest variant by a wide margin (ci/none is 2,000 to 11,000 bytes off), so the deploy was at default, but head source has moved since. profile not recorded because it is not proven |
+| source differs a lot, neither profile fits | legacy ArtCoinsDeployer (12530 vs 16811), legacy DefaultMetadataRenderer (2429 vs 1952), legacy ArtCoinsToken LAYER (9147 vs 10177 default, 8283 ci), open ArtCoinsFactory (13926 vs 15029 default, 12608 ci), open BurnRouter x2 (9247 and 11038 vs 10374, the two differ from each other), open ArtCoinsHookStaticFee (21302 vs 18959), current FeeAutoSwapper (chain 11086 with an ipfs hash vs 10072 default, 7990 ci/ipfs) | different source versions, not a settings difference. two BurnRouters on chain with different sizes against one head source shows head moved past both |
+
+how to close the rest: recover the sources as deployed (any pre 2026-06-13 history, or the deploy machine) into a scratch dir and rebuild per variant. to record a variant by hand after proving it, set `source.profile` and `source.metadata` on the entry; `--fill-source` keeps them on a mismatch.
+
+verification of the new logic (scratch registries): a recorded `ci/none` on a contract deployed at `ci/ipfs` still passes (the none build is compared with the cbor trailer stripped); a wrong recorded variant exits 1 with `matches X instead of the recorded Y`; a missing out dir is UNCHECKED and fails under `--require-artifacts`; a `foundry-out-ci-ipfs` that is really a no-metadata build is rejected with `WARN bad artifact dir`.
+
+open item for the director: `.gitignore` ignores `foundry-out/` but not the new `foundry-out-*` dirs, so they show as untracked. add `foundry-out-*/` (outside this write scope).

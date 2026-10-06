@@ -79,3 +79,8 @@ export async function connectWallet(page: Page, address: string): Promise<void> 
 }
 
 export { expect };
+
+/** one InfoRow (label, value) by its exact label */
+export function infoRow(page: Page, label: string) {
+  return page.locator('div.justify-between.border-b', { has: page.locator(`span:text-is("${label}")`) }).first();
+}

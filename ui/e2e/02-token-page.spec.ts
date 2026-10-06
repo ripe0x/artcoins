@@ -1,10 +1,10 @@
 // 2. token page for 111: contract reads decode, image policy, no self asserted verified badge
-import { test, expect, isNoise } from './fixtures';
+import { test, expect, isNoise, infoRow } from './fixtures';
 import { rpc } from './fork';
 import { COIN_111 } from './constants';
 import type { Page } from '@playwright/test';
 
-const row = (page: Page, label: string) => page.locator('div.flex', { has: page.locator(`span:text-is("${label}")`) }).first();
+const row = infoRow;
 
 async function checkReads(page: Page) {
   await expect(page.getByRole('heading', { level: 1 })).toContainText('111', { timeout: 120_000 });

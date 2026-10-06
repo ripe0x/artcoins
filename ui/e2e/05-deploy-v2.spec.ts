@@ -4,7 +4,7 @@
 //     exempt allowlist; then a launch succeeds through the ui
 //   - the new v2 coin trades through the widget and its hookData names the wallet as the refund address
 //   - its referral page reads the fee escrow
-import { test, expect, connectWallet, isNoise } from './fixtures';
+import { test, expect, connectWallet, isNoise, infoRow } from './fixtures';
 import { fund, pub, rpc, v2Env } from './fork';
 import { decodeRouterSwap } from './decode';
 import { widgetSwap, fmt18 } from './widget';
@@ -207,4 +207,28 @@ test('the v2 coin referral page reads the fee escrow and claims for the referrer
     expect(await pub.getBalance({ address: DEFAULT_REFERRER })).toBe(ethBefore + owed);
   }
   expect(consoleLog.filter((e) => e.type !== 'warning' && !isNoise(e))).toEqual([]);
+});
+
+test('known bug: v2 deprecated notice calls the v2 factory "the current factory"', async ({ page }) => {
+  test.fail(true, 'UI-E2E-04: DeployPage pageBlock wording');
+  if (!(await deprecated())) await setDeprecated(true);
+  await page.goto('/');
+  await expect(page.getByRole('status')).toContainText(/owner only/, { timeout: 60_000 });
+  await expect(page.getByRole('status')).not.toContainText('current factory', { timeout: 5_000 });
+});
+
+test('known bug: anti sniper countdown uses the browser clock, not the chain clock', async ({ page }) => {
+  test.fail(true, 'UI-E2E-03: on this fork the chain clock is hours behind the wall clock, an active window reads "expired"');
+  test.skip(!launched, 'launch did not happen');
+  await page.goto(`/tokens/${launched}`);
+  await expect(infoRow(page, 'Status')).toContainText('Active', { timeout: 60_000 });
+  await expect(infoRow(page, 'Time remaining')).not.toContainText('expired', { timeout: 5_000 });
+});
+
+test('known bug: the v2 referral page says referral fees are credited in the escrow (D59 pushes them)', async ({ page }) => {
+  test.fail(true, 'UI-E2E-05: EscrowClaim copy predates D59');
+  test.skip(!launched, 'launch did not happen');
+  await page.goto(`/tokens/${launched}/referrals`);
+  await expect(page.getByText('Referral earnings are claimed from the fee escrow')).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/credits the referrer in the fee escrow/)).toHaveCount(0, { timeout: 5_000 });
 });

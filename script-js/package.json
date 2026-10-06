@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "gen:addresses": "node gen-addresses.mjs",
-    "check:addresses": "node gen-addresses.mjs --check"
+    "check:addresses": "node gen-addresses.mjs --check",
+    "verify:registry": "cd .. && node script-js/verify-registry.mjs --no-build",
+    "verify:registry:build": "cd .. && node script-js/verify-registry.mjs --build"
   },
   "dependencies": {
     "puppeteer": "^23.0.0",

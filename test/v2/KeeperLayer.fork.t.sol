@@ -106,7 +106,8 @@ contract KeeperLayer_ForkTest is ForkBase {
 
     /// @dev the fee path the keeper is built on, read at the pin.
     function test_layerKeeper_liveReadings() public onlyFork {
-        IArtCoinsLpLocker.TokenRewardInfo memory info = IArtCoinsLpLocker(LOCKER).tokenRewards(LAYER);
+        IArtCoinsLpLocker.TokenRewardInfo memory info =
+            IArtCoinsLpLocker(LOCKER).tokenRewards(LAYER);
         assertEq(Currency.unwrap(key.currency0), LAYER, "LAYER is currency0");
         assertEq(Currency.unwrap(key.currency1), WETH, "weth is currency1");
         assertEq(info.numPositions, 12);
@@ -171,14 +172,18 @@ contract KeeperLayer_ForkTest is ForkBase {
         assertEq(_fl(PFC, WETH), 0, "pfc weth slot claimed");
         assertEq(_fl(PFC, LAYER), 0, "pfc LAYER slot claimed");
         assertEq(IERC20(WETH).balanceOf(PFC), 0, "controller split its weth");
-        assertGt(IERC20(WETH).balanceOf(UI_DEFAULT_REFERRER), treasuryWethBefore, "treasury got 60%");
+        assertGt(
+            IERC20(WETH).balanceOf(UI_DEFAULT_REFERRER), treasuryWethBefore, "treasury got 60%"
+        );
         // router burned the weth it held
         assertGt(wb, 0.01 ether, "weth burned at 0x2eDB");
         assertGt(lb, 0, "LAYER burned");
         assertEq(_routerWeth(R0), 0, "router0 drained");
         assertEq(IERC20(LAYER).balanceOf(R0), 0, "router0 holds no LAYER");
         assertLt(IERC20(LAYER).totalSupply(), supplyBefore, "supply burned");
-        assertGe(lb * 1e18 / wb, IRouterView(R0).minLayerOutPerWeth(), "realized rate above owner floor");
+        assertGe(
+            lb * 1e18 / wb, IRouterView(R0).minLayerOutPerWeth(), "realized rate above owner floor"
+        );
         _assertKeeperEmpty();
     }
 
@@ -251,8 +256,10 @@ contract KeeperLayer_ForkTest is ForkBase {
         vm.prank(CALLER);
         keeper.run(true, 0, false); // drain whatever the pin holds
         uint256 callerBefore = CALLER.balance;
+        uint256 g = gasleft();
         vm.prank(CALLER);
         (uint256 lc, uint256 wc, uint256 lbd, uint256 wb, uint256 lb) = keeper.run(true, 0, true);
+        console2.log("idle run gas", g - gasleft());
         assertEq(lc, 0);
         assertEq(wc, 0);
         assertEq(lbd, 0);
@@ -283,7 +290,9 @@ contract KeeperLayer_ForkTest is ForkBase {
     /// @dev D49: a collect revert for a reason other than gas bubbles.
     function test_layerKeeper_collectRevert_bubbles() public onlyFork {
         vm.mockCallRevert(
-            LOCKER, abi.encodeCall(IArtCoinsLpLocker.collectRewards, (LAYER)), bytes("collect broke")
+            LOCKER,
+            abi.encodeCall(IArtCoinsLpLocker.collectRewards, (LAYER)),
+            bytes("collect broke")
         );
         vm.prank(CALLER);
         vm.expectRevert(bytes("collect broke"));
@@ -297,6 +306,7 @@ contract KeeperLayer_ForkTest is ForkBase {
         uint256 snap = vm.snapshotState();
         uint256 reverted;
         uint256 succeeded;
+        uint256 lowest;
         for (uint256 limit = 2_600_000; limit >= 300_000; limit -= 50_000) {
             (bool ok, bytes memory ret) = address(keeper).call{gas: limit}(
                 abi.encodeCall(CollectFlushKeeperLayer.run, (true, 0, false))
@@ -310,6 +320,7 @@ contract KeeperLayer_ForkTest is ForkBase {
                 assertEq(_fl(R0, WETH), 0, "succeeded without claiming");
                 assertEq(_fl(PFC, WETH), 0);
                 ++succeeded;
+                lowest = limit;
             } else {
                 ++reverted;
             }
@@ -318,6 +329,7 @@ contract KeeperLayer_ForkTest is ForkBase {
         }
         console2.log("sweep succeeded", succeeded);
         console2.log("sweep reverted", reverted);
+        console2.log("lowest limit that completed", lowest);
         assertGt(succeeded, 0);
         assertGt(reverted, 0);
     }

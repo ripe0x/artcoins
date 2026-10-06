@@ -31,7 +31,11 @@ contract DeployKeeperLayer is SupersededGuard {
             Addresses.WETH,
             Addresses.LEGACY_FEE_LOCKER,
             Addresses.LEGACY_PROTOCOL_FEE_CONTROLLER,
-            [Addresses.LEGACY_BURN_ROUTER, Addresses.OPEN_BURN_ROUTER, Addresses.CURRENT_BURN_ROUTER]
+            [
+                Addresses.LEGACY_BURN_ROUTER,
+                Addresses.OPEN_BURN_ROUTER,
+                Addresses.CURRENT_BURN_ROUTER
+            ]
         );
         vm.stopBroadcast();
         console2.log("CollectFlushKeeperLayer", address(keeper));
