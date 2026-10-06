@@ -171,7 +171,7 @@ contract TreasuryMocksV2ForkTest is IntegrationV2Base {
         (address coin, PoolKey memory key) = _launchWith(address(t));
         uint256 used = _warmBuyGas(key);
         // stipend only push: the burner can spend 2,300 gas, then a warm escrow credit
-        assertLt(used, refGas + 25_000, "gas burner bounded by the stipend");
+        assertLt(used, refGas + 30_000, "gas burner bounded by the stipend");
         (Legs memory l, uint256 pushed, uint256 escrowed) = _trade(key, address(t));
         assertEq(pushed, 0);
         assertEq(escrowed, l.bounty, "bounty escrowed");

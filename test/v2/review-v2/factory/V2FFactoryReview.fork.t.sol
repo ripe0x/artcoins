@@ -3,8 +3,10 @@ pragma solidity ^0.8.26;
 
 // independent review of the v2 factory launch flow (docs/v2/review/v2-review-factory.md).
 // forks mainnet at the harness pin and deploys the real v2 stack the same way
-// test/v2/FactoryV2.fork.t.sol does. `test_V2Fxx_*` pass by showing the bad
-// outcome; `test_holds_*` pin claims that hold. skips cleanly without an rpc.
+// test/v2/FactoryV2.fork.t.sol does. after the fixes (D52, D53) `test_V2F01_*`
+// is a regression that passes by asserting the fix; `test_V2F03_*` still
+// passes by showing the accepted outcome (D54); `test_holds_*` pin claims that
+// hold. skips cleanly without an rpc.
 
 import {console2} from "forge-std/Test.sol";
 
@@ -211,49 +213,89 @@ contract V2FFactoryReviewTest is ForkBase {
     // V2F-01: the launcher's referral cap erases the protocol skim floor
     // ══════════════════════════════════════════════════════════════════════
 
-    /// owner sets minProtocolSkimShareBps = 2000 ("the protocol keeps at least
-    /// 20% of the skim", ui encodeV2.ts:288). a public launcher picks the max
-    /// bounty the factory allows (8000) and the max referral cap (1% of
-    /// volume). any swapper that names a referrer (D44: its own wallet is
-    /// fine) moves the whole protocol leg to that referrer. protocol gets 0.
+    /// REGRESSION (fixed by D52 and D53, was V2F-01 and V2F-02).
+    ///
+    /// original attack: the owner sets minProtocolSkimShareBps = 2000 ("the
+    /// protocol keeps at least 20% of the skim", ui encodeV2.ts:288). a public
+    /// launcher picks the max bounty the factory allowed (8000), the max
+    /// referral cap (1% of volume) and lpFee 0. any swapper that names a
+    /// referrer (D44: its own wallet is fine) moved the whole protocol leg to
+    /// that referrer, so the protocol earned 0 from the skim, and the 20%
+    /// locker slot earned 0 because there was no lp fee to share.
+    ///
+    /// now: the factory refuses lpFee below `minLpFee` (D53) and a referral cap
+    /// that does not fit above the protocol floor (D52), and the hook clamps
+    /// the referral leg at `protocol - floor` on every swap.
     function test_V2F01_referralCapZeroesProtocolSkimFloor() public onlyFork {
         factory.setMinProtocolSkimShareBps(2000);
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
         c.mev = IArtCoinsFactoryV2.MevConfigV2(address(0), 0, 0); // no window, baseline only
         c.fee.baselineSkimBps = 1000; // 1% of volume
-        c.fee.bountyBps = 8000; // max accepted: BPS - minProtocolSkimShareBps
+        c.fee.bountyBps = 8000; // old max accepted: BPS - minProtocolSkimShareBps
         c.fee.maxReferralBpsOfVolume = Constants.MAX_REFERRAL_CAP_OF_VOLUME; // 1%
-        c.fee.lpFee = 0; // no floor: the locker protocol slot (FT-03 fix) is worth nothing
+        c.fee.lpFee = 0;
+
+        // V2F-02: an lp fee of 0 (a worthless protocol locker slot) is refused.
+        vm.prank(alice);
+        vm.expectRevert(ArtCoinsFactoryV2.LpFeeBelowMinimum.selector);
+        factory.deployToken{value: FEE}(c);
+
+        // V2F-01: with a valid lp fee, the old attack config is refused because
+        // the 1% referral cap cannot fit above a 20% floor with an 80% bounty.
+        c.fee.lpFee = factory.minLpFee();
+        vm.prank(alice);
+        vm.expectRevert(ArtCoinsFactoryV2.ReferralCapAboveProtocolFloor.selector);
+        factory.deployToken{value: FEE}(c);
+
+        // the largest cap that fits: baseline 1000, bounty 5000, floor 2000
+        // gives referral <= 1000 * (10000 - 5000 - 2000) / 10000 = 300 (0.3% of volume).
+        c.fee.bountyBps = 5000;
+        c.fee.maxReferralBpsOfVolume = 301;
+        vm.prank(alice);
+        vm.expectRevert(ArtCoinsFactoryV2.ReferralCapAboveProtocolFloor.selector);
+        factory.deployToken{value: FEE}(c);
+        c.fee.maxReferralBpsOfVolume = 300;
         vm.prank(alice);
         address token = factory.deployToken{value: FEE}(c);
         PoolKey memory key = _key(token);
 
-        // control: no referrer, the protocol leg is 20% of the skim
+        // control: no referrer, the protocol leg is 50% of the 1% baseline skim
+        uint256 base = 1 ether * 1000 / Constants.SKIM_DENOMINATOR;
+        uint256 floor = base * factory.minProtocolSkimShareBps() / Constants.BPS;
         uint256 p0 = protocolR.balance;
         swapExactIn(key, true, 1 ether, address(this), "");
         uint256 protocolNoRef = protocolR.balance - p0;
-        assertGt(protocolNoRef, 0, "control: protocol paid");
+        assertGt(protocolNoRef, floor, "control: protocol paid above the floor");
         console2.log("protocol leg, no referrer (wei)", protocolNoRef);
 
-        // same swap naming a referrer: the protocol leg is 0
+        // same swap naming a referrer: the referrer is paid, the protocol keeps
+        // at least the floor (the hook clamps the referral at protocol - floor)
         p0 = protocolR.balance;
         uint256 r0 = referrerEoa.balance;
         uint256 b0 = bounty.balance;
         swapExactIn(key, true, 1 ether, address(this), _attribution(referrerEoa, 1000));
-        assertEq(protocolR.balance - p0, 0, "protocol leg erased");
-        assertGt(referrerEoa.balance - r0, 0, "referrer took it");
+        uint256 protocolWithRef = protocolR.balance - p0;
+        uint256 referral = referrerEoa.balance - r0;
+        assertGt(referral, 0, "referrer paid");
+        assertGe(protocolWithRef, floor, "protocol leg never below the floor");
+        assertLe(
+            protocolWithRef + referral, protocolNoRef + 1, "referral comes out of the protocol leg"
+        );
         assertGt(bounty.balance - b0, 0, "bounty unaffected");
-        console2.log("protocol leg, with referrer (wei)", protocolR.balance - p0);
-        console2.log("referral leg (wei)", referrerEoa.balance - r0);
+        console2.log("protocol leg, with referrer (wei)", protocolWithRef);
+        console2.log("referral leg (wei)", referral);
 
-        // the 20% locker protocol slot is appended but there is no lp fee to share
+        // D53: the 20% locker protocol slot now has an lp fee to share
         assertEq(locker.rewardRecipients(token)[1], protocolR);
         p0 = protocolR.balance;
+        uint256 c0 = IERC20(token).balanceOf(protocolR);
         locker.collectRewards(token);
-        assertEq(protocolR.balance - p0, 0, "protocol lp slot earns nothing");
-        assertEq(IERC20(token).balanceOf(protocolR), 0);
+        assertGt(
+            protocolR.balance - p0 + IERC20(token).balanceOf(protocolR) - c0,
+            0,
+            "protocol lp slot earns"
+        );
 
-        // and the launch was accepted with the floor in force
         assertEq(factory.minProtocolSkimShareBps(), 2000);
     }
 
@@ -375,9 +417,11 @@ contract V2FFactoryReviewTest is ForkBase {
         }
     }
 
+    /// V2F-03, accepted by D54 (not fixed): the proof still holds on purpose.
     /// every cap at its maximum: strings at D30 caps, 7 reward slots, 14
     /// positions, VENUE with 16 exempt and 32 venues, 10 extensions (9 vaults
     /// plus a dev buy). the factory accepts it; no mainnet tx can carry it.
+    /// only the launcher is affected; the ui keeps configs far below the caps.
     function test_V2F03_maxConfigLaunch_overTxGasCap() public onlyFork {
         (IArtCoinsFactoryV2.DeploymentConfigV2 memory c, uint256 v) =
             _maxCfg(true, true, true, true);

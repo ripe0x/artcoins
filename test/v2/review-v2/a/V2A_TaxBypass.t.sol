@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-// independent review v2-a, proof tests. each test PASSES by demonstrating the
-// bug. v4 is deployed from the pinned lib/v4-core source (no rpc needed), the
+// independent review v2-a. the proofs were written to PASS by demonstrating the
+// bugs; after the fixes (D46 for V2A-01) the V2A-01 tests are regressions that
+// PASS by asserting the fix: liquidity on a taxed pool can no longer be added
+// after arming (`TaxedPoolLiquidityClosed`), so the round trip attacks revert.
+// V2A-02 is fixed in the factory (D47 exempt allowlist) and the token keeps its
+// contracts only rule, so that proof still passes at token scope. v4 is deployed from the pinned lib/v4-core source (no rpc needed), the
 // hook is the real ArtCoinsHookV2 at a mined address, the coin is the real
 // ArtCoinsTokenV2. see docs/v2/review/v2-review-a.md.
 //
@@ -217,6 +221,22 @@ abstract contract V2AStackBase is Test {
             quoteToken: address(0)
         });
         canon = hook.initializePool(p);
+
+        lp = new V2AActor(pm, address(coin));
+        attacker = new V2AActor(pm, address(coin));
+        vm.deal(address(lp), 10_000_000 ether);
+        vm.deal(address(attacker), 1_000_000 ether);
+        coin.transfer(address(lp), 400_000e18);
+        coin.transfer(address(attacker), 100_000e18);
+
+        // D46: a taxed pool takes liquidity only before `initializeMevModule`
+        // arms it, in the creation block, which is what the factory does in
+        // the launch tx. launch liquidity (HARD: covered by the hook's add
+        // grant) and the attacker's parked position (modelling a position
+        // placed in the launch phase, e.g. by an owner enabled extension) go in
+        // here.
+        _run(lp, _one(_modify(canon, L_LAUNCH, bytes32(0))));
+        _run(attacker, _one(_modify(canon, L_PARKED, PARKED_SALT)));
         hook.initializeMevModule(canon, "");
 
         // an unhooked side pool for the same coin on the same PoolManager
@@ -229,15 +249,9 @@ abstract contract V2AStackBase is Test {
         });
         pm.initialize(side, TickMath.getSqrtPriceAtTick(0));
 
-        lp = new V2AActor(pm, address(coin));
-        attacker = new V2AActor(pm, address(coin));
-        vm.deal(address(lp), 10_000_000 ether);
-        vm.deal(address(attacker), 1_000_000 ether);
-        coin.transfer(address(lp), 400_000e18);
-        coin.transfer(address(attacker), 100_000e18);
-
-        // launch liquidity on the canonical pool (HARD: covered by the hook's add grant)
-        _run(lp, _one(_modify(canon, L_LAUNCH, bytes32(0))));
+        // regression, in setUp: the old setUp added the launch liquidity here,
+        // after arming. D46 closes that, on a taxed pool, for everyone.
+        _expectClosed(lp, _one(_modify(canon, L_LAUNCH, bytes32(0))));
     }
 
     // ── op builders ───────────────────────────────────────────────────────
@@ -318,12 +332,18 @@ abstract contract V2AStackBase is Test {
         who.run(ops);
     }
 
-    /// parks the attacker's canonical position in its own tx (isolated call).
-    /// done inside the test: forge isolates test calls but not setUp, so a
-    /// position added in setUp would keep its b1 marker into the test.
-    function _park() internal {
-        _run(attacker, _one(_modify(canon, L_PARKED, PARKED_SALT)));
-        assertEq(_parkedLiquidity(), uint128(uint256(L_PARKED)));
+    /// the whole unlock must revert with the hook's `TaxedPoolLiquidityClosed`
+    /// (the PoolManager wraps it in a WrappedError).
+    function _expectClosed(V2AActor who, V2AActor.Op[] memory ops) internal {
+        try who.run(ops) {
+            fail("taxed pool liquidity add should revert");
+        } catch (bytes memory err) {
+            assertEq(
+                _innerSelector(err),
+                ArtCoinsHookV2.TaxedPoolLiquidityClosed.selector,
+                "reverts TaxedPoolLiquidityClosed"
+            );
+        }
     }
 
     /// WrappedError(address,bytes4,bytes reason,bytes) -> bytes4(reason)
@@ -359,10 +379,16 @@ contract V2A01HardTest is V2AStackBase {
         _run(lp, _two(_swap(canon, true, -2000 ether), _modify(side, L_SIDE, bytes32(0))));
     }
 
-    /// add then remove on the canonical pool mints an IN grant for free while
-    /// it is outstanding; D34 netting cancels only what is still unused when
-    /// the remove reports. erc20 coin enters the PoolManager for a side pool
-    /// sell, which HARD must block.
+    /// REGRESSION (fixed by D46, was V2A-01 HARD, IN grant half).
+    ///
+    /// original attack: add then remove on the canonical pool mints an IN grant
+    /// for free while it is outstanding; D34 netting cancels only what is still
+    /// unused when the remove reports. erc20 coin enters the PoolManager for a
+    /// side pool sell, which HARD must block. the sell ran inside a zero capital
+    /// add ... remove of 1e22 and paid out over 80 eth.
+    ///
+    /// now: the add after arming reverts `TaxedPoolLiquidityClosed`, so the
+    /// whole unlock reverts and the sell never settles.
     function test_V2A01_hard_addThenRemove_mintsFreeInGrant_sidePoolSellSettles() public {
         _assertNoPending();
         uint256 sellAmt = 100e18;
@@ -378,12 +404,10 @@ contract V2A01HardTest is V2AStackBase {
         );
         _run(attacker, _one(_swap(side, false, -int256(sellAmt))));
 
-        // exploit: same sell inside a zero capital add ... remove of 1e22 on the
-        // canonical pool. the sell's coin is settled while the add's in grant is
-        // outstanding, before the remove's out report can net it (D34, D43).
+        // the exploit shape now fails at the add
         uint256 eth0 = address(attacker).balance;
         uint256 coin0 = coin.balanceOf(address(attacker));
-        _run(
+        _expectClosed(
             attacker,
             _four(
                 _modify(canon, 1e22, bytes32(uint256(99))),
@@ -392,22 +416,24 @@ contract V2A01HardTest is V2AStackBase {
                 _modify(canon, -1e22, bytes32(uint256(99)))
             )
         );
-        uint256 ethOut = address(attacker).balance - eth0;
-        uint256 coinIn = coin0 - coin.balanceOf(address(attacker));
-
-        assertGt(ethOut, 80 ether, "side pool sell paid out eth");
-        assertGe(coinIn, sellAmt, "erc20 coin entered the PoolManager");
-        assertLe(coinIn, sellAmt + 2, "only rounding dust beyond the sell");
-        emit log_named_uint("eth received from side pool sell", ethOut);
-        emit log_named_uint("erc20 coin settled into the PoolManager", coinIn);
+        assertEq(address(attacker).balance, eth0, "no eth paid out");
+        assertEq(coin.balanceOf(address(attacker)), coin0, "no coin moved");
+        _assertNoPending();
     }
 
-    /// remove then re add a position that existed before the tx mints an OUT
-    /// grant (and an IN grant) with no net canonical flow. the out grant lets
-    /// coin bought on a side pool leave the PoolManager as erc20.
+    /// REGRESSION (fixed by D46, was V2A-01 HARD, OUT grant half).
+    ///
+    /// original attack: remove then re add a position that existed before the
+    /// tx mints an OUT grant (and an IN grant) with no net canonical flow. the
+    /// out grant lets coin bought on a side pool leave the PoolManager as erc20.
+    ///
+    /// now: the position can only exist if it was placed in the launch phase
+    /// (setUp parks one before arming). the remove is allowed, but the re add
+    /// reverts `TaxedPoolLiquidityClosed`, so the OUT grant is never usable:
+    /// the whole unlock reverts and the position is untouched.
     function test_V2A01_hard_removeThenReadd_mintsOutGrant_sidePoolBuyTakes() public {
         _assertNoPending();
-        _park();
+        assertEq(_parkedLiquidity(), uint128(uint256(L_PARKED)), "parked in the launch phase");
 
         // baseline: a plain side pool buy cannot take its coin (the PoolManager
         // wraps the token's CanonicalFlowRequired in WrappedError)
@@ -419,22 +445,19 @@ contract V2A01HardTest is V2AStackBase {
 
         uint256 coin0 = coin.balanceOf(address(attacker));
         uint256 eth0 = address(attacker).balance;
-        _run(
+        _expectClosed(
             attacker,
             _four(
                 _modify(canon, -L_PARKED, PARKED_SALT),
                 _swap(side, true, -10 ether),
-                _takeCoin(), // consume the grant before the re add can net it (D34)
-                _modify(canon, L_PARKED, PARKED_SALT)
+                _takeCoin(),
+                _modify(canon, L_PARKED, PARKED_SALT) // closed: the re add reverts
             )
         );
-        uint256 coinOut = coin.balanceOf(address(attacker)) - coin0;
-        uint256 ethIn = eth0 - address(attacker).balance;
-
-        assertGt(coinOut, 9e18, "side pool coin left the PoolManager as erc20");
-        assertLe(ethIn, 10 ether + 2, "paid only the side pool input plus dust");
-        assertEq(_parkedLiquidity(), uint128(uint256(L_PARKED)), "canonical position restored");
-        emit log_named_uint("erc20 coin bought on side pool and taken", coinOut);
+        assertEq(coin.balanceOf(address(attacker)), coin0, "no side pool coin taken");
+        assertEq(address(attacker).balance, eth0, "no eth moved");
+        assertEq(_parkedLiquidity(), uint128(uint256(L_PARKED)), "position untouched");
+        _assertNoPending();
     }
 }
 
@@ -447,9 +470,17 @@ contract V2A01VenueTest is V2AStackBase {
         _run(lp, _one(_modify(side, L_SIDE, bytes32(0)))); // inflow, untaxed
     }
 
+    /// REGRESSION (fixed by D46, was V2A-01 VENUE).
+    ///
+    /// original attack: remove then re add of a parked canonical position
+    /// attests budget with no net canonical flow; a side pool buy wrapped in
+    /// that pair went untaxed (15% saved).
+    ///
+    /// now: the re add reverts `TaxedPoolLiquidityClosed`, so the wrapped buy
+    /// cannot complete and every side pool buy still pays the tax.
     function test_V2A01_venue_removeThenReadd_sidePoolBuyUntaxed() public {
         _assertNoPending();
-        _park();
+        assertEq(_parkedLiquidity(), uint128(uint256(L_PARKED)), "parked in the launch phase");
         address dead = Constants.DEAD;
 
         // baseline: side pool buy pays 15%
@@ -461,24 +492,29 @@ contract V2A01VenueTest is V2AStackBase {
         assertGt(tax, 1e18, "baseline side buy is taxed");
         assertApproxEqRel(tax * 10_000 / (taxed + tax), 1500, 1e15, "15% of gross");
 
-        // exploit: same buy wrapped in remove then re add of the parked position
+        // the same buy wrapped in remove then re add of the parked position
         dead0 = coin.balanceOf(dead);
         c0 = coin.balanceOf(address(attacker));
-        _run(
+        _expectClosed(
             attacker,
             _four(
                 _modify(canon, -L_PARKED, PARKED_SALT),
                 _swap(side, true, -10 ether),
-                _takeCoin(), // consume the grant before the re add can net it (D34)
-                _modify(canon, L_PARKED, PARKED_SALT)
+                _takeCoin(),
+                _modify(canon, L_PARKED, PARKED_SALT) // closed: the re add reverts
             )
         );
-        uint256 untaxed = coin.balanceOf(address(attacker)) - c0;
-        assertEq(coin.balanceOf(dead), dead0, "no tax paid");
-        assertGt(untaxed, taxed, "received the gross side pool output");
-        assertEq(_parkedLiquidity(), uint128(uint256(L_PARKED)), "canonical position restored");
-        emit log_named_uint("baseline net (taxed)", taxed);
-        emit log_named_uint("exploit net (untaxed)", untaxed);
+        assertEq(coin.balanceOf(address(attacker)), c0, "nothing received untaxed");
+        assertEq(coin.balanceOf(dead), dead0, "nothing moved");
+        assertEq(_parkedLiquidity(), uint128(uint256(L_PARKED)), "position untouched");
+
+        // and a repeat of the plain buy is still taxed at 15% of gross
+        dead0 = coin.balanceOf(dead);
+        c0 = coin.balanceOf(address(attacker));
+        _run(attacker, _one(_swap(side, true, -10 ether)));
+        uint256 net2 = coin.balanceOf(address(attacker)) - c0;
+        uint256 tax2 = coin.balanceOf(dead) - dead0;
+        assertApproxEqRel(tax2 * 10_000 / (net2 + tax2), 1500, 1e15, "still 15% of gross");
     }
 }
 
@@ -510,8 +546,13 @@ contract V2AVenue {
     }
 }
 
-/// V2A-02: FT-07 is not fixed. the exempt set accepts any contract, so a
-/// deployer exempts its own forwarder and buys from any venue untaxed.
+/// V2A-02, fixed in the factory by D47 (owner managed `exemptAllowlist`: a
+/// deployer can no longer exempt an arbitrary contract; see FactoryV2.fork.t.sol).
+/// original attack: the exempt set accepted any contract, so a deployer
+/// exempted its own forwarder and bought from any venue untaxed.
+/// this test stays at token scope: the token keeps its "contracts only" rule
+/// as defense in depth and still accepts a contract in the exempt list the
+/// factory passes it, so it PASSES by documenting that the wall is the factory.
 contract V2A02ExemptTest is Test {
     function test_V2A02_venue_deployerForwarderExempt_buysUntaxed() public {
         address dev = makeAddr("dev");
