@@ -121,7 +121,9 @@ contract DeployConversionLockerAndWire is Script {
         if (renounce) {
             console2.log("  locker.renounceOwnership()        done (rescue surface off)");
         } else {
-            console2.log("  locker.renounceOwnership()        SKIPPED (set CONFIRM_RENOUNCE=1 to run it)");
+            console2.log(
+                "  locker.renounceOwnership()        SKIPPED (set CONFIRM_RENOUNCE=1 to run it)"
+            );
         }
         console2.log("  setMevModule(linearFees, true)    done/already-set");
         console2.log("");
