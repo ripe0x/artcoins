@@ -54,7 +54,7 @@ wave 2 plan was: v2 implementation packages from DESIGN.md, registry wiring into
 | review hook | docs/v2/review/v2-review-hook.md, test/v2/review-v2/hook/ | done: 1 high (recipient code runs during the swap; fixed by D41, pushes with 2,300 gas and no probe), 1 medium (HARD add then remove; fixed by D43/D46), 4 low |
 | review factory | docs/v2/review/v2-review-factory.md | running |
 | fixes in progress | h1 (D41..D46), p1 (D39, D40), t1 (D47, D48), f1 (D47), k1 (D49) | running |
-| s1 deploy script | script/v2/DeployV2Stack.s.sol, test/v2/DeployV2Stack.fork.t.sol | running |
+| s1 deploy script | script/v2/DeployV2Lib.sol, DeployV2Stack.s.sol, LaunchV2Coin.s.sol, verify-v2.sh, README.md, test/v2/DeployV2Stack.fork.t.sol | done: fork dry run passes every post deploy check (30 txs, ~29.5m gas); 5 tests pass |
 | i1 integration | test/v2/IntegrationV2.fork.t.sol | after s1 and the fixes |
 
 ## how to run tests

@@ -29,7 +29,8 @@ export FOUNDRY_PROFILE=ci
 | REFERRAL_PAYOUT | 0 = the new escrow | factory referral payout. must have code. the escrow has no `notify`, so referral legs are credited to the referrer in the escrow (D16). the live 0xB03C… only accepts the v1 hook |
 | DEPLOY_FEE | 0.069 ether | factory deploy fee (wei) |
 | PROTOCOL_BPS | 2000 | factory default protocol slot |
-| MIN_PROTOCOL_SKIM_SHARE_BPS | 0 | caps launch `bountyBps` at `10000 - this` |
+| MIN_PROTOCOL_SKIM_SHARE_BPS | 1000 | D52: protocol floor of every skim. caps launch `bountyBps` at `10000 - this` and the referral cap above the floor |
+| MIN_LP_FEE | 3000 | D53: launch lp fee floor in pips |
 
 ```
 # dry run on a fork, no key

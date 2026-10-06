@@ -26,7 +26,8 @@ import {Script, console2} from "forge-std/Script.sol";
 ///     REFERRAL_PAYOUT               default 0 = the new escrow (see DeployV2Lib.Params)
 ///     DEPLOY_FEE                    default 0.069 ether (wei)
 ///     PROTOCOL_BPS                  default 2000
-///     MIN_PROTOCOL_SKIM_SHARE_BPS   default 0
+///     MIN_PROTOCOL_SKIM_SHARE_BPS   default 1000 (D52)
+///     MIN_LP_FEE                    default 3000 pips (D53)
 ///   when the broadcaster is not OWNER, the escrow, hook, locker and factory
 ///   end with `pendingOwner == OWNER`; OWNER must call `acceptOwnership()` on
 ///   each (script/v2/README.md).
@@ -48,7 +49,10 @@ contract DeployV2Stack is Script {
         p.referralPayout = vm.envOr("REFERRAL_PAYOUT", address(0));
         p.deployFee = vm.envOr("DEPLOY_FEE", DeployV2Lib.DEPLOY_FEE);
         p.protocolBps = uint16(vm.envOr("PROTOCOL_BPS", uint256(DeployV2Lib.PROTOCOL_BPS)));
-        p.minProtocolSkimShareBps = uint16(vm.envOr("MIN_PROTOCOL_SKIM_SHARE_BPS", uint256(0)));
+        p.minProtocolSkimShareBps = uint16(
+            vm.envOr("MIN_PROTOCOL_SKIM_SHARE_BPS", uint256(DeployV2Lib.MIN_PROTOCOL_SKIM_SHARE_BPS))
+        );
+        p.minLpFee = uint24(vm.envOr("MIN_LP_FEE", uint256(DeployV2Lib.MIN_LP_FEE)));
     }
 
     function run() external returns (DeployV2Lib.Stack memory s) {
@@ -88,6 +92,7 @@ contract DeployV2Stack is Script {
         console2.log("deployFee   ", p.deployFee);
         console2.log("protocolBps ", p.protocolBps);
         console2.log("minSkimShare", p.minProtocolSkimShareBps);
+        console2.log("minLpFee    ", p.minLpFee);
     }
 
     // ── json (registry contract format, DeployV2Lib order) ───────────────────
