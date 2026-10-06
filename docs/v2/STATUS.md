@@ -27,7 +27,7 @@ running log for the unattended v2 session. a restarted session should read this 
 | agent | output | state |
 |---|---|---|
 | registry miner | deployments/mainnet.json, script-js/verify-registry.mjs, .github/workflows/registry.yml, docs/v2/review/registry-notes.md | running |
-| repo hygiene | docs/v2/review/repo-hygiene.md | running |
+| repo hygiene | docs/v2/review/repo-hygiene.md | done. 25 findings: mirror publishes any tag, origin is the public repo, broadcast has no record of the current stack, ~140 fork tests pass vacuously (return, not skip), foundry.lock mismatches 5 of 8 libs, no secrets in history. |
 | ui review | docs/v2/review/ui.md | done. 25 findings, 8 high: mainnet addresses are zero, deployToken abi stale (wrong selector), deploy fee never sent, sell path always reverts, hook abi stale. ui is a stale fork and cannot launch on any live factory. |
 | scripts and keepers review | docs/v2/review/scripts-and-keepers.md | running |
 | mainnet fork harness (replaced the local v4 plan once the rpc opened) | test/v2/harness/ForkBase.sol, ForkStack.sol, docs/v2/review/harness.md | running |
