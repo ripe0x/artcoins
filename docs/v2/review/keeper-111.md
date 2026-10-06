@@ -26,9 +26,9 @@ v1 names confirmed in src: `locker.collectRewards(token)`, `swapper.flushPaired(
 
 | step | call | on non gas revert | on gas shortfall |
 |---|---|---|---|
-| 1 | `locker.collectRewards(token)` with explicit gas | swallowed, collected 0 | reverts `InsufficientGas(1)` |
-| 2 | `swapper.flushPaired()` with explicit gas | swallowed (`NothingToFlush`), flushed 0 | reverts `InsufficientGas(2)` |
-| 3 | `swapper.convert(minOut)` if `doConvert` | swallowed (`ConvertTooEarly`, `NothingToConvert`, `InsufficientOutput`), converted 0 | reverts `InsufficientGas(3)` |
+| 1 | `locker.collectRewards(token)`, floor 658k + 50k, then all remaining gas | revert bubbles (D49) | reverts `InsufficientGas(1)` |
+| 2 | `swapper.flushPaired()` with explicit gas | reported `FlushSkipped`, flushed 0 | reverts `InsufficientGas(2)` |
+| 3 | `swapper.convert(minOut)` if `doConvert` | reported `ConvertSkipped` (`ConvertTooEarly`, `NothingToConvert`, `InsufficientOutput`), converted 0 | reverts `InsufficientGas(3)` |
 | 4 | forward all eth and coin the keeper holds to `msg.sender` | coin forward is try/catch so dust cannot brick the run; eth forward reverts if the caller rejects eth | n/a |
 
 gas handling (reviewer finding): each step has a floor (measured collect 658k, flush 72k, convert 299k, plus 50k margin) and gets explicit gas. a shortfall reverts instead of skipping, and an empty revert from a step (out of gas) is rethrown as `InsufficientGas`. reason: with a skip path, an `estimateGas` search lands on the cheapest successful gas, which silently skipped convert. `test_keeperV1_lowGas_neverSilentlySkips` sweeps gas limits from 1.3M down to 0.3M: 8 succeed (all convert), 33 revert, none succeed with converted == 0.
@@ -79,7 +79,7 @@ LF-01 (critical, proved on fork against the live locker): `collectRewardsWithout
 | extra trigger | also whenever `preview()` shows `uncollectedEth` > 0.02 eth or `uncollectedCoin` > 10,000 coin (10_000e18) |
 | skip rule | do not run when pending is below gas cost (about 0.004 eth at 5 gwei for an 800k run, scale with gas price) unless the hourly timer is due |
 | flush | every run also flushes, so the escrow to swapper hop is closed in the same tx |
-| convert | `doConvert` true; min blocks (50) makes extra convert attempts a swallowed no-op, so running hourly is safe |
+| convert | `doConvert` true; min blocks (50) makes extra convert attempts a reported no-op (`ConvertSkipped`), so running hourly is safe |
 
 other trigger from the stranding bug: `preview().escrowedEth > 0.05 eth` at any time means a flush is overdue (escrowed eth is exposed to a third party claim until flushed).
 
@@ -114,7 +114,7 @@ cast send $SWAPPER "convert(uint256)" <minOut> --rpc-url $MAINNET_RPC_URL --acco
 | forgotten fees | none unless someone runs it. no on chain incentive: locker reward 0, swapper rewards 50 bps capped 0.01 eth per call |
 | owner raising locker keeper reward | allowed up to the locker's bound (KEEPER_REWARD_BPS_MAX, cap bounds); the keeper forwards whatever it receives, so a runner earns it |
 
-keeper properties tested: holds no eth or coin after a run, caller gets locker reward plus flush plus convert rewards (checked with the locker bps set to 50 by a pranked owner, live is 0), second run in the same block does not revert and pays nothing (`test_keeperV1_nothingToFlush_noRevert`), convert too early is swallowed (`test_keeperV1_convertTooEarly_isSwallowed`).
+keeper properties tested: holds no eth or coin after a run, caller gets locker reward plus flush plus convert rewards (checked with the locker bps set to 50 by a pranked owner, live is 0), second run in the same block does not revert and pays nothing (`test_keeperV1_nothingToFlush_noRevert`), convert too early is reported and skipped (`test_keeperV1_convertTooEarly_isSwallowed`).
 
 ## notes for the reader of the test
 
@@ -135,11 +135,22 @@ generic, for any v2 art coin. `src/v2/keepers/ArtCoinsKeeperV2.sol`, tests `test
 | art coin check | `factory.deploymentInfo(token)`; reverts `NotArtCoin(token)` when the record token does not match or the locker is zero |
 | steps | 1 `locker.collectRewards(token)`. then for each distinct locker reward recipient that answers erc165 `supportsInterface(type(IFeeAutoSwapperV2).interfaceId) == 1`: 2 `flushPaired()`, 3 `convert(minOut)` only when `doConvert`. 4 forward all eth and coin balance to `msg.sender` |
 | non swapper recipients | skipped (eoa, no erc165, reverts, wrong answer, wide return, gas burner). probe is a 30k gas staticcall copying one word |
-| gas floor | explicit gas per step, same pattern as v1: collect 900k, flush 150k, convert 400k, probe 30k, plus 50k margin and the 63/64 rule. a shortfall reverts `InsufficientGas(step)` (1 collect, 2 flush, 3 convert, 4 probe), never skips |
-| swallowed failures | a revert with data inside collect, flush or convert (nothing accrued, `NothingToFlush`, convert too early) is swallowed so one idle slot does not block the rest. an empty revert inside a capped step is treated as out of gas and reverts `InsufficientGas` |
+| gas floors (D49) | per step values are floors, not caps: collect 900k, flush 150k, convert 400k, probe 30k, each plus 50k margin and the 63/64 rule. before a step `gasleft()` must clear the floor or the call reverts `InsufficientGas(step)` (1 collect, 2 flush, 3 convert, 4 probe). the step then gets all remaining gas, so a collect that grows past the old figure still runs (fixes V2A-05) |
+| failed step (V2A-10) | no empty revert is read as out of gas. if a step reverts and `gasleft()` after the call is under its floor, the keeper reverts `InsufficientGas(step)`. otherwise: collect bubbles the original revert data (a real failure surfaces), flush emits `FlushSkipped(token, swapper, reason)` and convert emits `ConvertSkipped(token, swapper, reason)`, both then report 0 in `SwapperServiced`. flush is reported and not bubbled because `NothingToFlush` is the normal idle answer and one broken swapper should not block the others. reasons are copied up to 256 bytes (no return bomb) |
 | funds | holds nothing: balance (eth and coin, including donations) leaves in the same call. caller that rejects eth reverts `EthTransferFailed` |
 | reentry | `ReentrancyGuardTransient`, a swapper that reenters the keeper is rejected |
 | extra | `preview(token)` view: swapper count, accrued paired and coin, next convertible block. uncollected lp fees are not readable via the locker interface |
 | gas figures | v1 measurements with room added. re measure on the v2 stack when the fork harness is ready |
 
-tests (31): happy path (`test_keeperV2_collectAndForward_swapperRecipient`), non art coin and mismatched or zero locker records revert, non erc165 recipients skipped, duplicates serviced once, convert only when asked, swallowed step failures, low gas reverts for steps 1 to 4, a gas sweep from 100k to 2.5m proving every run either completes all steps or reverts `InsufficientGas` with state untouched, keeper holds nothing (with donations), reentrancy, preview, no owner. fork test against live v2 contracts is not written (no v2 stack on chain yet).
+tests (33): happy path (`test_keeperV2_collectAndForward_swapperRecipient`), non art coin and mismatched or zero locker records revert, non erc165 recipients skipped, duplicates serviced once, convert only when asked, collect revert bubbles, flush and convert reverts reported with their reason, steps that run past the old caps (collect 1.3m, flush 400k, convert 700k) still complete, out of gas inside collect reports `InsufficientGas(1)`, low gas reverts for steps 1 to 4, a gas sweep from 100k to 2.5m proving every run either completes all steps or reverts `InsufficientGas` with state untouched, keeper holds nothing (with donations), reentrancy, preview, no owner. fork test against live v2 contracts is not written (no v2 stack on chain yet).
+
+known limit: a recipient that answers erc165 and then burns all gas in `flushPaired` or `convert` now burns up to 63/64 of the tx gas and the run reverts `InsufficientGas`. before D49 the cap bounded the burn but the run reverted the same way. reward recipients are frozen at launch, `collectRewards` stays directly callable.
+
+### D49 follow up for CollectFlushKeeperV1 (coin 111 pin)
+
+| item | detail |
+|---|---|
+| floors | same rule: collect 658k, flush 72k, convert 299k plus 50k margin are floors checked with `gasleft()` before the step, the call has no `{gas: X}` |
+| collect revert | bubbles (fork test `test_keeperV1_collectRevert_bubbles`), out of gas reports `InsufficientGas(1)` |
+| flush and convert revert | reported with `FlushSkipped(bytes reason)` and `ConvertSkipped(bytes reason)`, returned 0. `test_keeperV1_convertTooEarly_isSwallowed` now also asserts the `ConvertSkipped` log carries the revert data |
+| sweep | `test_keeperV1_lowGas_neverSilentlySkips` still passes on fork (8 completed, 33 reverted, none completed without converting) |

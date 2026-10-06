@@ -81,6 +81,11 @@ library DeployV2Lib {
         uint256 deployFee;
         uint16 protocolBps;
         uint16 minProtocolSkimShareBps;
+        /// @dev Enforce EIP-170 in `check`. Always true in the script. The
+        ///      token deployer is over the limit at the default profile
+        ///      (optimizer_runs 20000), so the stack ships from FOUNDRY_PROFILE=ci;
+        ///      the fork harness turns this off under other profiles.
+        bool checkSizes;
     }
 
     struct Stack {
@@ -118,6 +123,7 @@ library DeployV2Lib {
         p.deployFee = DEPLOY_FEE;
         p.protocolBps = PROTOCOL_BPS;
         p.minProtocolSkimShareBps = 0;
+        p.checkSizes = true;
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -271,7 +277,7 @@ library DeployV2Lib {
         _checkFactory(s, p);
         _checkPeriphery(s, p);
         _checkOwners(s, p, accepted);
-        _checkSizes(s);
+        if (p.checkSizes) _checkSizes(s);
     }
 
     function _checkConstants(Stack memory s) private pure {
@@ -382,7 +388,7 @@ library DeployV2Lib {
         address[10] memory a = addresses(s);
         for (uint256 i; i < a.length; ++i) {
             uint256 n = a[i].code.length;
-            require(n != 0 && n <= EIP170, "v2: runtime size");
+            require(n != 0 && n <= EIP170, "v2: runtime size over EIP-170 (use FOUNDRY_PROFILE=ci)");
         }
     }
 

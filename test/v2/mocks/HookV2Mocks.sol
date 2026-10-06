@@ -201,6 +201,11 @@ contract HV2AddRemoveRouter is IUnlockCallback {
 
     receive() external payable {}
 
+    /// lets a test register this router as a pool's locker (d5 check).
+    function constantsHash() external pure returns (bytes32) {
+        return Constants.hash();
+    }
+
     function run(PoolKey calldata key, int24 lo, int24 hi, uint256 liq, bytes32 salt, uint8 mode)
         external
     {

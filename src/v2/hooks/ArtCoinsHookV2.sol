@@ -308,12 +308,11 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
 
     /// @dev D46: principal removals report nothing in any mode (the locker
     ///      never removes; a VENUE exit is taxed, a HARD exit reverts at
-    ///      take). A fee collect (zero liquidity decrease, the locker's only
-    ///      removal) reports its coin fees: fees accrue only from swaps, a
-    ///      collect cannot be undone or replayed, and the token draws the
-    ///      grant or budget even for an exempt recipient, so nothing is left.
+    ///      take). Only the pool's locker fee collect (zero liquidity
+    ///      decrease) reports its coin fees, so the locker's take passes in
+    ///      HARD and is budgeted in VENUE. Any other sender reports nothing.
     function _afterRemoveLiquidity(
-        address,
+        address sender,
         PoolKey calldata key,
         IPoolManager.ModifyLiquidityParams calldata p,
         BalanceDelta delta,
@@ -323,9 +322,10 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         PoolId pid = key.toId();
         uint8 mode = _info[pid].taxMode;
         int256 a = delta.amount1();
-        if (a > 0 && p.liquidityDelta == 0 && mode != Constants.TAX_MODE_NONE) {
-            _tokenFlow(key, pid, mode, a);
-        }
+        if (
+            a > 0 && p.liquidityDelta == 0 && mode != Constants.TAX_MODE_NONE
+                && _isLockerCollect(sender, _info[pid].locker)
+        ) _tokenFlow(key, pid, mode, a);
         return (BaseHook.afterRemoveLiquidity.selector, BalanceDelta.wrap(0));
     }
 
@@ -599,6 +599,27 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         // must be a contract), although the swap path no longer calls it (D41).
         if (s.referralPayout.code.length == 0) revert ReferralPayoutZero();
         if (s.quoteToken != address(0)) revert QuoteTokenMustBeNative();
+    }
+
+    /// @dev True when the PoolManager caller is an allowlisted launcher, the
+    ///      pool's locker itself, or the PositionManager the locker uses while
+    ///      the locker is its current caller (`msgSender()`). The v2 locker
+    ///      collects through the v4 PositionManager, so `sender` is the
+    ///      PositionManager there. Both reads are static and gas capped; any
+    ///      failure means "not the locker" (nothing reported).
+    function _isLockerCollect(address sender, address locker) private view returns (bool) {
+        if (sender == locker || _launchers[sender]) return true;
+        return _readAddress(locker, 0x791b98bc) == sender // positionManager()
+            && _readAddress(sender, 0xd737d0c7) == locker; // msgSender()
+    }
+
+    function _readAddress(address target, bytes4 sel) private view returns (address out) {
+        assembly ("memory-safe") {
+            mstore(0x00, sel)
+            let ok := staticcall(_MODULE_GAS, target, 0x00, 0x04, 0x00, 0x20)
+            if and(ok, eq(returndatasize(), 0x20)) { out := mload(0x00) }
+            if shr(160, out) { out := 0 }
+        }
     }
 
     function _checkReceiver(address r) private view {

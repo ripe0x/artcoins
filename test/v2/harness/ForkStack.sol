@@ -359,15 +359,20 @@ abstract contract ForkStack is ForkBase {
     DeployV2Lib.Stack internal v2;
     DeployV2Lib.Params internal v2Params;
 
-    /// @notice DeployV2Stack.s.sol defaults on mainnet infra (env overrides not read).
+    /// @notice DeployV2Stack.s.sol defaults on mainnet infra (env overrides not
+    ///         read). EIP-170 is checked only under FOUNDRY_PROFILE=ci, the
+    ///         profile the stack ships from (the token deployer is over the
+    ///         limit at the default profile; forge test does not enforce it).
     function v2DefaultParams(address owner, address broadcaster)
         internal
-        pure
-        returns (DeployV2Lib.Params memory)
+        view
+        returns (DeployV2Lib.Params memory p)
     {
-        return DeployV2Lib.defaults(
+        p = DeployV2Lib.defaults(
             owner, broadcaster, POOL_MANAGER, POSITION_MANAGER, PERMIT2, CREATE2_DEPLOYER
         );
+        p.checkSizes =
+            keccak256(bytes(vm.envOr("FOUNDRY_PROFILE", string("default")))) == keccak256("ci");
     }
 
     /// @notice The script's deploy routine with the live owner as broadcaster

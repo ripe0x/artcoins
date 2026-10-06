@@ -206,15 +206,16 @@ contract FeeAutoSwapperV2ForkTest is P1Base {
 
     function test_swapperV2_convert_honoursMinBlocks() public {
         coin.transfer(address(swapper), 3 * STEP);
-        uint256 b0 = block.number;
         swapper.convert(0);
+        // anchor on storage: via ir rematerializes a `block.number` local
+        // after `vm.roll`, so a local copy would move with the rolls
+        uint256 b0 = swapper.lastConvertBlock();
         uint256 next = b0 + 50;
         assertEq(swapper.nextConvertibleBlock(), next);
 
         vm.expectRevert(FeeAutoSwapperV2.AlreadyConvertedThisBlock.selector);
         swapper.convert(0);
 
-        // absolute rolls: via ir may cache `block.number` across `vm.roll`
         vm.roll(b0 + 1);
         vm.expectRevert(abi.encodeWithSelector(IFeeAutoSwapperV2.ConvertTooEarly.selector, next));
         swapper.convert(0);

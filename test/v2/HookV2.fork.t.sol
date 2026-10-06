@@ -29,6 +29,8 @@ import {Constants} from "../../src/Constants.sol";
 import {IArtCoinsHook} from "../../src/interfaces/IArtCoinsHook.sol";
 import {ArtCoinsFeeEscrowV2} from "../../src/v2/ArtCoinsFeeEscrowV2.sol";
 import {ArtCoinsTokenV2} from "../../src/v2/ArtCoinsTokenV2.sol";
+import {IArtCoinsFactoryV2} from "../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
+import {ArtCoinsLpLockerV2} from "../../src/v2/lp-lockers/ArtCoinsLpLockerV2.sol";
 import {ArtCoinsHookV2} from "../../src/v2/hooks/ArtCoinsHookV2.sol";
 import {HookCalldata} from "../../src/v2/hooks/libraries/HookCalldata.sol";
 import {IArtCoinsHookV2} from "../../src/v2/interfaces/IArtCoinsHookV2.sol";
@@ -1040,6 +1042,7 @@ abstract contract HookV2PriorTxBase is HookV2ForkBase {
     PoolKey internal key;
     ArtCoinsTokenV2 internal token;
     HV2AddRemoveRouter internal router;
+    HV2AddRemoveRouter internal other;
     bytes32 internal constant SALT = bytes32(uint256(9));
     uint256 internal constant POS_LIQ = 20e18;
 
@@ -1051,12 +1054,18 @@ abstract contract HookV2PriorTxBase is HookV2ForkBase {
         Launch memory l = _defaults(bountyEoa);
         l.taxMode = _mode();
         token = _newToken(l.taxMode, l.bounty, address(hook));
-        key = hook.initializePool(_params(l, address(token)));
+        router = new HV2AddRemoveRouter(pm); // the pool's locker
+        other = new HV2AddRemoveRouter(pm); // a non locker lp from the launch phase
+        IArtCoinsHookV2.PoolInitParams memory p = _params(l, address(token));
+        p.locker = address(router);
+        key = hook.initializePool(p);
         _modify(key, FULL_LO, FULL_HI, int256(LIQ), 0);
-        router = new HV2AddRemoveRouter(pm);
         vm.deal(address(router), 200 ether);
+        vm.deal(address(other), 200 ether);
         token.transfer(address(router), 200e18);
+        token.transfer(address(other), 200e18);
         router.run(key, -2000, 2000, POS_LIQ, SALT, 2); // launch phase placement
+        other.run(key, -2000, 2000, POS_LIQ, SALT, 2);
         hook.initializeMevModule(key, "");
         // a sell accrues coin side fees to the position
         _swap(key, false, -20 ether, 0, "");
@@ -1090,6 +1099,16 @@ contract HookV2PriorTxVenueTest is HookV2PriorTxBase {
         assertEq(token.balanceOf(Constants.DEAD), dead0);
         (uint256 b,,) = token.pendingCanonical();
         assertEq(b, 0, "collect budget drawn exactly");
+    }
+
+    /// D46: a fee collect by anyone but the pool's locker reports nothing;
+    /// its coin fees leave taxed.
+    function test_tax_nonLockerCollect_taxed() public onlyFork {
+        uint256 dead0 = token.balanceOf(Constants.DEAD);
+        other.run(key, -2000, 2000, 0, SALT, 3);
+        uint256 taken = other.lastTake1();
+        assertGt(taken, 0);
+        assertEq(token.balanceOf(Constants.DEAD) - dead0, (taken * token.taxBps()) / Constants.BPS);
     }
 
     /// V2A-01 flipped: remove a prior position and re add it in one unlock.
@@ -1127,11 +1146,96 @@ contract HookV2PriorTxHardTest is HookV2PriorTxBase {
         router.run(key, -2000, 2000, POS_LIQ, SALT, 0);
     }
 
+    function test_hard_nonLockerCollect_reverts() public onlyFork {
+        vm.expectRevert();
+        other.run(key, -2000, 2000, 0, SALT, 3);
+    }
+
     function test_hard_lockerCollect_pass() public onlyFork {
         router.run(key, -2000, 2000, 0, SALT, 3);
         assertGt(router.lastTake1(), 0);
         (, uint256 o, uint256 i) = token.pendingCanonical();
         assertEq(o, 0, "collect grant consumed exactly");
         assertEq(i, 0);
+    }
+}
+
+/// D46 end to end with the real v2 locker, the live v4 PositionManager and
+/// Permit2: launch phase placement through the PositionManager passes, and the
+/// locker's fee collect (PositionManager is the PoolManager caller, the locker
+/// its `msgSender()`) is reported, so HARD collect passes and VENUE collect is
+/// untaxed. a later third party add still reverts.
+contract HookV2RealLockerTest is HookV2ForkBase {
+    address internal constant POSM = 0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e;
+    address internal constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
+    int24 internal constant START = -200_000;
+    address internal project = makeAddr("project");
+
+    function _realLaunch(uint8 mode)
+        internal
+        returns (PoolKey memory k, ArtCoinsTokenV2 t, ArtCoinsLpLockerV2 rl)
+    {
+        rl = new ArtCoinsLpLockerV2(address(this), POSM, PERMIT2, address(escrow));
+        escrow.addDepositor(address(rl), true);
+        rl.setLauncher(address(this), true);
+        Launch memory l = _defaults(bountyEoa);
+        l.taxMode = mode;
+        t = _newToken(mode, bountyEoa, address(hook));
+        IArtCoinsHookV2.PoolInitParams memory p = _params(l, address(t));
+        p.locker = address(rl);
+        p.tickIfToken0IsArtCoin = START;
+        k = hook.initializePool(p);
+
+        IArtCoinsFactoryV2.LockerConfigV2 memory lc;
+        lc.locker = address(rl);
+        lc.rewardRecipients = new address[](1);
+        lc.rewardRecipients[0] = project;
+        lc.rewardBps = new uint16[](1);
+        lc.rewardBps[0] = 10_000;
+        lc.tickLower = new int24[](1);
+        lc.tickUpper = new int24[](1);
+        lc.positionBps = new uint16[](1);
+        lc.tickLower[0] = START;
+        lc.tickUpper[0] = -120_000;
+        lc.positionBps[0] = 10_000;
+        IArtCoinsFactoryV2.PoolConfigV2 memory pc;
+        pc.hook = address(hook);
+        pc.tickIfToken0IsArtCoin = START;
+        pc.tickSpacing = TS;
+        uint256 supply = 500_000_000e18;
+        t.approve(address(rl), supply);
+        rl.placeLiquidity(lc, pc, k, supply, address(t)); // through the PositionManager
+        hook.initializeMevModule(k, "");
+
+        // trade both ways so the position earns eth and coin fees
+        uint256 b0 = t.balanceOf(address(this));
+        _swap(k, true, -1 ether, 0, "");
+        uint256 bought = t.balanceOf(address(this)) - b0;
+        _swap(k, false, -int256(bought / 2), 0, "");
+    }
+
+    function test_realLocker_hard_placeAndCollect_pass() public onlyFork {
+        (PoolKey memory k, ArtCoinsTokenV2 t, ArtCoinsLpLockerV2 rl) =
+            _realLaunch(Constants.TAX_MODE_HARD);
+        rl.collectRewards(address(t));
+        assertGt(t.balanceOf(project) + escrow.balances(project, address(t)), 0, "coin fees out");
+        (, uint256 o, uint256 i) = t.pendingCanonical();
+        assertEq(o + i, 0, "collect grant consumed exactly");
+        // third party add after launch still refused
+        HV2AddRemoveRouter r = new HV2AddRemoveRouter(pm);
+        vm.deal(address(r), 10 ether);
+        t.transfer(address(r), 10e18);
+        vm.expectRevert();
+        r.run(k, 200_000, 202_000, 1e18, bytes32(uint256(1)), 2);
+    }
+
+    function test_realLocker_venue_collectUntaxed() public onlyFork {
+        (, ArtCoinsTokenV2 t, ArtCoinsLpLockerV2 rl) = _realLaunch(Constants.TAX_MODE_VENUE);
+        uint256 dead0 = t.balanceOf(Constants.DEAD);
+        rl.collectRewards(address(t));
+        assertGt(t.balanceOf(project) + escrow.balances(project, address(t)), 0, "coin fees out");
+        assertEq(t.balanceOf(Constants.DEAD), dead0, "collect untaxed");
+        (uint256 b,,) = t.pendingCanonical();
+        assertEq(b, 0);
     }
 }

@@ -289,81 +289,111 @@ contract V2FFactoryReviewTest is ForkBase {
     /// positions, VENUE with 16 exempt and 32 venues, 10 extensions (9 vaults
     /// plus a dev buy). reports whether the factory accepts a config that no
     /// mainnet transaction can carry.
-    function test_gas_maxConfigLaunch() public onlyFork {
-        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        c.token.name = _filled(64);
-        c.token.symbol = _filled(16);
-        c.token.image = _filled(2048);
-        c.token.metadata = _filled(4096);
-        c.token.context = _filled(4096);
-
-        c.locker.rewardRecipients = new address[](6);
-        c.locker.rewardBps = new uint16[](6);
-        for (uint256 i; i < 6; ++i) {
-            c.locker.rewardRecipients[i] = address(uint160(0xbeef0 + i));
-            c.locker.rewardBps[i] = i == 5 ? 1335 : 1333;
+    function _maxCfg(bool strings, bool slots, bool tax, bool ext)
+        internal
+        returns (IArtCoinsFactoryV2.DeploymentConfigV2 memory c, uint256 value)
+    {
+        c = _cfg();
+        value = FEE;
+        if (strings) {
+            c.token.name = _filled(64);
+            c.token.symbol = _filled(16);
+            c.token.image = _filled(2048);
+            c.token.metadata = _filled(4096);
+            c.token.context = _filled(4096);
         }
-        c.locker.tickLower = new int24[](14);
-        c.locker.tickUpper = new int24[](14);
-        c.locker.positionBps = new uint16[](14);
-        for (uint256 i; i < 14; ++i) {
-            // forge-lint: disable-next-line(unsafe-typecast)
-            int24 lo = START + int24(int256(i)) * 2000;
-            c.locker.tickLower[i] = lo;
-            c.locker.tickUpper[i] = lo + 40_000;
-            c.locker.positionBps[i] = i == 13 ? 718 : 714;
+        if (slots) {
+            c.locker.rewardRecipients = new address[](6);
+            c.locker.rewardBps = new uint16[](6);
+            for (uint256 i; i < 6; ++i) {
+                c.locker.rewardRecipients[i] = address(uint160(0xbeef0 + i));
+                c.locker.rewardBps[i] = i == 5 ? 1335 : 1333;
+            }
+            c.locker.tickLower = new int24[](14);
+            c.locker.tickUpper = new int24[](14);
+            c.locker.positionBps = new uint16[](14);
+            for (uint256 i; i < 14; ++i) {
+                // forge-lint: disable-next-line(unsafe-typecast)
+                int24 lo = START + int24(int256(i)) * 2000;
+                c.locker.tickLower[i] = lo;
+                c.locker.tickUpper[i] = lo + 40_000;
+                c.locker.positionBps[i] = i == 13 ? 718 : 714;
+            }
         }
-
-        c.tax.mode = Constants.TAX_MODE_VENUE;
-        c.tax.taxBps = 500;
-        c.tax.taxBpsMax = 1000;
-        c.tax.taxSink = Constants.DEAD;
-        c.tax.exempt = new address[](Constants.MAX_TAX_EXEMPT);
-        for (uint256 i; i < c.tax.exempt.length; ++i) {
-            c.tax.exempt[i] = address(new V2FDummy());
-            // D47 (in flight): exempt entries must be owner allowlisted
-            factory.setExemptAllowed(c.tax.exempt[i], true);
+        if (tax) {
+            c.tax.mode = Constants.TAX_MODE_VENUE;
+            c.tax.taxBps = 500;
+            c.tax.taxBpsMax = 1000;
+            c.tax.taxSink = Constants.DEAD;
+            c.tax.exempt = new address[](Constants.MAX_TAX_EXEMPT);
+            for (uint256 i; i < c.tax.exempt.length; ++i) {
+                c.tax.exempt[i] = address(new V2FDummy());
+                // D47 (in flight): exempt entries must be owner allowlisted
+                factory.setExemptAllowed(c.tax.exempt[i], true);
+            }
+            c.tax.venues = new IArtCoinsFactoryV2.TaxVenue[](Constants.MAX_TAX_VENUES);
+            for (uint256 i; i < c.tax.venues.length; ++i) {
+                c.tax.venues[i] = IArtCoinsFactoryV2.TaxVenue({
+                    kind: 2,
+                    factory: address(0x1F98431c8aD98523631AE4a59f267346ea31F984),
+                    initCodeHash: 0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54,
+                    counterToken: address(uint160(0xc0ffee00 + i)),
+                    v3Fee: 3000
+                });
+            }
         }
-        c.tax.venues = new IArtCoinsFactoryV2.TaxVenue[](Constants.MAX_TAX_VENUES);
-        for (uint256 i; i < c.tax.venues.length; ++i) {
-            c.tax.venues[i] = IArtCoinsFactoryV2.TaxVenue({
-                kind: 2,
-                factory: address(0x1F98431c8aD98523631AE4a59f267346ea31F984),
-                initCodeHash: 0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54,
-                counterToken: address(uint160(0xc0ffee00 + i)),
-                v3Fee: 3000
+        if (ext) {
+            c.extensions = new IArtCoinsFactoryV2.ExtensionConfigV2[](Constants.MAX_EXTENSIONS);
+            for (uint256 i; i < 9; ++i) {
+                c.extensions[i] = IArtCoinsFactoryV2.ExtensionConfigV2({
+                    extension: address(vault),
+                    msgValue: 0,
+                    extensionBps: 1000,
+                    extensionData: abi.encode(
+                        address(uint160(0xa11ce0 + i)), uint256(7 days), uint256(90 days)
+                    )
+                });
+            }
+            c.extensions[9] = IArtCoinsFactoryV2.ExtensionConfigV2({
+                extension: address(devBuy),
+                msgValue: 1 ether,
+                extensionBps: 0,
+                extensionData: abi.encode(alice, alice, uint128(1))
             });
+            value += 1 ether;
         }
+    }
 
-        c.extensions = new IArtCoinsFactoryV2.ExtensionConfigV2[](Constants.MAX_EXTENSIONS);
-        for (uint256 i; i < 9; ++i) {
-            c.extensions[i] = IArtCoinsFactoryV2.ExtensionConfigV2({
-                extension: address(vault),
-                msgValue: 0,
-                extensionBps: 1000,
-                extensionData: abi.encode(address(uint160(0xa11ce0 + i)), uint256(7 days), uint256(90 days))
-            });
-        }
-        c.extensions[9] = IArtCoinsFactoryV2.ExtensionConfigV2({
-            extension: address(devBuy),
-            msgValue: 1 ether,
-            extensionBps: 0,
-            extensionData: abi.encode(alice, alice, uint128(1))
-        });
-
-        bytes memory initArgs = abi.encode(
-            c.token,
-            uint256(1_000_000_000e18),
-            c.tax,
-            ArtCoinsTokenV2.CanonicalPool(address(hook), POOL_MANAGER, TS, bounty),
-            address(factory)
-        );
+    /// every cap at its maximum: strings at D30 caps, 7 reward slots, 14
+    /// positions, VENUE with 16 exempt and 32 venues, 10 extensions (9 vaults
+    /// plus a dev buy). the factory accepts it; no mainnet tx can carry it.
+    function test_V2F03_maxConfigLaunch_overTxGasCap() public onlyFork {
+        (IArtCoinsFactoryV2.DeploymentConfigV2 memory c, uint256 v) =
+            _maxCfg(true, true, true, true);
         console2.log("token creationCode bytes", type(ArtCoinsTokenV2).creationCode.length);
-        console2.log("token initcode bytes (max config)", type(ArtCoinsTokenV2).creationCode.length + initArgs.length);
-
-        (address token, uint256 total) = _measure(c, FEE + 1 ether, "max: every cap at its limit");
+        (address token, uint256 total) = _measure(c, v, "max: every cap at its limit");
         assertTrue(factory.isArtCoin(token));
-        console2.log("over EIP-7825 cap", total > TX_GAS_CAP);
+        assertGt(total, TX_GAS_CAP, "accepted config exceeds the EIP-7825 cap");
+    }
+
+    function test_gas_breakdown() public onlyFork {
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c;
+        uint256 v;
+        (c, v) = _maxCfg(true, false, false, false);
+        c.token.salt = bytes32(uint256(101));
+        _measure(c, v, "strings at caps only");
+        (c, v) = _maxCfg(false, true, false, false);
+        c.token.salt = bytes32(uint256(102));
+        _measure(c, v, "7 slots + 14 positions only");
+        (c, v) = _maxCfg(false, false, true, false);
+        c.token.salt = bytes32(uint256(103));
+        _measure(c, v, "VENUE 16 exempt + 32 venues only");
+        (c, v) = _maxCfg(false, false, false, true);
+        c.token.salt = bytes32(uint256(104));
+        _measure(c, v, "10 extensions (9 vaults + dev buy) only");
+        (c, v) = _maxCfg(true, true, true, false);
+        c.token.salt = bytes32(uint256(105));
+        _measure(c, v, "all caps except extensions");
     }
 
     // ══════════════════════════════════════════════════════════════════════
