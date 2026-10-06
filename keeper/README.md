@@ -27,6 +27,9 @@ hosted loop for the three keeper contracts. the loop ticks every `INTERVAL_SECON
 
 the weekly timer counts from the last successful run and lives in the state file, so a restart does not re run. a fresh volume has no timers: the first tick runs every keeper once. a simulation that reverts is logged and not sent. a tx still unmined after `RECEIPT_TIMEOUT_SECONDS` (600) stays in flight and later ticks handle it (next section).
 
+
+note: LAYER already has its own hosted keeper (`layer-keeper` in ripe0x/new-material). deploy this runner with `KEEPERS=111,v2` so the two bots do not race (D64).
+
 ## tx in flight
 
 one tx at a time, never a new nonce while one is in flight. the record (keeper, nonce, every hash signed for that nonce, fees, calldata) is written to the state file after signing and before the broadcast, so a crash cannot lose a sent tx, and a restart resumes it.

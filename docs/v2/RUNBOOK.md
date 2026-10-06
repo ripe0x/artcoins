@@ -63,6 +63,8 @@ rules for every send: (1) simulate first by swapping `cast send` for `cast call 
 
 ### 2b. deploy and run the LAYER keeper (collect, claim, split, burn)
 
+note (D64): LAYER already has a hosted keeper, `layer-keeper` on fly.io in ripe0x/new-material, running this same pipeline every 30 minutes. do not run a second LAYER bot. this action is optional: deploy `CollectFlushKeeperLayer` only if you want the layer keeper to switch to one atomic tx. the artcoins runner must be deployed with `KEEPERS=111,v2`.
+
 | field | value |
 |---|---|
 | finding | nothing calls `processBurnWeth` on the LAYER routers: the autoforward extension 0x38d0 deliberately skips it (no nested unlock), and its claim and split stages only fire above 0.01 weth or 100,000 LAYER, so small slots sit forever (scripts-and-keepers gap list). LF-01 exposure on LAYER is one swap's fee, because the hook collects on every swap |
