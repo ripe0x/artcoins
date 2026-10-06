@@ -9,7 +9,9 @@ pragma solidity ^0.8.26;
 import {console2} from "forge-std/Test.sol";
 
 import {Constants} from "../../../../src/Constants.sol";
-import {ArtCoinsPoolExtensionAllowlist} from "../../../../src/hooks/ArtCoinsPoolExtensionAllowlist.sol";
+import {
+    ArtCoinsPoolExtensionAllowlist
+} from "../../../../src/hooks/ArtCoinsPoolExtensionAllowlist.sol";
 import {ArtCoinsFactoryV2} from "../../../../src/v2/ArtCoinsFactoryV2.sol";
 import {ArtCoinsFeeEscrowV2} from "../../../../src/v2/ArtCoinsFeeEscrowV2.sol";
 import {ArtCoinsTokenV2} from "../../../../src/v2/ArtCoinsTokenV2.sol";
@@ -270,10 +272,11 @@ contract V2FFactoryReviewTest is ForkBase {
         floor = 21_000 + 10 * (z + 4 * nz); // EIP-7623
     }
 
-    function _measure(IArtCoinsFactoryV2.DeploymentConfigV2 memory c, uint256 value, string memory tag)
-        internal
-        returns (address token, uint256 total)
-    {
+    function _measure(
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c,
+        uint256 value,
+        string memory tag
+    ) internal returns (address token, uint256 total) {
         bytes memory data = abi.encodeCall(IArtCoinsFactoryV2.deployToken, (c));
         (uint256 std, uint256 floor) = _intrinsic(data);
         vm.prank(alice);
@@ -441,5 +444,4 @@ contract V2FFactoryReviewTest is ForkBase {
         vm.expectRevert();
         coin.transfer(POOL_MANAGER, 1);
     }
-
 }

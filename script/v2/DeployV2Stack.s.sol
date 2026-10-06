@@ -50,13 +50,17 @@ contract DeployV2Stack is Script {
         p.deployFee = vm.envOr("DEPLOY_FEE", DeployV2Lib.DEPLOY_FEE);
         p.protocolBps = uint16(vm.envOr("PROTOCOL_BPS", uint256(DeployV2Lib.PROTOCOL_BPS)));
         p.minProtocolSkimShareBps = uint16(
-            vm.envOr("MIN_PROTOCOL_SKIM_SHARE_BPS", uint256(DeployV2Lib.MIN_PROTOCOL_SKIM_SHARE_BPS))
+            vm.envOr(
+                "MIN_PROTOCOL_SKIM_SHARE_BPS", uint256(DeployV2Lib.MIN_PROTOCOL_SKIM_SHARE_BPS)
+            )
         );
         p.minLpFee = uint24(vm.envOr("MIN_LP_FEE", uint256(DeployV2Lib.MIN_LP_FEE)));
     }
 
     function run() external returns (DeployV2Lib.Stack memory s) {
-        require(block.chainid == Addresses.CHAIN_ID, "DeployV2Stack: mainnet (or a mainnet fork) only");
+        require(
+            block.chainid == Addresses.CHAIN_ID, "DeployV2Stack: mainnet (or a mainnet fork) only"
+        );
 
         vm.startBroadcast();
         (, address broadcaster,) = vm.readCallers();
@@ -71,7 +75,8 @@ contract DeployV2Stack is Script {
         string memory json = registryJson(s, p);
         console2.log("---- registry json (paste `contracts` into deployments/mainnet.json) ----");
         console2.log(json);
-        string memory path = string.concat(OUT_DIR, "/v2-deploy-", vm.toString(block.chainid), ".json");
+        string memory path =
+            string.concat(OUT_DIR, "/v2-deploy-", vm.toString(block.chainid), ".json");
         vm.createDir(OUT_DIR, true);
         vm.writeFile(path, json);
         console2.log("written:", path);
@@ -109,8 +114,16 @@ contract DeployV2Stack is Script {
         bytes[10] memory args = DeployV2Lib.ctorArgs(s, p);
 
         string[10] memory key = [
-            "escrow", "allowlist", "hook", "locker", "mev", "factory", "tokenDeployer",
-            "burnRouter", "controller", "keeper"
+            "escrow",
+            "allowlist",
+            "hook",
+            "locker",
+            "mev",
+            "factory",
+            "tokenDeployer",
+            "burnRouter",
+            "controller",
+            "keeper"
         ];
         string memory contracts = "";
         string memory verify = "";
@@ -122,22 +135,43 @@ contract DeployV2Stack is Script {
             verify = string.concat(
                 verify,
                 sep,
-                '{"name":"', n[i], '","address":"', vm.toString(a[i]), '","contract":"', src[i],
-                ":", n[i], '","args":"', vm.toString(args[i]), '"}'
+                '{"name":"',
+                n[i],
+                '","address":"',
+                vm.toString(a[i]),
+                '","contract":"',
+                src[i],
+                ":",
+                n[i],
+                '","args":"',
+                vm.toString(args[i]),
+                '"}'
             );
         }
         return string.concat(
-            '{"chainId":', vm.toString(block.chainid),
-            ',"simulatedAtBlock":', vm.toString(block.number),
-            ',"broadcaster":"', vm.toString(p.broadcaster),
-            '","owner":"', vm.toString(p.owner),
-            '","ownershipPending":', p.owner == p.broadcaster ? "false" : "true",
-            ',"hookSalt":"', vm.toString(s.hookSalt),
+            '{"chainId":',
+            vm.toString(block.chainid),
+            ',"simulatedAtBlock":',
+            vm.toString(block.number),
+            ',"broadcaster":"',
+            vm.toString(p.broadcaster),
+            '","owner":"',
+            vm.toString(p.owner),
+            '","ownershipPending":',
+            p.owner == p.broadcaster ? "false" : "true",
+            ',"hookSalt":"',
+            vm.toString(s.hookSalt),
             '","stack":{"v2":{"label":"v2 stack (skim hook v2, constants bound)","status":"current","factory":"',
             vm.toString(address(s.factory)),
             '","deployedAt":null,"notes":"deployed by script/v2/DeployV2Stack.s.sol. factory ships deprecated (owner only) until the first coin ran a fee cycle"}}',
-            ',"addresses":{', flat, '}',
-            ',"contracts":[', contracts, '],"verify":[', verify, "]}"
+            ',"addresses":{',
+            flat,
+            "}",
+            ',"contracts":[',
+            contracts,
+            '],"verify":[',
+            verify,
+            "]}"
         );
     }
 
@@ -154,15 +188,29 @@ contract DeployV2Stack is Script {
         bool owned = i == 0 || i == 1 || i == 2 || i == 3 || i == 5 || i == 7 || i == 8;
         string memory state = i == 5 ? "deprecated" : (i == 2 || i == 4) ? "enabled" : "unknown";
         string memory note = i == 2
-            ? string.concat("CREATE2 via ", vm.toString(p.create2Deployer), " salt ", vm.toString(s.hookSalt))
+            ? string.concat(
+                "CREATE2 via ", vm.toString(p.create2Deployer), " salt ", vm.toString(s.hookSalt)
+            )
             : "v2 stack";
         return string.concat(
-            '{"name":"', name, '","address":"', vm.toString(a),
-            '","stack":"v2","role":"', role,
-            '","deployBlock":null,"deployTxHash":null,"deployedAt":null,"deployer":"', vm.toString(p.broadcaster),
-            '","source":{"repoPath":"', src, '","commit":null,"bytecodeMatch":"unverified"}',
-            ',"etherscanVerified":"unknown","owner":', owned ? string.concat('"', vm.toString(p.owner), '"') : "null",
-            ',"state":"', state, '","status":"current","provenance":"broadcast","chainVerified":false,"notes":"', note, '"}'
+            '{"name":"',
+            name,
+            '","address":"',
+            vm.toString(a),
+            '","stack":"v2","role":"',
+            role,
+            '","deployBlock":null,"deployTxHash":null,"deployedAt":null,"deployer":"',
+            vm.toString(p.broadcaster),
+            '","source":{"repoPath":"',
+            src,
+            '","commit":null,"bytecodeMatch":"unverified"}',
+            ',"etherscanVerified":"unknown","owner":',
+            owned ? string.concat('"', vm.toString(p.owner), '"') : "null",
+            ',"state":"',
+            state,
+            '","status":"current","provenance":"broadcast","chainVerified":false,"notes":"',
+            note,
+            '"}'
         );
     }
 }

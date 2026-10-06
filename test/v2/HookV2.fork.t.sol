@@ -29,13 +29,13 @@ import {Constants} from "../../src/Constants.sol";
 import {IArtCoinsHook} from "../../src/interfaces/IArtCoinsHook.sol";
 import {ArtCoinsFeeEscrowV2} from "../../src/v2/ArtCoinsFeeEscrowV2.sol";
 import {ArtCoinsTokenV2} from "../../src/v2/ArtCoinsTokenV2.sol";
-import {IArtCoinsFactoryV2} from "../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
-import {ArtCoinsLpLockerV2} from "../../src/v2/lp-lockers/ArtCoinsLpLockerV2.sol";
 import {ArtCoinsHookV2} from "../../src/v2/hooks/ArtCoinsHookV2.sol";
 import {HookCalldata} from "../../src/v2/hooks/libraries/HookCalldata.sol";
+import {IArtCoinsFactoryV2} from "../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsHookV2} from "../../src/v2/interfaces/IArtCoinsHookV2.sol";
 import {IArtCoinsMevSkimV2} from "../../src/v2/interfaces/IArtCoinsMevSkimV2.sol";
 import {IConstantsBound} from "../../src/v2/interfaces/IConstantsBound.sol";
+import {ArtCoinsLpLockerV2} from "../../src/v2/lp-lockers/ArtCoinsLpLockerV2.sol";
 import {ArtCoinsMevLinearSkimV2} from "../../src/v2/mev-modules/ArtCoinsMevLinearSkimV2.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
@@ -61,7 +61,9 @@ struct URExactInSingle {
 }
 
 interface IUniversalRouterLike {
-    function execute(bytes calldata commands, bytes[] calldata inputs, uint256 deadline) external payable;
+    function execute(bytes calldata commands, bytes[] calldata inputs, uint256 deadline)
+        external
+        payable;
 }
 
 /// exposes the internal hookData parser.
@@ -338,7 +340,9 @@ contract HookV2ForkTest is HookV2ForkBase {
 
     function _refundData(address to) internal pure returns (bytes memory) {
         return abi.encode(
-            IArtCoinsHook.PoolSwapData({mevModuleSwapData: abi.encode(to), poolExtensionSwapData: ""})
+            IArtCoinsHook.PoolSwapData({
+                mevModuleSwapData: abi.encode(to), poolExtensionSwapData: ""
+            })
         );
     }
 
@@ -357,7 +361,9 @@ contract HookV2ForkTest is HookV2ForkBase {
         uint256 charged = (a * BASELINE) / D;
         bytes memory actions = abi.encodePacked(uint8(0x06), uint8(0x0c), uint8(0x0f));
         bytes[] memory params = new bytes[](3);
-        params[0] = abi.encode(URExactInSingle(key, true, uint128(a), uint128(0), _refundData(address(this))));
+        params[0] = abi.encode(
+            URExactInSingle(key, true, uint128(a), uint128(0), _refundData(address(this)))
+        );
         params[1] = abi.encode(key.currency0, a);
         params[2] = abi.encode(key.currency1, uint256(0));
         bytes[] memory inputs = new bytes[](2);
@@ -366,7 +372,9 @@ contract HookV2ForkTest is HookV2ForkBase {
         uint256 eth0 = address(this).balance;
         uint256 b0 = _paid(bountyEoa);
         uint256 p0 = _paid(protocolR);
-        IUniversalRouterLike(ur).execute{value: a}(abi.encodePacked(uint8(0x10), uint8(0x04)), inputs, block.timestamp);
+        IUniversalRouterLike(ur).execute{value: a}(
+            abi.encodePacked(uint8(0x10), uint8(0x04)), inputs, block.timestamp
+        );
 
         uint256 spent = eth0 - address(this).balance; // r + charged
         uint256 fair = (_paid(bountyEoa) - b0) + (_paid(protocolR) - p0);
@@ -663,11 +671,15 @@ contract HookV2ForkTest is HookV2ForkBase {
 
         // V2H-08: recipients that can never receive eth
         p = _params(_defaults(address(hook)), address(1));
-        vm.expectRevert(abi.encodeWithSelector(ArtCoinsHookV2.RecipientCannotReceive.selector, address(hook)));
+        vm.expectRevert(
+            abi.encodeWithSelector(ArtCoinsHookV2.RecipientCannotReceive.selector, address(hook))
+        );
         hook.initializePool(p);
         p = _params(_defaults(bountyEoa), address(1));
         p.skim.protocolRecipient = payable(POOL_MANAGER);
-        vm.expectRevert(abi.encodeWithSelector(ArtCoinsHookV2.RecipientCannotReceive.selector, POOL_MANAGER));
+        vm.expectRevert(
+            abi.encodeWithSelector(ArtCoinsHookV2.RecipientCannotReceive.selector, POOL_MANAGER)
+        );
         hook.initializePool(p);
 
         p = _params(_defaults(bountyEoa), address(1));
@@ -814,12 +826,12 @@ contract HookV2ForkTest is HookV2ForkBase {
 
     function _closedErr() internal view returns (bytes memory) {
         return abi.encodeWithSelector(
-                CustomRevert.WrappedError.selector,
-                address(hook),
-                IHooks.beforeAddLiquidity.selector,
-                abi.encodeWithSelector(ArtCoinsHookV2.TaxedPoolLiquidityClosed.selector),
-                abi.encodeWithSelector(Hooks.HookCallFailed.selector)
-            );
+            CustomRevert.WrappedError.selector,
+            address(hook),
+            IHooks.beforeAddLiquidity.selector,
+            abi.encodeWithSelector(ArtCoinsHookV2.TaxedPoolLiquidityClosed.selector),
+            abi.encodeWithSelector(Hooks.HookCallFailed.selector)
+        );
     }
 
     /// D46: before arming (and only in the creation block) any PoolManager
@@ -886,7 +898,6 @@ contract HookV2ForkTest is HookV2ForkBase {
         (uint256 b,,) = token.pendingCanonical();
         assertEq(b, 0, "no budget left");
     }
-
 
     function test_venue_canonicalBuy_untaxed() public onlyFork {
         Launch memory l = _defaults(bountyEoa);
@@ -1337,13 +1348,21 @@ contract HookV2RealLockerTest is HookV2ForkBase {
         bytes memory actions = abi.encodePacked(uint8(0x02), uint8(0x0d));
         bytes[] memory params = new bytes[](2);
         params[0] = abi.encode(
-            k, int24(200_000), int24(202_000), uint256(1e18), type(uint128).max,
-            type(uint128).max, mallory, bytes("")
+            k,
+            int24(200_000),
+            int24(202_000),
+            uint256(1e18),
+            type(uint128).max,
+            type(uint128).max,
+            mallory,
+            bytes("")
         );
         params[1] = abi.encode(k.currency0, k.currency1);
         vm.prank(mallory);
         vm.expectRevert(_closed());
-        IPosmLike(POSM).modifyLiquidities{value: 1 ether}(abi.encode(actions, params), block.timestamp);
+        IPosmLike(POSM).modifyLiquidities{value: 1 ether}(
+            abi.encode(actions, params), block.timestamp
+        );
     }
 
     function _closed() internal view returns (bytes memory) {

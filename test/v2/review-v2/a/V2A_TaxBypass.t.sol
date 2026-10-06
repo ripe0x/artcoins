@@ -89,22 +89,24 @@ contract V2AActor is IUnlockCallback {
             Op memory o = ops[i];
             if (o.kind == SWAP) {
                 lastSwapCoin = pm.swap(
-                    o.key,
-                    IPoolManager.SwapParams({
+                        o.key,
+                        IPoolManager.SwapParams({
                         zeroForOne: o.zeroForOne,
                         amountSpecified: o.amount,
                         sqrtPriceLimitX96: o.zeroForOne
                             ? TickMath.MIN_SQRT_PRICE + 1
                             : TickMath.MAX_SQRT_PRICE - 1
                     }),
-                    ""
-                ).amount1();
+                        ""
+                    ).amount1();
             } else if (o.kind == SETTLE_COIN) {
                 pm.sync(Currency.wrap(coin));
                 IV2AErc20(coin).transfer(address(pm), uint256(o.amount));
                 pm.settle();
             } else if (o.kind == TAKE_COIN) {
-                if (lastSwapCoin > 0) pm.take(Currency.wrap(coin), address(this), uint256(lastSwapCoin));
+                if (lastSwapCoin > 0) {
+                    pm.take(Currency.wrap(coin), address(this), uint256(lastSwapCoin));
+                }
             } else {
                 pm.modifyLiquidity(
                     o.key,
@@ -192,7 +194,10 @@ abstract contract V2AStackBase is Test {
             1e27,
             tax,
             ArtCoinsTokenV2.CanonicalPool({
-                hook: address(hook), poolManager: address(pm), tickSpacing: TS, bountyRecipient: bounty
+                hook: address(hook),
+                poolManager: address(pm),
+                tickSpacing: TS,
+                bountyRecipient: bounty
             }),
             address(this)
         );
@@ -328,7 +333,7 @@ abstract contract V2AStackBase is Test {
         for (uint256 i; i < body.length; ++i) {
             body[i] = err[i + 4];
         }
-        (, , bytes memory reason,) = abi.decode(body, (address, bytes4, bytes, bytes));
+        (,, bytes memory reason,) = abi.decode(body, (address, bytes4, bytes, bytes));
         sel = bytes4(reason);
     }
 

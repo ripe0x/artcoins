@@ -433,7 +433,9 @@ contract BurnRouterV2ForkTest is P1Base {
         router.setMaxBurnPerCall(hi);
         assertEq(router.maxBurnPerCall(), hi);
         vm.prank(attacker);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
+        );
         router.setMaxBurnPerCall(1 ether);
     }
 

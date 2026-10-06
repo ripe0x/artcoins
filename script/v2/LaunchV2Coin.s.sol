@@ -9,9 +9,9 @@ import {IArtCoinsMevSkimV2} from "../../src/v2/interfaces/IArtCoinsMevSkimV2.sol
 import {IArtCoinsTokenV2} from "../../src/v2/interfaces/IArtCoinsTokenV2.sol";
 import {IConstantsBound} from "../../src/v2/interfaces/IConstantsBound.sol";
 
+import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Script, console2} from "forge-std/Script.sol";
 import {Vm} from "forge-std/Vm.sol";
-import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 
 interface IOwnedFactoryV2 {
     function owner() external view returns (address);
@@ -106,21 +106,33 @@ library LaunchV2Lib {
         require(IConstantsBound(t.hook).constantsHash() == h, "preflight: hook constantsHash");
         require(IConstantsBound(t.locker).constantsHash() == h, "preflight: locker constantsHash");
         require(IConstantsBound(t.mev).constantsHash() == h, "preflight: mev constantsHash");
-        require(IOwnedFactoryV2(t.factory).owner() == owner, "preflight: owner is not factory owner");
-        require(IOwnedFactoryV2(t.factory).tokenDeployer() != address(0), "preflight: no token deployer");
+        require(
+            IOwnedFactoryV2(t.factory).owner() == owner, "preflight: owner is not factory owner"
+        );
+        require(
+            IOwnedFactoryV2(t.factory).tokenDeployer() != address(0), "preflight: no token deployer"
+        );
         require(f.enabledHooks(t.hook), "preflight: hook not enabled");
         require(f.enabledLockers(t.locker), "preflight: locker not enabled");
         require(f.enabledMevModules(t.mev), "preflight: mev module not enabled");
-        require(IArtCoinsHookV2(t.hook).isLauncher(t.factory), "preflight: factory not hook launcher");
-        require(IArtCoinsLpLockerV2(t.locker).isLauncher(t.factory), "preflight: factory not locker launcher");
-        require(IArtCoinsMevSkimV2(t.mev).hook() == t.hook, "preflight: mev module bound to another hook");
+        require(
+            IArtCoinsHookV2(t.hook).isLauncher(t.factory), "preflight: factory not hook launcher"
+        );
+        require(
+            IArtCoinsLpLockerV2(t.locker).isLauncher(t.factory),
+            "preflight: factory not locker launcher"
+        );
+        require(
+            IArtCoinsMevSkimV2(t.mev).hook() == t.hook,
+            "preflight: mev module bound to another hook"
+        );
         require(f.protocolRecipient() != address(0), "preflight: protocol recipient unset");
         require(f.referralPayout().code.length != 0, "preflight: referral payout has no code");
         value = f.deployFee();
-        require(value == 0 || f.teamFeeRecipient() != address(0), "preflight: team fee recipient unset");
         require(
-            l.protocolBps <= Constants.MAX_PROTOCOL_FEE_BPS, "preflight: protocolBps above max"
+            value == 0 || f.teamFeeRecipient() != address(0), "preflight: team fee recipient unset"
         );
+        require(l.protocolBps <= Constants.MAX_PROTOCOL_FEE_BPS, "preflight: protocolBps above max");
 
         predicted = f.predictToken(owner, l.cfg);
         require(predicted.code.length == 0, "preflight: predicted token already deployed");
@@ -160,7 +172,10 @@ library LaunchV2Lib {
         require(f.isArtCoin(token), "launch: not an art coin");
         IArtCoinsFactoryV2.DeploymentInfoV2 memory info = f.deploymentInfo(token);
         poolId = info.poolId;
-        require(info.hook == t.hook && info.locker == t.locker && info.mevModule == t.mev, "launch: info");
+        require(
+            info.hook == t.hook && info.locker == t.locker && info.mevModule == t.mev,
+            "launch: info"
+        );
         require(info.version == Constants.STACK_VERSION, "launch: info version");
         IArtCoinsHookV2.PoolInfo memory pi = IArtCoinsHookV2(t.hook).poolInfo(poolId);
         require(pi.version == Constants.STACK_VERSION && pi.token == token, "launch: hook poolInfo");

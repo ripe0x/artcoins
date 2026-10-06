@@ -32,9 +32,8 @@ contract DeployV2StackForkTest is ForkStack {
     ///      file cannot be read (foundry.toml fs_permissions has no read entry
     ///      for script/v2/launch-configs). When it can, the file wins and must
     ///      equal this copy (test_launchConfig_embeddedCopyMatchesFile).
-    string internal constant EXAMPLE_JSON =
-        '{"example":true,"about":"credits engine style coin: treasury contract as bounty recipient,'
-        ' tax sink and only project reward slot. VENUE tax mode at 0 bps (rate tunable by the token admin up to taxBpsMax). native eth pool,'
+    string internal constant EXAMPLE_JSON = '{"example":true,"about":"credits engine style coin: treasury contract as bounty recipient,'
+        " tax sink and only project reward slot. VENUE tax mode at 0 bps (rate tunable by the token admin up to taxBpsMax). native eth pool,"
         ' 69 minute linear anti sniper skim from 68.69% down to the 6% baseline. replace every treasury placeholder (0x7ea5...0001) with the real treasury contract and set example to false before a broadcast.",'
         '"protocolBps":2000,"expectedToken":"0x0000000000000000000000000000000000000000","token":{"tokenAdmin":"0xCB43078C32423F5348Cab5885911C3B5faE217F9",'
         '"name":"Credits Example","symbol":"CREDX","salt":"0x0000000000000000000000000000000000000000000000000000000000000001",'
@@ -104,13 +103,17 @@ contract DeployV2StackForkTest is ForkStack {
             assertEq(o[i].owner(), broadcaster, "owner before accept");
             assertEq(o[i].pendingOwner(), LIVE_OWNER, "pending owner");
             vm.prank(stranger);
-            vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, stranger));
+            vm.expectRevert(
+                abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, stranger)
+            );
             o[i].acceptOwnership();
         }
         acceptV2Ownership(s, p);
         DeployV2Lib.check(s, p, true);
         vm.prank(broadcaster);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, broadcaster));
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, broadcaster)
+        );
         s.factory.setDeprecated(false);
 
         // D36: the hook refuses an escrow that does not list it as core depositor
@@ -281,8 +284,8 @@ contract DeployV2StackForkTest is ForkStack {
         swapExactIn(key, true, 0.5 ether, address(this), "");
 
         uint256 treasuryBefore = address(treasury).balance;
-        uint256 controllerBefore = address(s.controller).balance
-            + s.escrow.balances(address(s.controller), address(0));
+        uint256 controllerBefore =
+            address(s.controller).balance + s.escrow.balances(address(s.controller), address(0));
         vm.prank(keeperCaller);
         s.keeper.collectAndForward(coin, false, 0);
 

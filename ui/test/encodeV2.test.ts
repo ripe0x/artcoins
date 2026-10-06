@@ -29,7 +29,9 @@ const ctx = (over: Partial<LaunchContext> = {}): LaunchContext => ({
   airdrop: '0x6666666666666666666666666666666666666666',
   devBuy: '0x7777777777777777777777777777777777777777',
   protocolBps: 2000,
-  minProtocolSkimShareBps: 1667,
+  minProtocolSkimShareBps: 1000, // the deploy script value (D52), 1667 would leave the default form no room for a referral cap
+  minLpFee: 3000,
+  exemptStatus: null,
   deployFee: 69_000_000_000_000_000n,
   salt: `0x${'ab'.repeat(32)}` as Hex,
   ...over,
@@ -128,8 +130,11 @@ test('bounty share is capped by the factory minimum protocol share', () => {
   assert.equal(maxBountyBps(1667), 8333);
   assert.equal(maxBountyBps(0), 9999);
   const f = form();
-  f.pool.bountyPercent = 90;
+  f.pool.bountyPercent = 90; // the exact limit at a 10% floor
+  assert.ok(!validateLaunch(f, ctx()).some((i) => i.field === 'pool.bounty'));
+  f.pool.bountyPercent = 90.01;
   assert.ok(validateLaunch(f, ctx()).some((i) => i.field === 'pool.bounty'));
+  assert.ok(validateLaunch(f, ctx({ minProtocolSkimShareBps: 1667 })).some((i) => i.field === 'pool.bounty'));
 });
 
 test('mev window is limited to 180 minutes and the start to 90 percent and the baseline', () => {

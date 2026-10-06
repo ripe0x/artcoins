@@ -15,7 +15,7 @@ import { factoryV2Abi } from '../lib/abi/v2/factory';
 import { maxReferralCapSkim } from '../lib/launchRules';
 import { useAddressesOrNull } from '../lib/useChain';
 import { defaultLaunchForm } from '../lib/launchForm';
-import { generateSalt, percentToBps, percentToSkim, projectSideBps, skimToPercent, validateLaunch, type LaunchContext } from '../lib/encodeV2';
+import { generateSalt, maxBountyBps, percentToBps, percentToSkim, projectSideBps, skimToPercent, validateLaunch, type LaunchContext } from '../lib/encodeV2';
 import { ZERO_ADDRESS } from '../lib/constants';
 
 function StepCard({
@@ -112,6 +112,27 @@ export default function DeployPage() {
     [form.tax.mode, form.tax.exempt]
   );
   const exemptStatus = useExemptStatus(v2?.factory, exemptEntries, v2?.locker ?? ZERO_ADDRESS, v2?.hook ?? ZERO_ADDRESS);
+
+  // the defaults (lp fee, bounty, referral cap) come from coin 111. once the factory answers, pull them inside the
+  // factory's limits (min lp fee, bounty ceiling, referral cap maximum) so the untouched form is launchable.
+  // this only ever lowers or raises a default into range, it never overwrites a value that is already valid.
+  const limitsKey = state.ok ? `${state.minLpFee}:${state.minProtocolSkimShareBps}` : null;
+  const [limitsFor, setLimitsFor] = useState<string | null>(null);
+  if (limitsKey && limitsFor !== limitsKey) {
+    setLimitsFor(limitsKey);
+    const p = form.pool;
+    const bounty = Math.min(p.bountyPercent, maxBountyBps(state.minProtocolSkimShareBps) / 100);
+    const capMaxPct = maxReferralCapSkim(percentToSkim(p.baselineSkimPercent), percentToBps(bounty), state.minProtocolSkimShareBps) / 1_000;
+    const next = {
+      ...p,
+      lpFeePercent: Math.max(p.lpFeePercent, state.minLpFee / 10_000),
+      bountyPercent: bounty,
+      referralCapPercent: Math.min(p.referralCapPercent, capMaxPct),
+    };
+    if (next.lpFeePercent !== p.lpFeePercent || next.bountyPercent !== p.bountyPercent || next.referralCapPercent !== p.referralCapPercent) {
+      setForm((f) => ({ ...f, pool: next }));
+    }
+  }
 
   const ctx: LaunchContext = useMemo(
     () => ({

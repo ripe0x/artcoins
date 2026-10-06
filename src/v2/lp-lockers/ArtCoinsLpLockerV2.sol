@@ -251,8 +251,8 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         // D37: solady tokens (ArtCoinsTokenV2) fix the Permit2 allowance at
         // infinity and revert any approve to it; skip the erc20 approve and
         // its reset for them. Other tokens get the exact amount, reset after.
-        bool fixedInfinite = IERC20(token).allowance(address(this), address(permit2))
-            == type(uint256).max;
+        bool fixedInfinite =
+            IERC20(token).allowance(address(this), address(permit2)) == type(uint256).max;
         if (!fixedInfinite) SafeTransferLib.safeApprove(token, address(permit2), poolSupply);
         permit2.approve(
             token, address(positionManager), uint160(poolSupply), uint48(block.timestamp)

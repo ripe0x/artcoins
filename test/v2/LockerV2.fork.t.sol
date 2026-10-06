@@ -5,11 +5,11 @@ import {Vm} from "forge-std/Vm.sol";
 
 import {Constants} from "../../src/Constants.sol";
 import {ArtCoinsFeeEscrowV2} from "../../src/v2/ArtCoinsFeeEscrowV2.sol";
+import {ArtCoinsTokenV2} from "../../src/v2/ArtCoinsTokenV2.sol";
 import {IArtCoinsFactoryV2} from "../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsLpLockerV2} from "../../src/v2/interfaces/IArtCoinsLpLockerV2.sol";
 import {IConstantsBound} from "../../src/v2/interfaces/IConstantsBound.sol";
 import {ArtCoinsLpLockerV2} from "../../src/v2/lp-lockers/ArtCoinsLpLockerV2.sol";
-import {ArtCoinsTokenV2} from "../../src/v2/ArtCoinsTokenV2.sol";
 import {
     BlockingToken,
     GasBurner,
@@ -531,10 +531,7 @@ contract LockerV2ForkTest is ForkBase {
         t.symbol = "LKT";
         IArtCoinsFactoryV2.TaxConfigV2 memory tax; // mode NONE, nothing set
         ArtCoinsTokenV2.CanonicalPool memory canon = ArtCoinsTokenV2.CanonicalPool({
-            hook: hook,
-            poolManager: POOL_MANAGER,
-            tickSpacing: SPACING,
-            bountyRecipient: address(0)
+            hook: hook, poolManager: POOL_MANAGER, tickSpacing: SPACING, bountyRecipient: address(0)
         });
         ArtCoinsTokenV2 coin = new ArtCoinsTokenV2(t, 2 * SUPPLY, tax, canon, launcher);
         assertEq(coin.allowance(address(locker), PERMIT2), type(uint256).max);
@@ -552,13 +549,14 @@ contract LockerV2ForkTest is ForkBase {
         IArtCoinsLpLockerV2.TokenRewardInfoV2 memory info = locker.tokenRewards(address(coin));
         assertEq(info.numPositions, 3);
         for (uint256 i; i < 3; ++i) {
-            assertGt(IPositionManager(POSITION_MANAGER).getPositionLiquidity(info.positionId + i), 0);
+            assertGt(
+                IPositionManager(POSITION_MANAGER).getPositionLiquidity(info.positionId + i), 0
+            );
         }
         assertEq(coin.balanceOf(address(locker)), 0);
         assertEq(coin.allowance(address(locker), PERMIT2), type(uint256).max);
-        (uint160 p2amount,,) = IAllowanceTransferLike(PERMIT2).allowance(
-            address(locker), address(coin), POSITION_MANAGER
-        );
+        (uint160 p2amount,,) = IAllowanceTransferLike(PERMIT2)
+            .allowance(address(locker), address(coin), POSITION_MANAGER);
         assertEq(p2amount, 0);
 
         _trade(key);
@@ -590,9 +588,8 @@ contract LockerV2ForkTest is ForkBase {
         }
         assertTrue(sawExact);
         assertEq(coin.allowance(address(locker), PERMIT2), 0);
-        (uint160 p2amount,,) = IAllowanceTransferLike(PERMIT2).allowance(
-            address(locker), address(coin), POSITION_MANAGER
-        );
+        (uint160 p2amount,,) = IAllowanceTransferLike(PERMIT2)
+            .allowance(address(locker), address(coin), POSITION_MANAGER);
         assertEq(p2amount, 0);
         assertEq(locker.tokenRewards(address(coin)).numPositions, 2);
     }

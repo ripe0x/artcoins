@@ -767,7 +767,9 @@ contract TokenV2Test is TokenV2Base {
         uint256 before = token.balanceOf(address(this));
         BalanceDelta d = _buy(side, 1 ether);
         uint256 gross = uint128(d.amount1());
-        assertEq(token.balanceOf(address(this)) - before, gross - gross * BPS / 10_000, "side taxed");
+        assertEq(
+            token.balanceOf(address(this)) - before, gross - gross * BPS / 10_000, "side taxed"
+        );
     }
 
     // the D34 lp remove then re add tests were deleted under D46: removals no

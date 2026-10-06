@@ -231,9 +231,15 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         view
         returns (address)
     {
-        return _deployer().predict(
-            c.token, _supply(c.token.totalSupply), c.tax, _canon(c), address(this), _salt(sender, c)
-        );
+        return _deployer()
+            .predict(
+                c.token,
+                _supply(c.token.totalSupply),
+                c.tax,
+                _canon(c),
+                address(this),
+                _salt(sender, c)
+            );
     }
 
     /// @inheritdoc IArtCoinsFactoryV2
@@ -768,8 +774,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     ///         use `setDeprecated` to stop public launches.
     function setTokenDeployer(address deployer) external onlyOwner {
         if (deployer == address(0)) revert ZeroAddress();
-        (bool ok, bytes memory ret) =
-            deployer.staticcall(abi.encodeWithSignature("factory()"));
+        (bool ok, bytes memory ret) = deployer.staticcall(abi.encodeWithSignature("factory()"));
         if (!ok || ret.length != 32 || abi.decode(ret, (address)) != address(this)) {
             revert InvalidDeployer(deployer);
         }

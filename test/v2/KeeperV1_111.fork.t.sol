@@ -185,7 +185,10 @@ contract KeeperV1_111_ForkTest is Test {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool reported;
         for (uint256 i; i < logs.length; ++i) {
-            if (logs[i].emitter == address(keeper) && logs[i].topics[0] == CollectFlushKeeperV1.ConvertSkipped.selector) {
+            if (
+                logs[i].emitter == address(keeper)
+                    && logs[i].topics[0] == CollectFlushKeeperV1.ConvertSkipped.selector
+            ) {
                 reported = true;
                 bytes memory reason = abi.decode(logs[i].data, (bytes));
                 assertGt(reason.length, 0, "skip reason carries the revert data");

@@ -454,7 +454,9 @@ contract FeeAutoSwapperV2 is
         if (artIn == 0 || sqrtPriceX96 == 0) return 0;
         uint256 step = FullMath.mulDiv(artIn, 1 << 96, sqrtPriceX96);
         uint256 expected = FullMath.mulDiv(step, 1 << 96, sqrtPriceX96);
-        return FullMath.mulDiv(expected, _netPpm() * spotFloorBps, Constants.FEE_DENOMINATOR * Constants.BPS);
+        return FullMath.mulDiv(
+            expected, _netPpm() * spotFloorBps, Constants.FEE_DENOMINATOR * Constants.BPS
+        );
     }
 
     /// @dev D50: the pool's known fees, read from `hook.skimConfig(poolId)`
@@ -482,8 +484,8 @@ contract FeeAutoSwapperV2 is
 
     /// @dev 1 - baseline skim - lp fee, in FEE_DENOMINATOR units (>= 80% by the caps).
     function _netPpm() internal view returns (uint256) {
-        uint256 skimPpm = uint256(poolBaselineSkimBps)
-            * (Constants.FEE_DENOMINATOR / Constants.SKIM_DENOMINATOR);
+        uint256 skimPpm =
+            uint256(poolBaselineSkimBps) * (Constants.FEE_DENOMINATOR / Constants.SKIM_DENOMINATOR);
         return Constants.FEE_DENOMINATOR - skimPpm - poolLpFee;
     }
 

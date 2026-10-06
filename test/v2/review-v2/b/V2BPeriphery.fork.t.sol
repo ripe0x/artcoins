@@ -89,8 +89,7 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
     /// later, but `_finish` checks the floor against `ethIn` including that
     /// refundable skim. the balance only grows, so burns stop for good.
     function test_V2B01_burnRouter_bigBudgetNeverBurns_defaultSettings() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) =
-            _launchWith(Constants.TAX_MODE_NONE, BASELINE);
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(Constants.TAX_MODE_NONE, BASELINE);
 
         BurnRouterV2 small = _router(key, address(token));
         _fund(address(small), 10 ether);
@@ -135,8 +134,7 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
     /// owner levers at their bounds (impact 300 bps, floor 50%) do not save a
     /// 300 eth balance on the same 1000 eth pool.
     function test_V2B01_burnRouter_bricked_evenAtOwnerLimits() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) =
-            _launchWith(Constants.TAX_MODE_NONE, BASELINE);
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(Constants.TAX_MODE_NONE, BASELINE);
         BurnRouterV2 r = _router(key, address(token));
         r.setMaxImpactBps(Constants.BURN_IMPACT_MAX);
         r.setSpotFloorBps(Constants.SPOT_FLOOR_MIN_BPS);
@@ -182,8 +180,7 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
     // ── claims that hold: HARD mode flows through the real hook ───────────
 
     function test_holds_hardMode_swapperConvert() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) =
-            _launchWith(Constants.TAX_MODE_HARD, BASELINE);
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(Constants.TAX_MODE_HARD, BASELINE);
         V2BSink end = new V2BSink();
         FeeAutoSwapperV2 s = _swapper(key, address(token), address(end), 1e18);
         token.transfer(address(s), 1e18);
@@ -197,8 +194,7 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
     }
 
     function test_holds_hardMode_burnRouter() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) =
-            _launchWith(Constants.TAX_MODE_HARD, BASELINE);
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(Constants.TAX_MODE_HARD, BASELINE);
         BurnRouterV2 r = _router(key, address(token));
         _fund(address(r), 1 ether);
         uint256 supply0 = token.totalSupply();

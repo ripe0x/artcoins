@@ -310,7 +310,10 @@ contract HV2SwapSeqRouter is IUnlockCallback {
             if (amt == 0) amt = -pm.currencyDelta(address(this), coin);
             uint160 lim = st.limit;
             if (lim == 0) {
-                lim = st.zeroForOne ? 4295128740 : 1461446703485210103287273052203988822378723970341;
+                lim =
+                    st.zeroForOne
+                    ? 4_295_128_740
+                    : 1_461_446_703_485_210_103_287_273_052_203_988_822_378_723_970_341;
             }
             BalanceDelta d = pm.swap(
                 st.key,

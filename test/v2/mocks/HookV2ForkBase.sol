@@ -242,11 +242,16 @@ abstract contract HookV2ForkBase is Test {
 
     /// one swap through `seq`; returns the router's net deltas (negative =
     /// paid) as V4Router would settle them.
-    function _swapNet(PoolKey memory key, bool zeroForOne, int256 amount, uint160 limit, bytes memory hd)
-        internal
-        returns (int256 net0, int256 net1)
-    {
-        if (!zeroForOne) IHV2Erc20(Currency.unwrap(key.currency1)).transfer(address(seq), 1_000e18);
+    function _swapNet(
+        PoolKey memory key,
+        bool zeroForOne,
+        int256 amount,
+        uint160 limit,
+        bytes memory hd
+    ) internal returns (int256 net0, int256 net1) {
+        if (!zeroForOne) {
+            IHV2Erc20(Currency.unwrap(key.currency1)).transfer(address(seq), 1000e18);
+        }
         HV2SwapSeqRouter.Step[] memory st = new HV2SwapSeqRouter.Step[](1);
         st[0] = HV2SwapSeqRouter.Step(key, zeroForOne, amount, limit, hd);
         seq.run(st);

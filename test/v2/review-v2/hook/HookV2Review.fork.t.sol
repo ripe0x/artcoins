@@ -12,7 +12,6 @@ import {HV2AddRemoveRouter} from "../../mocks/HookV2Mocks.sol";
 import {Constants} from "../../../../src/Constants.sol";
 import {ArtCoinsTokenV2} from "../../../../src/v2/ArtCoinsTokenV2.sol";
 
-import {console2} from "forge-std/console2.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
@@ -20,6 +19,7 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {console2} from "forge-std/console2.sol";
 
 interface IErc20Min {
     function approve(address, uint256) external returns (bool);
@@ -62,7 +62,9 @@ contract RvHardNettingTest is RvPriorTxBase {
         router.run(key, -2000, 2000, 50e18, bytes32(uint256(77)), 0);
         (, uint256 o1, uint256 i1) = token.pendingCanonical();
         assertEq(o1, 0, "no out grant (the author's test checks only this)");
-        assertGt(i1, 1e18, "BUG: IN grant equal to the position principal survives, nothing settled it");
+        assertGt(
+            i1, 1e18, "BUG: IN grant equal to the position principal survives, nothing settled it"
+        );
         console2.log("leftover HARD inflow grant (coin wei):", i1);
     }
 

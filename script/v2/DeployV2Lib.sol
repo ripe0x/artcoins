@@ -150,13 +150,11 @@ library DeployV2Lib {
         // 3
         (s.hook, s.hookSalt) = _deployHook(p, address(s.escrow), address(s.allowlist));
         // 4, 5
-        s.locker = new ArtCoinsLpLockerV2(
-            p.broadcaster, p.positionManager, p.permit2, address(s.escrow)
-        );
+        s.locker =
+            new ArtCoinsLpLockerV2(p.broadcaster, p.positionManager, p.permit2, address(s.escrow));
         s.mev = new ArtCoinsMevLinearSkimV2(address(s.hook));
         // 6, 7 (D38)
-        s.factory =
-            new ArtCoinsFactoryV2(p.broadcaster, p.poolManager, p.protocolBps, p.deployFee);
+        s.factory = new ArtCoinsFactoryV2(p.broadcaster, p.poolManager, p.protocolBps, p.deployFee);
         s.tokenDeployer = new ArtCoinsDeployerV2(address(s.factory));
         s.factory.setTokenDeployer(address(s.tokenDeployer));
         // 8, 9
@@ -185,8 +183,9 @@ library DeployV2Lib {
         private
         returns (ArtCoinsHookV2 hook, bytes32 salt)
     {
-        bytes memory initCode =
-            abi.encodePacked(type(ArtCoinsHookV2).creationCode, hookArgs(p, escrow, allowlist));
+        bytes memory initCode = abi.encodePacked(
+            type(ArtCoinsHookV2).creationCode, hookArgs(p, escrow, allowlist)
+        );
         address predicted;
         (predicted, salt) = mineHookSalt(p.create2Deployer, keccak256(initCode));
         // same formula as HookMiner, checked once on the result
@@ -324,7 +323,9 @@ library DeployV2Lib {
 
     function _checkEscrow(Stack memory s) private view {
         ArtCoinsFeeEscrowV2 e = s.escrow;
-        require(e.isDepositor(address(s.hook)) && e.isCoreDepositor(address(s.hook)), "v2: hook dep");
+        require(
+            e.isDepositor(address(s.hook)) && e.isCoreDepositor(address(s.hook)), "v2: hook dep"
+        );
         require(
             e.isDepositor(address(s.locker)) && e.isCoreDepositor(address(s.locker)),
             "v2: locker dep"
@@ -461,11 +462,7 @@ library DeployV2Lib {
     }
 
     /// @notice abi encoded constructor args, for `forge verify-contract`.
-    function ctorArgs(Stack memory s, Params memory p)
-        internal
-        pure
-        returns (bytes[10] memory a)
-    {
+    function ctorArgs(Stack memory s, Params memory p) internal pure returns (bytes[10] memory a) {
         a[0] = abi.encode(p.broadcaster);
         a[1] = abi.encode(p.owner);
         a[2] = hookArgs(p, address(s.escrow), address(s.allowlist));

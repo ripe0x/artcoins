@@ -268,9 +268,13 @@ contract FeeAutoSwapperV2ForkTest is P1Base {
     function test_swapperV2_maxImpact_bounds() public {
         uint256 lo = Constants.BURN_IMPACT_MIN;
         uint256 hi = Constants.BURN_IMPACT_MAX;
-        vm.expectRevert(abi.encodeWithSelector(IFeeAutoSwapperV2.OutOfBounds.selector, lo - 1, lo, hi));
+        vm.expectRevert(
+            abi.encodeWithSelector(IFeeAutoSwapperV2.OutOfBounds.selector, lo - 1, lo, hi)
+        );
         swapper.setMaxImpactBps(lo - 1);
-        vm.expectRevert(abi.encodeWithSelector(IFeeAutoSwapperV2.OutOfBounds.selector, hi + 1, lo, hi));
+        vm.expectRevert(
+            abi.encodeWithSelector(IFeeAutoSwapperV2.OutOfBounds.selector, hi + 1, lo, hi)
+        );
         swapper.setMaxImpactBps(hi + 1);
         vm.expectEmit(false, false, false, true, address(swapper));
         emit FeeAutoSwapperV2.MaxImpactBpsSet(hi, lo);
@@ -287,7 +291,9 @@ contract FeeAutoSwapperV2ForkTest is P1Base {
         assertLe(_priceMoveBps(pre, _spot()), Constants.SWAPPER_SLIPPAGE_MIN, "slippage tighter");
 
         vm.prank(attacker);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
+        );
         swapper.setMaxImpactBps(100);
     }
 

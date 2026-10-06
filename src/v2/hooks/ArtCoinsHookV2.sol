@@ -445,7 +445,8 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
                 emit SkimRefunded(pid, to, over);
             }
             if (skim != 0) {
-                address synced = Currency.unwrap(TransientStateLibrary.getSyncedCurrency(poolManager));
+                address synced =
+                    Currency.unwrap(TransientStateLibrary.getSyncedCurrency(poolManager));
                 _split(pid, sender, escrow, skim, bps, r, att);
                 // a 2,300 gas recipient can still reach `sync`; undo it so a
                 // router that settles native without syncing is not broken.

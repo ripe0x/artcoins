@@ -3,8 +3,8 @@ pragma solidity ^0.8.26;
 
 import {Constants} from "../../Constants.sol";
 import {IArtCoinsFeeEscrowV2} from "../interfaces/IArtCoinsFeeEscrowV2.sol";
-import {IBurnRouterV2} from "../interfaces/IBurnRouterV2.sol";
 import {IArtCoinsHookV2} from "../interfaces/IArtCoinsHookV2.sol";
+import {IBurnRouterV2} from "../interfaces/IBurnRouterV2.sol";
 import {IConstantsBound} from "../interfaces/IConstantsBound.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
@@ -455,8 +455,8 @@ contract BurnRouterV2 is
 
     /// @dev 1 - baseline skim - lp fee, in FEE_DENOMINATOR units (>= 80% by the caps).
     function _netPpm() internal view returns (uint256) {
-        uint256 skimPpm = uint256(poolBaselineSkimBps)
-            * (Constants.FEE_DENOMINATOR / Constants.SKIM_DENOMINATOR);
+        uint256 skimPpm =
+            uint256(poolBaselineSkimBps) * (Constants.FEE_DENOMINATOR / Constants.SKIM_DENOMINATOR);
         return Constants.FEE_DENOMINATOR - skimPpm - poolLpFee;
     }
 
@@ -467,6 +467,8 @@ contract BurnRouterV2 is
         if (ethIn == 0 || sqrtPriceX96 == 0) return 0;
         uint256 step = FullMath.mulDiv(ethIn, sqrtPriceX96, 1 << 96);
         uint256 expected = FullMath.mulDiv(step, sqrtPriceX96, 1 << 96);
-        return FullMath.mulDiv(expected, _netPpm() * _spotFloorBps, Constants.FEE_DENOMINATOR * Constants.BPS);
+        return FullMath.mulDiv(
+            expected, _netPpm() * _spotFloorBps, Constants.FEE_DENOMINATOR * Constants.BPS
+        );
     }
 }
