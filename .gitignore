@@ -32,7 +32,7 @@ ui/.env
 
 # Node (script-js/)
 script-js/node_modules/
-script-js/package-lock.json
+# script-js/package-lock.json is committed (reproducible installs)
 
 # IDE
 .vscode/

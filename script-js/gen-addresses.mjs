@@ -3,6 +3,7 @@
 // verify-registry.mjs). Outputs, both committed:
 //   script/Addresses.sol                  solidity library, imported by forge scripts
 //   ui/src/lib/deployments.generated.ts   typescript constants, imported by ui/src/lib/config.ts
+//   README.md                             the table between <!-- deployments:start --> and <!-- deployments:end -->
 // Usage: node script-js/gen-addresses.mjs [--check]     (or: cd script-js && npm run gen:addresses)
 // --check writes nothing, exits 1 if a generated file differs from disk or ui/public/config.json drifts.
 // Output is a pure function of the registry (no timestamps), so reruns are byte identical.
@@ -16,6 +17,7 @@ const REGISTRY = path.join(ROOT, 'deployments/mainnet.json');
 const OUT_SOL = path.join(ROOT, 'script/Addresses.sol');
 const OUT_TS = path.join(ROOT, 'ui/src/lib/deployments.generated.ts');
 const UI_CONFIG = path.join(ROOT, 'ui/public/config.json');
+const README = path.join(ROOT, 'README.md');
 const check = process.argv.includes('--check');
 
 const reg = JSON.parse(fs.readFileSync(REGISTRY, 'utf8'));
@@ -220,7 +222,36 @@ function typescript() {
   return L.join('\n') + '\n';
 }
 
-const outputs = [[OUT_SOL, solidity()], [OUT_TS, typescript()]];
+// ---- readme deployments table ----
+const link = (a) => `[${a.slice(0, 6)}…${a.slice(-4)}](https://etherscan.io/address/${a})`;
+function readmeBlock() {
+  const rows = ['| stack | status | factory | hook | locker | escrow | module | coins |', '|---|---|---|---|---|---|---|---|'];
+  // oldest first, by factory deploy date
+  const ids = Object.keys(reg.stacks).sort((a, b) => reg.stacks[a].deployedAt.localeCompare(reg.stacks[b].deployedAt));
+  for (const id of ids) {
+    const st = reg.stacks[id];
+    const inStack = reg.contracts.filter((c) => c.stack === id);
+    const role = (r) => inStack.filter((c) => c.role === r);
+    const one = (r) => { const h = role(r); return h.length ? link(cs(h[h.length - 1].address)) : 'none'; };
+    const fac = contract(id, 'ArtCoinsFactory');
+    const mods = role('mevModule');
+    const mod = mods.length > 1 ? `${mods.length} modules, see registry` : one('mevModule');
+    const coins = reg.coins.filter((k) => k.stack === id).map((k) => `\`${k.symbol}\``).join(', ') || 'none';
+    const access = fac.state === 'deprecated' ? 'owner only' : 'public';
+    rows.push(`| ${id} (${st.deployedAt}) | ${st.status}, ${access} | ${one('factory')} | ${one('hook')} | ${one('locker')} | ${one('escrow')} | ${mod} | ${coins} |`);
+  }
+  return rows.join('\n');
+}
+const START = '<!-- deployments:start -->';
+const END = '<!-- deployments:end -->';
+function readme() {
+  const cur = fs.readFileSync(README, 'utf8');
+  const i = cur.indexOf(START), j = cur.indexOf(END);
+  if (i < 0 || j < i) die(`README.md needs ${START} and ${END} markers`);
+  return cur.slice(0, i + START.length) + '\n' + readmeBlock() + '\n' + cur.slice(j);
+}
+
+const outputs = [[OUT_SOL, solidity()], [OUT_TS, typescript()], [README, readme()]];
 let bad = 0;
 for (const [file, text] of outputs) {
   const rel = path.relative(ROOT, file);

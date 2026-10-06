@@ -4,18 +4,39 @@ permissions: {}
 
 on:
   push:
+    branches: [master, v2]
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
 env:
   FOUNDRY_PROFILE: ci
+  # One forge version for ci and local dev: `forge fmt --check` output changes
+  # between releases, so a floating install flags cosmetic diffs. Bump together
+  # with a repo wide `forge fmt`.
+  FOUNDRY_VERSION: v1.7.1
+  # Default public gateway used when the MAINNET_RPC_URL secret is not set.
+  DEFAULT_MAINNET_RPC: https://mainnet.gateway.tenderly.co
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # No network job: fmt, build + sizes at the ci profile, deterministic tests.
+  # Fork gated tests skip themselves (vm.skip) and are reported as skipped.
+  # ---------------------------------------------------------------------------
   check:
-    name: Foundry project
+    name: Foundry project (no network)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
+    env:
+      # Never touch the network: the harness honours SKIP_FORK_TESTS, and the
+      # unreachable url makes every other self forking suite skip in setUp.
+      SKIP_FORK_TESTS: "true"
+      MAINNET_RPC_URL: http://127.0.0.1:9
     steps:
       - uses: actions/checkout@v5
         with:
@@ -23,13 +44,9 @@ jobs:
           submodules: recursive
 
       - name: Install Foundry
-        # Pin to a specific release so CI's `forge fmt --check` matches local
-        # `forge fmt`. Without a pin, the action installs whatever's current
-        # at job start, which has caused CI to flag cosmetic diffs that local
-        # fmt doesn't produce.
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: v1.5.0
+          version: ${{ env.FOUNDRY_VERSION }}
 
       - name: Show Forge version
         run: forge --version
@@ -37,14 +54,123 @@ jobs:
       - name: Run Forge fmt
         run: forge fmt --check
 
-      - name: Run Forge build
+      - name: Run Forge build (sizes)
         run: forge build --sizes
 
+      - name: Size gate, ArtCoinsHookV2 headroom
+        # The hook only fits EIP-170 (24,576 bytes) at the ci / tune profile
+        # (optimizer_runs 200). Fail when it has under 1,024 bytes of runtime
+        # headroom so a small edit cannot silently push it over the limit.
+        run: |
+          set -euo pipefail
+          MIN_HEADROOM=1024
+          forge build --sizes --json > sizes.json
+          name=ArtCoinsHookV2
+          if ! jq -e --arg n "$name" 'has($n)' sizes.json > /dev/null; then
+            echo "::notice::$name not in the build output; size gate skipped"
+            exit 0
+          fi
+          size=$(jq -r --arg n "$name" '.[$n].runtime_size' sizes.json)
+          margin=$(jq -r --arg n "$name" '.[$n].runtime_margin' sizes.json)
+          echo "$name runtime size $size bytes, headroom $margin bytes (min $MIN_HEADROOM)"
+          if [ "$margin" -lt "$MIN_HEADROOM" ]; then
+            echo "::error::$name has only $margin bytes of EIP-170 headroom (min $MIN_HEADROOM)"
+            exit 1
+          fi
+
       - name: Run Forge tests
-        # CI runs the deterministic, network-free suite. Fork-gated tests
-        # detect the absence of a fork (no code at the mainnet PoolManager) and
-        # skip themselves, so they cost nothing here. The two self-forking
-        # suites call `vm.createSelectFork` unconditionally and would reach a
-        # public RPC on every run — exclude them. Run fork tests locally with
-        # `forge test --fork-url $MAINNET_RPC_URL` when needed.
+        # Deterministic, network free suite. Two suites call `vm.createSelectFork`
+        # unconditionally and are excluded; run them locally with a fork url when
+        # needed. Everything else that needs a fork skips and shows as skipped.
         run: forge test --no-match-contract "AutoBurnOpenTab|DeployConversionLockerAndWire" -vvv
+
+  # ---------------------------------------------------------------------------
+  # Fork job: the fork gated suites and test/v2 against a pinned mainnet block.
+  # ---------------------------------------------------------------------------
+  fork-tests:
+    name: Foundry fork tests (pinned mainnet block)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      # secret first, public gateway as the fallback (see `Resolve rpc` below).
+      MAINNET_RPC_SECRET: ${{ secrets.MAINNET_RPC_URL }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: ${{ env.FOUNDRY_VERSION }}
+
+      - name: Resolve rpc and pinned block
+        run: |
+          set -euo pipefail
+          rpc="${MAINNET_RPC_SECRET:-$DEFAULT_MAINNET_RPC}"
+          # The single source of truth for the block is ForkBase.FORK_BLOCK.
+          block=$(grep -oP 'FORK_BLOCK\s*=\s*\K[0-9_]+' test/v2/harness/ForkBase.sol | head -n1 | tr -d '_')
+          if [ -z "$block" ]; then
+            echo "::error::could not read FORK_BLOCK from test/v2/harness/ForkBase.sol"
+            exit 1
+          fi
+          echo "MAINNET_RPC_URL=$rpc" >> "$GITHUB_ENV"
+          echo "FORK_BLOCK=$block" >> "$GITHUB_ENV"
+          echo "fork block $block"
+
+      - name: Run fork tests
+        # `--fork-url` forks every test at the pinned block (cached after the
+        # first read). Retries and backoff ride out 429s from the public gateway.
+        # Suites that fork themselves in setUp read MAINNET_RPC_URL / FORK_BLOCK.
+        run: >
+          forge test
+          --no-match-contract "AutoBurnOpenTab|DeployConversionLockerAndWire"
+          --fork-url "$MAINNET_RPC_URL"
+          --fork-block-number "$FORK_BLOCK"
+          --fork-retries 8
+          --fork-retry-backoff 2000
+          -vvv
+
+  # ---------------------------------------------------------------------------
+  # ui: build and lint.
+  # ---------------------------------------------------------------------------
+  ui:
+    name: ui build and lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # TODO UI-18 (docs/v2/review/ui.md): `tsc -b` fails today (5 errors) and
+    # eslint reports 1 error, so this job is red on a clean checkout. It runs
+    # on every push so the failures stay visible. Remove continue-on-error as
+    # soon as the ui builds, then make the job required.
+    continue-on-error: true
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install (no lifecycle scripts)
+        run: npm ci --ignore-scripts
+
+      - name: Build
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Audit (runtime deps, informational)
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true

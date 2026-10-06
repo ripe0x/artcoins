@@ -1,3 +1,9 @@
+# NOTE (owner decision): merging v2 into master makes this job publish
+# everything on master to the public repo, including docs/v2/** (review
+# findings) and test/v2/** (including test/v2/review PoC tests), plus all
+# commit messages. Decide what v2 carries before it is merged. This
+# workflow does not filter paths.
+#
 # Mirror master to the public repo, ripe0x/artcoins.
 #
 # This repo is the private working repo. The public repo is a
@@ -12,7 +18,7 @@ name: mirror
 on:
   push:
     branches: [master]
-    tags: ["*"]
+    tags: ["*"]  # only tags reachable from master are mirrored, see the push step
   workflow_dispatch:
 
 concurrency:
@@ -33,7 +39,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Push master + tags to the public mirror
+      - name: Push master + master-reachable tags to the public mirror
         env:
           DEPLOY_KEY: ${{ secrets.MIRROR_DEPLOY_KEY }}
         run: |
@@ -46,6 +52,23 @@ jobs:
           chmod 600 ~/.ssh/mirror_key
           ssh-keyscan github.com >> ~/.ssh/known_hosts
           export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/mirror_key -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
-          # Fast-forward only (no --force): the mirror is append-only.
+
+          # Only tags whose commit is an ancestor of master are published. A
+          # tag on any other (wip, review) commit would upload that commit and
+          # its whole ancestry, so it is skipped with a warning. Never use
+          # `--tags`: push an explicit list.
+          refspecs=()
+          for tag in $(git tag --list); do
+            commit=$(git rev-parse "refs/tags/$tag^{commit}")
+            if git merge-base --is-ancestor "$commit" refs/remotes/origin/master; then
+              refspecs+=("refs/tags/$tag:refs/tags/$tag")
+            else
+              echo "::warning::tag $tag ($commit) is not reachable from master; not mirrored"
+            fi
+          done
+
+          # Fast-forward only (no --force, no leading +): the mirror is
+          # append-only. A diverged master or a moved tag fails the job loudly.
           git push git@github.com:ripe0x/artcoins.git \
-            refs/remotes/origin/master:refs/heads/master --tags
+            refs/remotes/origin/master:refs/heads/master \
+            "${refspecs[@]}"

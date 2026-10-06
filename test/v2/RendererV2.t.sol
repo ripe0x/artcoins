@@ -528,7 +528,7 @@ contract RendererV2Test is Test {
     }
 
     function test_renderV2_controlAndInvalidBytesYieldValidOutput() public {
-        tok.set(string(hex"610a0d0900ff41c0"), string(hex"0180"), string(hex"e282"), string(hex"ed a0 80"));
+        tok.set(string(hex"610a0d0900ff41c0"), string(hex"0180"), string(hex"e282"), string(hex"eda080"));
         _checkAll();
         tok.set(string(abi.encodePacked("a", hex"0a", "b")), "s", "d", "i");
         string memory svg = _svg(ex, address(tok));

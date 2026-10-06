@@ -61,3 +61,17 @@ optimizer_runs = 200
 yul = true
 [profile.ci.optimizer_details.yulDetails]
 stackAllocation = true
+
+
+# [profile.fork] — opt in fork runs against the pinned mainnet block:
+#   FOUNDRY_PROFILE=fork forge test --fork-retries 8 --fork-retry-backoff 2000 --match-path "test/v2/**"
+# Keep fork_block_number equal to ForkBase.FORK_BLOCK (test/v2/harness/ForkBase.sol).
+# Set MAINNET_RPC_URL (the tenderly public gateway works, rate limited; ci falls back to
+# it in the workflow env). forge 1.7.1 has no fork_retries config key, so retries are
+# cli flags only (so is --compute-units-per-second). Same optimizer as the default
+# profile; use FOUNDRY_PROFILE=ci for sizes.
+[profile.fork]
+eth_rpc_url = "${MAINNET_RPC_URL}"
+fork_block_number = 26130269
+rpc_storage_caching = { chains = ["mainnet"], endpoints = "remote" }
+no_storage_caching = false

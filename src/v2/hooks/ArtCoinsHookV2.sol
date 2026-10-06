@@ -196,15 +196,15 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         if (_started[pid]) revert MevModuleAlreadyInitialized();
         _started[pid] = true;
 
-        address mod = info.mevModule;
-        if (mod != address(0)) {
+        address module = info.mevModule;
+        if (module != address(0)) {
             uint256 start = Constants.DEFAULT_START_SKIM_BPS;
             uint256 window = Constants.DEFAULT_MEV_WINDOW;
             if (mevConfig.length != 0) (start, window) = abi.decode(mevConfig, (uint256, uint256));
             uint256 end = _skim[pid].baselineSkimBps;
             if (end > start) end = start;
-            IArtCoinsMevSkimV2(mod).initialize(pid, abi.encode(start, window, end));
-            emit MevModuleInitialized(pid, mod);
+            IArtCoinsMevSkimV2(module).initialize(pid, abi.encode(start, window, end));
+            emit MevModuleInitialized(pid, module);
         }
         address ext = info.extension;
         if (ext != address(0)) {
@@ -235,8 +235,8 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         PoolId pid = key.toId();
         PoolInfo storage info = _info[pid];
         if (block.timestamp < uint256(info.createdAt) + Constants.MAX_MEV_WINDOW) {
-            address mod = info.mevModule;
-            if (mod != address(0) && _started[pid] && block.timestamp < _windowEnd(mod, pid)) {
+            address module = info.mevModule;
+            if (module != address(0) && _started[pid] && block.timestamp < _windowEnd(module, pid)) {
                 revert MevWindowActive();
             }
         }
@@ -492,8 +492,8 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         bps = baseline;
         PoolInfo storage info = _info[pid];
         if (block.timestamp >= uint256(info.createdAt) + Constants.MAX_MEV_WINDOW) return bps;
-        address mod = info.mevModule;
-        if (mod == address(0)) return bps;
+        address module = info.mevModule;
+        if (module == address(0)) return bps;
         bytes4 sel = IArtCoinsMevSkimV2.currentSkimBps.selector;
         uint256 v;
         uint256 active;
@@ -501,7 +501,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
             let m := mload(0x40)
             mstore(m, sel)
             mstore(add(m, 0x04), pid)
-            if and(staticcall(_MODULE_GAS, mod, m, 0x24, m, 0x40), gt(returndatasize(), 0x3f)) {
+            if and(staticcall(_MODULE_GAS, module, m, 0x24, m, 0x40), gt(returndatasize(), 0x3f)) {
                 v := mload(m)
                 active := mload(add(m, 0x20))
             }
@@ -510,13 +510,13 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     }
 
     /// @dev Module `windowEnd`; 0 (no lock) on failure.
-    function _windowEnd(address mod, PoolId pid) private view returns (uint256 end) {
+    function _windowEnd(address module, PoolId pid) private view returns (uint256 end) {
         bytes4 sel = IArtCoinsMevSkimV2.windowEnd.selector;
         assembly ("memory-safe") {
             let m := mload(0x40)
             mstore(m, sel)
             mstore(add(m, 0x04), pid)
-            if and(staticcall(_MODULE_GAS, mod, m, 0x24, m, 0x20), gt(returndatasize(), 0x1f)) {
+            if and(staticcall(_MODULE_GAS, module, m, 0x24, m, 0x20), gt(returndatasize(), 0x1f)) {
                 end := mload(m)
             }
         }
