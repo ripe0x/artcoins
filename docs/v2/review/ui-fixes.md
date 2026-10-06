@@ -78,3 +78,52 @@ with neither, the deploy page shows the closed banner ("launches are owner only 
 | price impact on the live pool | a 0.05 eth buy of coin 111 shows 6.8% against mid, that is the 0.5% lp fee plus the 6% baseline skim plus curve depth. the ui shows it and asks for a confirmation only above 10% |
 | dev buy size | the default curve is steep: 0.1 eth buys about 3.1e8 coins of a 1e9 supply, not the 9e8 a flat price would suggest. this is why `minTokenOut` comes from the curve and is required |
 | `git` | `ui/src/pages/FeeFlowPage.tsx` is deleted from the working tree and was also removed from the index with `git rm --cached` (a staged deletion). nothing was committed |
+
+## package u2: factory rules, referral escrow claim (D46, D47, D52, D53, D57)
+
+scope: `ui/**` and this file. `deployments.generated.ts` untouched. no dependency changed.
+
+### what changed
+
+| area | change | files |
+|---|---|---|
+| referral cap | max = `floor(baselineSkimBps * (BPS - bountyBps - minProtocolSkimShareBps) / BPS)`, clamped to the 1% ceiling, zero when the bounty leaves no room. same integer inequality as `_validateFee` (`ReferralCapAboveProtocolFloor`). slider max follows the baseline and bounty on the form, an over max value shows the maximum and a "set it" button, the validator blocks it. `minProtocolSkimShareBps` is read from the factory | `lib/launchRules.ts`, `lib/encodeV2.ts`, `components/PoolConfigForm.tsx` |
+| lp fee floor | `minLpFee()` read from the factory (new in the abi), slider min and validator error below it (`LpFeeBelowMinimum`) | `lib/factoryState.ts`, `lib/encodeV2.ts`, `components/PoolConfigForm.tsx` |
+| string caps | name 64, symbol 16, image 2048, metadata 4096, context 4096, in utf8 bytes via `TextEncoder`, on the exact value the builder sends (name, symbol, image trimmed). live byte counters, the char `maxLength` on name and symbol is gone. a unit test reads `ArtCoinsTokenV2.sol` and fails if the numbers drift | `lib/constants.ts`, `lib/launchRules.ts`, `components/TokenConfigForm.tsx`, `components/formUi.tsx` |
+| tax exempt allowlist | per entry reads `exemptAllowed`, `enabledEscrows`, `enabledExtensions` (the three ways `_validateTax` lets an entry through; this launch's locker and hook are known client side). a refused entry shows "not allowed by the launcher owner" and blocks the launch. unread entries block too (never assumed allowed). duplicates rejected | `lib/factoryState.ts` (`useExemptStatus`), `lib/launchRules.ts`, `lib/encodeV2.ts`, `components/TaxForm.tsx`, `pages/DeployPage.tsx` |
+| tax mode text | VENUE: side pools taxed. HARD: side pools blocked, and listing a v2 pair later traps its lps (they cannot withdraw, their weth is stuck). both modes: liquidity on the canonical pool is locker only, third party lp goes to side pools (D46). NONE: canonical pool stays open | `components/TaxForm.tsx`, `lib/encodeV2.ts` (hard warning), `components/ReviewAndDeploy.tsx` |
+| protocol floor text | "protocol keeps at least X% of the skim" now states it holds for referred swaps too (D52, the factory wires the floor into pool init since 0ff16f3) and the referral cap maximum is shown on the pool step, the header strip and the review step | `components/PoolConfigForm.tsx`, `pages/DeployPage.tsx`, `components/ReviewAndDeploy.tsx` |
+| defaults | once the factory answers, the coin 111 defaults are pulled inside its limits (lp fee up to the minimum, bounty down to the ceiling, referral cap down to the maximum) so an untouched form launches. only ever moves a value that is out of range | `pages/DeployPage.tsx` |
+| referral payout | v2 default payout is the escrow (D57). the referral page asks the coin's factory `enabledEscrows(payout)` (or matches the stack escrow) and then shows an escrow panel: explains `claim(referrer, address(0))`, anyone may trigger it, eth goes to the referrer, `selfClaimOnly` and `claimTo`. balance read `balances(referrer, 0)`, simulated claim, receipt checked. a typed address claims for another referrer. v1 coins and a non escrow v2 payout keep the old ReferralPayout flow | `components/EscrowClaim.tsx`, `lib/escrowClaim.ts`, `pages/ReferralsPage.tsx` |
+| abis | factory and escrow abis now come from the contract artifacts `ArtCoinsFactoryV2` and `ArtCoinsFeeEscrowV2` (superset of the interface: `minLpFee`, `exemptAllowed`, `tokenDeployer`, `owner`, additive errors). the generator fails if a contract abi ever loses an interface item. other v2 abis still come from the interfaces. regenerated, hook and token abis picked up the current interfaces | `scripts/gen-abis.mjs`, `lib/abi/v2/*` |
+
+### checks
+
+| check | result |
+|---|---|
+| build artifacts | `/tmp/claude-0/forge.sh build --skip "test/**" --skip script` |
+| `npm run gen:abi` then `npm run check:abi` | abis match artifacts |
+| `npm run build` | passes (`tsc -b` incl. tests, then vite). the vite `eval` warning is from a dependency and was there before |
+| `npm run lint` | 0 errors, 0 warnings |
+| `npm test` | 47 pass. new `test/launchRules.test.ts`: referral cap worked values, tightness (max passes the bigint solidity expression, max+1 fails) on a grid, negative room, validator at and over the cap, floor 1667 vs 1000; utf8 caps at the boundary per field, multibyte (2, 3, 4 byte chars), trimmed fields, drift guards against `ArtCoinsTokenV2.sol` and `Constants.sol`; lp fee floor; exempt allowlist (allowed, refused, unread, no factory, duplicates); escrow claim selector against the forge artifact and the self claim only block |
+| `npm run smoke` | server render ok for every route (no wallet) |
+
+### things to know
+
+| item | detail |
+|---|---|
+| default form vs the floor | the coin 111 style defaults (bounty 83.33%) leave exactly 16.67% for the protocol. at the deploy script floor of 10% the max cap is 0.4% (default 0.25% passes). at a floor of 16.67% or more the maximum is 0 and the bounty default is clamped down by the new defaults step. the old unit test ctx used 1667, changed to the script value 1000 |
+| exempt reads | three reads per entry (max 16 entries, one multicall). the factory also requires an exempt entry to have code (`InvalidTaxConfig`), the ui does not check code, the launch simulation shows it |
+| escrow vs page text | the escrow balance is per address across all coins and any failed lp fee push, the page says so |
+| not browser tested | wallet prompts and the claim flow were only type checked and server rendered here |
+
+### still needs the deployed v2 addresses or other owners
+
+| item | blocked on |
+|---|---|
+| v2 stack (`V2` export or `VITE_V2_*`, with `VITE_V2_ESCROW` for the stack fallback match) | v2 deploy and registry entry |
+| run a launch on a fork against the deployed v2 factory with the encoder output, including a venue tax launch with an allowlisted and a refused exempt entry, and an over cap referral and a below min lp fee launch to confirm the revert names match the ui messages | v2 deploy |
+| run a referred swap on a v2 coin, then the escrow claim from the ui against the deployed escrow, with and without `selfClaimOnly` | v2 deploy, a browser |
+| the owner must allowlist (`setExemptAllowed`) the fee swapper, burn router and any venue helper before launches can exempt them. the form only shows what the factory says | launcher owner |
+| the referral page matches the escrow through `enabledEscrows`: the escrow must be enabled on the factory (`setEscrow(escrow, true)` in the deploy script) or `VITE_V2_ESCROW` set | deploy script, config |
+| escrow admin ui (`setSelfClaimOnly`, `claimTo` buttons), vault and airdrop claim pages, tax venue admin actions | product decision |

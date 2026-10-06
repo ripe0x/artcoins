@@ -138,7 +138,7 @@ const solidityOk = (cap: number, baseline: number, bounty: number, min: number):
 test('referral cap maximum: worked values', () => {
   // live coin 111 style fees, protocol floor 10% of the skim: 6000 * (10000 - 8333 - 1000) / 10000 = 400.2
   assert.equal(maxReferralCapSkim(6000, 8333, 1000), 400);
-  // floor 16.67%: 6000 * 1667 / 10000 = 1000.2 -> wait that is room 1667 - 0, bounty 8333 leaves 0
+  // floor 16.67% with bounty 83.33%: the two take the whole skim, no room left for a referral
   assert.equal(maxReferralCapSkim(6000, 8333, 1667), 0);
   // no bounty, no floor: room is the whole skim, 6000 * 10000 / 10000 = 6000, clamped to the 1% ceiling
   assert.equal(maxReferralCapSkim(6000, 0, 0), C.MAX_REFERRAL_CAP_OF_VOLUME);
@@ -301,11 +301,20 @@ test('escrow claim blocks: nothing to claim, and self claim only for a stranger'
   assert.equal(escrowClaimBlock({ balance: 5n, selfClaimOnly: true, caller: REFERRER.toLowerCase() as Address, referrer: REFERRER }), null);
 });
 
-test('factory abi carries the additive reads the form uses', () => {
-  for (const name of ['minLpFee', 'minProtocolSkimShareBps', 'exemptAllowed', 'enabledEscrows', 'enabledExtensions', 'owner']) {
-    assert.ok(getAbiItem({ abi: factoryV2Abi, name }), name);
-  }
-  for (const name of ['ExemptNotAllowed', 'ReferralCapAboveProtocolFloor', 'LpFeeBelowMinimum', 'StringTooLong']) {
-    assert.ok(getAbiItem({ abi: factoryV2Abi, name }), name);
+test('factory abi carries the additive reads and errors the form uses', () => {
+  const names = new Set(factoryV2Abi.map((x) => ('name' in x ? String(x.name) : '')));
+  for (const name of [
+    'minLpFee',
+    'minProtocolSkimShareBps',
+    'exemptAllowed',
+    'enabledEscrows',
+    'enabledExtensions',
+    'owner',
+    'ExemptNotAllowed',
+    'ReferralCapAboveProtocolFloor',
+    'LpFeeBelowMinimum',
+    'StringTooLong',
+  ]) {
+    assert.ok(names.has(name), name);
   }
 });
