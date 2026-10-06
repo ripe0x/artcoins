@@ -163,7 +163,7 @@ export default function DeployPage() {
       ? 'Launches are owner only on the current factory (its deprecated() flag is set), and the v2 launcher is not deployed yet. Public launches open with v2.'
       : 'The v2 launcher is not configured in this build, so this page cannot send a launch.';
   else if (state.deprecated && !isOwner)
-    pageBlock = 'Launches are owner only on the current factory (deprecated() is true). Only the factory owner can launch until it is reopened.';
+    pageBlock = 'Launches are owner only on the v2 factory (deprecated() is true). Only the factory owner can launch until it is reopened.';
 
   // the most a referrer may be paid for the fees on the form (D52), shown next to the factory numbers
   const refCapMaxPercent =

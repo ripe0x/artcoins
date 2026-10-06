@@ -21,6 +21,7 @@ const NOISE = [
   /Failed to load resource: net::ERR_(NAME_NOT_RESOLVED|CONNECTION_REFUSED|TUNNEL_CONNECTION_FAILED|CERT|INTERNET_DISCONNECTED|PROXY)/i,
   /Download the React DevTools/i,
   /Lit is in dev mode/i,
+  /Error checking Cross-Origin-Opener-Policy: Failed to fetch/i, // reown's remote header probe, blocked by the sandbox proxy
 ];
 
 export function isNoise(e: ConsoleEntry): boolean {

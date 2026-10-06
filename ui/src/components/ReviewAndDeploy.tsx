@@ -156,7 +156,7 @@ export default function ReviewAndDeploy({ form, ctx, v2, state, pageBlock, suppl
           <Row label="Bounty share of skim" value={pct(form.pool.bountyPercent)} />
           <Row
             label="Referral cap"
-            value={`${pct(form.pool.referralCapPercent, 3)} of volume (maximum for these fees ${pct(maxReferralCapSkim(percentToSkim(form.pool.baselineSkimPercent), percentToBps(form.pool.bountyPercent), ctx.minProtocolSkimShareBps) / 1_000, 3)}), claimed from the fee escrow`}
+            value={`${pct(form.pool.referralCapPercent, 3)} of volume (maximum for these fees ${pct(maxReferralCapSkim(percentToSkim(form.pool.baselineSkimPercent), percentToBps(form.pool.bountyPercent), ctx.minProtocolSkimShareBps) / 1_000, 3)}), paid to the referrer on each swap`}
           />
           <Row label="Protocol keeps at least" value={`${pct(ctx.minProtocolSkimShareBps / 100)} of the skim`} />
           <Row label="Anti sniper" value={mev.enabled ? `${pct(mev.startPercent)} decaying to ${pct(form.pool.baselineSkimPercent)} over ${mev.windowMin} min` : 'Off'} />

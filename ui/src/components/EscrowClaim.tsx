@@ -13,7 +13,7 @@ import InfoCard from './InfoCard';
 import InfoRow from './InfoRow';
 import { inputClass } from './formStyles';
 
-/** Claim panel for referral earnings held in the v2 fee escrow. Anyone may trigger a claim, the eth goes to the referrer. */
+/** Claim panel for referral fees the hook could not push and the v2 fee escrow holds instead (D59). Anyone may trigger a claim, the eth goes to the referrer. */
 export default function EscrowClaim({ escrow, chainId }: { escrow: Address; chainId: number }) {
   const gate = useWalletGate();
   const client = usePublicClient();
@@ -65,9 +65,10 @@ export default function EscrowClaim({ escrow, chainId }: { escrow: Address; chai
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-300 space-y-2">
-        <p className="font-medium text-zinc-100">Referral earnings are claimed from the fee escrow</p>
+        <p className="font-medium text-zinc-100">Referral earnings that could not be delivered</p>
         <p>
-          On this coin the hook does not send referral fees to a wallet. It credits the referrer in the fee escrow, as ETH. The claim is{' '}
+          On this coin the hook sends each referral fee straight to the referrer, in ETH, during the swap. Only a payment the referrer could not
+          receive (a contract that rejects ETH with 2,300 gas) is credited in the fee escrow, and that balance is claimed here. The claim is{' '}
           <code className="text-xs">claim(referrer, address(0))</code> on the escrow, and anyone may send it: the ETH always goes to the referrer. A
           referrer that wants only itself to trigger claims can turn on self claim only, and can use <code className="text-xs">claimTo</code> to send its
           balance to another address.

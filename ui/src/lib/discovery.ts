@@ -1,5 +1,5 @@
-// Token discovery from the launch events of every factory in play: the current (v1) factory from the
-// registry and the v2 factory when one is configured. Scans start at the registry deploy block, never
+// Token discovery from the launch events of every factory in play: the current (v1) factory and the legacy
+// factory (LAYER) from the registry, and the v2 factory when one is configured. Scans start at the registry deploy block, never
 // block 0, and shrink the range on rpc errors instead of walking 2000 block pages (UI-12).
 import { getAbiItem, type Address, type Hex, type PublicClient } from 'viem';
 import { factoryV1Abi } from './abi/v1/factory';
@@ -16,6 +16,8 @@ export interface TokenRecord {
   version: 1 | 2;
   /** the registry factory whose log announced this token. The only trust signal the list carries */
   factory: Address;
+  /** announced by the frozen legacy factory (its hook has no skim config, its pool may pair with weth) */
+  legacy: boolean;
   token: Address;
   admin: Address;
   sender: Address;
@@ -43,12 +45,19 @@ export interface FactorySource {
   version: 1 | 2;
   factory: Address;
   fromBlock: bigint;
+  /** the registry's legacy stack: same TokenCreated event as the current factory, older hook and locker */
+  legacy?: boolean;
 }
 
-/** The factories to scan on a chain: always the current stack, plus v2 when configured. */
+/** The factories to scan on a chain: the current stack, the legacy stack (LAYER), plus v2 when configured.
+ *  The legacy factory emits the same TokenCreated event as the current one, so it is scanned as a v1 source.
+ *  The open stack launched no coin and is not scanned. */
 export function factorySources(chainId: number): FactorySource[] {
   if (chainId !== 1) return [];
-  const out: FactorySource[] = [{ version: 1, factory: STACKS.current.factory, fromBlock: STACKS.current.deployBlock }];
+  const out: FactorySource[] = [
+    { version: 1, factory: STACKS.current.factory, fromBlock: STACKS.current.deployBlock },
+    { version: 1, factory: STACKS.legacy.factory, fromBlock: STACKS.legacy.deployBlock, legacy: true },
+  ];
   const v2 = getV2Stack(chainId);
   if (v2) out.push({ version: 2, factory: v2.factory, fromBlock: v2.deployBlock });
   return out;
@@ -82,6 +91,7 @@ async function scanV1(client: PublicClient, src: FactorySource, head: bigint): P
     out.push({
       version: 1,
       factory: src.factory,
+      legacy: !!src.legacy,
       token: a.tokenAddress,
       admin: a.tokenAdmin,
       sender: a.msgSender,
@@ -119,6 +129,7 @@ async function scanV2(client: PublicClient, src: FactorySource, head: bigint): P
     out.push({
       version: 2,
       factory: src.factory,
+      legacy: false,
       token: a.token,
       admin: c.token.tokenAdmin,
       sender: a.sender,

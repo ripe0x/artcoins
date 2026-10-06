@@ -74,8 +74,7 @@ test('buy 111 with 0.01 eth, then sell half back', async ({ page, makeWallet, co
   expect(consoleLog.filter((e) => e.type !== 'warning' && !isNoise(e))).toEqual([]);
 });
 
-test('selling more than the balance says "Insufficient 111" and sends nothing', async ({ page, makeWallet }) => {
-  test.fail(true, 'known bug: the permit2 approval step hides the balance check, see docs/v2/review/ui-e2e.md (UI-E2E-02)');
+test('selling more than the balance says "Insufficient 111", offers no approval and sends nothing', async ({ page, makeWallet }) => {
   const wallet = await makeWallet({ label: 'overbalance' });
   await fund(wallet.address, '0.1');
   await page.goto(`/tokens/${COIN_111}`);
@@ -83,6 +82,11 @@ test('selling more than the balance says "Insufficient 111" and sends nothing', 
   await page.getByRole('button', { name: 'Sell', exact: true }).click();
   await page.getByPlaceholder('0.0').fill('100000'); // the wallet holds 0
   await expect(page.getByText(/^Min received/)).toBeVisible({ timeout: 90_000 });
-  // today: "2. Let the router spend it for 10 minutes", enabled
-  await expect(page.getByRole('button', { name: 'Insufficient 111' })).toBeVisible({ timeout: 10_000 });
+  const insufficient = page.getByRole('button', { name: 'Insufficient 111' });
+  await expect(insufficient).toBeVisible({ timeout: 10_000 });
+  await expect(insufficient).toBeDisabled();
+  // no step 1 / step 2 approval to sign for coins the wallet does not hold
+  await expect(page.getByRole('button', { name: /^1\. Approve/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^2\. Let the router spend/ })).toHaveCount(0);
+  expect(wallet.sent.length).toBe(0);
 });

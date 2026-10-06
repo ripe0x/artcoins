@@ -1,5 +1,6 @@
-// Referral earnings on a v2 coin are credited to the referrer in the v2 fee escrow (D57, the factory's
-// default `referralPayout`), as native eth (token address(0)). They are claimed with
+// On a v2 coin the hook pushes each referral fee straight to the referrer (D59). Only a push the referrer could
+// not receive is credited to it in the v2 fee escrow (D57, the factory's default `referralPayout`), as native
+// eth (token address(0)). That fallback balance is claimed with
 // `claim(referrer, address(0))`. Anyone may send that call, the eth always goes to the referrer, unless
 // the referrer turned on `selfClaimOnly`, then only the referrer may.
 import type { Address } from 'viem';

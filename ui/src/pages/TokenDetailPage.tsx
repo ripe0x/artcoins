@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { useReadContract, useReadContracts } from 'wagmi';
+import { usePublicClient, useReadContract, useReadContracts } from 'wagmi';
+import { useQuery } from '@tanstack/react-query';
 import type { Address, Hex } from 'viem';
 
 import InfoCard from '../components/InfoCard';
@@ -29,6 +30,9 @@ import { useToken } from '../lib/useTokens';
 import { useAddressesOrNull } from '../lib/useChain';
 import { getV2Stack } from '../lib/v2';
 import { impliedFdvEth } from '../lib/curve';
+import { classifyPool } from '../lib/swap';
+import { readContractUri } from '../lib/contractUri';
+import { useChainNow } from '../lib/useChainNow';
 
 const ZERO = '0x0000000000000000000000000000000000000000';
 
@@ -71,6 +75,8 @@ export default function TokenDetailPage() {
   const poolKey = rewardsView?.poolKey ?? null;
   const poolId: Hex | undefined = useMemo(() => (poolKey ? computePoolId(poolKey) : undefined), [poolKey]);
   // the pool this record announced must be the pool the locker holds, else do not trade it
+  const pairKind = poolKey && record && addresses ? classifyPool(poolKey, record.token, addresses.weth) : null;
+  const pairLabel = !poolKey ? '…' : pairKind === 'native' ? 'native ETH' : pairKind === 'weth' ? 'WETH' : 'not a native ETH or WETH pair';
   const poolMatches = !!poolKey && !!record && poolId?.toLowerCase() === record.poolId.toLowerCase();
 
   // ── 2. token, hook and mev reads ──
@@ -85,7 +91,6 @@ export default function TokenDetailPage() {
       { address: t, abi: tokenV1Abi, functionName: 'admin' },
       { address: t, abi: tokenV1Abi, functionName: 'imageUrl' },
       { address: t, abi: tokenV1Abi, functionName: 'metadata' },
-      { address: t, abi: tokenV1Abi, functionName: 'contractURI' },
       { address: t, abi: tokenV1Abi, functionName: 'isVerified' },
       { address: t, abi: tokenV1Abi, functionName: 'metadataRenderer' },
       { address: record.hook, abi: record.version === 2 ? hookV2Abi : hookV1Abi, functionName: 'skimConfig', args: [poolId] },
@@ -106,10 +111,24 @@ export default function TokenDetailPage() {
   const currentAdmin = r(3) as Address | undefined;
   const imageUrl = r(4) as string | undefined;
   const metadataText = r(5) as string | undefined;
-  const contractURI = r(6) as string | undefined;
-  const creatorConfirmed = r(7) as boolean | undefined;
-  const metadataRenderer = r(8) as Address | undefined;
-  const skim = normalizeSkim(r(9));
+  const creatorConfirmed = r(6) as boolean | undefined;
+  const metadataRenderer = r(7) as Address | undefined;
+  const skim = normalizeSkim(r(8));
+
+  // contractURI() can be an on chain renderer (~180M gas, hundreds of kB). It is read alone with its own gas
+  // limit and a timeout, never in the multicall above, so a slow or refusing rpc cannot hold the token card.
+  // A failure shows the placeholder (the card then falls back to imageUrl).
+  const publicClient = usePublicClient();
+  const uriQuery = useQuery({
+    queryKey: ['contractURI', chainId, record?.token],
+    enabled: !!record && !!publicClient,
+    queryFn: () => readContractUri(publicClient as never, record!.token),
+    staleTime: 300_000,
+    gcTime: 300_000,
+    retry: false,
+  });
+  const contractURI = uriQuery.data;
+  const uriState: 'loading' | 'ready' | 'failed' = uriQuery.isError ? 'failed' : uriQuery.data !== undefined ? 'ready' : 'loading';
 
   // v2: independent confirmation from the factory, v2 token tax config
   const { data: v2Data } = useReadContracts({
@@ -133,7 +152,8 @@ export default function TokenDetailPage() {
   const taxSink = v2Data?.[4]?.result as Address | undefined;
 
   // ── 3. anti sniper state ──
-  const mevAddr = record && record.mevModule !== ZERO ? record.mevModule : undefined;
+  // the legacy stack's mev modules are older contracts with other abis: no anti sniper reads for them
+  const mevAddr = record && !record.legacy && record.mevModule !== ZERO ? record.mevModule : undefined;
   const { data: mevData } = useReadContracts({
     contracts:
       record && poolId && mevAddr
@@ -166,7 +186,9 @@ export default function TokenDetailPage() {
     mevActive = !!(md?.[2]?.result as boolean | undefined);
     mevEnd = cfg ? Number(cfg[3]) + Number(cfg[2]) : undefined;
   }
-  const mevRemaining = mevEnd !== undefined ? Math.max(0, mevEnd - Math.floor(Date.now() / 1000)) : undefined;
+  // the window end is a block timestamp: count down against the chain clock, not the browser's
+  const chainNow = useChainNow();
+  const mevRemaining = mevEnd !== undefined ? Math.max(0, mevEnd - chainNow) : undefined;
 
   // ── 4. pool price ──
   const { data: slot0 } = useReadContract({
@@ -253,7 +275,10 @@ export default function TokenDetailPage() {
                 }}
               />
             ) : (
-              <div className="w-full h-full bg-gradient-to-br from-violet-900/30 to-zinc-900 flex items-center justify-center">
+              <div
+                className="w-full h-full bg-gradient-to-br from-violet-900/30 to-zinc-900 flex items-center justify-center"
+                title={uriState === 'loading' ? 'loading the metadata…' : uriState === 'failed' ? 'the metadata could not be read, showing a placeholder' : undefined}
+              >
                 <span className="font-mono text-3xl font-bold text-zinc-600">{shownSymbol.slice(0, 4) || '??'}</span>
               </div>
             )}
@@ -264,7 +289,7 @@ export default function TokenDetailPage() {
             <h1 className="text-2xl font-bold">
               {shownName} <span className="text-zinc-500 font-normal">({shownSymbol})</span>
             </h1>
-            <OfficialBadge version={record.version} />
+            <OfficialBadge version={record.version} legacy={record.legacy} />
             {record.version === 2 && isArtCoin === false && (
               <span className="px-2 py-0.5 text-xs rounded-full bg-red-600/20 text-red-300 border border-red-600/30">factory does not list this token</span>
             )}
@@ -294,6 +319,7 @@ export default function TokenDetailPage() {
           poolKey={poolKey}
           feeSummary={skim ? feeSummary(skim) : undefined}
           mevActive={mevActive}
+          attribution={!record.legacy}
           mevSkimPercent={mevSkimBps !== undefined ? skimPercent(mevSkimBps) : undefined}
         />
       )}
@@ -328,7 +354,17 @@ export default function TokenDetailPage() {
           <InfoRow label="Factory" value={<CopyableAddress address={record.factory} explorerUrl={explorerUrl(chainId, record.factory)} />} />
           <InfoRow
             label="Renderer"
-            value={metadataRenderer && metadataRenderer !== ZERO ? <CopyableAddress address={metadataRenderer} explorerUrl={explorerUrl(chainId, metadataRenderer)} /> : <span className="text-zinc-500">default (on-chain)</span>}
+            value={
+              metadataRenderer === undefined ? (
+                <span className="text-zinc-500" title={readsLoading ? undefined : 'the renderer could not be read from the token'}>
+                  {readsLoading ? '…' : '—'}
+                </span>
+              ) : metadataRenderer !== ZERO ? (
+                <CopyableAddress address={metadataRenderer} explorerUrl={explorerUrl(chainId, metadataRenderer)} />
+              ) : (
+                <span className="text-zinc-500">default (on-chain)</span>
+              )
+            }
           />
           <InfoRow
             label="Creator flag"
@@ -349,7 +385,7 @@ export default function TokenDetailPage() {
         </InfoCard>
 
         <InfoCard title="Pool">
-          <InfoRow label="Pair" value="native ETH" />
+          <InfoRow label="Pair" value={pairLabel} />
           <InfoRow label="Price" value={ethPerCoin !== undefined ? `${formatPrice(ethPerCoin)} ETH` : 'loading…'} />
           <InfoRow label="Implied fdv" value={ethPerCoin !== undefined && supplyWhole !== undefined ? `${(ethPerCoin * supplyWhole).toLocaleString(undefined, { maximumFractionDigits: 2 })} ETH` : '—'} />
           {record.startingTick !== null && supplyWhole !== undefined && (
@@ -439,6 +475,7 @@ export default function TokenDetailPage() {
         contractURI={contractURI}
         onRefresh={() => {
           void refetchStatic();
+          void uriQuery.refetch();
         }}
       />
     </main>

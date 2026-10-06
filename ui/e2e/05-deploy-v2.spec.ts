@@ -189,15 +189,15 @@ test('the v2 coin referral page reads the fee escrow and claims for the referrer
   const wallet = await makeWallet({ label: 'v2-claimer' });
   await fund(wallet.address, '0.1');
   await page.goto(`/tokens/${coin}/referrals`);
-  await expect(page.getByText('Referral earnings are claimed from the fee escrow')).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByText('Referral earnings that could not be delivered')).toBeVisible({ timeout: 120_000 });
   await connectWallet(page, wallet.address);
   const claim = page.getByRole('button', { name: /^Claim .* ETH$|Checking the claim|Confirm in wallet|Claiming/ });
   await expect(claim).toHaveText('Claim 0 ETH');
   await expect(claim).toBeDisabled();
   const owed = await pub.readContract({ address: v2.escrow, abi: escrowV2Abi, functionName: 'balances', args: [DEFAULT_REFERRER, '0x0000000000000000000000000000000000000000'] });
   test.info().annotations.push({ type: 'escrow owed to the default referrer', description: `${owed} (referral leg pushed directly: ${referralPushed})` });
-  // the page tells the user referral fees sit in the escrow; with the D59 push they do not (see the doc)
-  test.info().annotations.push({ type: 'copy', description: await page.getByText('Referral earnings are claimed from the fee escrow').locator('..').innerText() });
+  // D59: the page says the referral is pushed to the referrer and only a failed push sits in the escrow
+  test.info().annotations.push({ type: 'copy', description: await page.getByText('Referral earnings that could not be delivered').locator('..').innerText() });
   await page.getByPlaceholder('0x...').fill(DEFAULT_REFERRER);
   await expect(claim).toHaveText(`Claim ${Number(owed) === 0 ? '0' : (await import('viem')).formatEther(owed)} ETH`, { timeout: 60_000 });
   if (owed > 0n) {
@@ -209,26 +209,25 @@ test('the v2 coin referral page reads the fee escrow and claims for the referrer
   expect(consoleLog.filter((e) => e.type !== 'warning' && !isNoise(e))).toEqual([]);
 });
 
-test('known bug: v2 deprecated notice calls the v2 factory "the current factory"', async ({ page }) => {
-  test.fail(true, 'UI-E2E-04: DeployPage pageBlock wording');
+test('v2 deprecated notice names the v2 factory, not "the current factory" (UI-E2E-04)', async ({ page }) => {
   if (!(await deprecated())) await setDeprecated(true);
   await page.goto('/');
-  await expect(page.getByRole('status')).toContainText(/owner only/, { timeout: 60_000 });
+  await expect(page.getByRole('status')).toContainText(/owner only on the v2 factory/, { timeout: 60_000 });
   await expect(page.getByRole('status')).not.toContainText('current factory', { timeout: 5_000 });
 });
 
-test('known bug: anti sniper countdown uses the browser clock, not the chain clock', async ({ page }) => {
-  test.fail(true, 'UI-E2E-03: on this fork the chain clock is hours behind the wall clock, an active window reads "expired"');
+test('anti sniper countdown follows the chain clock, not the browser clock (UI-E2E-03)', async ({ page }) => {
   test.skip(!launched, 'launch did not happen');
   await page.goto(`/tokens/${launched}`);
   await expect(infoRow(page, 'Status')).toContainText('Active', { timeout: 60_000 });
   await expect(infoRow(page, 'Time remaining')).not.toContainText('expired', { timeout: 5_000 });
+  await expect(page.getByText(/decaying to the baseline in (?!expired)/)).toBeVisible();
 });
 
-test('known bug: the v2 referral page says referral fees are credited in the escrow (D59 pushes them)', async ({ page }) => {
-  test.fail(true, 'UI-E2E-05: EscrowClaim copy predates D59');
+test('the v2 referral page says the referral is pushed to the referrer, the escrow is the fallback (UI-E2E-05)', async ({ page }) => {
   test.skip(!launched, 'launch did not happen');
   await page.goto(`/tokens/${launched}/referrals`);
-  await expect(page.getByText('Referral earnings are claimed from the fee escrow')).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText('Referral earnings that could not be delivered')).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText(/credits the referrer in the fee escrow/)).toHaveCount(0, { timeout: 5_000 });
+  await expect(page.getByText(/sends each referral fee straight to the referrer/)).toBeVisible();
 });

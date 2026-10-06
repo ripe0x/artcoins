@@ -52,7 +52,7 @@ export default function TokenCard({ event }: Props) {
           <span>block {event.blockNumber.toString()}</span>
         </div>
         <div className="flex flex-wrap items-center gap-1.5 pt-1">
-          <OfficialBadge version={event.version} />
+          <OfficialBadge version={event.version} legacy={event.legacy} />
           {event.lookalike && (
             <span className="px-1.5 py-0.5 text-[10px] rounded bg-amber-500/10 text-amber-300 border border-amber-500/30" title="Another token has a very similar name or symbol. Check the contract address.">
               similar name

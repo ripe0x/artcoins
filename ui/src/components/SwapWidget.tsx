@@ -23,6 +23,8 @@ import {
 import { encodeSwapHookData } from '../lib/attribution';
 import { getV2Stack } from '../lib/v2';
 import { useReferrer } from '../lib/useReferrer';
+import { latestChainTimestamp, permit2Expiration as permit2ExpirationFor, sellApprovalSteps } from '../lib/chainClock';
+import { useChainNow } from '../lib/useChainNow';
 import { useAddressesOrNull, useWalletGate } from '../lib/useChain';
 import { describeError } from '../lib/errors';
 import ReferrerNotice from './ReferrerNotice';
@@ -39,6 +41,8 @@ interface Props {
   mevActive?: boolean;
   /** current anti sniper skim in percent of volume, when known */
   mevSkimPercent?: number;
+  /** false for the legacy stack's hook: it reads no referral data, so none is sent (hookData stays empty) */
+  attribution?: boolean;
 }
 
 const SLIPPAGE_OPTIONS = [0.5, 1, 2, 5];
@@ -63,7 +67,7 @@ interface Quote {
   fetchedAt: number;
 }
 
-export default function SwapWidget({ tokenAddress, tokenSymbol, poolKey, feeSummary, mevActive, mevSkimPercent }: Props) {
+export default function SwapWidget({ tokenAddress, tokenSymbol, poolKey, feeSummary, mevActive, mevSkimPercent, attribution = true }: Props) {
   const { address } = useAccount();
   const gate = useWalletGate();
   const client = usePublicClient();
@@ -90,8 +94,8 @@ export default function SwapWidget({ tokenAddress, tokenSymbol, poolKey, feeSumm
   const isV2Pool = !!v2Hook && poolKey.hooks.toLowerCase() === v2Hook.toLowerCase();
   const refundTo = isV2Pool ? address : undefined;
   const hookData: Hex = useMemo(
-    () => encodeSwapHookData({ referrer: referrer.referrer ?? undefined, refundTo }),
-    [referrer.referrer, refundTo]
+    () => (attribution ? encodeSwapHookData({ referrer: referrer.referrer ?? undefined, refundTo }) : '0x'),
+    [attribution, referrer.referrer, refundTo]
   );
 
   // ── balances ────────────────────────────────────────────────────────
@@ -214,13 +218,19 @@ export default function SwapWidget({ tokenAddress, tokenSymbol, poolKey, feeSumm
     return () => clearTimeout(t);
   }, [receipt, pendingAction, refetchTokenBalance, refetchErc20Allowance, refetchPermit2, reset]);
 
-  const needsErc20Approval = direction === 'sell' && amountInWei > 0n && ((erc20ToPermit2 as bigint | undefined) ?? 0n) < amountInWei;
-  const nowSec = Math.floor(Date.now() / 1000);
-  const needsPermit2Approval =
-    direction === 'sell' &&
-    amountInWei > 0n &&
-    !needsErc20Approval &&
-    (permit2Amount < amountInWei || permit2Expiration < nowSec + deadlineMin * 60);
+  // permit2 compares expirations with block.timestamp: use the chain clock (browser clock only as a fallback).
+  // The balance check comes first: above the balance the answer is "Insufficient", never an approval to sign.
+  const nowSec = useChainNow(QUOTE_REFRESH_MS);
+  const { needsErc20Approval, needsPermit2Approval } = sellApprovalSteps({
+    direction,
+    amountIn: amountInWei,
+    balance,
+    erc20ToPermit2: (erc20ToPermit2 as bigint | undefined) ?? 0n,
+    permit2Amount,
+    permit2Expiration: Number(permit2Expiration),
+    chainNow: nowSec,
+    deadlineMin,
+  });
 
   const handleApproveErc20 = async () => {
     if (!permit2) return;
@@ -240,8 +250,8 @@ export default function SwapWidget({ tokenAddress, tokenSymbol, poolKey, feeSumm
     setActionError(null);
     setPendingAction('approve-permit2');
     try {
-      // exact amount, expiry just past the swap deadline
-      const expiration = Math.floor(Date.now() / 1000) + (deadlineMin + 5) * 60;
+      // exact amount, expiry just past the swap deadline, counted from the latest block (not the browser clock)
+      const expiration = permit2ExpirationFor(client ? await latestChainTimestamp(client) : Math.floor(Date.now() / 1000), deadlineMin);
       await writeContractAsync({
         address: permit2,
         abi: permit2Abi,
@@ -471,7 +481,11 @@ export default function SwapWidget({ tokenAddress, tokenSymbol, poolKey, feeSumm
           </div>
         </div>
 
-        <ReferrerNotice state={referrer} />
+        {attribution ? (
+          <ReferrerNotice state={referrer} />
+        ) : (
+          <p className="text-xs text-zinc-500">This pool is on the legacy stack. Its hook has no referral fees, so no referrer is attached.</p>
+        )}
 
         {gate.needsSwitch ? (
           <button type="button" onClick={gate.switchToMainnet} className="w-full rounded-lg bg-violet-600 hover:bg-violet-500 py-3 text-sm font-semibold">

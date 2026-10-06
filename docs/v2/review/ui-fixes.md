@@ -152,3 +152,34 @@ scope: `ui/**` and this file. `deployments.generated.ts` untouched. no dependenc
 | allowlist file | gains an optional `index` field (additive, `AllowlistFile`). `script-js/build-allowlist.ts` is outside this change and does not write it, the root match covers that |
 | not verified | against a deployed v2 airdrop: none exists yet. not run in a browser (another agent owns the smoke). `VITE_V2_AIRDROP` (or the registry `V2.airdrop`) should be set when a v2 airdrop is deployed, otherwise the page probes every extension |
 | status | V2B-04 fixed |
+
+### follow up: browser run findings UI-E2E-01 to -06 (see ui-e2e.md)
+
+| id | change | files |
+|---|---|---|
+| UI-E2E-01 | discovery scans the registry legacy factory (`STACKS.legacy`, from its deploy block) as a v1 source: it emits the same `TokenCreated` event (topic 0x9299d1d1…, checked on the fork), so LAYER gets a card (`artcoins factory v1 (legacy)`, block 25045152) and a page with the widget on the weth calldata path. the open stack launched no coin and is not scanned. `TokenRecord.legacy` is new. the pair row comes from `classifyPool` (native ETH, WETH, or unsupported) instead of the hardcoded "native ETH". legacy coins skip the anti sniper reads (older module abis) and the widget sends empty hookData with a note instead of a referrer (the legacy hook reads none, and the weth path was only proven with `0x`). skim rows show "Fee config unavailable." as the legacy hook has no `skimConfig` | `lib/discovery.ts`, `lib/useTokens.ts`, `components/OfficialBadge.tsx`, `components/TokenCard.tsx`, `pages/TokenDetailPage.tsx`, `components/SwapWidget.tsx` |
+| UI-E2E-02 | `sellApprovalSteps`: neither approval step is offered above the balance, so the button reads "Insufficient 111" and nothing can be signed | `lib/chainClock.ts`, `components/SwapWidget.tsx` |
+| UI-E2E-03 | chain deadlines use the chain clock: `useChainNow` = latest block timestamp plus the seconds since it was read (a skewed browser clock cancels out), browser clock only when no block is known. permit2 expiry is signed from `latestChainTimestamp` (fallback: browser clock) plus deadline plus 5 min, and the "is the allowance still good" check adds a 120 s margin (`CHAIN_DEADLINE_MARGIN_SEC`). the anti sniper countdown on the token page uses the same clock | `lib/chainClock.ts`, `lib/useChainNow.ts`, `components/SwapWidget.tsx`, `pages/TokenDetailPage.tsx` |
+| UI-E2E-04 | deprecated notice says "owner only on the v2 factory" | `pages/DeployPage.tsx` |
+| UI-E2E-05 | copy follows D59: the hook pays the referral straight to the referrer, only a failed push (a contract rejecting eth with 2,300 gas) sits in the escrow and is claimed on the referral page. heading is now "Referral earnings that could not be delivered". pool form hint and review row say referrers are paid in eth on each swap | `components/EscrowClaim.tsx`, `components/PoolConfigForm.tsx`, `components/ReviewAndDeploy.tsx`, `lib/escrowClaim.ts` (comment) |
+| UI-E2E-06 | `contractURI()` leaves the multicall: `readContractUri` reads it alone through react query with an explicit 300M gas limit, a 60 s timeout, one retry without the explicit gas when the node refuses it, never a retry after a timeout. a failure leaves the symbol placeholder (tooltip says why). the renderer row shows `…` while loading and `—` when the read failed, "default (on-chain)" only when the token answered the zero address | `lib/contractUri.ts`, `pages/TokenDetailPage.tsx` |
+
+tests
+
+| suite | result |
+|---|---|
+| `npm test` | 74 pass (new: `chainClock.test.ts`, `contractUri.test.ts`, `discovery.test.ts`) |
+| `npm run build`, `npm run lint` | pass (the rolldown direct eval warning comes from a dependency, as before) |
+| `npm run test:e2e` on an anvil fork at block 26130269 with the v2 stack deployed (project `v2`) | 19 of 19 pass, 1.8 min. the five `test.fail` cases are real tests now (03 over balance, 05 wording, countdown, referral copy) and LAYER runs through the widget (04a: page, WETH pair, buy 0.01 eth, sell all, empty hookData, router left with 0 weth) |
+
+e2e changes: 01 expects both cards ("2 tokens total"), 04a is the widget scenario, `fixtures.ts` filters reown's `Error checking Cross-Origin-Opener-Policy: Failed to fetch` (remote probe the sandbox blocks) as noise, the v2 referral test looks for the new heading.
+
+open items
+
+| item | note |
+|---|---|
+| UI-E2E-07 | image `onError` still leaves an empty box, not in this batch |
+| explicit gas on contractURI | on the 60M anvil the call still fails and the placeholder shows (test 02a). public rpcs were not tried with the explicit 300M, the single retry without it covers a node that refuses it |
+| idle chain on anvil | the chain clock is the latest block timestamp. on a mainnet node that is at most a block old. an idle anvil fork can lag, so the permit2 expiry signed from it is only good while the fork has been mined recently (the e2e mines before every sell) |
+| `script-js/gen-addresses.mjs` | not touched (outside scope): the legacy locker is read from the launch event, not the registry |
+| deploy script | compiled with `--skip src/v2/keepers/CollectFlushKeeperLayer.sol --skip script/v2/RunKeeperLayer.s.sol`; `cache/DeployV2Stack.s.sol` removed and `tmp/v2-deploy-1.json` restored afterwards |

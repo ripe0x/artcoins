@@ -5,13 +5,13 @@ import { isAddress } from 'viem';
 import { fetchAllTokens, factorySources, type TokenRecord } from './discovery';
 import { useAddressesOrNull } from './useChain';
 
-/** Every token launched through a configured factory (current stack and v2), newest first. */
+/** Every token launched through a configured factory (current stack, legacy stack and v2), newest first. */
 export function useTokens() {
   const client = usePublicClient();
   const { chainId, addresses } = useAddressesOrNull();
   const sources = factorySources(chainId);
   const query = useQuery({
-    queryKey: ['tokens', chainId, sources.map((s) => `${s.version}:${s.factory}`).join(',')],
+    queryKey: ['tokens', chainId, sources.map((s) => `${s.version}:${s.factory}:${s.fromBlock}`).join(',')],
     queryFn: () => {
       if (!client) throw new Error('No rpc client');
       return fetchAllTokens(client, chainId);
