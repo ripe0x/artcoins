@@ -5,15 +5,17 @@
 ## setup, used by every command
 
 ```
-export MAINNET_RPC_URL=${MAINNET_RPC_URL:-https://mainnet.gateway.tenderly.co}
-export OWNER=0xCB43078C32423F5348Cab5885911C3B5faE217F9        # single eoa, owner of nearly everything
-export OWNER_KEY=<set in your shell from a keystore, never paste or commit>  # or use --account <keystore> instead of --private-key
+export ETH_RPC_URL=https://mainnet.gateway.tenderly.co
+export MAINNET_RPC_URL=$ETH_RPC_URL
+export OWNER=0xCB43078C32423F5348Cab5885911C3B5faE217F9
 export F_CUR=0x49596c375c139E79bb937bcf826068a8F78D4e0e F_OPEN=0xF051cd4C4F3F36F9f24d8a19d60Ee8F84FC6793e F_LEGACY=0xD1595A2742C392d1c109b616b4F08918D02292f9
 export L111=0x866ea3Dc2bf7A3e77374619cf50EB697FA766aab C111=0x61C9d89fe1212F6b55fF888816A151463287B8ae SWAPPER=0xeBD9B74A4c26C6E54e83C84CB247c069eC42A961 ESCROW=0x7559689765aE86cBB38e68CD1294830CccB125F2
 export LAYER=0xb7287e4A5b605aB92A8589C62af8A4ebD347E6c9 LLOCKER=0x75BE7E95745915fD0C1761B74F3f9650ad2d1118 LFEELOCKER=0x1143db0913Ca5eCe8A42FC01b625fD81F9386b05 LHOOK=0xA5eA9904F2cD572c638a1eF81463BDAbEa9D28cc
 export R_LAYER=0x2eDBdF011768d8cd4Ef537658b41440900C52000 R_OPEN=0xE60046ee745B235109C10d322A1cbDB3c029De43 RENDERER=0x0572C1754378c2f9Aef51b57b2830D343ee9d186 SCRIPTY=0xbD11994aABB55Da86DC246EBB17C1Be0af5b7699
 export WETH=0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 PM=0x000000000004444c5dc75cB358380D2e3dE08A90
 ```
+
+the owner `0xCB43…` signs with the foundry keystore `ripe0x` (`--account ripe0x`); keeper calls sign with the keystore `artcoins-keeper`. no key is ever passed as an argument or written to a file. the owner eoa carries an eip 7702 delegation (code `0xef0100…`), so nodes accept one in flight tx from it: `cast send` waits for each receipt, and every multi tx `forge script --broadcast` from it needs `--slow`.
 
 rules for every send: (1) simulate first by swapping `cast send` for `cast call --from $OWNER` with the same arguments; (2) one tx at a time, check the verify line; (3) the owner key stays in a keystore or the shell, never in a file or argument list, and the keeper uses its own separate hot key; (4) every owner call is a plain eoa tx, none needs a multisig or a delay.
 
@@ -31,6 +33,14 @@ rules for every send: (1) simulate first by swapping `cast send` for `cast call 
 | 6 | decide the LAYER freezes (scripty, renderer, extension) | irreversible, owner choice, do last | see 6 |
 | 7, 9, 10 | keep 0x4959 deprecated, stranding limits, leave alone list | context | none |
 
+done on chain (read at block 26136123):
+
+| action | tx | block |
+|---|---|---|
+| 1 collect 111 | owner nonce 3766, `collectRewards(0x61C9…)` on 0x866e, https://evm.now/tx/0xd02578644e6e7af831da59a111618c5620f874c66945ee44e86b64aaca80c723?chainId=1 | 26135717 |
+| 5 floor 0x2eDB | owner nonce 3767, `setMinLayerOutPerWeth(15402461028354640333126378)`, https://evm.now/tx/0xbb83afee249adb2ac03db77bc1a8c66d2b345752655dc18dce10d2f6728f02b2?chainId=1 | 26135720 |
+| 5 floor 0xE600 | owner nonce 3768, same floor, https://evm.now/tx/0x084c43596046634ffa282e13a4f7af654ef0f809450b6e0202a27773ddab1b46?chainId=1 | 26135723 |
+
 ## part 1: today, without redeploying
 
 ### 1. collect 111 lp fees now and keep collecting (LF-01, LF-02 window)
@@ -41,9 +51,9 @@ rules for every send: (1) simulate first by swapping `cast send` for `cast call 
 | contract | locker `0x866ea3Dc2bf7A3e77374619cf50EB697FA766aab` |
 | call | `collectRewards(address token)` selector 0x5763dbd0, arg = 111 `0x61C9d89fe1212F6b55fF888816A151463287B8ae` |
 | caller | anyone. locker pays the caller `keeperRewardBps` of the eth side (live 0, so nothing) |
-| send | `cast send $L111 "collectRewards(address)" $C111 --gas-limit 900000 --rpc-url $MAINNET_RPC_URL --private-key $OWNER_KEY` |
+| send | `cast send $L111 "collectRewards(address)" $C111 --gas-limit 900000 --rpc-url $ETH_RPC_URL --account ripe0x` |
 | read now | pending is 13,404 coin and 0 eth (simulated, 658k gas). the swapper then holds the coin, the eth side would sit at the escrow under the swapper slot |
-| verify | `cast call $C111 "balanceOf(address)(uint256)" $SWAPPER --rpc-url $MAINNET_RPC_URL` rises by about the pending coin. `cast call $ESCROW "feesToClaim(address,address)(uint256)" $SWAPPER 0x0000000000000000000000000000000000000000 --rpc-url $MAINNET_RPC_URL` (eth credit, 0 expected now) |
+| verify | `cast call $C111 "balanceOf(address)(uint256)" $SWAPPER --rpc-url $ETH_RPC_URL` rises by about the pending coin. `cast call $ESCROW "feesToClaim(address,address)(uint256)" $SWAPPER 0x0000000000000000000000000000000000000000 --rpc-url $ETH_RPC_URL` (eth credit, 0 expected now) |
 | risk | gas (~665k, about 0.003 eth at 5 gwei) exceeds the 0.0007 eth value pending today: this resets the exposure, it does not earn. if an eth credit appears at the escrow, flush in the same minute (`cast send $SWAPPER "flushPaired()" --gas-limit 200000 ...`, 72k gas) because anyone can `escrow.claim(swapper, 0)` and strand it (LF-02, nothing recovers it). coin side: leave it in the swapper until a keeper run converts it with a real minOut, `convert(0)` invites a sandwich bounded only by the swapper's 80% of spot floor |
 | keep collecting | action 3 keeper, hourly check, collect when `preview()` shows more than 0.02 eth or 10,000 coin uncollected, or weekly regardless. it shrinks exposure and cannot close the hole |
 | v2 class note | the LF-01 class does not exist on v2 coins. `ArtCoinsLpLockerV2` has only `collectRewards(address)` (0x5763dbd0): it opens the position manager's own unlock, takes exact balance deltas, pays the frozen split, and reverts `PoolManagerUnlocked()` (0x0e1475a4) if the pool manager is already unlocked. there is no `collectRewardsWithoutUnlock(address)` (0x86b0c83f, v1 only), no open tab collect and no hook collect path. an extension that needs to collect inside a swap would need a new locker, not a setting. so the hourly collect rule above is a v1 111 rule, v2 keepers run on the part 2 cadence |
@@ -56,9 +66,9 @@ rules for every send: (1) simulate first by swapping `cast send` for `cast call 
 | contract | locker `0x75BE7E95745915fD0C1761B74F3f9650ad2d1118`, token LAYER `0xb7287e4A5b605aB92A8589C62af8A4ebD347E6c9` |
 | call | `collectRewards(address token)` selector 0x5763dbd0 (checked in bytecode, simulation succeeds, 597k gas) |
 | caller | anyone |
-| send | `cast send $LLOCKER "collectRewards(address)" $LAYER --gas-limit 900000 --rpc-url $MAINNET_RPC_URL --private-key $OWNER_KEY` |
+| send | `cast send $LLOCKER "collectRewards(address)" $LAYER --gas-limit 900000 --rpc-url $ETH_RPC_URL --account ripe0x` |
 | split | slots read on chain: 3800 bps owner `0xCB43…` (credited to fee locker 0x1143), 4200 bps burn router 0x2eDB, 2000 bps protocol fee controller 0x5fDc39756A64A84518ef00CB6a0ED46971e00A60. slot admins: owner for slots 0 and 1, factory 0xd159 for slot 2 |
-| verify | `cast call $LFEELOCKER "availableFees(address,address)(uint256)" $OWNER $LAYER --rpc-url $MAINNET_RPC_URL` rises. `cast call $R_LAYER "status()(uint256,uint256,bool)" --rpc-url $MAINNET_RPC_URL` shows router balances |
+| verify | `cast call $LFEELOCKER "availableFees(address,address)(uint256)" $OWNER $LAYER --rpc-url $ETH_RPC_URL` rises. `cast call $R_LAYER "status()(uint256,uint256,bool)" --rpc-url $ETH_RPC_URL` shows router balances |
 | risk | gas only. do it once now and when LAYER trading volume is high. not worth a cron at current size |
 
 ### 2b. deploy and run the LAYER keeper (collect, claim, split, burn)
@@ -70,16 +80,16 @@ note (D64): LAYER already has a hosted keeper, `layer-keeper` on fly.io in ripe0
 | finding | nothing calls `processBurnWeth` on the LAYER routers: the autoforward extension 0x38d0 deliberately skips it (no nested unlock), and its claim and split stages only fire above 0.01 weth or 100,000 LAYER, so small slots sit forever (scripts-and-keepers gap list). LF-01 exposure on LAYER is one swap's fee, because the hook collects on every swap |
 | contract | `src/v2/keepers/CollectFlushKeeperLayer.sol`, ctor `(locker, LAYER, weth, feeLocker, controller, [router0, router1, router2])` = `$LLOCKER $LAYER $WETH $LFEELOCKER 0x5fDc39756A64A84518ef00CB6a0ED46971e00A60 [$R_LAYER, $R_OPEN, 0x0EB22955E8904b8C5a4EC6f1D476f5b0C93854ca]`, taken from `script/Addresses.sol` by the script. no owner, holds nothing, any wallet deploys and runs it. use the keeper hot key, not the owner key |
 | path | collect to the fee locker (38% owner, 42% router 0x2eDB, 20% controller 0x5fDc), `claim` (0x21c0b342) the controller and router slots (never the owner slot), `processFees(address)` (0x61582eaa: 60% treasury 0x41c3, 40% router), `processBurnLayer()` (0x811be55f), `processBurnWeth(uint256)` (0x2cb58c11) on every router at or above 0.01 weth. no LF-02 stranding shape: router and controller book by balance (`test_layerKeeper_thirdPartyClaim_doesNotStrand`) |
-| deploy dry run | `ALLOW_SUPERSEDED=1 forge script script/v2/RunKeeperLayer.s.sol:DeployKeeperLayer --rpc-url $MAINNET_RPC_URL` (the scripts refuse mainnet without `ALLOW_SUPERSEDED=1`, the legacy stack is superseded in the registry) |
-| deploy | `ALLOW_SUPERSEDED=1 forge script script/v2/RunKeeperLayer.s.sol:DeployKeeperLayer --rpc-url $MAINNET_RPC_URL --broadcast --account <keystore>` then `export KEEPER_LAYER=<printed address>`. record it in `deployments/mainnet.json` |
-| check | `cast call $KEEPER_LAYER "preview()(uint256,uint256,uint256[4],uint256[3],uint256[3])" --rpc-url $MAINNET_RPC_URL` (0xefae2305): uncollected LAYER, uncollected weth, claimable [controller LAYER, controller weth, router LAYER, router weth], weth plus eth at [0x2eDB, 0xE600, 0x0EB2], their thresholds |
-| run dry | `ALLOW_SUPERSEDED=1 forge script script/v2/RunKeeperLayer.s.sol:RunKeeperLayer --rpc-url $MAINNET_RPC_URL` (prints preview, simulates with rate 0, quotes the realized LAYER per weth minus `KEEPER_SLIPPAGE_BPS`, default 200) |
-| run | `ALLOW_SUPERSEDED=1 forge script script/v2/RunKeeperLayer.s.sol:RunKeeperLayer --rpc-url $MAINNET_RPC_URL --broadcast --account <keystore> --gas-limit 3500000`. by hand: `cast send $KEEPER_LAYER "run(bool,uint256,bool)" true $RATE true --gas-limit 3500000 --rpc-url $MAINNET_RPC_URL --account <keystore>` (selector 0xc2e8c918, `$RATE` LAYER per 1e18 weth, 0 means each router's own floor; simulate first with `cast call --from <keeper key address>` and the same arguments) |
+| deploy dry run | `ALLOW_SUPERSEDED=1 forge script script/v2/RunKeeperLayer.s.sol:DeployKeeperLayer --rpc-url $ETH_RPC_URL` (the scripts refuse mainnet without `ALLOW_SUPERSEDED=1`, the legacy stack is superseded in the registry) |
+| deploy | `ALLOW_SUPERSEDED=1 forge script script/v2/RunKeeperLayer.s.sol:DeployKeeperLayer --rpc-url $ETH_RPC_URL --broadcast --account artcoins-keeper` then `export KEEPER_LAYER=<printed address>`. record it in `deployments/mainnet.json` |
+| check | `cast call $KEEPER_LAYER "preview()(uint256,uint256,uint256[4],uint256[3],uint256[3])" --rpc-url $ETH_RPC_URL` (0xefae2305): uncollected LAYER, uncollected weth, claimable [controller LAYER, controller weth, router LAYER, router weth], weth plus eth at [0x2eDB, 0xE600, 0x0EB2], their thresholds |
+| run dry | `ALLOW_SUPERSEDED=1 forge script script/v2/RunKeeperLayer.s.sol:RunKeeperLayer --rpc-url $ETH_RPC_URL` (prints preview, simulates with rate 0, quotes the realized LAYER per weth minus `KEEPER_SLIPPAGE_BPS`, default 200) |
+| run | `ALLOW_SUPERSEDED=1 forge script script/v2/RunKeeperLayer.s.sol:RunKeeperLayer --rpc-url $ETH_RPC_URL --broadcast --account artcoins-keeper --gas-limit 3500000`. by hand: `cast send $KEEPER_LAYER "run(bool,uint256,bool)" true $RATE true --gas-limit 3500000 --rpc-url $ETH_RPC_URL --account artcoins-keeper` (selector 0xc2e8c918, `$RATE` LAYER per 1e18 weth, 0 means each router's own floor; simulate first with `cast call --from <keeper key address>` and the same arguments) |
 | gas floors (D49) | floors, not caps: collect 640k, claim 60k, processFees 80k, processBurnLayer 60k, processBurnWeth 900k (each burn is a swap and pays the hook's collect), each plus 50k margin, the 1/63 reserve and 20k. a shortfall reverts `InsufficientGas(step)` (0x969aeb08, 1 collect to 5 weth burn), a collect revert bubbles, other reverts are logged as `StepSkipped(uint8,address,bytes)` (topic 0x0ec30982ffee6bdc8b4f21abd0cf9b3d5a7f4f836a0c96799c3efc0118d66235) and the run completes. measured: full path with one burn 853k, two reward router burns 1.84M, smallest completing limit with one burn 1.5M. set 3,500,000 |
 | floors and rate | routers with an owner floor (0x2eDB 5e24, 0xE600 1.0353e25) get `max(rate, floor) * balance / 1e18`. floor 0 means paused, the router reverts `SlippageFloorNotSet` (0xc2358797), reported. 0x0EB2 has no floor setter and gets 0 (its 1% impact clamp and 80% spot floor on the consumed amount apply) |
 | cadence | daily cron: run when any `routerWeth[i] >= routerThreshold[i]` or `routerWeth[0] + claimable[3] + 0.4 * (claimable[1] + controller weth) >= 0.01 weth`; weekly regardless. an idle run is about 0.65M gas for nothing, skip it. refresh the router floors first (action 5) |
 | hosted runner | `keeper/` (fly.io, one machine) applies this cadence: reads `preview()` daily, runs at most once per 24 h, weekly regardless, with the 3,500,000 gas limit. rate: the simulated `run(true, 0, false)` rate cut to the largest router balance's constant liquidity estimate, minus 200 bps, and never under the pool floor `spot * (1 - lp fee - skim) * (1 - 200 bps - 100 bps impact)` read from `extsload` of the pool slot0; no weth burned in the simulation, impact above 100 bps or no floor sends `run(false, 0, true)`, never a rate of 0 with burn on. a run that leaves its trigger (routerWeth, combined weth) above half its value backs off 1 h doubling to 24 h and alerts `no_progress` (`due_no_burn` when the burn was skipped). funding: the key needs `3,500,000 x MAX_GAS_GWEI` (default 14 gwei: 0.049 eth) or LAYER sends are skipped `insufficient_funds`. stuck tx: same nonce replacement at +12.5% after 30 min, 3 times, then a cancel. deploy, secrets, alerts: `keeper/README.md`. set `KEEPER_LAYER` until the keeper is in the registry |
-| verify | `cast call $R_LAYER "status()(uint256,uint256,bool)" --rpc-url $MAINNET_RPC_URL` shows weth under 0.01 after a burn. `cast call $LFEELOCKER "availableFees(address,address)(uint256)" 0x5fDc39756A64A84518ef00CB6a0ED46971e00A60 $WETH --rpc-url $MAINNET_RPC_URL` is 0. `cast balance $KEEPER_LAYER --rpc-url $MAINNET_RPC_URL` is 0 |
+| verify | `cast call $R_LAYER "status()(uint256,uint256,bool)" --rpc-url $ETH_RPC_URL` shows weth under 0.01 after a burn. `cast call $LFEELOCKER "availableFees(address,address)(uint256)" 0x5fDc39756A64A84518ef00CB6a0ED46971e00A60 $WETH --rpc-url $ETH_RPC_URL` is 0. `cast balance $KEEPER_LAYER --rpc-url $ETH_RPC_URL` is 0 |
 | risk | rewards: 0x2eDB pays none, 0xE600 and 0x0EB2 pay 0.5% (cap 0.01 eth) to the caller, so the run is owner funded at current volume. a stale low owner floor is still callable by anyone directly (LF-09). key under 0.05 eth. proof tests: `test/v2/KeeperLayer.fork.t.sol` (11), detail in `docs/v2/review/keeper-111.md` (LAYER keeper) |
 
 ### 3. deploy and run the 111 collect and flush keeper
@@ -88,15 +98,15 @@ note (D64): LAYER already has a hosted keeper, `layer-keeper` on fly.io in ripe0
 |---|---|
 | finding | LF-01 (reduces pending), LF-02 / K-01 (collect, flush and convert in one tx), K-04 (no third party earns enough to run it) |
 | contract | `src/v2/keepers/CollectFlushKeeperV1.sol`, ctor `(locker, token, swapper, escrow)` pinned to `$L111 $C111 $SWAPPER $ESCROW`. no owner, holds nothing, any wallet can deploy and run it. use a dedicated hot key, not the owner key |
-| deploy dry run | `forge script script/v2/RunKeeper111.s.sol:DeployKeeper111 --rpc-url $MAINNET_RPC_URL` |
-| deploy | `forge script script/v2/RunKeeper111.s.sol:DeployKeeper111 --rpc-url $MAINNET_RPC_URL --broadcast --account <keystore>` then `export KEEPER_111=<printed address>`. record it in `deployments/mainnet.json` |
-| check | `cast call $KEEPER_111 "preview()(uint256,uint256,uint256,uint256,uint256)" --rpc-url $MAINNET_RPC_URL` returns uncollectedEth, uncollectedCoin, escrowedEth, swapperEth, swapperCoin. `swapperEth > 0` means a third party already stranded eth |
-| run dry | `forge script script/v2/RunKeeper111.s.sol:RunKeeper111 --rpc-url $MAINNET_RPC_URL` (prints preview and a quoted minOut, `KEEPER_SLIPPAGE_BPS` default 100) |
-| run | `forge script script/v2/RunKeeper111.s.sol:RunKeeper111 --rpc-url $MAINNET_RPC_URL --broadcast --account <keystore> --gas-limit 1200000` (`run(bool,uint256)` selector 0x02143aa9, measured 799k gas) |
+| deploy dry run | `forge script script/v2/RunKeeper111.s.sol:DeployKeeper111 --rpc-url $ETH_RPC_URL` |
+| deploy | `forge script script/v2/RunKeeper111.s.sol:DeployKeeper111 --rpc-url $ETH_RPC_URL --broadcast --account artcoins-keeper` then `export KEEPER_111=<printed address>`. record it in `deployments/mainnet.json` |
+| check | `cast call $KEEPER_111 "preview()(uint256,uint256,uint256,uint256,uint256)" --rpc-url $ETH_RPC_URL` returns uncollectedEth, uncollectedCoin, escrowedEth, swapperEth, swapperCoin. `swapperEth > 0` means a third party already stranded eth |
+| run dry | `forge script script/v2/RunKeeper111.s.sol:RunKeeper111 --rpc-url $ETH_RPC_URL` (prints preview and a quoted minOut, `KEEPER_SLIPPAGE_BPS` default 100) |
+| run | `forge script script/v2/RunKeeper111.s.sol:RunKeeper111 --rpc-url $ETH_RPC_URL --broadcast --account artcoins-keeper --gas-limit 1200000` (`run(bool,uint256)` selector 0x02143aa9, measured 799k gas) |
 | gas floors (D49) | the gas limit is part of the call, set it by hand and never take a limit from an `estimateGas` search. the floors are not caps: each step runs with all remaining gas but only starts if `gasleft()` clears floor plus 50k margin plus the 1/63 reserve plus 20k. collect floor 658k (needs 739k left to start), flush 72k (needs 144k left), convert 299k (needs 375k left). the smallest limit that completes is about 1.1M, use 1.2M. below that the run reverts `InsufficientGas(step)` (selector 0x969aeb08, step 1 collect, 2 flush, 3 convert), it never skips a step silently: the sweep from 1.3M to 0.3M gave 8 completed, 33 reverted, 0 skipped. a collect revert bubbles, a flush or convert revert is reported as `FlushSkipped` or `ConvertSkipped` and the run completes |
 | cadence | cron hourly: read `preview()`, run when uncollectedEth > 0.02 eth, uncollectedCoin > 10,000e18, escrowedEth > 0.05 eth (flush overdue), or the weekly timer is due. skip if pending is worth less than the gas, unless the timer is due. convert has its own 50 block pacing, extra attempts are swallowed no ops. monitor `lastConvertBlock` age and `swapperEth` |
 | hosted runner | `keeper/` (fly.io, one machine) applies this cadence: reads `preview()` hourly, runs at most once per 6 h, skips a threshold run worth less than its gas (eth plus coin at pool spot) unless the weekly timer is due, with the 1,200,000 gas limit. minOut: `max(simulated run(true, 0) - 100 bps, spot * (1 - skim - lp fee) * (1 - 100 bps - 100 bps impact))` for the swapper's next step, spot from `extsload` of the pool slot0 and the hook's `skimConfig`; no convert in the simulation, a missing floor or a quote under it sends `run(false, 0)`, never `run(true, 0)`. live mode refuses to start without `PRIVATE_RPC_URL` unless `ALLOW_PUBLIC_MEMPOOL=1`. a run that leaves its trigger above half its value backs off 1 h doubling to 24 h (`no_progress`). alerts on `swapperEth > 0` and two reverts in a row. funding: `3,500,000 x MAX_GAS_GWEI` with LAYER enabled (0.049 eth at the default 14 gwei), `1,200,000 x MAX_GAS_GWEI` for 111 alone (0.0168 eth). deploy, secrets, alerts: `keeper/README.md`. set `KEEPER_111` until the keeper is in the registry |
-| verify | `cast call $SWAPPER "lastConvertBlock()(uint256)" --rpc-url $MAINNET_RPC_URL` moves after a convert. `cast balance $KEEPER_111` is 0 after every run |
+| verify | `cast call $SWAPPER "lastConvertBlock()(uint256)" --rpc-url $ETH_RPC_URL` moves after a convert. `cast balance $KEEPER_111` is 0 after every run |
 | risk | cannot stop a griefer who calls `collectRewards` then `escrow.claim(swapper,0)` himself in one tx, cannot recover eth already stranded. send runs through a private relay. the key only pays gas, keep under 0.05 eth. proof tests: `test/v2/KeeperV1_111.fork.t.sol` (8), detail in `docs/v2/review/keeper-111.md` |
 
 ### 4. deprecate the open factory 0xf051 (FT-02, FT-03, S-03)
@@ -104,10 +114,10 @@ note (D64): LAYER already has a hosted keeper, `layer-keeper` on fly.io in ripe0
 | field | value |
 |---|---|
 | finding | FT-02 launch hijack, FT-03 protocol bps zeroed by any caller, S-03 open by default. live: deprecated false, deployFee 0, version "3", owner 0xCB43, hook 0xAAd6 and locker 0xd914 enabled |
-| confirm first | `cast call $F_OPEN "deprecated()(bool)" --rpc-url $MAINNET_RPC_URL` returns false. zero coins: `cast logs --address $F_OPEN --from-block 25125700 --to-block latest "TokenCreated(address,address,address,string,string,string,string,string,int24,address,bytes32,address,address,address,uint256,address[])" --rpc-url $MAINNET_RPC_URL` returns nothing (positive control: the same query on $F_CUR from block 25260000 returns the 111 launch) |
+| confirm first | `cast call $F_OPEN "deprecated()(bool)" --rpc-url $ETH_RPC_URL` returns false. zero coins: `cast logs --address $F_OPEN --from-block 25125700 --to-block latest "TokenCreated(address,address,address,string,string,string,string,string,int24,address,bytes32,address,address,address,uint256,address[])" --rpc-url $ETH_RPC_URL` returns nothing (positive control: the same query on $F_CUR from block 25260000 returns the 111 launch) |
 | contract and call | `$F_OPEN` `setDeprecated(bool)` selector 0xd848dee7, arg `true`. onlyOwner (also present on 0x4959 and 0xd159) |
-| send | `cast send $F_OPEN "setDeprecated(bool)" true --rpc-url $MAINNET_RPC_URL --private-key $OWNER_KEY` |
-| verify | `cast call $F_OPEN "deprecated()(bool)" --rpc-url $MAINNET_RPC_URL` returns true |
+| send | `cast send $F_OPEN "setDeprecated(bool)" true --rpc-url $ETH_RPC_URL --account ripe0x` |
+| verify | `cast call $F_OPEN "deprecated()(bool)" --rpc-url $ETH_RPC_URL` returns true |
 | risk | none for coins (zero launched). reversible by `setDeprecated(false)`. the allowlist 0xd6D5fb5CfE386d0eB73a09cba5d190beb802e6E8 is shared with the live hook 0x636c, do not touch it. no other action on 0xf051 is needed once deprecated (owner can still launch there) |
 
 ### 5. LAYER burn router floors (LF-09)
@@ -117,10 +127,10 @@ note (D64): LAYER already has a hosted keeper, `layer-keeper` on fly.io in ripe0
 | finding | LF-09 high: the live routers burn the whole weth balance per call, the only guard is the owner floor `minLayerOutPerWeth` (LAYER out per 1e18 weth, 1e18 scaled), now 30.8% and 63.9% of spot. a floor above spot blocks burns until updated (safe), floor 0 pauses `processBurnWeth` with `SlippageFloorNotSet` |
 | contracts | LAYER router `0x2eDBdF011768d8cd4Ef537658b41440900C52000` (floor 5.0e24, owner 0xCB43, threshold 0.01 weth, holds 0.000186 weth). open stack router `0xE60046ee745B235109C10d322A1cbDB3c029De43` (floor 1.0353e25, owner 0xCB43, holds 0). both bound to the LAYER pool, source `src/protocol-fee/legacy/BurnRouter.sol`. `processBurnWethOpenTab` does not exist on either |
 | call | `setMinLayerOutPerWeth(uint256 newFloor)` selector 0xe12eb8ba, owner only, emits `MinLayerOutPerWethUpdated` |
-| compute | spot from the pool (id 0x85c15a70d86374f345b25c9e97a1f06b2a39765ac48269445ce0514037f31e50, LAYER is currency0, lp fee 1%, hook 0xA5eA): `SLOT=$(cast keccak $(cast abi-encode "f(bytes32,uint256)" $PID 6))`, `V=$(cast call $PM "extsload(bytes32)(bytes32)" $SLOT --rpc-url $MAINNET_RPC_URL)`, `SQRT=$(python3 -c "import sys;print(int(sys.argv[1],16)&((1<<160)-1))" $V)`, `SPOT=$(python3 -c "import sys;s=int(sys.argv[1]);print(10**18*2**192//(s*s))" $SQRT)`, `FLOOR=$(python3 -c "import sys;print(int(sys.argv[1])*95//100)" $SPOT)`. at block 26130514 spot = 1.6213e25 LAYER per weth, 95% = 1.5402e25 |
+| compute | spot from the pool (id 0x85c15a70d86374f345b25c9e97a1f06b2a39765ac48269445ce0514037f31e50, LAYER is currency0, lp fee 1%, hook 0xA5eA): `SLOT=$(cast keccak $(cast abi-encode "f(bytes32,uint256)" $PID 6))`, `V=$(cast call $PM "extsload(bytes32)(bytes32)" $SLOT --rpc-url $ETH_RPC_URL)`, `SQRT=$(python3 -c "import sys;print(int(sys.argv[1],16)&((1<<160)-1))" $V)`, `SPOT=$(python3 -c "import sys;s=int(sys.argv[1]);print(10**18*2**192//(s*s))" $SQRT)`, `FLOOR=$(python3 -c "import sys;print(int(sys.argv[1])*95//100)" $SPOT)`. at block 26130514 spot = 1.6213e25 LAYER per weth, 95% = 1.5402e25 |
 | recommended | 95% of spot (1% pool fee plus about 4% for impact on a sub weth balance). raise the margin to 90% if the router balance is above 1 weth or the pool is thin. refresh at least daily and before any manual burn, because a stale low floor is the exposure and a stale high floor only blocks. keep router balances small |
-| send | `cast send $R_LAYER "setMinLayerOutPerWeth(uint256)" $FLOOR --rpc-url $MAINNET_RPC_URL --private-key $OWNER_KEY` and the same on `$R_OPEN` |
-| verify | `cast call $R_LAYER "minLayerOutPerWeth()(uint256)" --rpc-url $MAINNET_RPC_URL`. enforced minimum is `requiredMinLayerOutForWethAmount(1e18)`. LF-12: on 0xE600 the view reads about 0.5% under the stored floor, so keepers should pass `minLayerOut` from the setter value, not the view |
+| send | `cast send $R_LAYER "setMinLayerOutPerWeth(uint256)" $FLOOR --rpc-url $ETH_RPC_URL --account ripe0x` and the same on `$R_OPEN` |
+| verify | `cast call $R_LAYER "minLayerOutPerWeth()(uint256)" --rpc-url $ETH_RPC_URL`. enforced minimum is `requiredMinLayerOutForWethAmount(1e18)`. LF-12: on 0xE600 the view reads about 0.5% under the stored floor, so keepers should pass `minLayerOut` from the setter value, not the view |
 | risk | the setter is the whole control. a floor set in a public mempool right before a burn is front runnable only in the harmless direction. not a fix: LF-03 (clamp loops) is in the src router, v2 replaces both. burning is permissionless (`processBurnWeth(uint256 minLayerOut)`, ready at 0.01 weth), so also call `status()` before changing floors |
 | other routers | `0x0EB22955E8904b8C5a4EC6f1D476f5b0C93854ca` (behind permanent collection controller 0xd8C6…, owner 0xCB43) has no floor setter, nothing to set, flagged LF-03 and LF-04. `0x9304a81965Ef3F7A092bd9eFd8c2fFc411E5F34d` (superseded) has floor 0 so it is paused, holds 0 |
 
@@ -130,11 +140,11 @@ what is mutable today, all owned by the owner eoa (token admin, renderer owner, 
 
 | asset | state read | freeze call | what it means |
 |---|---|---|---|
-| scripty content, sketch js | `ll/sketch.b64.1778120217836`, 22,996 bytes, frozen false, owner 0xCB43 | `cast send $SCRIPTY "freezeContent(string)" "ll/sketch.b64.1778120217836" --rpc-url $MAINNET_RPC_URL --private-key $OWNER_KEY` (selector 0x7a2c5701, on `ScriptyStorageV2` 0xbD11994aABB55Da86DC246EBB17C1Be0af5b7699, third party contract, source not in repo) | the bytes under that name can never change again. one way. without it the owner can append chunks and rewrite the animation script |
+| scripty content, sketch js | `ll/sketch.b64.1778120217836`, 22,996 bytes, frozen false, owner 0xCB43 | `cast send $SCRIPTY "freezeContent(string)" "ll/sketch.b64.1778120217836" --rpc-url $ETH_RPC_URL --account ripe0x` (selector 0x7a2c5701, on `ScriptyStorageV2` 0xbD11994aABB55Da86DC246EBB17C1Be0af5b7699, third party contract, source not in repo) | the bytes under that name can never change again. one way. without it the owner can append chunks and rewrite the animation script |
 | scripty content, history | `ll/history.b64.1778120217836`, 3,632 bytes, frozen false | same call with that name | seeded trade history fixed |
 | scripty content, mona image | `ll/mona.1778120217836`, 78,065 bytes, frozen false | same call with that name | backdrop image fixed |
 
-verify each freeze: `cast call $SCRIPTY "contents(string)(bool,address,uint256,bytes)" "<name>" --rpc-url $MAINNET_RPC_URL` first value true. freezing storage alone does not freeze the animation: the renderer still lets the owner point at other content names. all of these are one way, so do them last and only after the v2 plan is final:
+verify each freeze: `cast call $SCRIPTY "contents(string)(bool,address,uint256,bytes)" "<name>" --rpc-url $ETH_RPC_URL` first value true. freezing storage alone does not freeze the animation: the renderer still lets the owner point at other content names. all of these are one way, so do them last and only after the v2 plan is final:
 
 | lever | call | effect | recommendation |
 |---|---|---|---|
@@ -150,9 +160,9 @@ verify each freeze: `cast call $SCRIPTY "contents(string)(bool,address,uint256,b
 | field | value |
 |---|---|
 | finding | superseded stack, only owner can launch (deprecated true, deployFee 0.069 eth, owner 0xCB43) |
-| now | nothing to send. confirm: `cast call $F_CUR "deprecated()(bool)" --rpc-url $MAINNET_RPC_URL` returns true. never call `setDeprecated(false)` on it |
-| later, when v2 is live and the credits coin launched | `cast send $F_CUR "setHook(address,bool)" 0x636c050296B5Cc528D8785169Bf8923716FCa9cc false --rpc-url $MAINNET_RPC_URL --private-key $OWNER_KEY` (`setHook(address,bool)` selector 0x833e8db1, onlyOwnerOrAdmin, checked in the 0x4959 bytecode) |
-| verify | `cast call $F_CUR "enabledHooks(address)(bool)" 0x636c050296B5Cc528D8785169Bf8923716FCa9cc --rpc-url $MAINNET_RPC_URL` returns false |
+| now | nothing to send. confirm: `cast call $F_CUR "deprecated()(bool)" --rpc-url $ETH_RPC_URL` returns true. never call `setDeprecated(false)` on it |
+| later, when v2 is live and the credits coin launched | `cast send $F_CUR "setHook(address,bool)" 0x636c050296B5Cc528D8785169Bf8923716FCa9cc false --rpc-url $ETH_RPC_URL --account ripe0x` (`setHook(address,bool)` selector 0x833e8db1, onlyOwnerOrAdmin, checked in the 0x4959 bytecode) |
+| verify | `cast call $F_CUR "enabledHooks(address)(bool)" 0x636c050296B5Cc528D8785169Bf8923716FCa9cc --rpc-url $ETH_RPC_URL` returns false |
 | risk | affects future launches on 0x4959 only. coin 111, its hook, locker and pool are untouched. reversible by `setHook(..., true)`. the hook has no owner and no off switch, `setHook` is the only lever |
 
 ### 8. claim the owner's unclaimed LAYER fees (legacy fee locker)
@@ -162,8 +172,8 @@ verify each freeze: `cast call $SCRIPTY "contents(string)(bool,address,uint256,b
 | finding | the owner is slot 0 recipient (3800 bps) of the LAYER locker, credited at the fee locker, never claimed: 3,315,375.59 LAYER and 0.4796 weth (read: `availableFees`) |
 | contract | fee locker `0x1143db0913Ca5eCe8A42FC01b625fD81F9386b05`, owner 0xCB43, allowed depositor: the LAYER locker |
 | call | `claim(address feeOwner, address token)` selector 0x21c0b342. permissionless but pays only `feeOwner`, so anyone can trigger it and it can only pay the owner. reverts `NoFeesToClaim` at zero |
-| send | `cast send $LFEELOCKER "claim(address,address)" $OWNER $LAYER --rpc-url $MAINNET_RPC_URL --private-key $OWNER_KEY` and again with `$WETH` |
-| verify | `cast call $LFEELOCKER "availableFees(address,address)(uint256)" $OWNER $LAYER --rpc-url $MAINNET_RPC_URL` returns 0, `cast call $LAYER "balanceOf(address)(uint256)" $OWNER --rpc-url $MAINNET_RPC_URL` rose |
+| send | `cast send $LFEELOCKER "claim(address,address)" $OWNER $LAYER --rpc-url $ETH_RPC_URL --account ripe0x` and again with `$WETH` |
+| verify | `cast call $LFEELOCKER "availableFees(address,address)(uint256)" $OWNER $LAYER --rpc-url $ETH_RPC_URL` returns 0, `cast call $LAYER "balanceOf(address)(uint256)" $OWNER --rpc-url $ETH_RPC_URL` rose |
 | risk | none in the claim. selling 3.3M LAYER (about 0.2 eth at spot) moves a thin pool and the burn router floors. no deadline. same pattern for the protocol slot: 4,849 LAYER and 0.000489 weth at `0x5fDc…0A60` (below autoforward thresholds forever): `claim(0x5fDc39756A64A84518ef00CB6a0ED46971e00A60, token)` on the fee locker then `processFees(address)` on the controller, both permissionless |
 
 ### 9. 111 swapper stranding (LF-02, K-01): what the owner can and cannot do
@@ -207,9 +217,9 @@ about 29.5m gas over 30 txs (0.011 eth at 0.38 gwei, measured on a fork at block
 
 | step | rehearsal, no key | command |
 |---|---|---|
-| 0a | dry run on a fork | `FOUNDRY_PROFILE=ci forge script script/v2/DeployV2Stack.s.sol --rpc-url $MAINNET_RPC_URL --sender $OWNER` (no `--broadcast`) |
-| 0b | harness rehearsal, broadcaster differs from OWNER, then accept | `FOUNDRY_PROFILE=ci forge test --match-path "test/v2/DeployV2Stack.fork.t.sol" --fork-url $MAINNET_RPC_URL -vv`. record the block |
-| 0c | broadcast | `FOUNDRY_PROFILE=ci forge script script/v2/DeployV2Stack.s.sol --rpc-url $MAINNET_RPC_URL --ledger --sender $OWNER --broadcast --slow` (or `--account <keystore>`) |
+| 0a | dry run on a fork | `FOUNDRY_PROFILE=ci forge script script/v2/DeployV2Stack.s.sol --rpc-url $ETH_RPC_URL --sender $OWNER` (no `--broadcast`) |
+| 0b | harness rehearsal, broadcaster differs from OWNER, then accept | `FOUNDRY_PROFILE=ci forge test --match-path "test/v2/DeployV2Stack.fork.t.sol" --fork-url $ETH_RPC_URL -vv`. record the block |
+| 0c | broadcast | `FOUNDRY_PROFILE=ci forge script script/v2/DeployV2Stack.s.sol --rpc-url $ETH_RPC_URL --account ripe0x --sender $OWNER --broadcast --slow` |
 
 contracts, in the order `DeployV2Lib.deploy` creates them (D38, D36):
 
@@ -252,12 +262,14 @@ step 12 for a broadcaster that is not OWNER, one tx at a time, before anything e
 J=tmp/v2-deploy-1.json
 for k in escrow hook locker factory; do
   a=$(jq -r ".addresses.$k" $J)
-  cast call --from $OWNER $a "acceptOwnership()" --rpc-url $MAINNET_RPC_URL            # simulate
-  cast send $a "acceptOwnership()" --rpc-url $MAINNET_RPC_URL --ledger                  # send
-  cast call $a "owner()(address)" --rpc-url $MAINNET_RPC_URL                             # == OWNER
-  cast call $a "pendingOwner()(address)" --rpc-url $MAINNET_RPC_URL                      # == 0x0
+  cast call --from $OWNER $a "acceptOwnership()" --rpc-url $ETH_RPC_URL
+  cast send $a "acceptOwnership()" --rpc-url $ETH_RPC_URL --account ripe0x
+  cast call $a "owner()(address)" --rpc-url $ETH_RPC_URL
+  cast call $a "pendingOwner()(address)" --rpc-url $ETH_RPC_URL
 done
 ```
+
+per contract: the first line simulates, the second sends, `owner()` must return OWNER and `pendingOwner()` must return 0x0.
 
 | step | what | command and check |
 |---|---|---|
@@ -272,8 +284,8 @@ the first coin is `deployTokenAsOwner` (the one path that sets the protocol slot
 |---|---|---|
 | 1 | owner calls before launch | `factory.setExemptAllowed(treasury, true)` (0xa492f064, D47) only if the treasury must be in `tax.exempt` (VENUE mode only, needs code at launch). `escrow.addDepositor(feeSwapper, false)` (0x26a760ad, D33) if a per coin `FeeAutoSwapperV2` is a locker reward recipient: deploy the swapper first, its address goes into `rewardRecipients`. a plain treasury recipient needs neither. referral payout is the escrow (D57), no call |
 | 2 | config | `cp script/v2/launch-configs/example.json my-coin.json`, set treasury, names, ticks, `"example": false`. limits: `bountyBps` at most 9000, `lpFee` at least 3000 pips, referral cap under the D52 floor, project `rewardBps` plus protocolBps equal 10000, native eth only, tax sink is DEAD or the bounty recipient. the json cannot carry launch extensions, a pool extension or tax venues |
-| 3 | dry run | `forge script script/v2/LaunchV2Coin.s.sol --sig "run(string)" "$(cat my-coin.json)" --rpc-url $MAINNET_RPC_URL --sender $OWNER`. preflight on the wiring, `predictToken`, a snapshot dry run, then it stops before the tx. record the predicted token, `configHash`, value (the deploy fee) and pool id |
-| 4 | broadcast | the same command plus `--ledger --broadcast` (or `--account <keystore>`). excess value above `deployFee()` plus extension msgValues is refunded |
+| 3 | dry run | `forge script script/v2/LaunchV2Coin.s.sol --sig "run(string)" "$(cat my-coin.json)" --rpc-url $ETH_RPC_URL --sender $OWNER`. preflight on the wiring, `predictToken`, a snapshot dry run, then it stops before the tx. record the predicted token, `configHash`, value (the deploy fee) and pool id |
+| 4 | broadcast | the same command plus `--account ripe0x --broadcast --slow`. excess value above `deployFee()` plus extension msgValues is refunded |
 | 5 | checks | `factory.isArtCoin(token)`, token equals the predicted address, `hook.poolInfo(poolId).version == 2`, `token.launcherVersion() == 2`, the `TokenCreatedV2` event echoes the config and its `configHash` equals the dry run |
 | 6 | post launch owner calls | `escrow.isDepositor(feeSwapper)` (0x2f70d1ba) is true, add it if step 1 was skipped. the swapper's deployer calls `swapper.setup(coin)` (0x66d38203). `BurnRouterV2.initialize(token, key)` if the coin uses the burn leg, then `router.coin() == token` |
 | 7 | run the keeper once | see the next table. then a small buy and sell and check the fee legs: the bounty is pushed with the 2,300 gas stipend (D41), anything that fails sits in the escrow under the recipient, claim it |
@@ -283,8 +295,8 @@ keeper for a v2 coin: `ArtCoinsKeeperV2.collectAndForward(address token, bool do
 
 | item | value |
 |---|---|
-| dry run | `cast call --from $KEEPER_ADDR $KEEPER_V2 "collectAndForward(address,bool,uint256)" $TOKEN true 0 --gas-limit 2000000 --rpc-url $MAINNET_RPC_URL` |
-| send | `cast send $KEEPER_V2 "collectAndForward(address,bool,uint256)" $TOKEN true $MINOUT --gas-limit 2000000 --rpc-url $MAINNET_RPC_URL --account <keystore>`. `$MINOUT` is the simulated convert output at `minOut` 0 minus 100 bps, never spot. `0` only for the first dry run |
+| dry run | `cast call --from $KEEPER_ADDR $KEEPER_V2 "collectAndForward(address,bool,uint256)" $TOKEN true 0 --gas-limit 2000000 --rpc-url $ETH_RPC_URL` |
+| send | `cast send $KEEPER_V2 "collectAndForward(address,bool,uint256)" $TOKEN true $MINOUT --gas-limit 2000000 --rpc-url $ETH_RPC_URL --account artcoins-keeper`. `$MINOUT` is the simulated convert output at `minOut` 0 minus 100 bps, never spot. `0` only for the first dry run |
 | gas floors (D49) | collect 900k, flush 150k, convert 400k, erc165 probe 30k, each plus 50k margin and the 1/63 reserve. floors, not caps. below them the call reverts `InsufficientGas(step)` (0x969aeb08, 1 collect, 2 flush, 3 convert, 4 probe). set the limit by hand, 2,000,000 is safe. the figures are v1 measurements with room, re measure on the live v2 coin and tighten |
 | failed step | collect bubbles its revert. flush and convert reverts are logged (`FlushSkipped`, `ConvertSkipped`) and the run completes. a reward recipient that is not a swapper (a plain treasury) is skipped, the locker pushes its share itself |
 | cadence | the locker has no LF-01 hole, so there is no hourly rule. hourly cron reads `preview(token)` (0x13a69df9: swappers, accruedPaired, accruedArtCoin, nextConvertibleBlock) and runs when the accrued amounts are worth more than the gas, and at least weekly regardless (uncollected lp fees are not readable through the locker interface). convert is paced per swapper, extra attempts are logged no ops |
@@ -292,7 +304,7 @@ keeper for a v2 coin: `ArtCoinsKeeperV2.collectAndForward(address token, bool do
 
 ### 2c. open to the public, `setDeprecated(false)` last
 
-before the call: every gate below is true, the first coin ran at least one full fee cycle, and `cast call $F_V2 "deprecated()(bool)" --rpc-url $MAINNET_RPC_URL` returns true. then `cast send $F_V2 "setDeprecated(bool)" false --rpc-url $MAINNET_RPC_URL --private-key $OWNER_KEY` (0xd848dee7). to close again: `setDeprecated(true)`. no other owner tx is needed at opening.
+before the call: every gate below is true, the first coin ran at least one full fee cycle, and `cast call $F_V2 "deprecated()(bool)" --rpc-url $ETH_RPC_URL` returns true. then `cast send $F_V2 "setDeprecated(bool)" false --rpc-url $ETH_RPC_URL --account ripe0x` (0xd848dee7). to close again: `setDeprecated(true)`. no other owner tx is needed at opening.
 
 ### must be true before public
 

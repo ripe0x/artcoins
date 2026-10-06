@@ -2,6 +2,27 @@
 
 running log for the unattended v2 session. a restarted session should read this first, then DECISIONS.md.
 
+## local director session (2026-10-06 evening, owner's mac)
+
+worktree `.claude/worktrees/artcoins-v2-handoff-8404d2`, local branch `v2-director` tracking `origin/v2` (push with `git push origin HEAD:v2`). forge 1.7.1 binary from the scratchpad, ci profile where the command says so. see HANDOFF lessons for the submodule and port setup.
+
+| group | command (HANDOFF "how to run tests") | expected | result at 72479ce |
+|---|---|---|---|
+| v2 unit | unit command | 235 | 235 pass |
+| v2 fork | fork command, block 26130269 | 354 | 354 pass |
+| deploy rehearsal | DeployV2Stack.fork.t.sol | 6 | 6 pass |
+| review proofs | review, review-v2 | 94 | 94 pass |
+| sizes | ci profile | hook 16,716 | hook 16,716, headroom 7,860 |
+| keeper runner | `cd keeper && npm test` with `MAINNET_RPC_URL` and ci artifacts built | 70 | 70 pass |
+| ui unit, build, lint | `cd ui && npm test && npm run build && npm run lint` | 74 | 74 pass, build and lint green |
+| ui e2e | anvil fork on port 8546, v2 stack deployed, `E2E_FORK_RPC=http://127.0.0.1:8546` | 19 | 3 pass, 10 fail, 6 not run. every failure is the console assertion seeing third party 403 / 400 load errors (real internet; the suite was written behind a blocking proxy). harness fix in progress |
+
+| open item (HANDOFF) | state |
+|---|---|
+| 1 runbook part 1 | owner ran action 1 (block 26135717) and action 5 (26135720, 26135723) before this session. open: action 2 collect LAYER, action 4 deprecate 0xf051, action 3 deploy 111 helper, action 8 claim owner LAYER fees. all simulated at block 26136123 |
+| 2 audit tags | done. `v2-audit-1` = 9fed001, `v2-audit-2` = d8575db pushed to origin; the mirror job skipped both (not on master), public repo has none |
+| D65 to D68 | proposed, waiting for the owner |
+
 ## environment (session of 2026-10-06)
 
 | item | state |
