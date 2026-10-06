@@ -31,6 +31,19 @@ async function main() {
       await sleep(Math.min(300_000, 10_000 * 2 ** attempt));
     }
   }
+  // watchdog: a loop that stops finishing ticks (hung rpc) exits, and fly restarts the machine. the tx in
+  // flight, if any, is in the state file and is settled by the next process
+  const stall = Math.max(3 * ctx.cfg.intervalSeconds, ctx.cfg.receiptTimeoutSeconds + 2 * ctx.cfg.intervalSeconds) + 300;
+  const armedAt = Math.floor(Date.now() / 1000);
+  setInterval(() => {
+    const now = Math.floor(Date.now() / 1000);
+    const last = Math.max(ctx.state.lastTickAt ?? 0, armedAt);
+    if (now - last > stall) {
+      L.error('watchdog: no tick finished, exiting for a restart', { lastTickAt: ctx.state.lastTickAt, stallSeconds: stall });
+      process.exit(1);
+    }
+  }, 60_000).unref();
+
   while (!stopping) {
     await safeTick(ctx);
     if (stopping) break;

@@ -180,7 +180,9 @@ async function settle(ctx, k, f, receipt) {
     const events = decodeKeeperLogs(receipt.logs, k.kind, k.address);
     for (const e of events.filter((x) => x.skipped)) {
       metrics.inc('keeper_skipped_events_total', { keeper: k.id, event: e.event });
-      log.warn('step skipped', { keeper: k.id, event: e.event, step: e.step, reason: e.reason, hash: f.hash });
+      // the normal idle answers log at info, anything else (floors, slippage, broken recipients) at warn
+      const idle = /^(NothingToFlush|NothingToConvert|ConvertTooEarly)\(/.test(e.reason || '');
+      (idle ? log.info : log.warn)('step skipped', { keeper: k.id, event: e.event, step: e.step, reason: e.reason, hash: f.hash });
     }
     metrics.inc('keeper_runs_total', { keeper: k.id });
     metrics.inc('keeper_results_total', { keeper: k.id, result: 'ok' });

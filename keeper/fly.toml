@@ -1,0 +1,52 @@
+# fly.io config for the artcoins keeper runner (one machine, state on a 1 gb volume). deploy from the repo root:
+#   fly deploy . --config keeper/fly.toml --dockerfile keeper/Dockerfile --ignorefile keeper/.dockerignore --ha=false
+# secrets (never in this file): fly secrets set KEEPER_PRIVATE_KEY=... MAINNET_RPC_URL=... PRIVATE_RPC_URL=...
+# see keeper/README.md
+app = "artcoins-keeper"
+primary_region = "iad"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "Dockerfile"
+  ignorefile = ".dockerignore"
+
+[env]
+  INTERVAL_SECONDS = "600"
+  MAX_GAS_GWEI = "30"
+  MAX_PRIORITY_GWEI = "2"
+  STATE_PATH = "/data/state.json"
+  PORT = "8080"
+  KEEPERS = "111,layer,v2"
+  PRIVATE_RPC_KEEPERS = "111"
+  DRY_RUN = "0"
+  # until the keepers are recorded in deployments/mainnet.json (then remove these and redeploy):
+  # KEEPER_111 = "0x..."
+  # KEEPER_LAYER = "0x..."
+
+[mounts]
+  source = "keeper_state"
+  destination = "/data"
+  initial_size = "1gb"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "60s"
+    interval = "60s"
+    method = "GET"
+    path = "/healthz"
+    timeout = "5s"
+
+[[restart]]
+  policy = "always"
+  retries = 10
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
