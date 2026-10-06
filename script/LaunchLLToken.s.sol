@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+// targets superseded stack legacy; current stack is 0x4959… (Addresses.CURRENT_FACTORY).
+// Mainnet runs are refused unless ALLOW_SUPERSEDED=1.
+
 import {Script, console2} from "forge-std/Script.sol";
 
 import {ArtCoinsToken} from "../src/ArtCoinsToken.sol";
@@ -8,6 +11,7 @@ import {IArtCoinsAirdrop} from "../src/extensions/interfaces/IArtCoinsAirdrop.so
 import {IArtCoinsFactory} from "../src/interfaces/IArtCoinsFactory.sol";
 import {IArtCoinsHook} from "../src/interfaces/IArtCoinsHook.sol";
 import {ArtCoinsFactory} from "../src/legacy/ArtCoinsFactory.sol";
+import {Addresses} from "./Addresses.sol";
 import {LaunchDefaults} from "./LaunchDefaults.sol";
 
 /// @notice Launches the Liquidity Layer migration test token on Sepolia.
@@ -30,7 +34,16 @@ contract LaunchLLToken is Script {
     bytes32 internal constant MERKLE_ROOT =
         0x67e99df6795c55652274e25884dca33c9198a49c34f5854faab1fefb5e297239;
 
+    /// @dev This script drives the legacy factory ABI (LAYER launched on stack `legacy`, 2026-05-07).
+    ///      On mainnet it refuses to run unless ALLOW_SUPERSEDED=1.
+    function _requireSupersededAllowed() internal view {
+        if (block.chainid == Addresses.CHAIN_ID && vm.envOr("ALLOW_SUPERSEDED", uint256(0)) != 1) {
+            revert("targets superseded stack legacy; set ALLOW_SUPERSEDED=1 to run on mainnet");
+        }
+    }
+
     function run() public {
+        _requireSupersededAllowed();
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(pk);
 
