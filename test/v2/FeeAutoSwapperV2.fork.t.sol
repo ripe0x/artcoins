@@ -437,6 +437,18 @@ contract FeeAutoSwapperV2ForkTest is P1Base {
         assertGe(out, floor, "enforced floor is the stored one");
     }
 
+    /// @notice D50: a hookless pool has no known fees, so the floor is raw spot.
+    function test_swapperV2_hooklessPool_rawSpotFloor() public {
+        assertEq(swapper.poolBaselineSkimBps(), 0);
+        assertEq(swapper.poolLpFee(), 0);
+        assertEq(swapper.floorFor(STEP), _expectedFloor(STEP, swapper.spotFloorBps()), "raw spot");
+        swapper.syncPoolFees();
+        assertEq(swapper.poolLpFee(), 0, "sync keeps zero");
+        FeeAutoSwapperV2 s = _deploy(address(end), address(0));
+        vm.expectRevert(IFeeAutoSwapperV2.NotFinalized.selector);
+        s.syncPoolFees();
+    }
+
     function test_swapperV2_constructor_rejectsOutOfBounds() public {
         FeeAutoSwapperV2.Config memory c = FeeAutoSwapperV2.Config({
             owner: address(this),

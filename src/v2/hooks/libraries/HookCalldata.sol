@@ -5,6 +5,7 @@ pragma solidity ^0.8.26;
 /// @notice Tolerant, bounds checked parser for the swap `hookData` the v2 hook
 ///         accepts (unchanged from v1):
 ///           hookData = abi.encode(PoolSwapData{bytes mevModuleSwapData, bytes poolExtensionSwapData})
+///           mevModuleSwapData = "" or abi.encode(address refundTo) (v2: no module reads it)
 ///           poolExtensionSwapData = abi.encode(PCSwapData{PCAttribution attribution, bytes extensionPayload})
 ///           PCAttribution = (bytes32 sourceId, address referrer, bytes16 campaignId, uint24 referralBps)
 /// @dev    Replaces v1's three external decode helpers and their try/catch
@@ -56,6 +57,28 @@ library HookCalldata {
         att.referrer = address(uint160(ref));
         att.campaignId = bytes16(bytes32(camp));
         att.referralBps = bps;
+    }
+
+    /// @notice Optional refund address for the unfilled skim of a price
+    ///         limited swap: `mevModuleSwapData == abi.encode(address)`
+    ///         (exactly 32 bytes, clean high bits). Zero if absent or
+    ///         malformed (the hook then refunds the PoolManager caller).
+    /// @dev    Only the swapper's own over charge is at stake, and the swapper
+    ///         chooses its hookData, so no authorization is needed. Never
+    ///         reverts: same bounds discipline as `decode`.
+    function refundTo(bytes calldata d) internal pure returns (address to) {
+        uint256 n = d.length;
+        if (n < 0x60) return address(0);
+        uint256 t = _word(d, 0);
+        if (t > n - 0x40) return address(0);
+        uint256 o = _word(d, t);
+        if (o > n) return address(0);
+        uint256 p = t + o; // <= 2n
+        if (p > n - 0x40) return address(0);
+        if (_word(d, p) != 0x20) return address(0);
+        uint256 w = _word(d, p + 0x20);
+        if (w >> 160 != 0) return address(0);
+        to = address(uint160(w));
     }
 
     /// @dev Caller guarantees `i + 32 <= d.length`.

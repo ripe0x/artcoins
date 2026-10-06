@@ -6,7 +6,14 @@ import {HookV2ForkBase} from "../mocks/HookV2ForkBase.sol";
 import {Constants} from "../../../src/Constants.sol";
 import {ArtCoinsTokenV2} from "../../../src/v2/ArtCoinsTokenV2.sol";
 import {FeeAutoSwapperV2} from "../../../src/v2/FeeAutoSwapperV2.sol";
+import {IArtCoinsHookV2} from "../../../src/v2/interfaces/IArtCoinsHookV2.sol";
+import {IFeeAutoSwapperV2} from "../../../src/v2/interfaces/IFeeAutoSwapperV2.sol";
 import {BurnRouterV2} from "../../../src/v2/protocol-fee/BurnRouterV2.sol";
+
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
+import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
@@ -21,6 +28,9 @@ contract P1HookSink {
 ///         (1000 eth full range, 0.5% lp fee).
 /// Run: /tmp/claude-0/forge.sh test --match-path "test/v2/p1/P1HookRegression.fork.t.sol" -vv
 contract P1HookRegressionForkTest is HookV2ForkBase {
+    using StateLibrary for IPoolManager;
+    using PoolIdLibrary for PoolKey;
+
     address internal keeper = makeAddr("p1-keeper");
 
     function _launchWith(uint8 mode, uint24 baseline)
@@ -201,5 +211,83 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
         // at the default 100 bps cap on a 0.5% lp fee pool the round trip
         // costs the attacker more than it extracts
         assertLe(profit, 0, "not profitable at the default cap");
+    }
+
+    // ── D50: fee aware floor ─────────────────────────────────────────────
+
+    /// @notice Reviewer's `test_holds_hardMode_swapperConvert` scenario (HARD
+    ///         coin, 6% baseline skim, 0.5% lp fee): converts at the default
+    ///         95% floor, because the floor nets out the pool's known fees.
+    function test_swapperV2_feeAwareFloor_6pctSkimPool_convertsAtDefault() public onlyFork {
+        (PoolKey memory key, ArtCoinsTokenV2 token) =
+            _launchWith(Constants.TAX_MODE_HARD, BASELINE);
+        P1HookSink end = new P1HookSink();
+        FeeAutoSwapperV2 s = _swapper(key, address(token), address(end), 1e18);
+        assertEq(s.poolBaselineSkimBps(), BASELINE, "skim read from the hook");
+        assertEq(s.poolLpFee(), LP_FEE, "lp fee read from the hook");
+        assertEq(s.spotFloorBps(), 9500, "default floor");
+        token.transfer(address(s), 1e18);
+        uint256 floor = s.floorFor(1e18);
+        vm.prank(keeper);
+        uint256 out = s.convert(0);
+        emit log_named_uint("out", out);
+        emit log_named_uint("fee aware floor", floor);
+        assertGe(out, floor);
+        assertEq(token.balanceOf(address(s)), 0);
+        assertEq(address(s).balance, 0);
+    }
+
+    /// @notice 3% taken beyond the known fees (modelled by the hook reporting
+    ///         a 6% baseline while charging 9%, e.g. a skim above baseline).
+    ///         A floor that leaves less than 3% tolerance reverts; the default
+    ///         95% leaves 5% minus impact and lets it through.
+    function test_swapperV2_feeAwareFloor_3pctBeyondKnownFees() public onlyFork {
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(Constants.TAX_MODE_NONE, 9000);
+        IArtCoinsHookV2.SkimConfig memory cfg = hook.skimConfig(key.toId());
+        assertEq(cfg.baselineSkimBps, 9000);
+        cfg.baselineSkimBps = 6000; // the swapper believes 6%
+        vm.mockCall(
+            address(hook),
+            abi.encodeWithSelector(IArtCoinsHookV2.skimConfig.selector, key.toId()),
+            abi.encode(cfg)
+        );
+        P1HookSink end = new P1HookSink();
+        FeeAutoSwapperV2 s = _swapper(key, address(token), address(end), 1e18);
+        vm.clearMockedCalls();
+        assertEq(s.poolBaselineSkimBps(), 6000);
+        token.transfer(address(s), 2e18);
+        vm.roll(block.number + 1);
+
+        s.setSpotFloorBps(9700);
+        vm.expectPartialRevert(IFeeAutoSwapperV2.MinOutBelowFloor.selector);
+        s.convert(0);
+
+        s.setSpotFloorBps(9500);
+        uint256 out = s.convert(0);
+        assertGt(out, 0, "default tolerance absorbs 3%");
+
+        // anyone resyncs to the hook's real 9%; the floor follows
+        vm.roll(block.number + 100);
+        s.syncPoolFees();
+        assertEq(s.poolBaselineSkimBps(), 9000);
+        s.setSpotFloorBps(9700);
+        s.convert(0);
+    }
+
+    /// @notice Router side: fees stored at initialize, floor view nets them out.
+    function test_burnV2_feeAwareFloor_storedAndUsed() public onlyFork {
+        (PoolKey memory key, ArtCoinsTokenV2 token) =
+            _launchWith(Constants.TAX_MODE_NONE, BASELINE);
+        BurnRouterV2 r = _router(key, address(token));
+        assertEq(r.poolBaselineSkimBps(), BASELINE);
+        assertEq(r.poolLpFee(), LP_FEE);
+        (uint160 p,,,) = pm.getSlot0(key.toId());
+        uint256 raw = FullMath.mulDiv(FullMath.mulDiv(1 ether, p, 1 << 96), p, 1 << 96);
+        uint256 netPpm = 1e6 - uint256(BASELINE) * 10 - LP_FEE;
+        assertEq(r.floorFor(1 ether), FullMath.mulDiv(raw, netPpm * 8000, 1e6 * 1e4));
+        r.setSpotFloorBps(9500);
+        _fund(address(r), 1 ether);
+        (, uint256 burned) = r.processBurn(0);
+        assertGt(burned, 0, "burns at 95% of the fee net spot");
     }
 }

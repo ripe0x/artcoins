@@ -195,6 +195,17 @@ contract BurnRouterV2ForkTest is P1Base {
         router.setSpotFloorBps(9000);
     }
 
+    /// @notice D50: a hookless pool has no known fees, so the floor is raw spot.
+    function test_burnV2_hooklessPool_rawSpotFloor() public {
+        assertEq(router.poolBaselineSkimBps(), 0);
+        assertEq(router.poolLpFee(), 0);
+        assertEq(router.floorFor(1 ether), _expectedFloor(1 ether, Constants.SPOT_FLOOR_BPS));
+        router.syncPoolFees();
+        BurnRouterV2 r = new BurnRouterV2(address(this), address(pm), address(escrow));
+        vm.expectRevert(IBurnRouterV2.NotInitialized.selector);
+        r.syncPoolFees();
+    }
+
     /// @notice The floor the view reports and the burn enforces uses the stored bps.
     function test_burnV2_spotFloor_usesStoredValue() public {
         assertEq(router.floorFor(1 ether), _expectedFloor(1 ether, Constants.SPOT_FLOOR_BPS));

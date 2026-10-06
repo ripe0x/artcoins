@@ -57,15 +57,21 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 ///
 ///         Quote specified swaps (exact in buy, exact out sell) are charged in
 ///         `beforeSwap` on the requested amount, then trued up in `afterSwap`
-///         on the realized fill. The unfilled share is refunded inside the
-///         swap (D42) with `settleFor(sender)`, which credits the swapper's
-///         eth delta. The afterSwap return delta cannot carry it: for these two
-///         shapes the unspecified currency is the art coin. Escrow fallback
-///         only when the caller has an erc20 synced at that moment (a native
-///         settle would revert). Routers must settle from
-///         `currencyDelta` (V4Router and the universal router do): on a
-///         partial fill the swap's returned BalanceDelta still shows the
-///         gross charge; the refund is the extra credit.
+///         on the realized fill. The unfilled share is credited in the fee
+///         escrow to the refund address the swapper names in hookData
+///         (`mevModuleSwapData = abi.encode(address)`), else to the
+///         PoolManager caller. Why not inside the swap (D42, D51): v4 lets
+///         `afterSwap` return a delta only on the UNSPECIFIED currency, and
+///         for exactly these two shapes that is the art coin, so an eth
+///         refund cannot ride the return delta. `settleFor(sender)` credits
+///         the caller's transient delta but not the BalanceDelta `swap()`
+///         returns, so routers that settle the returned delta (dev buy,
+///         PoolSwapTest, many integrations) fail `CurrencyNotSettled`. The
+///         escrow keeps returned and transient deltas equal for every router.
+///         Known limit: on a partial exact out sell the caller's eth delta
+///         can be negative until the refund is claimed (V2H-06); a router
+///         that cannot claim (the universal router) must pass a refund
+///         address or the refund stays under it (V2H-03).
 ///
 ///         Self referral through a router (referrer = the user's own wallet)
 ///         is accepted and bounded by the frozen per pool cap (<= 1% of
@@ -417,17 +423,19 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         (bytes calldata ext, HookCalldata.Attribution memory att) = HookCalldata.decode(hookData);
         if (charged != 0) {
             address escrow = _globals.feeEscrow;
-            address synced = Currency.unwrap(TransientStateLibrary.getSyncedCurrency(poolManager));
             uint256 over = charged - skim;
             if (over != 0) {
-                // D42: credit the swapper's eth delta inside the swap. A
-                // native settle reverts while an erc20 is synced; only then
-                // fall back to the escrow.
-                if (synced == address(0)) poolManager.settleFor{value: over}(sender);
-                else IArtCoinsFeeEscrowV2(escrow).storeFeesNative{value: over}(sender);
-                emit SkimRefunded(pid, sender, over);
+                // b3: the unfilled share goes to the escrow, credited to the
+                // hookData refund address or else the PoolManager caller.
+                // D42/D51 (refund inside the swap) cannot be done without
+                // breaking routers: see the contract natspec.
+                address to = HookCalldata.refundTo(hookData);
+                if (to == address(0)) to = sender;
+                IArtCoinsFeeEscrowV2(escrow).storeFeesNative{value: over}(to);
+                emit SkimRefunded(pid, to, over);
             }
             if (skim != 0) {
+                address synced = Currency.unwrap(TransientStateLibrary.getSyncedCurrency(poolManager));
                 _split(pid, sender, escrow, skim, bps, r, att);
                 // a 2,300 gas recipient can still reach `sync`; undo it so a
                 // router that settles native without syncing is not broken.

@@ -66,6 +66,10 @@ interface IUniversalRouterLike {
 
 /// exposes the internal hookData parser.
 contract HV2CalldataHarness {
+    function refundTo(bytes calldata d) external pure returns (address) {
+        return HookCalldata.refundTo(d);
+    }
+
     function decode(bytes calldata d)
         external
         pure
@@ -269,27 +273,32 @@ contract HookV2ForkTest is HookV2ForkBase {
         assertEq(_escrowed(address(swapRouter)), 0, "no refund");
     }
 
+    /// b3: the unfilled skim of a price limited exact in buy is credited in
+    /// escrow; the returned BalanceDelta and the transient delta agree, so
+    /// both router styles (settle returned delta: PoolSwapTest; settle
+    /// currencyDelta: seq) settle cleanly.
     function test_skim_exactInPriceLimited_refundsUnfilled() public onlyFork {
         PoolKey memory key = _launchSimple(bountyEoa);
         uint256 a = 100 ether;
         uint256 charged = (a * BASELINE) / D;
         uint256 requested = a - charged;
+        uint160 lim = TickMath.getSqrtPriceAtTick(-100);
         uint256 b0 = _paid(bountyEoa);
         uint256 p0 = _paid(protocolR);
-        uint256 eth0 = address(seq).balance;
 
-        (int256 net0,) = _swapNet(key, true, -int256(a), TickMath.getSqrtPriceAtTick(-100), "");
+        (int256 net0,) = _swapNet(key, true, -int256(a), lim, "");
+        assertEq(seq.lastReturned0(), net0, "returned delta == transient delta");
 
         uint256 fair = (_paid(bountyEoa) - b0) + (_paid(protocolR) - p0);
-        uint256 spent = eth0 - address(seq).balance; // swapper balance, directly
-        assertEq(spent, uint256(-net0));
-        uint256 r = spent - fair; // realized pool input
+        uint256 r = uint256(-net0) - charged; // realized pool input
         assertLt(r, requested / 4, "partial fill");
-        assertApproxEqAbs(fair, (charged * r) / requested, 1, "legs on the fill");
-        // D42: the unfilled skim never left the swapper; nothing in escrow
-        assertEq(_escrowed(address(seq)), 0, "no escrow refund");
-        assertLt(spent, a - charged / 2, "swapper paid fill plus fair skim only");
+        assertEq(fair, (charged * r) / requested, "legs on the fill");
+        assertEq(_escrowed(address(seq)), charged - fair, "unfilled skim refunded");
         assertApproxEqRel(fair * D, (r + fair) * BASELINE, 1e12);
+
+        // a router that settles the returned delta works too
+        _swap(key, true, -int256(a), TickMath.getSqrtPriceAtTick(-200), "");
+        assertGt(_escrowed(address(swapRouter)), 0);
     }
 
     function test_skim_exactOutPriceLimited_refundsUnfilled() public onlyFork {
@@ -299,26 +308,44 @@ contract HookV2ForkTest is HookV2ForkBase {
         uint256 requested = a + charged;
         uint256 b0 = _paid(bountyEoa);
         uint256 p0 = _paid(protocolR);
-        uint256 eth0 = address(seq).balance;
 
         (int256 net0,) = _swapNet(key, false, int256(a), TickMath.getSqrtPriceAtTick(100), "");
+        assertEq(seq.lastReturned0(), net0, "returned delta == transient delta");
 
-        // V2H-06: after the unlock the seller only receives eth, never owes it
-        assertGt(net0, 0, "seller nets eth inside the swap");
-        assertEq(address(seq).balance - eth0, uint256(net0), "swapper balance");
+        int256 r = net0 + int256(charged); // realized pool output
+        assertGt(r, 0);
+        assertLt(uint256(r), requested / 4, "partial fill");
         uint256 fair = (_paid(bountyEoa) - b0) + (_paid(protocolR) - p0);
-        uint256 r = uint256(net0) + fair; // realized pool output
-        assertLt(r, requested / 4, "partial fill");
-        assertApproxEqAbs(fair, (charged * r) / requested, 1);
-        assertEq(_escrowed(address(seq)), 0, "no escrow refund");
-        // the returned BalanceDelta still shows the gross charge (documented)
-        assertEq(seq.lastReturned0(), int256(r) - int256(charged));
+        assertEq(fair, (charged * uint256(r)) / requested);
+        uint256 refund = charged - fair;
+        assertEq(_escrowed(address(seq)), refund, "unfilled skim refunded");
+        // V2H-06 (documented): net of the refund the seller receives eth
+        assertGt(net0 + int256(refund), 0, "seller nets eth after the refund");
+
+        // a router that settles the returned delta works too
+        _swap(key, false, int256(a), TickMath.getSqrtPriceAtTick(200), "");
     }
 
-    /// D42 / V2H-03 through the live universal router (V4Router, min price
-    /// limit): a buy past the last launch position fills partially; the
-    /// unfilled skim is credited to UR's delta and settled back to the user;
-    /// nothing is stranded in the escrow under UR.
+    /// V2H-03: the swapper names a refund address in hookData; the unfilled
+    /// skim is credited to it instead of the router.
+    function test_skim_refundTo_fromHookData() public onlyFork {
+        PoolKey memory key = _launchSimple(bountyEoa);
+        address me = makeAddr("refundMe");
+        _swapNet(key, true, -100 ether, TickMath.getSqrtPriceAtTick(-100), _refundData(me));
+        assertGt(_escrowed(me), 0, "credited to the named address");
+        assertEq(_escrowed(address(seq)), 0);
+    }
+
+    function _refundData(address to) internal pure returns (bytes memory) {
+        return abi.encode(
+            IArtCoinsHook.PoolSwapData({mevModuleSwapData: abi.encode(to), poolExtensionSwapData: ""})
+        );
+    }
+
+    /// V2H-03 through the live universal router (V4Router settles the full
+    /// debt, min price limit): a buy past the last launch position fills
+    /// partially; with a refund address in hookData the unfilled skim is
+    /// credited to the user, nothing is stranded under UR.
     function test_skim_universalRouterPartialFill_nothingInEscrow() public onlyFork {
         address ur = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af;
         ArtCoinsTokenV2 token = _newToken(0, bountyEoa, address(hook));
@@ -330,7 +357,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         uint256 charged = (a * BASELINE) / D;
         bytes memory actions = abi.encodePacked(uint8(0x06), uint8(0x0c), uint8(0x0f));
         bytes[] memory params = new bytes[](3);
-        params[0] = abi.encode(URExactInSingle(key, true, uint128(a), uint128(0), bytes("")));
+        params[0] = abi.encode(URExactInSingle(key, true, uint128(a), uint128(0), _refundData(address(this))));
         params[1] = abi.encode(key.currency0, a);
         params[2] = abi.encode(key.currency1, uint256(0));
         bytes[] memory inputs = new bytes[](2);
@@ -341,11 +368,12 @@ contract HookV2ForkTest is HookV2ForkBase {
         uint256 p0 = _paid(protocolR);
         IUniversalRouterLike(ur).execute{value: a}(abi.encodePacked(uint8(0x10), uint8(0x04)), inputs, block.timestamp);
 
-        uint256 spent = eth0 - address(this).balance;
+        uint256 spent = eth0 - address(this).balance; // r + charged
         uint256 fair = (_paid(bountyEoa) - b0) + (_paid(protocolR) - p0);
-        uint256 r = spent - fair;
+        uint256 r = spent - charged;
         assertLt(r, (a - charged) / 2, "partial fill");
-        assertApproxEqAbs(fair, (charged * r) / (a - charged), 1);
+        assertEq(fair, (charged * r) / (a - charged));
+        assertEq(_escrowed(address(this)), charged - fair, "refund credited to the user");
         assertEq(_escrowed(ur), 0, "nothing stranded under UR");
         assertEq(ur.balance, 0);
         assertGt(token.balanceOf(address(this)), 0);
@@ -720,8 +748,8 @@ contract HookV2ForkTest is HookV2ForkBase {
         bytes memory hd = _attribution(makeAddr("ref"), 100);
         (int256 net0,) = _swapNet(key, true, -100 ether, TickMath.getSqrtPriceAtTick(-100), hd);
         assertEq(ext.swaps(), 1);
-        // trader facing: fill plus fair skim, the unfilled skim never charged
-        assertEq(int256(ext.lastAmount0()), net0);
+        // trader facing: fill plus fair skim (the refund comes back via escrow)
+        assertEq(int256(ext.lastAmount0()), net0 + int256(_escrowed(address(seq))));
         assertEq(
             keccak256(ext.lastData()),
             keccak256(abi.decode(hd, (IArtCoinsHook.PoolSwapData)).poolExtensionSwapData)
@@ -1044,9 +1072,24 @@ contract HookV2ForkTest is HookV2ForkBase {
         assertEq(att.referrer, address(0));
     }
 
+    function test_calldata_refundTo() public {
+        HV2CalldataHarness h = new HV2CalldataHarness();
+        address me = makeAddr("me");
+        assertEq(h.refundTo(_refundData(me)), me);
+        assertEq(h.refundTo(_attribution(me, 1)), address(0), "empty mev data");
+        assertEq(h.refundTo(""), address(0));
+        bytes memory dirty = abi.encode(
+            IArtCoinsHook.PoolSwapData({
+                mevModuleSwapData: abi.encode(type(uint256).max), poolExtensionSwapData: ""
+            })
+        );
+        assertEq(h.refundTo(dirty), address(0), "dirty high bits");
+    }
+
     function testFuzz_calldata_neverReverts(bytes calldata junk) public {
         HV2CalldataHarness h = new HV2CalldataHarness();
         h.decode(junk);
+        h.refundTo(junk);
         // and a valid outer frame around junk
         h.decode(
             abi.encode(

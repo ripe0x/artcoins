@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import {Constants} from "../Constants.sol";
 import {IArtCoinsFeeEscrowV2} from "./interfaces/IArtCoinsFeeEscrowV2.sol";
+import {IArtCoinsHookV2} from "./interfaces/IArtCoinsHookV2.sol";
 import {IConstantsBound} from "./interfaces/IConstantsBound.sol";
 import {IFeeAutoSwapperV2} from "./interfaces/IFeeAutoSwapperV2.sol";
 import {FeeDelivery} from "./libraries/FeeDelivery.sol";
@@ -72,6 +73,8 @@ contract FeeAutoSwapperV2 is
 
     /// @notice D32: owner moved the output floor (bps of the spot implied output).
     event SpotFloorBpsSet(uint256 oldBps, uint256 newBps);
+    /// @notice D50: the pool's known fees were (re)read from the hook.
+    event PoolFeesSynced(uint256 baselineSkimBps, uint256 lpFee);
     /// @notice D39: owner moved the per convert price impact cap.
     event MaxImpactBpsSet(uint256 oldBps, uint256 newBps);
 
@@ -127,6 +130,10 @@ contract FeeAutoSwapperV2 is
     ///         [BURN_IMPACT_MIN, BURN_IMPACT_MAX]. The swap's price limit is
     ///         the tighter of this and `maxSlippageBps`.
     uint256 public maxImpactBps;
+    /// @notice D50: pool baseline skim (SKIM_DENOMINATOR units) the floor nets out.
+    uint24 public poolBaselineSkimBps;
+    /// @notice D50: pool lp fee (FEE_DENOMINATOR units) the floor nets out.
+    uint24 public poolLpFee;
 
     constructor(Config memory c) Ownable(c.owner) {
         if (c.poolManager == address(0)) revert ZeroAddress("poolManager");
@@ -187,6 +194,14 @@ contract FeeAutoSwapperV2 is
         artCoin = artCoin_;
         _finalized = true;
         emit ArtCoinBound(artCoin_);
+        _syncFees(_key(artCoin_));
+    }
+
+    /// @notice D50: anyone re reads the pool's known fees from the hook.
+    ///         It can only set what the hook reports, so it is not gated.
+    function syncPoolFees() external {
+        if (!_finalized) revert NotFinalized();
+        _syncFees(_key(artCoin));
     }
 
     // ── permissionless ────────────────────────────────────────────────────
@@ -432,13 +447,44 @@ contract FeeAutoSwapperV2 is
     }
 
     /// @dev Expected eth for `artIn` coin (currency1) at spot, times
-    ///      `spotFloorBps`. price = token1 per token0, so eth = artIn / price.
+    ///      (1 - baseline skim - lp fee) (D50) times `spotFloorBps`.
+    ///      price = token1 per token0, so eth = artIn / price.
     ///      Two mulDivs avoid overflow at extreme prices.
     function _spotFloor(uint256 artIn, uint160 sqrtPriceX96) internal view returns (uint256) {
         if (artIn == 0 || sqrtPriceX96 == 0) return 0;
         uint256 step = FullMath.mulDiv(artIn, 1 << 96, sqrtPriceX96);
         uint256 expected = FullMath.mulDiv(step, 1 << 96, sqrtPriceX96);
-        return (expected * spotFloorBps) / Constants.BPS;
+        return FullMath.mulDiv(expected, _netPpm() * spotFloorBps, Constants.FEE_DENOMINATOR * Constants.BPS);
+    }
+
+    /// @dev D50: the pool's known fees, read from `hook.skimConfig(poolId)`
+    ///      (zero for a hookless pool or a hook that does not answer), clamped
+    ///      to the Constants caps. `baselineSkimBps` in SKIM_DENOMINATOR units,
+    ///      `lpFee` in FEE_DENOMINATOR units.
+    function _syncFees(PoolKey memory key) internal {
+        uint256 s;
+        uint256 f;
+        address h = address(key.hooks);
+        if (h.code.length != 0) {
+            try IArtCoinsHookV2(h).skimConfig(key.toId()) returns (
+                IArtCoinsHookV2.SkimConfig memory cfg
+            ) {
+                s = cfg.baselineSkimBps;
+                f = cfg.lpFee;
+            } catch {}
+            if (s > Constants.MAX_BASELINE_SKIM_BPS) s = Constants.MAX_BASELINE_SKIM_BPS;
+            if (f > Constants.MAX_LP_FEE) f = Constants.MAX_LP_FEE;
+        }
+        poolBaselineSkimBps = uint24(s);
+        poolLpFee = uint24(f);
+        emit PoolFeesSynced(s, f);
+    }
+
+    /// @dev 1 - baseline skim - lp fee, in FEE_DENOMINATOR units (>= 80% by the caps).
+    function _netPpm() internal view returns (uint256) {
+        uint256 skimPpm = uint256(poolBaselineSkimBps)
+            * (Constants.FEE_DENOMINATOR / Constants.SKIM_DENOMINATOR);
+        return Constants.FEE_DENOMINATOR - skimPpm - poolLpFee;
     }
 
     function _checkSlippage(uint256 bps) internal pure {
