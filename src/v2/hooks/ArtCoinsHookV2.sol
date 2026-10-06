@@ -114,6 +114,8 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     /// @dev Additive: a fee recipient that can never receive eth (this hook,
     ///      the PoolManager) would strand every leg in the escrow (V2H-08).
     error RecipientCannotReceive(address recipient);
+    /// @dev Additive (D46): liquidity add on a taxed pool after arming.
+    error TaxedPoolLiquidityClosed();
 
     // ── storage ───────────────────────────────────────────────────────────
 
@@ -259,7 +261,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     /// @dev Anti sniper add lock (b7: ends at createdAt + MAX_MEV_WINDOW
     ///      whatever the module reports) and the D46 taxed pool lp gate.
     function _beforeAddLiquidity(
-        address sender,
+        address,
         PoolKey calldata key,
         IPoolManager.ModifyLiquidityParams calldata,
         bytes calldata
@@ -273,16 +275,17 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
                 revert MevWindowActive();
             }
         }
-        // D46: on a taxed pool (VENUE, HARD) liquidity is placed only in the
-        // launch phase (inside the launch tx, before `initializeMevModule`
-        // arms the pool) or by an allowlisted launcher calling the
-        // PoolManager directly. The v2 locker places through the v4
-        // PositionManager, so `sender` is the PositionManager there; the
-        // launch phase gate is what admits it, and allowlisting the
-        // PositionManager would reopen the hole for everyone.
-        if (info.taxMode != Constants.TAX_MODE_NONE && _started[pid] && !_launchers[sender]) {
-            revert NotLauncher();
-        }
+        // D46: on a taxed pool (VENUE, HARD) liquidity is added only before
+        // the pool is armed by `initializeMevModule`, which the launcher
+        // calls in the launch tx, and only in the creation block. After that
+        // nobody adds: not via the PositionManager, not via a direct
+        // PoolManager `modifyLiquidity`, not a launcher. `sender` cannot
+        // identify the locker (it is the PositionManager), so there is no
+        // sender exception at all. NONE pools stay open.
+        if (
+            info.taxMode != Constants.TAX_MODE_NONE
+                && (_started[pid] || block.timestamp != info.createdAt)
+        ) revert TaxedPoolLiquidityClosed();
         return BaseHook.beforeAddLiquidity.selector;
     }
 
@@ -306,15 +309,17 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         return (BaseHook.afterAddLiquidity.selector, BalanceDelta.wrap(0));
     }
 
-    /// @dev D46: principal removals report nothing in any mode (the locker
-    ///      never removes; a VENUE exit is taxed, a HARD exit reverts at
-    ///      take). Only the pool's locker fee collect (zero liquidity
-    ///      decrease) reports its coin fees, so the locker's take passes in
-    ///      HARD and is budgeted in VENUE. Any other sender reports nothing.
+    /// @dev Coin a removal or fee collect (zero liquidity decrease) releases
+    ///      on a taxed pool: VENUE attest, HARD outflow grant, for any sender.
+    ///      INVARIANT: removal grants are safe only because adds are closed
+    ///      after arming (D46, `_beforeAddLiquidity`). Every position on a
+    ///      taxed pool was placed in the launch tx (the locker, or an owner
+    ///      enabled extension), so no one can round trip liquidity to mint
+    ///      budget or grants. Reopening adds on taxed pools reopens V2A-01.
     function _afterRemoveLiquidity(
-        address sender,
+        address,
         PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata p,
+        IPoolManager.ModifyLiquidityParams calldata,
         BalanceDelta delta,
         BalanceDelta,
         bytes calldata
@@ -322,10 +327,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         PoolId pid = key.toId();
         uint8 mode = _info[pid].taxMode;
         int256 a = delta.amount1();
-        if (
-            a > 0 && p.liquidityDelta == 0 && mode != Constants.TAX_MODE_NONE
-                && _isLockerCollect(sender, _info[pid].locker)
-        ) _tokenFlow(key, pid, mode, a);
+        if (a > 0 && mode != Constants.TAX_MODE_NONE) _tokenFlow(key, pid, mode, a);
         return (BaseHook.afterRemoveLiquidity.selector, BalanceDelta.wrap(0));
     }
 
@@ -599,27 +601,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         // must be a contract), although the swap path no longer calls it (D41).
         if (s.referralPayout.code.length == 0) revert ReferralPayoutZero();
         if (s.quoteToken != address(0)) revert QuoteTokenMustBeNative();
-    }
-
-    /// @dev True when the PoolManager caller is an allowlisted launcher, the
-    ///      pool's locker itself, or the PositionManager the locker uses while
-    ///      the locker is its current caller (`msgSender()`). The v2 locker
-    ///      collects through the v4 PositionManager, so `sender` is the
-    ///      PositionManager there. Both reads are static and gas capped; any
-    ///      failure means "not the locker" (nothing reported).
-    function _isLockerCollect(address sender, address locker) private view returns (bool) {
-        if (sender == locker || _launchers[sender]) return true;
-        return _readAddress(locker, 0x791b98bc) == sender // positionManager()
-            && _readAddress(sender, 0xd737d0c7) == locker; // msgSender()
-    }
-
-    function _readAddress(address target, bytes4 sel) private view returns (address out) {
-        assembly ("memory-safe") {
-            mstore(0x00, sel)
-            let ok := staticcall(_MODULE_GAS, target, 0x00, 0x04, 0x00, 0x20)
-            if and(ok, eq(returndatasize(), 0x20)) { out := mload(0x00) }
-            if shr(160, out) { out := 0 }
-        }
     }
 
     function _checkReceiver(address r) private view {

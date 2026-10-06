@@ -41,6 +41,8 @@ import {ArtCoinsMevLinearSkimV2} from "../../src/v2/mev-modules/ArtCoinsMevLinea
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {CustomRevert} from "@uniswap/v4-core/src/libraries/CustomRevert.sol";
+import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
@@ -728,8 +730,9 @@ contract HookV2ForkTest is HookV2ForkBase {
 
     // ─── b1 / H14 / d2: tax attestations and flow grants ─────────────────
 
-    /// D46: after launch, nobody but an allowlisted launcher adds liquidity
-    /// on a taxed canonical pool; NONE pools stay open.
+    /// D46: after arming, nobody adds liquidity on a taxed canonical pool
+    /// through a direct PoolManager `modifyLiquidity` (the PositionManager
+    /// path is covered by HookV2RealLockerTest); NONE pools stay open.
     function test_tax_thirdPartyAdd_reverts() public onlyFork {
         uint8[2] memory modes = [Constants.TAX_MODE_VENUE, Constants.TAX_MODE_HARD];
         for (uint256 m; m < 2; ++m) {
@@ -737,11 +740,11 @@ contract HookV2ForkTest is HookV2ForkBase {
             l.taxMode = modes[m];
             (PoolKey memory k, ArtCoinsTokenV2 t) = _launch(l);
             HV2AddRemoveRouter r = _fundedRouter(t);
-            vm.expectRevert();
+            vm.expectRevert(_closedErr());
             r.run(k, -2000, 2000, 50e18, bytes32(uint256(7)), 2);
-            vm.expectRevert();
+            vm.expectRevert(_closedErr());
             r.run(k, -2000, 2000, 50e18, bytes32(uint256(7)), 0); // add then remove
-            vm.expectRevert();
+            vm.expectRevert(_closedErr());
             _modify(k, FULL_LO, FULL_HI, 1e18, bytes32(uint256(8)));
         }
         (PoolKey memory kn, ArtCoinsTokenV2 tn) = _launch(_defaults(bountyEoa));
@@ -749,23 +752,41 @@ contract HookV2ForkTest is HookV2ForkBase {
         rn.run(kn, -2000, 2000, 50e18, bytes32(uint256(7)), 2);
     }
 
-    /// D46: the launch phase admits the placement whoever the PoolManager
-    /// caller is (the locker goes through the PositionManager); an
-    /// allowlisted launcher can add directly afterwards.
-    function test_tax_launchPhasePlacement_andLauncherAdd_pass() public onlyFork {
+    function _closedErr() internal view returns (bytes memory) {
+        return abi.encodeWithSelector(
+                CustomRevert.WrappedError.selector,
+                address(hook),
+                IHooks.beforeAddLiquidity.selector,
+                abi.encodeWithSelector(ArtCoinsHookV2.TaxedPoolLiquidityClosed.selector),
+                abi.encodeWithSelector(Hooks.HookCallFailed.selector)
+            );
+    }
+
+    /// D46: before arming (and only in the creation block) any PoolManager
+    /// caller can place, as the locker does through the PositionManager;
+    /// after arming nobody can, launchers included. a pool left unarmed is
+    /// closed from the next block on.
+    function test_tax_addOnlyBeforeArming_andInCreationBlock() public onlyFork {
         Launch memory l = _defaults(bountyEoa);
         l.taxMode = Constants.TAX_MODE_HARD;
         ArtCoinsTokenV2 t = _newToken(l.taxMode, l.bounty, address(hook));
         PoolKey memory k = hook.initializePool(_params(l, address(t)));
         HV2AddRemoveRouter r = _fundedRouter(t);
-        r.run(k, -2000, 2000, 50e18, bytes32(uint256(7)), 2); // placement passes
-        hook.initializeMevModule(k, "");
-        vm.expectRevert();
-        r.run(k, -2000, 2000, 1e18, bytes32(uint256(7)), 2);
-        hook.setLauncher(address(r), true);
-        r.run(k, -2000, 2000, 1e18, bytes32(uint256(7)), 2);
+        r.run(k, -2000, 2000, 50e18, bytes32(uint256(7)), 2); // pre arm placement passes
         (, uint256 o, uint256 i) = t.pendingCanonical();
-        assertEq(o + i, 0, "placement grants consumed exactly");
+        assertEq(o + i, 0, "placement grant consumed exactly");
+        hook.initializeMevModule(k, "");
+        hook.setLauncher(address(r), true); // a launcher gets no exception
+        vm.expectRevert(_closedErr());
+        r.run(k, -2000, 2000, 1e18, bytes32(uint256(7)), 2);
+
+        // unarmed pool: open in its creation block only
+        ArtCoinsTokenV2 t2 = _newToken(l.taxMode, l.bounty, address(hook));
+        PoolKey memory k2 = hook.initializePool(_params(l, address(t2)));
+        HV2AddRemoveRouter r2 = _fundedRouter(t2);
+        vm.warp(block.timestamp + 12);
+        vm.expectRevert(_closedErr());
+        r2.run(k2, -2000, 2000, 1e18, bytes32(uint256(7)), 2);
     }
 
     /// D34: a canonical buy sold back in the same unlock leaves no budget, so
@@ -1077,16 +1098,18 @@ contract HookV2PriorTxVenueTest is HookV2PriorTxBase {
         return Constants.TAX_MODE_VENUE;
     }
 
-    /// D46: a principal removal attests nothing; the exit is taxed in full.
-    function test_tax_principalRemoval_notExempt() public onlyFork {
+    /// a launch position's removal is attested and leaves untaxed (safe
+    /// only because adds are closed after arming, D46).
+    function test_tax_priorTxLpExit_isExempt() public onlyFork {
         uint256 bal0 = token.balanceOf(address(this));
         uint256 dead0 = token.balanceOf(Constants.DEAD);
         router.run(key, -2000, 2000, POS_LIQ, SALT, 3);
         uint256 taken = router.lastTake1();
         assertGt(taken, 0);
-        uint256 tax = (taken * token.taxBps()) / Constants.BPS;
-        assertEq(token.balanceOf(Constants.DEAD) - dead0, tax, "exit taxed");
-        assertEq(token.balanceOf(address(this)) - bal0, taken - tax);
+        assertEq(token.balanceOf(address(this)) - bal0, taken, "lp exit untaxed");
+        assertEq(token.balanceOf(Constants.DEAD), dead0);
+        (uint256 b,,) = token.pendingCanonical();
+        assertEq(b, 0, "budget drawn exactly");
     }
 
     function test_tax_lockerCollect_isExempt() public onlyFork {
@@ -1101,14 +1124,13 @@ contract HookV2PriorTxVenueTest is HookV2PriorTxBase {
         assertEq(b, 0, "collect budget drawn exactly");
     }
 
-    /// D46: a fee collect by anyone but the pool's locker reports nothing;
-    /// its coin fees leave taxed.
-    function test_tax_nonLockerCollect_taxed() public onlyFork {
+    /// any launch position's collect is reported, whoever the caller is
+    /// (the PoolManager only sees the PositionManager as sender).
+    function test_tax_anyLaunchPositionCollect_untaxed() public onlyFork {
         uint256 dead0 = token.balanceOf(Constants.DEAD);
         other.run(key, -2000, 2000, 0, SALT, 3);
-        uint256 taken = other.lastTake1();
-        assertGt(taken, 0);
-        assertEq(token.balanceOf(Constants.DEAD) - dead0, (taken * token.taxBps()) / Constants.BPS);
+        assertGt(other.lastTake1(), 0);
+        assertEq(token.balanceOf(Constants.DEAD), dead0);
     }
 
     /// V2A-01 flipped: remove a prior position and re add it in one unlock.
@@ -1118,13 +1140,12 @@ contract HookV2PriorTxVenueTest is HookV2PriorTxBase {
         router.run(key, -2000, 2000, POS_LIQ, SALT, 1);
     }
 
-    /// V2A-01 flipped: the removal alone (no re add, claims instead) leaves
-    /// no budget for a side pool take.
+    /// V2A-01 flipped: a removal's budget is drawn by its own take, nothing
+    /// is left for a side pool take later in the unlock or tx.
     function test_V2A01_venue_removalLeavesNoBudget() public onlyFork {
-        (uint256 b0,,) = token.pendingCanonical();
         router.run(key, -2000, 2000, POS_LIQ / 2, SALT, 3);
-        (uint256 b1,,) = token.pendingCanonical();
-        assertEq(b1, b0, "no budget from a principal removal");
+        (uint256 b,,) = token.pendingCanonical();
+        assertEq(b, 0, "no leftover budget");
     }
 }
 
@@ -1133,10 +1154,12 @@ contract HookV2PriorTxHardTest is HookV2PriorTxBase {
         return Constants.TAX_MODE_HARD;
     }
 
-    /// D46: a principal removal grants no outflow; the take reverts.
-    function test_hard_principalRemoval_reverts() public onlyFork {
-        vm.expectRevert();
+    function test_hard_priorTxLpExit_pass() public onlyFork {
+        uint256 bal0 = token.balanceOf(address(this));
         router.run(key, -2000, 2000, POS_LIQ, SALT, 3);
+        assertEq(token.balanceOf(address(this)) - bal0, router.lastTake1());
+        (, uint256 o, uint256 i) = token.pendingCanonical();
+        assertEq(o + i, 0, "grant consumed exactly");
     }
 
     /// V2A-01 / V2H-02 flipped: increase then decrease a prior position in one
@@ -1146,9 +1169,11 @@ contract HookV2PriorTxHardTest is HookV2PriorTxBase {
         router.run(key, -2000, 2000, POS_LIQ, SALT, 0);
     }
 
-    function test_hard_nonLockerCollect_reverts() public onlyFork {
-        vm.expectRevert();
+    function test_hard_anyLaunchPositionCollect_pass() public onlyFork {
         other.run(key, -2000, 2000, 0, SALT, 3);
+        assertGt(other.lastTake1(), 0);
+        (, uint256 o,) = token.pendingCanonical();
+        assertEq(o, 0);
     }
 
     function test_hard_lockerCollect_pass() public onlyFork {
@@ -1221,12 +1246,39 @@ contract HookV2RealLockerTest is HookV2ForkBase {
         assertGt(t.balanceOf(project) + escrow.balances(project, address(t)), 0, "coin fees out");
         (, uint256 o, uint256 i) = t.pendingCanonical();
         assertEq(o + i, 0, "collect grant consumed exactly");
-        // third party add after launch still refused
+        // third party add after arming: refused via a direct PoolManager modify
         HV2AddRemoveRouter r = new HV2AddRemoveRouter(pm);
         vm.deal(address(r), 10 ether);
         t.transfer(address(r), 10e18);
-        vm.expectRevert();
+        vm.expectRevert(_closed());
         r.run(k, 200_000, 202_000, 1e18, bytes32(uint256(1)), 2);
+        // and via the live PositionManager
+        _posmMintReverts(k);
+    }
+
+    function _posmMintReverts(PoolKey memory k) internal {
+        address mallory = makeAddr("mallory");
+        vm.deal(mallory, 10 ether);
+        bytes memory actions = abi.encodePacked(uint8(0x02), uint8(0x0d));
+        bytes[] memory params = new bytes[](2);
+        params[0] = abi.encode(
+            k, int24(200_000), int24(202_000), uint256(1e18), type(uint128).max,
+            type(uint128).max, mallory, bytes("")
+        );
+        params[1] = abi.encode(k.currency0, k.currency1);
+        vm.prank(mallory);
+        vm.expectRevert(_closed());
+        IPosmLike(POSM).modifyLiquidities{value: 1 ether}(abi.encode(actions, params), block.timestamp);
+    }
+
+    function _closed() internal view returns (bytes memory) {
+        return abi.encodeWithSelector(
+            CustomRevert.WrappedError.selector,
+            address(hook),
+            IHooks.beforeAddLiquidity.selector,
+            abi.encodeWithSelector(ArtCoinsHookV2.TaxedPoolLiquidityClosed.selector),
+            abi.encodeWithSelector(Hooks.HookCallFailed.selector)
+        );
     }
 
     function test_realLocker_venue_collectUntaxed() public onlyFork {
@@ -1238,4 +1290,13 @@ contract HookV2RealLockerTest is HookV2ForkBase {
         (uint256 b,,) = t.pendingCanonical();
         assertEq(b, 0);
     }
+
+    function test_realLocker_venue_posmAddAfterArming_reverts() public onlyFork {
+        (PoolKey memory k,,) = _realLaunch(Constants.TAX_MODE_VENUE);
+        _posmMintReverts(k);
+    }
+}
+
+interface IPosmLike {
+    function modifyLiquidities(bytes calldata unlockData, uint256 deadline) external payable;
 }
