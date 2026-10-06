@@ -107,30 +107,53 @@ contract HarnessForkTest is ForkStack {
         assertGt(sqrtP, 0, "pool initialized");
 
         // buy at t0: total skim = mev starting bps (90%).
-        uint256 ethIn = 1 ether;
-        (uint256 bounty, uint256 proto) = _legDeltasBuy(l, p, ethIn);
-        uint256 baseline = ethIn * p.baselineSkimBps / SKIM_DENOM;
-        uint256 total = ethIn * 90_000 / SKIM_DENOM;
-        uint256 bountyShare = baseline * p.bountyBps / BPS;
-        assertApproxEqAbs(bounty, bountyShare + (total - baseline), 2, "t0 bounty incl anti-sniper");
-        assertApproxEqAbs(proto, baseline - bountyShare, 2, "t0 protocol escrowed");
+        LiveSkim memory c = LiveSkim({
+            baseBps: p.baselineSkimBps,
+            bountyBps: p.bountyBps,
+            totalBps: 90_000,
+            bountyR: p.bountyRecipient,
+            protoR: p.protocolRecipient
+        });
+        _buyAndCheckLegs(l, c, 1 ether, "t0");
 
         // post window: baseline only.
         skip(31 minutes);
-        (bounty, proto) = _legDeltasBuy(l, p, ethIn);
-        assertApproxEqAbs(bounty, bountyShare, 2, "post window bounty");
-        assertApproxEqAbs(proto, baseline - bountyShare, 2, "post window protocol");
+        c.totalBps = c.baseBps;
+        _buyAndCheckLegs(l, c, 1 ether, "post window");
+
+        _sellHalfAndCheckLegs(l, c);
+        _collectAndClaim(l, p);
+    }
+
+    function _buyAndCheckLegs(Launched memory l, LiveSkim memory c, uint256 ethIn, string memory tag)
+        internal
+    {
+        uint256 bBefore = c.bountyR.balance;
+        uint256 eBefore = stack.escrow.availableFees(c.protoR, address(0));
+        (, uint256 got) = swapExactIn(l.key, true, ethIn, address(this), "");
+        assertGt(got, 0, tag);
+        (uint256 expBounty, uint256 expProto) = _expectedLegs(ethIn, c);
+        assertApproxEqAbs(c.bountyR.balance - bBefore, expBounty, 2, string.concat(tag, " bounty"));
+        assertApproxEqAbs(
+            stack.escrow.availableFees(c.protoR, address(0)) - eBefore,
+            expProto,
+            2,
+            string.concat(tag, " protocol")
+        );
+    }
+
+    function _sellHalfAndCheckLegs(Launched memory l, LiveSkim memory c) internal {
         uint256 tokenBal = IERC20(l.token).balanceOf(address(this));
         assertGt(tokenBal, 0, "bought tokens");
-
-        // sell half: output side eth skim on both legs.
-        uint256 bBefore = p.bountyRecipient.balance;
-        uint256 eBefore = stack.escrow.availableFees(p.protocolRecipient, address(0));
+        uint256 bBefore = c.bountyR.balance;
+        uint256 eBefore = stack.escrow.availableFees(c.protoR, address(0));
         (, uint256 ethOut) = swapExactIn(l.key, false, tokenBal / 2, address(this), "");
         assertGt(ethOut, 0, "sell paid eth");
-        assertGt(p.bountyRecipient.balance - bBefore, 0, "sell bounty");
-        assertGt(stack.escrow.availableFees(p.protocolRecipient, address(0)) - eBefore, 0, "sell protocol");
+        assertGt(c.bountyR.balance - bBefore, 0, "sell bounty");
+        assertGt(stack.escrow.availableFees(c.protoR, address(0)) - eBefore, 0, "sell protocol");
+    }
 
+    function _collectAndClaim(Launched memory l, LaunchParams memory p) internal {
         // LP fees: collect into the escrow for every reward slot.
         stack.locker.collectRewards(l.token);
         assertGt(stack.escrow.availableFees(p.rewardRecipients[0], address(0)), 0, "artist eth");
@@ -248,14 +271,4 @@ contract HarnessForkTest is ForkStack {
         proto = baseline - bountyShare;
     }
 
-    function _legDeltasBuy(Launched memory l, LaunchParams memory p, uint256 ethIn)
-        internal
-        returns (uint256 bounty, uint256 proto)
-    {
-        uint256 bBefore = p.bountyRecipient.balance;
-        uint256 eBefore = stack.escrow.availableFees(p.protocolRecipient, address(0));
-        swapExactIn(l.key, true, ethIn, address(this), "");
-        bounty = p.bountyRecipient.balance - bBefore;
-        proto = stack.escrow.availableFees(p.protocolRecipient, address(0)) - eBefore;
-    }
 }
