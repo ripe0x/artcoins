@@ -10,7 +10,7 @@ running log for the unattended v2 session. a restarted session should read this 
 | attachments | artcoins-audit.md, artcoins-audit-full.tar.gz, credits-engine.bundle were not present in the container. working from the bug list in the brief. |
 | forge/anvil/cast | 1.7.1 installed from the npm `@foundry-rs/*-linux-amd64` packages (github releases denied) |
 | solc | native 0.8.26 from 02:40 utc; before that a node shim over solc-js 0.8.26 (same commit 8a97fa7a). |
-| branch | `v2` (also pushed to `claude/gallant-dirac-3dezg7` for the session). never master. |
+| branch | `v2` in the private working repo ripe0x/new-material-coin-launcher (pr #35). the day one copy on the public mirror (ripe0x/artcoins v2, pr #34) is to be deleted by the owner (D63). never master. |
 
 ## jobs
 
