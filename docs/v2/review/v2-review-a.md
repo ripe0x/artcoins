@@ -51,7 +51,7 @@ fix: drop the deployer supplied exempt list. exempt only addresses the factory i
 
 ### V2A-03 low: HARD venue listing freezes third party counter assets
 
-a HARD coin can be paired on an unlisted v2 pair by anyone (only the PoolManager and listed venues are walled). once the venue admin lists that pair (`addDerivedTaxVenue`), `pair.burn` transfers both tokens and reverts on the coin leg, so lp weth is stuck with no removal path. v3 lps can still `collect` the counter token alone. t1 notes call this "freezes coin inside it (lp included)"; the counter asset is not mentioned. fix: document it in the launch ui and token docs next to HARD ("listing a pool traps its lps' paired asset"),. a "list only empty pools" rule is griefable with a dust transfer, so documentation is the practical fix.
+a HARD coin can be paired on an unlisted v2 pair by anyone (only the PoolManager and listed venues are walled). once the venue admin lists that pair (`addDerivedTaxVenue`), `pair.burn` transfers both tokens and reverts on the coin leg, so lp weth is stuck with no removal path. v3 lps can still `collect` the counter token alone. t1 notes call this "freezes coin inside it (lp included)"; the counter asset is not mentioned. fix: document it in the launch ui and token docs next to HARD ("listing a pool traps its lps' paired asset"). a "list only empty pools" rule is griefable with a dust transfer, so documentation is the practical fix.
 
 ### V2A-04 low: venue admin decoupled from token admin
 
