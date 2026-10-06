@@ -260,7 +260,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         return BaseHook.beforeAddLiquidity.selector;
     }
 
-    /// @dev HARD inflow allowance for the art coin the position takes in.
+    /// @dev Inflow report (both modes) for the art coin the position takes in.
     ///      An add to an existing position also collects its fees; when the
     ///      coin fees exceed the coin principal the caller nets coin OUT, which
     ///      is real fee income (VENUE attest, HARD out grant), bounded by the
@@ -276,7 +276,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         PoolId pid = key.toId();
         uint8 mode = _info[pid].taxMode;
         int256 a = delta.amount1();
-        if (a > 0 ? mode != Constants.TAX_MODE_NONE : (a < 0 && mode == Constants.TAX_MODE_HARD)) {
+        if (a != 0 && mode != Constants.TAX_MODE_NONE) {
             _tokenFlow(key, pid, mode, a);
         }
         return (BaseHook.afterAddLiquidity.selector, BalanceDelta.wrap(0));
@@ -390,9 +390,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         {
             uint8 mode = _info[pid].taxMode;
             int256 a = delta.amount1();
-            if (a > 0
-                    ? mode != Constants.TAX_MODE_NONE
-                    : (a < 0 && mode == Constants.TAX_MODE_HARD)) {
+            if (a != 0 && mode != Constants.TAX_MODE_NONE) {
                 _tokenFlow(key, pid, mode, a);
             }
         }
@@ -542,11 +540,13 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         }
     }
 
-    /// @dev d2 hook half. `a > 0`: art coin leaving the PoolManager (VENUE
-    ///      attest, HARD out grant). `a < 0`: art coin entering (HARD in grant).
+    /// @dev d2 hook half. `a > 0`: art coin leaving the canonical pool (VENUE
+    ///      attest, HARD out grant). `a < 0`: art coin entering it, a sell or
+    ///      an lp add (in grant in both modes: the token nets it against the
+    ///      unused out side, D34, so a same tx round trip leaves nothing).
     function _tokenFlow(PoolKey calldata key, PoolId pid, uint8 mode, int256 a) private {
         IArtCoinsTokenV2 t = IArtCoinsTokenV2(Currency.unwrap(key.currency1));
-        if (mode == Constants.TAX_MODE_VENUE) {
+        if (a > 0 && mode == Constants.TAX_MODE_VENUE) {
             t.attestCanonicalBudget(PoolId.unwrap(pid), uint256(a));
         } else if (a > 0) {
             t.grantCanonicalFlow(PoolId.unwrap(pid), uint256(a), 0);

@@ -21,7 +21,8 @@ import {
     HV2ReturnBomb,
     HV2RevertingModule,
     HV2RevertingPayout,
-    HV2StreamRecipient
+    HV2StreamRecipient,
+    HV2SwapSeqRouter
 } from "./mocks/HookV2Mocks.sol";
 
 import {Constants} from "../../src/Constants.sol";
@@ -625,6 +626,44 @@ contract HookV2ForkTest is HookV2ForkBase {
         assertEq(b1, b0, "add then remove attests nothing");
     }
 
+    /// D34: a canonical buy sold back in the same unlock leaves no budget, so
+    /// a side pool buy in that unlock is taxed in full (v1 and early v2: the
+    /// buy's attestation exempted it).
+    function test_venue_roundTripThenSidePoolBuy_taxedInFull() public onlyFork {
+        Launch memory l = _defaults(bountyEoa);
+        l.taxMode = Constants.TAX_MODE_VENUE;
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(l);
+
+        // a hookless side pool for the same coin
+        PoolKey memory side = PoolKey({
+            currency0: Currency.wrap(address(0)),
+            currency1: Currency.wrap(address(token)),
+            fee: 3000,
+            tickSpacing: 60,
+            hooks: IHooks(address(0))
+        });
+        pm.initialize(side, TickMath.getSqrtPriceAtTick(0));
+        _modify(side, -887_220, 887_220, int256(LIQ), 0);
+
+        HV2SwapSeqRouter router = new HV2SwapSeqRouter(pm);
+        vm.deal(address(router), 10 ether);
+        HV2SwapSeqRouter.Step[] memory steps = new HV2SwapSeqRouter.Step[](3);
+        steps[0] = HV2SwapSeqRouter.Step(key, true, -1 ether); // canonical buy
+        steps[1] = HV2SwapSeqRouter.Step(key, false, 0); // sell it all back
+        steps[2] = HV2SwapSeqRouter.Step(side, true, -0.5 ether); // side pool buy
+
+        uint256 bal0 = token.balanceOf(address(this));
+        uint256 dead0 = token.balanceOf(Constants.DEAD);
+        router.run(steps);
+        uint256 out = router.lastTake1();
+        assertGt(out, 0);
+        uint256 tax = (out * token.taxBps()) / Constants.BPS;
+        assertEq(token.balanceOf(Constants.DEAD) - dead0, tax, "taxed in full");
+        assertEq(token.balanceOf(address(this)) - bal0, out - tax);
+        (uint256 b,,) = token.pendingCanonical();
+        assertEq(b, 0, "no budget left");
+    }
+
     function test_hard_addThenRemoveSameTx_grantsNoOutflow() public onlyFork {
         Launch memory l = _defaults(bountyEoa);
         l.taxMode = Constants.TAX_MODE_HARD;
@@ -925,16 +964,13 @@ contract HookV2PriorTxVenueTest is HookV2PriorTxBase {
         assertEq(token.balanceOf(Constants.DEAD), dead0);
     }
 
-    /// documents the residual the design accepts (DESIGN b1 invariant): a
-    /// position that existed before the tx can be removed and re added in one
-    /// unlock; the removal attests its coin side although no coin leaves the
-    /// PoolManager. bounded by the position's own coin amount, no cost.
-    function test_residual_removeThenAddSameTx_boundedByPriorPosition() public onlyFork {
+    /// D34: removing a prior tx position and re adding it in one unlock
+    /// attests the removal, then the add's inflow cancels it: no net budget.
+    function test_tax_removeThenAddSameTx_noNetBudget() public onlyFork {
         (uint256 b0,,) = token.pendingCanonical();
         router.run(key, -2000, 2000, POS_LIQ, SALT, 1);
         (uint256 b1,,) = token.pendingCanonical();
-        assertGt(b1, b0);
-        assertLt(b1 - b0, 200e18, "bounded by the prior position");
+        assertEq(b1, b0, "remove then re add leaves no budget");
     }
 }
 

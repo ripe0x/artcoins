@@ -262,3 +262,63 @@ contract HV2AddRemoveRouter is IUnlockCallback {
         }
     }
 }
+
+/// runs several swaps inside ONE unlock, then settles eth from its own
+/// balance and takes the net coin credit to `owner`. a step with
+/// `amount == 0` sells the router's whole coin credit so far (exact in).
+contract HV2SwapSeqRouter is IUnlockCallback {
+    using TransientStateLibrary for IPoolManager;
+
+    struct Step {
+        PoolKey key;
+        bool zeroForOne;
+        int256 amount;
+    }
+
+    IPoolManager public immutable pm;
+    address public immutable owner;
+    uint256 public lastTake1;
+
+    constructor(IPoolManager pm_) {
+        pm = pm_;
+        owner = msg.sender;
+    }
+
+    receive() external payable {}
+
+    function run(Step[] calldata steps) external {
+        lastTake1 = 0;
+        pm.unlock(abi.encode(steps));
+    }
+
+    function unlockCallback(bytes calldata raw) external returns (bytes memory) {
+        require(msg.sender == address(pm), "pm");
+        Step[] memory steps = abi.decode(raw, (Step[]));
+        Currency coin;
+        for (uint256 i; i < steps.length; ++i) {
+            Step memory st = steps[i];
+            coin = st.key.currency1;
+            int256 amt = st.amount;
+            if (amt == 0) amt = -pm.currencyDelta(address(this), coin);
+            pm.swap(
+                st.key,
+                IPoolManager.SwapParams({
+                    zeroForOne: st.zeroForOne,
+                    amountSpecified: amt,
+                    sqrtPriceLimitX96: st.zeroForOne ? 4295128740 : 1461446703485210103287273052203988822378723970341
+                }),
+                ""
+            );
+        }
+        int256 d0 = pm.currencyDelta(address(this), Currency.wrap(address(0)));
+        if (d0 < 0) pm.settle{value: uint256(-d0)}();
+        else if (d0 > 0) pm.take(Currency.wrap(address(0)), address(this), uint256(d0));
+        int256 d1 = pm.currencyDelta(address(this), coin);
+        require(d1 >= 0, "coin owed");
+        if (d1 > 0) {
+            lastTake1 = uint256(d1);
+            pm.take(coin, owner, uint256(d1));
+        }
+        return "";
+    }
+}
