@@ -726,15 +726,44 @@ contract HookV2ForkTest is HookV2ForkBase {
 
     // ─── b1 / H14 / d2: tax attestations and flow grants ─────────────────
 
-    function test_tax_addThenRemoveSameTx_mintsNoBudget() public onlyFork {
+    /// D46: after launch, nobody but an allowlisted launcher adds liquidity
+    /// on a taxed canonical pool; NONE pools stay open.
+    function test_tax_thirdPartyAdd_reverts() public onlyFork {
+        uint8[2] memory modes = [Constants.TAX_MODE_VENUE, Constants.TAX_MODE_HARD];
+        for (uint256 m; m < 2; ++m) {
+            Launch memory l = _defaults(bountyEoa);
+            l.taxMode = modes[m];
+            (PoolKey memory k, ArtCoinsTokenV2 t) = _launch(l);
+            HV2AddRemoveRouter r = _fundedRouter(t);
+            vm.expectRevert();
+            r.run(k, -2000, 2000, 50e18, bytes32(uint256(7)), 2);
+            vm.expectRevert();
+            r.run(k, -2000, 2000, 50e18, bytes32(uint256(7)), 0); // add then remove
+            vm.expectRevert();
+            _modify(k, FULL_LO, FULL_HI, 1e18, bytes32(uint256(8)));
+        }
+        (PoolKey memory kn, ArtCoinsTokenV2 tn) = _launch(_defaults(bountyEoa));
+        HV2AddRemoveRouter rn = _fundedRouter(tn);
+        rn.run(kn, -2000, 2000, 50e18, bytes32(uint256(7)), 2);
+    }
+
+    /// D46: the launch phase admits the placement whoever the PoolManager
+    /// caller is (the locker goes through the PositionManager); an
+    /// allowlisted launcher can add directly afterwards.
+    function test_tax_launchPhasePlacement_andLauncherAdd_pass() public onlyFork {
         Launch memory l = _defaults(bountyEoa);
-        l.taxMode = Constants.TAX_MODE_VENUE;
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(l);
-        HV2AddRemoveRouter router = _fundedRouter(token);
-        (uint256 b0,,) = token.pendingCanonical();
-        router.run(key, -2000, 2000, 50e18, bytes32(uint256(7)), 0);
-        (uint256 b1,,) = token.pendingCanonical();
-        assertEq(b1, b0, "add then remove attests nothing");
+        l.taxMode = Constants.TAX_MODE_HARD;
+        ArtCoinsTokenV2 t = _newToken(l.taxMode, l.bounty, address(hook));
+        PoolKey memory k = hook.initializePool(_params(l, address(t)));
+        HV2AddRemoveRouter r = _fundedRouter(t);
+        r.run(k, -2000, 2000, 50e18, bytes32(uint256(7)), 2); // placement passes
+        hook.initializeMevModule(k, "");
+        vm.expectRevert();
+        r.run(k, -2000, 2000, 1e18, bytes32(uint256(7)), 2);
+        hook.setLauncher(address(r), true);
+        r.run(k, -2000, 2000, 1e18, bytes32(uint256(7)), 2);
+        (, uint256 o, uint256 i) = t.pendingCanonical();
+        assertEq(o + i, 0, "placement grants consumed exactly");
     }
 
     /// D34: a canonical buy sold back in the same unlock leaves no budget, so
@@ -775,20 +804,6 @@ contract HookV2ForkTest is HookV2ForkBase {
         assertEq(b, 0, "no budget left");
     }
 
-    /// V2H-02 flipped (D43): HARD reports the removal, the token nets it
-    /// against the add, no grant survives in either direction.
-    function test_hard_addThenRemoveSameTx_leavesNoGrant() public onlyFork {
-        Launch memory l = _defaults(bountyEoa);
-        l.taxMode = Constants.TAX_MODE_HARD;
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(l);
-        HV2AddRemoveRouter router = _fundedRouter(token);
-        (, uint256 o0, uint256 i0) = token.pendingCanonical();
-        assertEq(o0 + i0, 0);
-        router.run(key, -2000, 2000, 50e18, bytes32(uint256(7)), 0);
-        (, uint256 o1, uint256 i1) = token.pendingCanonical();
-        assertEq(o1, 0, "no out grant");
-        assertEq(i1, 0, "no free in grant");
-    }
 
     function test_venue_canonicalBuy_untaxed() public onlyFork {
         Launch memory l = _defaults(bountyEoa);
@@ -1018,8 +1033,9 @@ contract HookV2ForkTest is HookV2ForkBase {
     }
 }
 
-/// tests that need a position created in an earlier tx (setUp is its own tx,
-/// so the same tx position marker is clear when the test body runs).
+/// tests that need a position created in an earlier tx (setUp is its own
+/// tx). the extra position is placed by a non launcher router in the launch
+/// phase, the way the locker places through the PositionManager (D46).
 abstract contract HookV2PriorTxBase is HookV2ForkBase {
     PoolKey internal key;
     ArtCoinsTokenV2 internal token;
@@ -1034,11 +1050,14 @@ abstract contract HookV2PriorTxBase is HookV2ForkBase {
         if (!onFork) return;
         Launch memory l = _defaults(bountyEoa);
         l.taxMode = _mode();
-        (key, token) = _launch(l);
+        token = _newToken(l.taxMode, l.bounty, address(hook));
+        key = hook.initializePool(_params(l, address(token)));
+        _modify(key, FULL_LO, FULL_HI, int256(LIQ), 0);
         router = new HV2AddRemoveRouter(pm);
         vm.deal(address(router), 200 ether);
         token.transfer(address(router), 200e18);
-        router.run(key, -2000, 2000, POS_LIQ, SALT, 2);
+        router.run(key, -2000, 2000, POS_LIQ, SALT, 2); // launch phase placement
+        hook.initializeMevModule(key, "");
         // a sell accrues coin side fees to the position
         _swap(key, false, -20 ether, 0, "");
     }
@@ -1049,43 +1068,44 @@ contract HookV2PriorTxVenueTest is HookV2PriorTxBase {
         return Constants.TAX_MODE_VENUE;
     }
 
-    function test_tax_priorTxLpExit_isExempt() public onlyFork {
+    /// D46: a principal removal attests nothing; the exit is taxed in full.
+    function test_tax_principalRemoval_notExempt() public onlyFork {
         uint256 bal0 = token.balanceOf(address(this));
         uint256 dead0 = token.balanceOf(Constants.DEAD);
         router.run(key, -2000, 2000, POS_LIQ, SALT, 3);
         uint256 taken = router.lastTake1();
         assertGt(taken, 0);
-        assertEq(token.balanceOf(address(this)) - bal0, taken, "lp exit untaxed");
-        assertEq(token.balanceOf(Constants.DEAD), dead0);
+        uint256 tax = (taken * token.taxBps()) / Constants.BPS;
+        assertEq(token.balanceOf(Constants.DEAD) - dead0, tax, "exit taxed");
+        assertEq(token.balanceOf(address(this)) - bal0, taken - tax);
     }
 
     function test_tax_lockerCollect_isExempt() public onlyFork {
         uint256 bal0 = token.balanceOf(address(this));
+        uint256 dead0 = token.balanceOf(Constants.DEAD);
         router.run(key, -2000, 2000, 0, SALT, 3); // zero liquidity: fee collect
         uint256 taken = router.lastTake1();
         assertGt(taken, 0, "coin fees accrued");
         assertEq(token.balanceOf(address(this)) - bal0, taken, "fee collect untaxed");
-    }
-
-    /// an add to an existing position collects its fees; net coin out is fee
-    /// income and leaves untaxed.
-    function test_tax_addCollectsFees_isExempt() public onlyFork {
-        uint256 bal0 = token.balanceOf(address(this));
-        uint256 dead0 = token.balanceOf(Constants.DEAD);
-        router.run(key, -2000, 2000, 1e6, SALT, 2);
-        uint256 taken = router.lastTake1();
-        assertGt(taken, 0, "fees exceed the dust principal");
-        assertEq(token.balanceOf(address(this)) - bal0, taken);
         assertEq(token.balanceOf(Constants.DEAD), dead0);
+        (uint256 b,,) = token.pendingCanonical();
+        assertEq(b, 0, "collect budget drawn exactly");
     }
 
-    /// D34: removing a prior tx position and re adding it in one unlock
-    /// attests the removal, then the add's inflow cancels it: no net budget.
-    function test_tax_removeThenAddSameTx_noNetBudget() public onlyFork {
-        (uint256 b0,,) = token.pendingCanonical();
+    /// V2A-01 flipped: remove a prior position and re add it in one unlock.
+    /// the re add is refused (D46), the whole unlock reverts.
+    function test_V2A01_venue_removeThenReadd_reverts() public onlyFork {
+        vm.expectRevert();
         router.run(key, -2000, 2000, POS_LIQ, SALT, 1);
+    }
+
+    /// V2A-01 flipped: the removal alone (no re add, claims instead) leaves
+    /// no budget for a side pool take.
+    function test_V2A01_venue_removalLeavesNoBudget() public onlyFork {
+        (uint256 b0,,) = token.pendingCanonical();
+        router.run(key, -2000, 2000, POS_LIQ / 2, SALT, 3);
         (uint256 b1,,) = token.pendingCanonical();
-        assertEq(b1, b0, "remove then re add leaves no budget");
+        assertEq(b1, b0, "no budget from a principal removal");
     }
 }
 
@@ -1094,34 +1114,24 @@ contract HookV2PriorTxHardTest is HookV2PriorTxBase {
         return Constants.TAX_MODE_HARD;
     }
 
-    function test_hard_priorTxLpExit_pass() public onlyFork {
-        uint256 bal0 = token.balanceOf(address(this));
+    /// D46: a principal removal grants no outflow; the take reverts.
+    function test_hard_principalRemoval_reverts() public onlyFork {
+        vm.expectRevert();
         router.run(key, -2000, 2000, POS_LIQ, SALT, 3);
-        assertEq(token.balanceOf(address(this)) - bal0, router.lastTake1());
-        (, uint256 o,) = token.pendingCanonical();
-        assertEq(o, 0, "grant consumed exactly");
     }
 
-    /// V2H-02 flipped (D43): increase then decrease a prior tx position in
-    /// one unlock leaves no grant and does not revert.
-    function test_hard_increaseThenDecreasePrior_leavesNoGrant() public onlyFork {
+    /// V2A-01 / V2H-02 flipped: increase then decrease a prior position in one
+    /// unlock is refused at the add.
+    function test_V2A01_hard_increaseThenDecrease_reverts() public onlyFork {
+        vm.expectRevert();
         router.run(key, -2000, 2000, POS_LIQ, SALT, 0);
-        (, uint256 o, uint256 i) = token.pendingCanonical();
-        assertEq(o, 0);
-        assertEq(i, 0);
-    }
-
-    function test_hard_addCollectsFees_pass() public onlyFork {
-        router.run(key, -2000, 2000, 1e6, SALT, 2);
-        assertGt(router.lastTake1(), 0);
-        (, uint256 o,) = token.pendingCanonical();
-        assertEq(o, 0);
     }
 
     function test_hard_lockerCollect_pass() public onlyFork {
         router.run(key, -2000, 2000, 0, SALT, 3);
         assertGt(router.lastTake1(), 0);
-        (, uint256 o,) = token.pendingCanonical();
-        assertEq(o, 0);
+        (, uint256 o, uint256 i) = token.pendingCanonical();
+        assertEq(o, 0, "collect grant consumed exactly");
+        assertEq(i, 0);
     }
 }

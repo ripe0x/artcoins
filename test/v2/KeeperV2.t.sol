@@ -50,6 +50,8 @@ contract KeeperV2Test is Test {
     event SwapperServiced(
         address indexed token, address indexed swapper, uint256 flushed, uint256 converted
     );
+    event ConvertSkipped(address indexed token, address indexed swapper, bytes reason);
+    event FlushSkipped(address indexed token, address indexed swapper, bytes reason);
 
     function setUp() public {
         factory = new KeeperMockFactory();
@@ -246,20 +248,34 @@ contract KeeperV2Test is Test {
         assertEq(caller.balance, 0.3 ether);
     }
 
-    // ── swallowed step failures ───────────────────────────────────────────
+    // ── real failures: collect bubbles, flush and convert are reported ────
 
-    function test_keeperV2_collectRevert_isSwallowed_flushStillRuns() public {
+    function test_keeperV2_collectRevert_bubbles() public {
         locker.setFailCollect(true);
         swapper.set(0.1 ether, 0, 0, 0);
-        _run(false, 0);
-        assertEq(locker.collectCalls(), 0);
-        assertEq(swapper.flushCalls(), 1);
-        assertEq(caller.balance, 0.1 ether);
+        vm.prank(caller);
+        vm.expectRevert(bytes("nothing to collect"));
+        keeper.collectAndForward(address(coin), false, 0);
+        assertEq(swapper.flushCalls(), 0, "nothing ran after a collect failure");
+        assertEq(caller.balance, 0);
+        _assertKeeperEmpty();
     }
 
-    function test_keeperV2_flushAndConvertRevert_areSwallowed() public {
+    function test_keeperV2_flushAndConvertRevert_areReported_notSilent() public {
         swapper.setReverts(true, true);
         locker.setRewards(0.3 ether, 0);
+        vm.expectEmit(address(keeper));
+        emit FlushSkipped(
+            address(coin),
+            address(swapper),
+            abi.encodeWithSelector(IFeeAutoSwapperV2.NothingToFlush.selector)
+        );
+        vm.expectEmit(address(keeper));
+        emit ConvertSkipped(
+            address(coin),
+            address(swapper),
+            abi.encodeWithSelector(IFeeAutoSwapperV2.ConvertTooEarly.selector, block.number + 50)
+        );
         vm.expectEmit(address(keeper));
         emit SwapperServiced(address(coin), address(swapper), 0, 0);
         _run(true, 0);
@@ -269,12 +285,45 @@ contract KeeperV2Test is Test {
         _assertKeeperEmpty();
     }
 
-    function test_keeperV2_convertTooEarly_isSwallowed_flushRewardKept() public {
+    function test_keeperV2_convertTooEarly_isReported_flushRewardKept() public {
         swapper.set(0.1 ether, 0.2 ether, 0, 0);
         swapper.setReverts(false, true);
+        vm.expectEmit(address(keeper));
+        emit ConvertSkipped(
+            address(coin),
+            address(swapper),
+            abi.encodeWithSelector(IFeeAutoSwapperV2.ConvertTooEarly.selector, block.number + 50)
+        );
         _run(true, 0);
         assertEq(swapper.flushCalls(), 1);
         assertEq(caller.balance, 0.1 ether);
+    }
+
+    // ── floors, not caps (D49) ────────────────────────────────────────────
+
+    /// @dev collect (1.3m), flush (400k) and convert (700k) all run past the old per step caps (950k, 200k,
+    ///      450k) when the tx supplies the gas.
+    function test_keeperV2_stepsBeyondOldCaps_stillRun() public {
+        locker.setBurn(1_300_000);
+        swapper.setBurn(400_000, 700_000);
+        locker.setRewards(0.3 ether, 0);
+        swapper.set(0.1 ether, 0.2 ether, 0, 0);
+        vm.prank(caller);
+        keeper.collectAndForward{gas: 3_500_000}(address(coin), true, 0);
+        assertEq(locker.collectCalls(), 1);
+        assertEq(swapper.flushCalls(), 1);
+        assertEq(swapper.convertCalls(), 1);
+        assertEq(caller.balance, 0.6 ether);
+        _assertKeeperEmpty();
+    }
+
+    /// @dev a step that really runs out of gas (floor passed, then starved) reports InsufficientGas, it does not
+    ///      bubble an empty revert or skip.
+    function test_keeperV2_outOfGasInsideCollect_reportsInsufficientGas() public {
+        locker.setBurn(50_000_000);
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(ArtCoinsKeeperV2.InsufficientGas.selector, uint8(1)));
+        keeper.collectAndForward{gas: 3_000_000}(address(coin), true, 0);
     }
 
     // ── gas floor: revert, never silently skip ────────────────────────────

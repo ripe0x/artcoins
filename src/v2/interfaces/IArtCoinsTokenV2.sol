@@ -26,6 +26,8 @@ interface IArtCoinsTokenV2 {
     event TaxBpsUpdated(uint16 oldBps, uint16 newBps);
     event TaxVenueAdded(address indexed venue);
     event VenueAdminRenounced();
+    /// @notice D48, additive: venue admin handed over.
+    event VenueAdminTransferred(address indexed previousAdmin, address indexed newAdmin);
 
     event Verified(address indexed admin, address indexed token);
     event UpdateImage(string image);
@@ -92,6 +94,8 @@ interface IArtCoinsTokenV2 {
         external
         returns (address pool);
     /// @notice Venue admin. Freezes the venue list.
+    /// @notice D48, additive. Venue admin only, nonzero. Not moved by `updateAdmin`.
+    function transferVenueAdmin(address newAdmin) external;
     function renounceVenueAdmin() external;
 
     // ── canonical hook only ───────────────────────────────────────────────

@@ -223,15 +223,20 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
         _mint(launcher_, supply);
     }
 
-    /// @dev Exempt entries must be contracts that exist at launch (the
-    ///      locker, a position manager), never this token, and at most
-    ///      MAX_TAX_EXEMPT. An externally owned account cannot be exempted, so
-    ///      a deployer cannot list its own wallet and buy untaxed (FT-07).
     function _cap(string memory v, uint256 max, uint8 field) private pure {
         uint256 len = bytes(v).length;
         if (len > max) revert StringTooLong(field, len);
     }
 
+    /// @dev Exempt entries must be contracts that exist at launch, never this
+    ///      token, unique, and at most MAX_TAX_EXEMPT. An externally owned
+    ///      account cannot be exempted. This is defense in depth only: per D47
+    ///      the factory restricts every entry to its owner managed
+    ///      `exemptAllowlist` (escrow, locker, hook, the coin's fee swapper and
+    ///      burn router, registered extensions), so a deployer cannot exempt its
+    ///      own forwarder (V2A-02). Never exempt a contract with a public sweep
+    ///      (v4 PositionManager, universal router): `take` to it then sweep
+    ///      would make the tax optional for everyone.
     function _initExempt(address[] memory exempt) private {
         uint256 n = exempt.length;
         if (n > Constants.MAX_TAX_EXEMPT) revert TaxConfigInvalid();
@@ -468,6 +473,15 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
         pool = TaxVenues.derive(venue, address(this));
         if (pool == address(0)) revert InvalidTaxVenue(address(0));
         _addVenue(pool, canonicalHook, poolManager, launcher);
+    }
+
+    /// @inheritdoc IArtCoinsTokenV2
+    /// @dev D48: single step, venue admin only. Not moved by `updateAdmin`.
+    function transferVenueAdmin(address newAdmin) external {
+        _onlyVenueAdmin();
+        if (newAdmin == address(0)) revert ZeroAddress();
+        emit VenueAdminTransferred(venueAdmin, newAdmin);
+        venueAdmin = newAdmin;
     }
 
     /// @inheritdoc IArtCoinsTokenV2

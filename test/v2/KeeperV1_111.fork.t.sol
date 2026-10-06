@@ -13,7 +13,7 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {Test, console2} from "forge-std/Test.sol";
+import {Test, Vm, console2} from "forge-std/Test.sol";
 
 interface ISwapperV1 {
     function endRecipient() external view returns (address);
@@ -179,13 +179,34 @@ contract KeeperV1_111_ForkTest is Test {
         assertGt(f1, 0);
         assertGt(c1, 0);
         _makeFees(); // more fees in the same block window
+        vm.recordLogs();
         vm.prank(CALLER);
         (uint256 col2, uint256 f2, uint256 c2) = keeper.run(true, 0); // same block: convert reverts ConvertTooEarly
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bool reported;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter == address(keeper) && logs[i].topics[0] == CollectFlushKeeperV1.ConvertSkipped.selector) {
+                reported = true;
+                bytes memory reason = abi.decode(logs[i].data, (bytes));
+                assertGt(reason.length, 0, "skip reason carries the revert data");
+            }
+        }
+        assertTrue(reported, "convert skip is reported, not silent");
         assertGt(col2, 0);
         assertEq(f2, col2);
         assertEq(c2, 0, "convert skipped inside min blocks, run did not revert");
         assertEq(address(SWAPPER).balance, 0);
         assertEq(address(keeper).balance, 0);
+    }
+
+    /// @dev D49: a collect revert for a reason other than gas is a real failure and bubbles.
+    function test_keeperV1_collectRevert_bubbles() public onlyFork {
+        vm.mockCallRevert(
+            LOCKER, abi.encodeCall(IArtCoinsLpLocker.collectRewards, (COIN)), bytes("collect broke")
+        );
+        vm.prank(CALLER);
+        vm.expectRevert(bytes("collect broke"));
+        keeper.run(true, 0);
     }
 
     /// @dev reviewer finding: a gas limit picked by estimateGas must never land on a path that skips convert.

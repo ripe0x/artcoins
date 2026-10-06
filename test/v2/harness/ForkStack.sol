@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import {ForkBase} from "./ForkBase.sol";
 
 import {LaunchDefaults} from "../../../script/LaunchDefaults.sol";
+import {DeployV2Lib} from "../../../script/v2/DeployV2Lib.sol";
 import {ArtCoinsFactory} from "../../../src/ArtCoinsFactory.sol";
 import {ArtCoinsFeeEscrow} from "../../../src/ArtCoinsFeeEscrow.sol";
 import {ArtCoinsHookSkimFee} from "../../../src/hooks/ArtCoinsHookSkimFee.sol";
@@ -18,6 +19,7 @@ import {TaxConfig, TaxVenue} from "../../../src/interfaces/IArtCoinsTaxable.sol"
 import {ArtCoinsLpLocker} from "../../../src/lp-lockers/ArtCoinsLpLocker.sol";
 import {ArtCoinsMevLinearSkim} from "../../../src/mev-modules/ArtCoinsMevLinearSkim.sol";
 
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
@@ -349,6 +351,65 @@ abstract contract ForkStack is ForkBase {
         t.canonicalTickSpacing = LaunchDefaults.TICK_SPACING;
         t.exempt = new address[](0);
         t.venues = new TaxVenue[](0);
+    }
+
+    // ─── v2 stack (script/v2/DeployV2Lib.sol) ────────────────────────────
+
+    /// @notice Last stack from `deployV2Stack` and the params it used.
+    DeployV2Lib.Stack internal v2;
+    DeployV2Lib.Params internal v2Params;
+
+    /// @notice DeployV2Stack.s.sol defaults on mainnet infra (env overrides not read).
+    function v2DefaultParams(address owner, address broadcaster)
+        internal
+        pure
+        returns (DeployV2Lib.Params memory)
+    {
+        return DeployV2Lib.defaults(
+            owner, broadcaster, POOL_MANAGER, POSITION_MANAGER, PERMIT2, CREATE2_DEPLOYER
+        );
+    }
+
+    /// @notice The script's deploy routine with the live owner as broadcaster
+    ///         and owner (no pending ownership). Factory stays deprecated.
+    function deployV2Stack() internal returns (DeployV2Lib.Stack memory) {
+        return deployV2Stack(v2DefaultParams(LIVE_OWNER, LIVE_OWNER));
+    }
+
+    /// @notice Runs `DeployV2Lib.deploy(p)` as `p.broadcaster` (the same code
+    ///         `DeployV2Stack.s.sol` broadcasts), then every post deploy assert.
+    function deployV2Stack(DeployV2Lib.Params memory p)
+        internal
+        returns (DeployV2Lib.Stack memory s)
+    {
+        vm.startPrank(p.broadcaster, p.broadcaster);
+        s = DeployV2Lib.deploy(p);
+        vm.stopPrank();
+        DeployV2Lib.check(s, p, false);
+        vm.label(address(s.escrow), "v2Escrow");
+        vm.label(address(s.allowlist), "v2Allowlist");
+        vm.label(address(s.hook), "v2Hook");
+        vm.label(address(s.locker), "v2Locker");
+        vm.label(address(s.mev), "v2MevSkim");
+        vm.label(address(s.factory), "v2Factory");
+        vm.label(address(s.tokenDeployer), "v2TokenDeployer");
+        vm.label(address(s.burnRouter), "v2BurnRouter");
+        vm.label(address(s.controller), "v2Controller");
+        vm.label(address(s.keeper), "v2Keeper");
+        v2 = s;
+        v2Params = p;
+    }
+
+    /// @notice OWNER accepts the four pending ownerships (no-op when the
+    ///         broadcaster was the owner).
+    function acceptV2Ownership(DeployV2Lib.Stack memory s, DeployV2Lib.Params memory p) internal {
+        if (p.owner == p.broadcaster) return;
+        Ownable2Step[4] memory o = DeployV2Lib.pendingOwnables(s);
+        for (uint256 i; i < 4; ++i) {
+            vm.prank(p.owner);
+            o[i].acceptOwnership();
+        }
+        DeployV2Lib.check(s, p, true);
     }
 
     // ─── live stack ──────────────────────────────────────────────────────

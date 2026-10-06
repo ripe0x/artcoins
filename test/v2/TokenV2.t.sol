@@ -70,13 +70,13 @@ contract TV2StubHook {
 
     function afterRemoveLiquidity(
         address,
-        PoolKey calldata key,
+        PoolKey calldata,
         IPoolManager.ModifyLiquidityParams calldata,
-        BalanceDelta delta,
+        BalanceDelta,
         BalanceDelta,
         bytes calldata
-    ) external returns (bytes4, BalanceDelta) {
-        _flow(key, delta.amount1());
+    ) external pure returns (bytes4, BalanceDelta) {
+        // D46: removals never attest or grant; only swaps (and adds, in) do.
         return (IHooks.afterRemoveLiquidity.selector, BalanceDelta.wrap(0));
     }
 
@@ -135,8 +135,6 @@ contract TV2Actor is IUnlockCallback {
     uint8 internal constant OP_ADD_WITH_CLAIMS = 2;
     uint8 internal constant OP_BUY_AND_TAKE = 3;
     uint8 internal constant OP_ROUND_TRIP = 4;
-    uint8 internal constant OP_REMOVE_READD = 5;
-    uint8 internal constant OP_ADD = 6;
 
     constructor(IPoolManager pm_) {
         pm = pm_;
@@ -188,12 +186,6 @@ contract TV2Actor is IUnlockCallback {
             );
             _close(key.currency0, int256(b.amount0()) + s.amount0());
             _close(coin, int256(b.amount1()) + s.amount1());
-        } else if (op == OP_REMOVE_READD || op == OP_ADD) {
-            BalanceDelta d;
-            if (op == OP_REMOVE_READD) (d,) = pm.modifyLiquidity(key, _lp(-amount), "");
-            (BalanceDelta d2,) = pm.modifyLiquidity(key, _lp(amount), "");
-            _close(key.currency0, int256(d.amount0()) + d2.amount0());
-            _close(coin, int256(d.amount1()) + d2.amount1());
         } else if (op == OP_ADD_WITH_CLAIMS) {
             (BalanceDelta d,) = pm.modifyLiquidity(
                 key,
@@ -206,12 +198,6 @@ contract TV2Actor is IUnlockCallback {
             pm.burn(address(this), coin.toId(), uint128(-d.amount1()));
         }
         return "";
-    }
-
-    function _lp(int256 liq) internal pure returns (IPoolManager.ModifyLiquidityParams memory) {
-        return IPoolManager.ModifyLiquidityParams({
-            tickLower: -887_220, tickUpper: 887_220, liquidityDelta: liq, salt: 0
-        });
     }
 
     /// @dev Settle a negative delta, take a positive one.
@@ -427,13 +413,16 @@ contract TokenV2Test is TokenV2Base {
         _assertNoPending();
     }
 
-    function test_hard_canonicalLpRemove_pass() public {
+    /// @dev D46 (inverted from the earlier `_pass` test): the hook grants
+    ///      nothing on removals, so a removal's coin cannot leave the
+    ///      PoolManager as erc20 in HARD. under D46 only the launcher's locker
+    ///      can add to the canonical pool, so no third party position exists.
+    function test_hard_canonicalLpRemove_noGrant_reverts() public {
         _deployMode(Constants.TAX_MODE_HARD);
         _initCanonWithLiquidity(100e18);
-        uint256 before = token.balanceOf(address(this));
-        liqRouter.modifyLiquidity(_canonKey(), _liq(-50e18), "");
-        assertGt(token.balanceOf(address(this)), before, "lp exit");
         _assertNoPending();
+        vm.expectPartialRevert(CustomRevert.WrappedError.selector);
+        liqRouter.modifyLiquidity(_canonKey(), _liq(-50e18), "");
     }
 
     function test_hard_launchLiquidityPlacement_pass() public {
@@ -781,24 +770,62 @@ contract TokenV2Test is TokenV2Base {
         assertEq(token.balanceOf(address(this)) - before, gross - gross * BPS / 10_000, "side taxed");
     }
 
-    function _lpRemoveReadd(uint8 mode) internal {
-        _deployMode(mode);
-        _initCanonWithLiquidity(1000e18);
-        TV2Actor actor = new TV2Actor(pm);
-        vm.deal(address(actor), 100 ether);
-        token.transfer(address(actor), 100e18);
-        actor.run(6, _canonKey(), 10e18); // actor's own position, granted inflow consumed
+    // the D34 lp remove then re add tests were deleted under D46: removals no
+    // longer attest or grant, and third party adds to a taxed canonical pool
+    // are refused by the hook, so the scenario cannot occur.
+
+    function test_venue_removalAttestsNothing() public {
+        _deployMode(Constants.TAX_MODE_VENUE);
+        _initCanonWithLiquidity(100e18);
+        uint256 before = token.balanceOf(address(this));
+        liqRouter.modifyLiquidity(_canonKey(), _liq(-50e18), "");
+        uint256 net = token.balanceOf(address(this)) - before;
         _assertNoPending();
-        actor.run(5, _canonKey(), 10e18); // remove then re add in one unlock
-        _assertNoPending();
+        // a non exempt lp exit from the PoolManager is taxed like any outflow
+        uint256 tax = token.balanceOf(Constants.DEAD);
+        assertGt(net, 0);
+        assertEq(tax, (net + tax) * BPS / 10_000, "taxed in full");
     }
 
-    function test_d34_hard_lpRemoveThenReadd_noNetGrant() public {
-        _lpRemoveReadd(Constants.TAX_MODE_HARD);
+    // ── venue admin transfer (D48) ───────────────────────────────────────
+
+    function test_venue_transferVenueAdmin() public {
+        _deployMode(Constants.TAX_MODE_VENUE);
+        address va = makeAddr("newVenueAdmin");
+        vm.prank(alice);
+        vm.expectRevert(IArtCoinsTokenV2.NotVenueAdmin.selector);
+        token.transferVenueAdmin(va);
+        vm.prank(admin);
+        vm.expectRevert(IArtCoinsTokenV2.ZeroAddress.selector);
+        token.transferVenueAdmin(address(0));
+
+        vm.prank(admin);
+        vm.expectEmit(address(token));
+        emit IArtCoinsTokenV2.VenueAdminTransferred(admin, va);
+        token.transferVenueAdmin(va);
+        assertEq(token.venueAdmin(), va);
+
+        TV2MockPool pool = new TV2MockPool(address(token), makeAddr("weth"));
+        vm.prank(admin);
+        vm.expectRevert(IArtCoinsTokenV2.NotVenueAdmin.selector);
+        token.addTaxVenue(address(pool));
+        vm.prank(va);
+        token.addTaxVenue(address(pool));
+
+        // updateAdmin does not move it
+        vm.prank(admin);
+        token.updateAdmin(bob);
+        assertEq(token.venueAdmin(), va);
+        vm.prank(va);
+        token.renounceVenueAdmin();
+        assertEq(token.venueAdmin(), address(0));
     }
 
-    function test_d34_venue_lpRemoveThenReadd_noNetBudget() public {
-        _lpRemoveReadd(Constants.TAX_MODE_VENUE);
+    function test_venue_transferVenueAdmin_noneModeReverts() public {
+        _deployMode(Constants.TAX_MODE_NONE);
+        vm.prank(admin);
+        vm.expectRevert(IArtCoinsTokenV2.TaxNotEnabled.selector);
+        token.transferVenueAdmin(bob);
     }
 
     function test_canonicalCalls_onlyHook() public {

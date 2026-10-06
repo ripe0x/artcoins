@@ -107,8 +107,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     ///      keccak256("artcoins.hookV2.requested").
     uint256 private constant _REQ_SLOT =
         0x1ed2782058d87e2c0cc971c5cc47936f85ed6b62abd4c00f9ad4c24ce7f27f87;
-    /// @dev Transient position marker tag (b1).
-    bytes32 private constant _POS_TAG = keccak256("artcoins.hookV2.positionAdded");
 
     /// @dev Additive, not in the frozen interface: `setFeeEscrow` target does
     ///      not list this hook as a core depositor.
@@ -259,11 +257,11 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     }
 
     /// @dev Anti sniper add lock (b7: ends at createdAt + MAX_MEV_WINDOW
-    ///      whatever the module reports) and the same tx position marker (b1).
+    ///      whatever the module reports) and the D46 taxed pool lp gate.
     function _beforeAddLiquidity(
         address sender,
         PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata p,
+        IPoolManager.ModifyLiquidityParams calldata,
         bytes calldata
     ) internal override returns (bytes4) {
         PoolId pid = key.toId();
@@ -275,22 +273,22 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
                 revert MevWindowActive();
             }
         }
-        // D43: the same tx marker only gates VENUE attestation. HARD reports
-        // every removal and the token nets it against the add (D34).
-        if (info.taxMode == Constants.TAX_MODE_VENUE) {
-            bytes32 slot = _positionSlot(pid, sender, p);
-            assembly ("memory-safe") {
-                tstore(slot, 1)
-            }
+        // D46: on a taxed pool (VENUE, HARD) liquidity is placed only in the
+        // launch phase (inside the launch tx, before `initializeMevModule`
+        // arms the pool) or by an allowlisted launcher calling the
+        // PoolManager directly. The v2 locker places through the v4
+        // PositionManager, so `sender` is the PositionManager there; the
+        // launch phase gate is what admits it, and allowlisting the
+        // PositionManager would reopen the hole for everyone.
+        if (info.taxMode != Constants.TAX_MODE_NONE && _started[pid] && !_launchers[sender]) {
+            revert NotLauncher();
         }
         return BaseHook.beforeAddLiquidity.selector;
     }
 
-    /// @dev Inflow report (both modes) for the art coin the position takes in.
-    ///      An add to an existing position also collects its fees; when the
-    ///      coin fees exceed the coin principal the caller nets coin OUT, which
-    ///      is real fee income (VENUE attest, HARD out grant), bounded by the
-    ///      fees the position earned from swaps.
+    /// @dev Inflow report for the art coin the position takes in. Under D46
+    ///      a taxed pool only sees adds in the launch phase (the locker's
+    ///      placement, which needs the HARD inflow grant) or from launchers.
     function _afterAddLiquidity(
         address,
         PoolKey calldata key,
@@ -308,12 +306,14 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         return (BaseHook.afterAddLiquidity.selector, BalanceDelta.wrap(0));
     }
 
-    /// @dev Art coin a removal or fee collect releases. VENUE: attested only
-    ///      for positions that existed before this tx (b1). HARD: always
-    ///      reported as outflow (D43); the token nets it against the add's
-    ///      inflow, so add then remove leaves no grant either way.
+    /// @dev D46: principal removals report nothing in any mode (the locker
+    ///      never removes; a VENUE exit is taxed, a HARD exit reverts at
+    ///      take). A fee collect (zero liquidity decrease, the locker's only
+    ///      removal) reports its coin fees: fees accrue only from swaps, a
+    ///      collect cannot be undone or replayed, and the token draws the
+    ///      grant or budget even for an exempt recipient, so nothing is left.
     function _afterRemoveLiquidity(
-        address sender,
+        address,
         PoolKey calldata key,
         IPoolManager.ModifyLiquidityParams calldata p,
         BalanceDelta delta,
@@ -323,17 +323,8 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         PoolId pid = key.toId();
         uint8 mode = _info[pid].taxMode;
         int256 a = delta.amount1();
-        if (a > 0) {
-            if (mode == Constants.TAX_MODE_HARD) {
-                _tokenFlow(key, pid, mode, a);
-            } else if (mode == Constants.TAX_MODE_VENUE) {
-                bytes32 slot = _positionSlot(pid, sender, p);
-                uint256 added;
-                assembly ("memory-safe") {
-                    added := tload(slot)
-                }
-                if (added == 0) _tokenFlow(key, pid, mode, a);
-            }
+        if (a > 0 && p.liquidityDelta == 0 && mode != Constants.TAX_MODE_NONE) {
+            _tokenFlow(key, pid, mode, a);
         }
         return (BaseHook.afterRemoveLiquidity.selector, BalanceDelta.wrap(0));
     }
@@ -582,14 +573,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         assembly ("memory-safe") {
             pop(call(_EXTENSION_GAS, ext, 0, add(cd, 0x20), mload(cd), codesize(), 0x00))
         }
-    }
-
-    function _positionSlot(
-        PoolId pid,
-        address sender,
-        IPoolManager.ModifyLiquidityParams calldata p
-    ) private pure returns (bytes32) {
-        return keccak256(abi.encode(_POS_TAG, pid, sender, p.tickLower, p.tickUpper, p.salt));
     }
 
     function _i128(uint256 x) private pure returns (int128) {

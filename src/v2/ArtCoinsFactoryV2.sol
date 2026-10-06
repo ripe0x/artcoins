@@ -67,6 +67,10 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     /// @notice Parallel arrays of different lengths (FT-10).
     error ArrayLengthMismatch();
+    /// @notice D47: a tax exempt entry is not on the exempt allowlist and is
+    ///         not implicitly allowed (this launch's locker or hook, an enabled
+    ///         escrow, an enabled extension).
+    error ExemptNotAllowed(address account);
     /// @notice No token deployer set yet (D38).
     error DeployerNotSet();
     /// @notice The deployer has no code, is not bound to this factory, or was
@@ -75,6 +79,8 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     // ── additive events (not in the frozen interface) ────────────────────
 
+    /// @notice D47: an address was added to or removed from the exempt allowlist.
+    event ExemptAllowedSet(address indexed account, bool allowed);
     /// @notice D38: the token deployer pointer changed.
     event TokenDeployerSet(address indexed oldDeployer, address indexed newDeployer);
     /// @notice Position count is 0 or above `Constants.MAX_LP_POSITIONS`, or position bps do not sum to BPS.
@@ -139,6 +145,12 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     mapping(address => bool) public enabledExtensions;
     /// @inheritdoc IArtCoinsFactoryV2
     mapping(address => bool) public enabledEscrows;
+    /// @notice D47: contracts a launch may list in `TaxConfigV2.exempt`, on top
+    ///         of the implicit set (this launch's locker and hook, enabled
+    ///         escrows, enabled extensions). Never a contract with a public
+    ///         sweep (v4 PositionManager, universal router): that would make the
+    ///         tax optional for everyone.
+    mapping(address => bool) public exemptAllowed;
 
     // ── launch records ────────────────────────────────────────────────────
 
@@ -319,7 +331,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         _validateFee(c.fee);
         _validateLocker(c.locker, protocolBps);
         _validateMev(c.mev, c.pool.hook, c.fee.baselineSkimBps);
-        _validateTax(c.tax, c.fee.bountyRecipient);
+        _validateTax(c.tax, c.fee.bountyRecipient, c.locker.locker, c.pool.hook);
         return _validateExtensions(c.extensions, supply);
     }
 
@@ -397,7 +409,12 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     ///      not exist); VENUE needs 0 < taxBpsMax <= TAX_BPS_ABSOLUTE_MAX and
     ///      taxBps <= taxBpsMax; HARD has no rate and no exempt set, its sink is
     ///      display only and may be 0.
-    function _validateTax(TaxConfigV2 calldata t, address bountyRecipient) internal view {
+    function _validateTax(
+        TaxConfigV2 calldata t,
+        address bountyRecipient,
+        address locker,
+        address hook
+    ) internal view {
         uint8 mode = t.mode;
         if (mode == Constants.TAX_MODE_NONE) {
             if (
@@ -430,11 +447,18 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         ) {
             revert InvalidTaxConfig();
         }
-        // mirrors the token (FT-07): exempt entries are contracts that exist at
-        // launch (so never the token itself) and appear once.
+        // D47 / V2A-02: every exempt entry must be on the owner managed
+        // allowlist, or be this launch's locker or hook, an enabled escrow or an
+        // enabled extension. a deployer cannot exempt its own forwarder.
+        // then, mirroring the token (FT-07): a contract that exists at launch
+        // (so never the token itself), listed once.
         uint256 n = t.exempt.length;
         for (uint256 i; i < n; ++i) {
             address a = t.exempt[i];
+            if (
+                !exemptAllowed[a] && a != locker && a != hook && !enabledEscrows[a]
+                    && !enabledExtensions[a]
+            ) revert ExemptNotAllowed(a);
             if (a.code.length == 0) revert InvalidTaxConfig();
             for (uint256 j; j < i; ++j) {
                 if (t.exempt[j] == a) revert InvalidTaxConfig();
@@ -685,6 +709,13 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         if (enabled) _checkConstants(escrow);
         enabledEscrows[escrow] = enabled;
         emit EscrowSet(escrow, enabled);
+    }
+
+    /// @notice D47: adds or removes a tax exempt candidate. Affects new launches only.
+    function setExemptAllowed(address account, bool allowed) external onlyOwner {
+        if (account == address(0)) revert ZeroAddress();
+        exemptAllowed[account] = allowed;
+        emit ExemptAllowedSet(account, allowed);
     }
 
     /// @notice D38: points the factory at a token deployer bound to it.

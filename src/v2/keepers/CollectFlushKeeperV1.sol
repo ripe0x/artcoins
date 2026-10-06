@@ -26,7 +26,8 @@ interface ILockerPositionManager {
 ///         LP fees, flushes escrowed eth, optionally converts coin fees, forwards all rewards to the caller.
 /// @dev    Narrows the v1 stranding window (a third party `escrow.claim(swapper, 0)` pushes eth into the
 ///         swapper where `flushPaired` cannot see it) by collecting and flushing in one tx; it cannot recover
-///         eth already stranded. Non-gas reverts of a step are swallowed, gas shortfalls revert.
+///         eth already stranded. A collect revert bubbles; flush and convert reverts are reported and skipped;
+///         gas shortfalls revert `InsufficientGas`.
 contract CollectFlushKeeperV1 {
     using StateLibrary for IPoolManager;
     using PoolIdLibrary for PoolKey;
@@ -40,13 +41,19 @@ contract CollectFlushKeeperV1 {
     IFeeAutoSwapper public immutable swapper;
     IArtCoinsFeeLocker public immutable escrow;
 
-    /// @dev step gas measured on a mainnet fork, MARGIN added on top
+    /// @dev step gas measured on a mainnet fork. These are floors, not caps (D49): a step needs
+    ///      `gasleft() > floor + MARGIN` before it starts, then gets all remaining gas.
     uint256 internal constant COLLECT_GAS = 658_000;
     uint256 internal constant CONVERT_GAS = 299_000;
     uint256 internal constant FLUSH_GAS = 72_000;
     uint256 internal constant MARGIN = 50_000;
 
     event KeeperRun(address indexed caller, uint256 collected, uint256 flushed, uint256 converted);
+
+    /// @dev `convert` / `flushPaired` reverted for a reason other than gas (too early, nothing to do). `converted`
+    ///      or `flushed` is 0 in that run.
+    event ConvertSkipped(bytes reason);
+    event FlushSkipped(bytes reason);
 
     /// @dev gas shortfall for `step` (1 collect, 2 flush, 3 convert). Reverts rather than skips so an
     ///      estimateGas search cannot land on a path that silently skips a step.
@@ -68,24 +75,31 @@ contract CollectFlushKeeperV1 {
         returns (uint256 collected, uint256 flushed, uint256 converted)
     {
         uint256 before_ = escrow.availableFees(address(swapper), address(0));
-        uint256 g = _gas(1, COLLECT_GAS);
-        try locker.collectRewards{gas: g}(token) {
+        _gas(1, COLLECT_GAS);
+        try locker.collectRewards(token) {
             collected = escrow.availableFees(address(swapper), address(0)) - before_;
         } catch (bytes memory r) {
-            if (r.length == 0) revert InsufficientGas(1);
+            // out of gas (back under the floor) reports the step; any other revert is a real failure and bubbles
+            if (gasleft() < COLLECT_GAS + MARGIN) revert InsufficientGas(1);
+            assembly ("memory-safe") {
+                revert(add(r, 0x20), mload(r))
+            }
         }
-        g = _gas(2, FLUSH_GAS);
-        try swapper.flushPaired{gas: g}() returns (uint256 out) {
+        _gas(2, FLUSH_GAS);
+        try swapper.flushPaired() returns (uint256 out) {
             flushed = out;
         } catch (bytes memory r) {
-            if (r.length == 0) revert InsufficientGas(2);
+            // `NothingToFlush` is the normal idle answer, so a flush revert is reported, not bubbled
+            if (gasleft() < FLUSH_GAS + MARGIN) revert InsufficientGas(2);
+            emit FlushSkipped(r);
         }
         if (doConvert) {
-            g = _gas(3, CONVERT_GAS);
-            try swapper.convert{gas: g}(minOut) returns (uint256 out) {
+            _gas(3, CONVERT_GAS);
+            try swapper.convert(minOut) returns (uint256 out) {
                 converted = out;
             } catch (bytes memory r) {
-                if (r.length == 0) revert InsufficientGas(3);
+                if (gasleft() < CONVERT_GAS + MARGIN) revert InsufficientGas(3);
+                emit ConvertSkipped(r);
             }
         }
         // forward rewards (locker, flush, convert) and any coin sent to us
@@ -100,8 +114,8 @@ contract CollectFlushKeeperV1 {
         emit KeeperRun(msg.sender, collected, flushed, converted);
     }
 
-    function _gas(uint8 step, uint256 cost) internal view returns (uint256 g) {
-        g = cost + MARGIN;
+    function _gas(uint8 step, uint256 cost) internal view {
+        uint256 g = cost + MARGIN;
         if (gasleft() < g + g / 63 + 20_000) revert InsufficientGas(step);
     }
 

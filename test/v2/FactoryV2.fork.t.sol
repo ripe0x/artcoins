@@ -43,6 +43,8 @@ import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 
 contract FactoryV2ForkTest is ForkBase {
@@ -115,6 +117,10 @@ contract FactoryV2ForkTest is ForkBase {
         payout = new FV2Payout();
 
         hook.setLauncher(address(factory), true);
+        // D46: the launch placement adds on a taxed canonical pool; the deploy
+        // script registers the locker as a hook launcher.
+        hook.setLauncher(locker, true);
+        require(hook.isLauncher(locker), "D46: locker must be a hook launcher");
 
         factory.setHook(address(hook), true);
         factory.setLocker(locker, true);
@@ -329,9 +335,10 @@ contract FactoryV2ForkTest is ForkBase {
             c.tax.exempt[i] = address(uint160(0x1000 + i));
         }
         _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidTaxConfig.selector));
-        // FT-07: an eoa cannot be exempted
+        // FT-07: an eoa cannot be exempted, even if the owner lists it (defense in depth)
         c.tax.exempt = new address[](1);
         c.tax.exempt[0] = makeAddr("fv2.exemptEoa");
+        factory.setExemptAllowed(c.tax.exempt[0], true);
         _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidTaxConfig.selector));
         c.tax.exempt = new address[](0);
         c.tax.venues = new IArtCoinsFactoryV2.TaxVenue[](Constants.MAX_TAX_VENUES + 1);
@@ -804,8 +811,8 @@ contract FactoryV2ForkTest is ForkBase {
         c.tax.taxSink = Constants.DEAD;
         // duplicate exempt
         c.tax.exempt = new address[](2);
-        c.tax.exempt[0] = POSITION_MANAGER;
-        c.tax.exempt[1] = POSITION_MANAGER;
+        c.tax.exempt[0] = locker;
+        c.tax.exempt[1] = locker;
         _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidTaxConfig.selector));
         c.tax.exempt = new address[](0);
 
@@ -843,9 +850,9 @@ contract FactoryV2ForkTest is ForkBase {
         // distinct venues launch, and the token lists them
         c.tax.venues[1].kind = 2;
         c.tax.exempt = new address[](1);
-        c.tax.exempt[0] = POSITION_MANAGER;
+        c.tax.exempt[0] = locker;
         address t = _deploy(alice, c);
-        assertTrue(ArtCoinsTokenV2(t).isTaxExempt(POSITION_MANAGER));
+        assertTrue(ArtCoinsTokenV2(t).isTaxExempt(locker));
     }
 
     /// cross package (D37): the real v2 locker places liquidity for the real v2
@@ -906,6 +913,122 @@ contract FactoryV2ForkTest is ForkBase {
         address afterSwap = factory.predictToken(alice, c);
         assertTrue(afterSwap != before);
         assertEq(_deploy(alice, c), afterSwap);
+    }
+
+    /// D47 / V2A-02: exempt entries come from the owner allowlist or the implicit set.
+    function test_exemptAllowlist() public onlyFork {
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
+        c.tax.mode = Constants.TAX_MODE_VENUE;
+        c.tax.taxBps = 1000;
+        c.tax.taxBpsMax = 2000;
+        c.tax.taxSink = Constants.DEAD;
+        c.tax.exempt = new address[](1);
+
+        // a deployer's own forwarder (any contract) is refused
+        address forwarder = address(new FV2Payout());
+        c.tax.exempt[0] = forwarder;
+        _expectRevertDeploy(
+            c, abi.encodeWithSelector(ArtCoinsFactoryV2.ExemptNotAllowed.selector, forwarder)
+        );
+        // so are sweepable periphery contracts unless the owner lists them (it must not)
+        c.tax.exempt[0] = POSITION_MANAGER;
+        _expectRevertDeploy(
+            c, abi.encodeWithSelector(ArtCoinsFactoryV2.ExemptNotAllowed.selector, POSITION_MANAGER)
+        );
+
+        // owner listing: owner only, nonzero, evented
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
+        factory.setExemptAllowed(forwarder, true);
+        vm.expectRevert(IArtCoinsFactoryV2.ZeroAddress.selector);
+        factory.setExemptAllowed(address(0), true);
+        vm.expectEmit(true, false, false, true, address(factory));
+        emit ArtCoinsFactoryV2.ExemptAllowedSet(forwarder, true);
+        factory.setExemptAllowed(forwarder, true);
+        assertTrue(factory.exemptAllowed(forwarder));
+
+        c.tax.exempt[0] = forwarder;
+        address t1 = _deploy(alice, c);
+        assertTrue(ArtCoinsTokenV2(t1).isTaxExempt(forwarder), "listed passes");
+
+        // delisting affects new launches
+        factory.setExemptAllowed(forwarder, false);
+        c.token.salt = bytes32(uint256(31));
+        _expectRevertDeploy(
+            c, abi.encodeWithSelector(ArtCoinsFactoryV2.ExemptNotAllowed.selector, forwarder)
+        );
+
+        // implicit: this launch's locker and hook, enabled escrows, enabled extensions
+        FV2Extension e = _newExt();
+        c.tax.exempt = new address[](4);
+        c.tax.exempt[0] = locker;
+        c.tax.exempt[1] = address(hook);
+        c.tax.exempt[2] = address(escrow);
+        c.tax.exempt[3] = address(e);
+        address t2 = _deploy(alice, c);
+        assertTrue(ArtCoinsTokenV2(t2).isTaxExempt(locker), "locker passes without listing");
+        assertTrue(ArtCoinsTokenV2(t2).isTaxExempt(address(hook)));
+        assertTrue(ArtCoinsTokenV2(t2).isTaxExempt(address(escrow)));
+        assertTrue(ArtCoinsTokenV2(t2).isTaxExempt(address(e)));
+        assertFalse(factory.exemptAllowed(locker));
+    }
+
+    /// D46: a taxed launch still places its liquidity (locker is a hook
+    /// launcher) and the pool trades both ways.
+    function test_taxedLaunch_hard_placesAndTrades() public onlyFork {
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
+        c.tax.mode = Constants.TAX_MODE_HARD;
+        _launchAndTrade(c);
+    }
+
+    function test_taxedLaunch_venue_placesAndTrades() public onlyFork {
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
+        c.tax.mode = Constants.TAX_MODE_VENUE;
+        c.tax.taxBps = 1000;
+        c.tax.taxBpsMax = 2000;
+        c.tax.taxSink = Constants.DEAD;
+        c.tax.exempt = new address[](1);
+        c.tax.exempt[0] = locker;
+        _launchAndTrade(c);
+    }
+
+    function _launchAndTrade(IArtCoinsFactoryV2.DeploymentConfigV2 memory c) internal {
+        assertTrue(hook.isLauncher(locker), "D46: locker is a hook launcher");
+        address t = _deploy(alice, c);
+        assertEq(realLocker.tokenRewards(t).numPositions, 2, "liquidity placed");
+        assertEq(IERC20(t).balanceOf(address(factory)), 0);
+        PoolKey memory key = _key(t);
+
+        // buy: exact eth in
+        uint256 before = IERC20(t).balanceOf(address(this));
+        swapRouter.swap{value: 0.1 ether}(
+            key,
+            IPoolManager.SwapParams({
+                zeroForOne: true,
+                amountSpecified: -0.1 ether,
+                sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+            }),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            ""
+        );
+        uint256 bought = IERC20(t).balanceOf(address(this)) - before;
+        assertGt(bought, 0, "bought");
+
+        // sell half back: exact coin in
+        IERC20(t).approve(address(swapRouter), type(uint256).max);
+        uint256 ethBefore = address(this).balance;
+        swapRouter.swap(
+            key,
+            IPoolManager.SwapParams({
+                zeroForOne: false,
+                amountSpecified: -int256(bought / 2),
+                sqrtPriceLimitX96: TickMath.MAX_SQRT_PRICE - 1
+            }),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            ""
+        );
+        assertEq(IERC20(t).balanceOf(address(this)), before + bought - bought / 2, "sold");
+        assertGt(address(this).balance, ethBefore, "eth back");
     }
 
     /// D30: string caps are checked before any deploy work, same error as the token.
@@ -974,7 +1097,7 @@ contract FactoryV2ForkTest is ForkBase {
         c.tax.taxBpsMax = 1500;
         c.tax.taxSink = bounty;
         c.tax.exempt = new address[](1);
-        c.tax.exempt[0] = POSITION_MANAGER;
+        c.tax.exempt[0] = locker;
         c.extensions = new IArtCoinsFactoryV2.ExtensionConfigV2[](1);
         c.extensions[0] = _ext(address(e), 0.5 ether, 700);
         c.token.renderer = address(0);
@@ -1005,7 +1128,7 @@ contract FactoryV2ForkTest is ForkBase {
         // the whole config round trips byte for byte
         assertEq(keccak256(abi.encode(got)), keccak256(abi.encode(c)), "full config");
         assertEq(got.tax.taxSink, bounty);
-        assertEq(got.tax.exempt[0], POSITION_MANAGER);
+        assertEq(got.tax.exempt[0], locker);
         assertEq(got.extensions[0].msgValue, 0.5 ether);
         assertEq(got.locker.rewardRecipients[0], project);
 
