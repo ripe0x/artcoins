@@ -27,6 +27,7 @@ export interface ContractAddresses {
 }
 
 const ZERO: Address = '0x0000000000000000000000000000000000000000';
+const MAINNET_V4_QUOTER: Address = '0x52F0E24D1c21C8A0cB1e5a5dD6198556BD9E1203';
 
 // Mainnet: the current stack of deployments/mainnet.json (generated into deployments.generated.ts
 // by script-js/gen-addresses.mjs, do not hand edit). Slots with no current stack deployment stay
@@ -46,7 +47,9 @@ const MAINNET_ADDRESSES: ContractAddresses = {
   weth: INFRA.weth,
   poolManager: INFRA.poolManager,
   stateView: INFRA.stateView,
-  quoter: ZERO,
+  // Uniswap v4 Quoter (mainnet, code present, poolManager() = the v4 PoolManager, checked 2026-10-06).
+  // Not in the registry INFRA table, so it is typed here.
+  quoter: MAINNET_V4_QUOTER,
   universalRouter: INFRA.universalRouter,
   permit2: INFRA.permit2,
 };

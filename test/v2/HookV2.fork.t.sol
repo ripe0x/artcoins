@@ -26,7 +26,9 @@ import {
 
 import {Constants} from "../../src/Constants.sol";
 import {IArtCoinsHook} from "../../src/interfaces/IArtCoinsHook.sol";
+import {ArtCoinsFeeEscrowV2} from "../../src/v2/ArtCoinsFeeEscrowV2.sol";
 import {ArtCoinsTokenV2} from "../../src/v2/ArtCoinsTokenV2.sol";
+import {ArtCoinsHookV2} from "../../src/v2/hooks/ArtCoinsHookV2.sol";
 import {HookCalldata} from "../../src/v2/hooks/libraries/HookCalldata.sol";
 import {IArtCoinsHookV2} from "../../src/v2/interfaces/IArtCoinsHookV2.sol";
 import {IArtCoinsMevSkimV2} from "../../src/v2/interfaces/IArtCoinsMevSkimV2.sol";
@@ -102,7 +104,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         uint256 b0 = bountyEoa.balance;
         _swap(key, true, -1 ether, 0, "");
         _swap(key, false, -1 ether, 0, "");
-        (uint256 bounty,) = _legs((1 ether * BASELINE) / D, BASELINE);
+        (uint256 bounty,) = _legs((1 ether * uint256(BASELINE)) / D, BASELINE);
         assertGe(bountyEoa.balance - b0, bounty, "bounty pushed to the eoa");
         assertEq(_escrowed(bountyEoa), 0);
     }
@@ -113,7 +115,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         PoolKey memory key = _launchSimple(address(r));
         uint256 b0 = address(r).balance;
         _swap(key, true, -1 ether, 0, "");
-        (uint256 bounty,) = _legs((1 ether * BASELINE) / D, BASELINE);
+        (uint256 bounty,) = _legs((1 ether * uint256(BASELINE)) / D, BASELINE);
         assertEq(address(r).balance - b0, bounty, "pushed, empty fallback accepts eth");
         // and again once its balance is far above the stream floor
         _swap(key, true, -1 ether, 0, "");
@@ -131,7 +133,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         // probe capped at preSwapStreamGas, 100kb of returndata never copied
         assertLt(used, refGas + hook.globals().preSwapStreamGas + 10_000, "return bomb bounded");
         assertEq(r.bombs(), 2, "probe succeeded and offered the blob twice");
-        (uint256 bounty,) = _legs((1 ether * BASELINE) / D, BASELINE);
+        (uint256 bounty,) = _legs((1 ether * uint256(BASELINE)) / D, BASELINE);
         assertGe(address(r).balance, 1 ether + bounty, "pushed");
     }
 
@@ -165,7 +167,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         HV2Rejecter r = new HV2Rejecter();
         vm.deal(address(r), 1 ether); // streamForward reverts too, and is probed
         PoolKey memory key = _launchSimple(address(r));
-        uint256 skim = (1 ether * BASELINE) / D;
+        uint256 skim = (1 ether * uint256(BASELINE)) / D;
         (uint256 bounty,) = _legs(skim, BASELINE);
         vm.expectEmit(true, true, true, true, address(hook));
         emit IArtCoinsHookV2.FeeDelivered(key.toId(), Constants.LEG_BOUNTY, address(r), bounty, true);
@@ -178,7 +180,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         HV2Rejecter rej = new HV2Rejecter();
         (PoolKey memory key,) = _launchProtocol(_defaults(bountyEoa), address(rej));
         _swap(key, true, -1 ether, 0, "");
-        (, uint256 protocol) = _legs((1 ether * BASELINE) / D, BASELINE);
+        (, uint256 protocol) = _legs((1 ether * uint256(BASELINE)) / D, BASELINE);
         assertEq(_escrowed(address(rej)), protocol);
 
         HV2GasBurner burner = new HV2GasBurner();
@@ -202,7 +204,7 @@ contract HookV2ForkTest is HookV2ForkBase {
     function test_skim_fullFill_noRefund() public onlyFork {
         PoolKey memory key = _launchSimple(bountyEoa);
         uint256 skim = _skimOfBuy1Eth(key, bountyEoa);
-        assertEq(skim, (1 ether * BASELINE) / D);
+        assertEq(skim, (1 ether * uint256(BASELINE)) / D);
         assertEq(_escrowed(address(swapRouter)), 0, "no refund");
     }
 
@@ -289,7 +291,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         (, bool active) = IArtCoinsMevSkimV2(address(m)).currentSkimBps(key.toId());
         assertTrue(active);
         _modify(key, -2000, 2000, 1e18, bytes32(uint256(5)));
-        assertEq(_skimOfBuy1Eth(key, bountyEoa), (1 ether * BASELINE) / D, "baseline after cap");
+        assertEq(_skimOfBuy1Eth(key, bountyEoa), (1 ether * uint256(BASELINE)) / D, "baseline after cap");
     }
 
     function test_hookV2_realModule_decaysAndUnlocks() public onlyFork {
@@ -308,7 +310,7 @@ contract HookV2ForkTest is HookV2ForkBase {
 
         vm.warp(t0 + 600);
         _modify(key, -2000, 2000, 1e18, bytes32(uint256(5)));
-        assertEq(_skimOfBuy1Eth(key, bountyEoa), (1 ether * BASELINE) / D);
+        assertEq(_skimOfBuy1Eth(key, bountyEoa), (1 ether * uint256(BASELINE)) / D);
     }
 
     function test_mevV2_durationAboveCap_reverts() public onlyFork {
@@ -333,7 +335,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         Launch memory l = _defaults(bountyEoa);
         l.module = address(m);
         (PoolKey memory key,) = _launch(l);
-        assertEq(_skimOfBuy1Eth(key, bountyEoa), (1 ether * BASELINE) / D);
+        assertEq(_skimOfBuy1Eth(key, bountyEoa), (1 ether * uint256(BASELINE)) / D);
         _modify(key, -2000, 2000, 1e18, bytes32(uint256(5)));
     }
 
@@ -537,7 +539,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         _swap(key, true, -1 ether, 0, _attribution(ref, 1000)); // asks 1%, cap 0.25%
         uint256 referral = (1 ether * uint256(MAX_REF)) / D;
         assertEq(payout.credited(ref), referral);
-        (, uint256 protocol) = _legs((1 ether * BASELINE) / D, BASELINE);
+        (, uint256 protocol) = _legs((1 ether * uint256(BASELINE)) / D, BASELINE);
         assertEq(protocolR.balance - p0, protocol - referral, "referral comes out of protocol");
     }
 
@@ -546,7 +548,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         uint256 p0 = protocolR.balance;
         _swap(key, true, -1 ether, 0, _attribution(address(swapRouter), 250));
         assertEq(payout.credited(address(swapRouter)), 0, "caller cannot name itself");
-        (, uint256 protocol) = _legs((1 ether * BASELINE) / D, BASELINE);
+        (, uint256 protocol) = _legs((1 ether * uint256(BASELINE)) / D, BASELINE);
         assertEq(protocolR.balance - p0, protocol, "protocol leg intact");
     }
 
@@ -756,15 +758,28 @@ contract HookV2ForkTest is HookV2ForkBase {
         vm.stopPrank();
     }
 
-    function test_owner_setFeeEscrow_checksConstants() public {
+    function test_owner_setFeeEscrow_checksConstantsAndDepositor() public {
         HV2ConstantsStub bad = new HV2ConstantsStub(keccak256("other"));
         vm.expectRevert(abi.encodeWithSelector(IConstantsBound.ConstantsMismatch.selector, address(bad)));
         hook.setFeeEscrow(address(bad));
-        HV2ConstantsStub good = new HV2ConstantsStub(Constants.hash());
+        // a matching escrow that does not list the hook as core depositor would
+        // turn every failed push into a swap revert
+        ArtCoinsFeeEscrowV2 e2 = new ArtCoinsFeeEscrowV2(address(this));
+        vm.expectRevert(
+            abi.encodeWithSelector(ArtCoinsHookV2.EscrowNotCoreDepositor.selector, address(e2))
+        );
+        hook.setFeeEscrow(address(e2));
+        e2.addDepositor(address(hook), false);
+        vm.expectRevert(
+            abi.encodeWithSelector(ArtCoinsHookV2.EscrowNotCoreDepositor.selector, address(e2))
+        );
+        hook.setFeeEscrow(address(e2));
+        ArtCoinsFeeEscrowV2 e3 = new ArtCoinsFeeEscrowV2(address(this));
+        e3.addDepositor(address(hook), true);
         vm.expectEmit(address(hook));
-        emit IArtCoinsHookV2.FeeEscrowSet(address(escrow), address(good));
-        hook.setFeeEscrow(address(good));
-        assertEq(hook.globals().feeEscrow, address(good));
+        emit IArtCoinsHookV2.FeeEscrowSet(address(escrow), address(e3));
+        hook.setFeeEscrow(address(e3));
+        assertEq(hook.globals().feeEscrow, address(e3));
         vm.expectRevert(IArtCoinsHookV2.ZeroAddress.selector);
         hook.setLauncher(address(0), true);
     }
@@ -872,6 +887,18 @@ contract HookV2PriorTxVenueTest is HookV2PriorTxBase {
         assertEq(token.balanceOf(address(this)) - bal0, taken, "fee collect untaxed");
     }
 
+    /// an add to an existing position collects its fees; net coin out is fee
+    /// income and leaves untaxed.
+    function test_tax_addCollectsFees_isExempt() public onlyFork {
+        uint256 bal0 = token.balanceOf(address(this));
+        uint256 dead0 = token.balanceOf(Constants.DEAD);
+        router.run(key, -2000, 2000, 1e6, SALT, 2);
+        uint256 taken = router.lastTake1();
+        assertGt(taken, 0, "fees exceed the dust principal");
+        assertEq(token.balanceOf(address(this)) - bal0, taken);
+        assertEq(token.balanceOf(Constants.DEAD), dead0);
+    }
+
     /// documents the residual the design accepts (DESIGN b1 invariant): a
     /// position that existed before the tx can be removed and re added in one
     /// unlock; the removal attests its coin side although no coin leaves the
@@ -896,6 +923,13 @@ contract HookV2PriorTxHardTest is HookV2PriorTxBase {
         assertEq(token.balanceOf(address(this)) - bal0, router.lastTake1());
         (, uint256 o,) = token.pendingCanonical();
         assertEq(o, 0, "grant consumed exactly");
+    }
+
+    function test_hard_addCollectsFees_pass() public onlyFork {
+        router.run(key, -2000, 2000, 1e6, SALT, 2);
+        assertGt(router.lastTake1(), 0);
+        (, uint256 o,) = token.pendingCanonical();
+        assertEq(o, 0);
     }
 
     function test_hard_lockerCollect_pass() public onlyFork {

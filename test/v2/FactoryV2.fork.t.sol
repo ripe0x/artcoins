@@ -56,7 +56,7 @@ contract FactoryV2ForkTest is ForkBase {
     uint16 internal constant PROTOCOL_BPS = 2000;
     uint256 internal constant FEE = 0.01 ether;
 
-    bytes32 internal constant TOKEN_CREATED_SIG = IArtCoinsFactoryV2.TokenCreatedV2.selector;
+    bytes32 internal immutable TOKEN_CREATED_SIG = IArtCoinsFactoryV2.TokenCreatedV2.selector;
 
     ArtCoinsFactoryV2 internal factory;
     ArtCoinsFeeEscrowV2 internal escrow;

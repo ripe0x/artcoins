@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --import tsx --test test/*.test.ts",
+    "gen:abi": "node scripts/gen-abis.mjs",
+    "check:abi": "node scripts/gen-abis.mjs --check"
   },
   "dependencies": {
     "@irys/web-upload": "^0.0.15",

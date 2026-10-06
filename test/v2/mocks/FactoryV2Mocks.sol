@@ -24,7 +24,8 @@ contract FV2Payout is IReferralPayoutForHook {
 
 /// launch extension. mode 0 pulls its share, 1 pulls nothing, 2 pulls one wei
 /// less, 3 tries to reenter the factory.
-contract FV2Extension is IArtCoinsExtensionV2 {
+/// not declared `is IArtCoinsExtensionV2` so its answers can be made to revert (FT-04).
+contract FV2Extension {
     uint8 public mode;
     bool public broken;
     uint256 public receivedValue;

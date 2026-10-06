@@ -77,7 +77,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     ///      that starves the extension leaves too little gas to finish.
     uint256 private constant _EXTENSION_GAS = 2_000_000;
 
-    /// @dev Transient: skim minted in `beforeSwap` on a quote specified swap.
+    /// @dev Transient: skim charged in `beforeSwap` on a quote specified swap.
     ///      keccak256("artcoins.hookV2.skim") (a literal: inline assembly
     ///      accepts number constants only).
     uint256 private constant _SKIM_SLOT =
@@ -88,6 +88,10 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         0x1ed2782058d87e2c0cc971c5cc47936f85ed6b62abd4c00f9ad4c24ce7f27f87;
     /// @dev Transient position marker tag (b1).
     bytes32 private constant _POS_TAG = keccak256("artcoins.hookV2.positionAdded");
+
+    /// @dev Additive, not in the frozen interface: `setFeeEscrow` target does
+    ///      not list this hook as a core depositor.
+    error EscrowNotCoreDepositor(address escrow);
 
     // ── storage ───────────────────────────────────────────────────────────
 
@@ -256,7 +260,11 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         return BaseHook.beforeAddLiquidity.selector;
     }
 
-    /// @dev HARD mode inflow allowance for the art coin the position takes in.
+    /// @dev HARD inflow allowance for the art coin the position takes in.
+    ///      An add to an existing position also collects its fees; when the
+    ///      coin fees exceed the coin principal the caller nets coin OUT, which
+    ///      is real fee income (VENUE attest, HARD out grant), bounded by the
+    ///      fees the position earned from swaps.
     function _afterAddLiquidity(
         address,
         PoolKey calldata key,
@@ -266,12 +274,10 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         bytes calldata
     ) internal override returns (bytes4, BalanceDelta) {
         PoolId pid = key.toId();
-        if (_info[pid].taxMode == Constants.TAX_MODE_HARD) {
-            int256 a = delta.amount1();
-            if (a < 0) {
-                IArtCoinsTokenV2(Currency.unwrap(key.currency1))
-                    .grantCanonicalFlow(PoolId.unwrap(pid), 0, uint256(-a));
-            }
+        uint8 mode = _info[pid].taxMode;
+        int256 a = delta.amount1();
+        if (a > 0 ? mode != Constants.TAX_MODE_NONE : (a < 0 && mode == Constants.TAX_MODE_HARD)) {
+            _tokenFlow(key, pid, mode, a);
         }
         return (BaseHook.afterAddLiquidity.selector, BalanceDelta.wrap(0));
     }
@@ -325,7 +331,8 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
                     tstore(_SKIM_SLOT, s)
                     tstore(_REQ_SLOT, packed)
                 }
-                poolManager.mint(address(this), key.currency0.toId(), s);
+                // no erc6909 mint: the +s specified delta is booked to the
+                // hook after `afterSwap` returns, where `take(s)` nets it.
                 return (BaseHook.beforeSwap.selector, toBeforeSwapDelta(_i128(s), 0), 0);
             }
         }
@@ -349,7 +356,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         uint256 bps;
         uint256 volume;
         if (params.zeroForOne == exactIn) {
-            // quote specified: true up the skim minted in beforeSwap (b3).
+            // quote specified: true up the skim charged in beforeSwap (b3).
             uint256 packed;
             assembly ("memory-safe") {
                 charged := tload(_SKIM_SLOT)
@@ -363,7 +370,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
                 skim = r >= requested ? charged : (charged * r) / requested;
                 // exact in buy: trader input; exact out sell: trader output.
                 volume = exactIn ? r + skim : r - skim;
-                poolManager.burn(address(this), key.currency0.toId(), charged);
             }
         } else {
             // quote unspecified: skim the realized quote side, returned as the
@@ -384,9 +390,8 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         {
             uint8 mode = _info[pid].taxMode;
             int256 a = delta.amount1();
-            if (mode != Constants.TAX_MODE_NONE && a != 0) {
-                if (a > 0) _tokenFlow(key, pid, mode, a);
-                else if (mode == Constants.TAX_MODE_HARD) _tokenFlow(key, pid, mode, a);
+            if (a > 0 ? mode != Constants.TAX_MODE_NONE : (a < 0 && mode == Constants.TAX_MODE_HARD)) {
+                _tokenFlow(key, pid, mode, a);
             }
         }
 
@@ -616,8 +621,14 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     }
 
     /// @inheritdoc IArtCoinsHookV2
+    /// @dev The new escrow must already list this hook as a core depositor:
+    ///      every failed push lands there, so a wrong pointer would revert
+    ///      swaps.
     function setFeeEscrow(address escrow) external onlyOwner {
         _checkConstants(escrow);
+        if (!IArtCoinsFeeEscrowV2(escrow).isCoreDepositor(address(this))) {
+            revert EscrowNotCoreDepositor(escrow);
+        }
         emit FeeEscrowSet(_globals.feeEscrow, escrow);
         _globals.feeEscrow = escrow;
     }
