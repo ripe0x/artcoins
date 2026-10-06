@@ -66,6 +66,7 @@ wave 2 plan was: v2 implementation packages from DESIGN.md, registry wiring into
 | registry verifier profile aware bytecode compare | script-js/verify-registry.mjs, deployments/mainnet.json source.profile, registry.yml | done: 0 drift; 18 bytecode rows stay mismatch because the repo history starts 2026-06-13, after every stack was live, so the deployed source of the older contracts is not in git (documented per contract) |
 | ui airdrop claim v2 abi (V2B-04), S-01 renounce guard, keeper test decoupled from swapper Config | ui/, script/DeployConversionLockerAndWire.s.sol, test/v2/DeployV2Stack.fork.t.sol | done |
 | browser smoke of the ui on an anvil fork (playwright) | ui/e2e/, docs/v2/review/ui-e2e.md | done: 19/19 after fixing the six bugs it found (LAYER not tradeable, sell above balance, browser clock deadlines, stale referral copy, v2 notice wording, 111 contractURI gas). `cd ui && npm run test:e2e` |
+| k4 hosted keeper runner (fly.io) | keeper/ (node 22, viem), keeper/README.md, docs/v2/review/keeper-runner.md, ci job `keeper`, RUNBOOK actions 3 and 2b hosted runner rows | done: 41/41 (`cd keeper && npm ci && npm test`, incl. one anvil fork run at 26130269: 111 run quoted and converted at 869,690 gas, LAYER run 686,184 gas, restart on the state file sends nothing). image built and run locally. fly itself, the private relay and v2 on a real stack not tested. registry ROLES has no `keeper` role yet |
 
 ## how to run tests
 

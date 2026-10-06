@@ -5,9 +5,9 @@
   "engines": { "node": ">=22" },
   "scripts": {
     "start": "node index.mjs",
-    "test": "node --test --test-concurrency=1 test/",
+    "test": "node --test --test-concurrency=1 \"test/*.test.mjs\"",
     "gen:abi": "node scripts/gen-abi.mjs",
-    "deploy": "cd .. && fly deploy . --config keeper/fly.toml --dockerfile keeper/Dockerfile --ignorefile keeper/.dockerignore"
+    "deploy": "cd .. && fly deploy . --config keeper/fly.toml --dockerfile keeper/Dockerfile --ignorefile keeper/.dockerignore --ha=false"
   },
   "dependencies": {
     "viem": "2.57.3"

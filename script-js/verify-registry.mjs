@@ -45,7 +45,7 @@ process.on('uncaughtException', (e) => { console.error('rpc/runtime error (exit 
 const reg = JSON.parse(fs.readFileSync(FILE, 'utf8'));
 
 // ---------- schema ----------
-const ROLES = 'factory hook locker escrow mevModule extension renderer allowlist controller swapper router token other'.split(' ');
+const ROLES = 'factory hook locker escrow mevModule extension renderer allowlist controller swapper router token keeper other'.split(' ');
 const addr = (v, nul) => (nul && v === null) || (typeof v === 'string' && isAddress(v, { strict: false }));
 const hash = (v) => v === null || /^0x[0-9a-f]{64}$/.test(v);
 const date = (v) => v === null || /^\d{4}-\d\d-\d\d$/.test(v);

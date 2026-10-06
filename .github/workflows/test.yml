@@ -230,6 +230,36 @@ jobs:
           -vvv
 
   # ---------------------------------------------------------------------------
+  # keeper runner (keeper/, node): unit tests. no MAINNET_RPC_URL and no anvil
+  # here, so the fork and local anvil tests skip themselves.
+  # ---------------------------------------------------------------------------
+  keeper:
+    name: keeper runner tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: keeper
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: keeper/package-lock.json
+
+      - name: Install (no lifecycle scripts)
+        run: npm ci --ignore-scripts
+
+      - name: Test
+        run: npm test
+
+  # ---------------------------------------------------------------------------
   # ui: build and lint.
   # ---------------------------------------------------------------------------
   ui:

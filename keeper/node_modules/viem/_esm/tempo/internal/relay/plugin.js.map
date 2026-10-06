@@ -1,1 +1,0 @@
-{"version":3,"file":"plugin.js","sourceRoot":"","sources":["../../../../tempo/internal/relay/plugin.ts"],"names":[],"mappings":"AAEA,MAAM,eAAe,GAAG,IAAI,OAAO,EAAgB,CAAA;AAEnD,iFAAiF;AACjF,MAAM,UAAU,QAAQ,CAAC,MAAoB;IAC3C,eAAe,CAAC,GAAG,CAAC,MAAM,CAAC,CAAA;IAC3B,OAAO,MAAmC,CAAA;AAC5C,CAAC;AAED,MAAM,UAAU,UAAU,CAAC,MAAoB;IAC7C,OAAO,eAAe,CAAC,GAAG,CAAC,MAAM,CAAC,CAAA;AACpC,CAAC"}
