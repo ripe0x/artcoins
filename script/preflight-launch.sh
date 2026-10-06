@@ -57,6 +57,7 @@ if [ "$CHAIN_ID" = "1" ]; then
   default_env HOOK                    "$(reg_addr legacy ArtCoinsHookStaticFeeV2)"
   default_env LOCKER                  "$(reg_addr legacy ArtCoinsLpLockerMultiple)"
   default_env MEV_SNIPER_STEPPED      "$(reg_addr legacy ArtCoinsMevSniperSteppedFees)"
+  default_env FEE_LOCKER              "$(reg_addr legacy ArtCoinsFeeLocker)"
   default_env AIRDROP                 "$(reg_addr legacy ArtCoinsAirdropV2)"
   default_env BURN_EXTENSION          "$(reg_addr legacy BurnExtension)"
   default_env LL_COUNTER              "$(reg_addr legacy LiquidityLayerCounterPoolExtension)"

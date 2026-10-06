@@ -1,6 +1,6 @@
 # artcoins ops runbook
 
-> disclosure: part 1 describes LF-01 (critical, live, immutable lockers) and other findings on deployed contracts. keep this file off the public mirror until the owner has run actions 1, 2 and 4 (collects and the open factory) and 5 (router floors). nothing here needs a code change. every address was read on chain at block 26130514 (2026-10-06) and every selector was checked against the deployed bytecode or the v1 source.
+> disclosure: part 1 describes LF-01 (critical, live, immutable lockers) and other findings on deployed contracts. keep this file off the public mirror until the owner has run actions 1, 2 and 4 (collects and the open factory) and 5 (router floors). nothing here needs a code change. every address was read on chain at block 26130514 (2026-10-06) and every selector was checked against the deployed bytecode or the v1 source. the owner calls in actions 1, 2, 4, 5, 6 (scripty freeze, lockPoolExtension), 7 and 8 were simulated with `cast call --from $OWNER` and succeed today. nothing was broadcast.
 
 ## setup, used by every command
 
