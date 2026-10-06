@@ -1046,7 +1046,20 @@ contract FactoryV2ForkTest is ForkBase {
         );
         c.fee.maxReferralBpsOfVolume = 600; // boundary passes
         address t = _deploy(alice, c);
-        assertEq(hook.skimConfig(factory.deploymentInfo(t).poolId).maxReferralBpsOfVolume, 600);
+        PoolId pid = factory.deploymentInfo(t).poolId;
+        assertEq(hook.skimConfig(pid).maxReferralBpsOfVolume, 600);
+        assertEq(hook.minProtocolShareBps(pid), 1000, "floor frozen on the pool");
+
+        // bounty + floor > BPS fails in the factory before the hook's BadLegBps
+        c = _cfg();
+        c.fee.bountyBps = 9001;
+        c.fee.maxReferralBpsOfVolume = 0;
+        _expectRevertDeploy(
+            c,
+            abi.encodeWithSelector(
+                IArtCoinsFactoryV2.BountyBpsTooHigh.selector, uint16(9001), uint16(9000)
+            )
+        );
 
         // the reviewer's V2F-01 shape: baseline 1%, max bounty, max referral
         c = _cfg();
@@ -1064,7 +1077,7 @@ contract FactoryV2ForkTest is ForkBase {
         c.fee.bountyBps = 0;
         c.fee.maxReferralBpsOfVolume = 1000; // = baseline
         c.token.salt = bytes32(uint256(41));
-        _deploy(alice, c);
+        assertEq(hook.minProtocolShareBps(factory.deploymentInfo(_deploy(alice, c)).poolId), 0);
         c.fee.baselineSkimBps = 999;
         _expectRevertDeploy(
             c, abi.encodeWithSelector(ArtCoinsFactoryV2.ReferralCapAboveProtocolFloor.selector)

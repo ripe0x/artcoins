@@ -372,6 +372,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
             f.lpFee > Constants.MAX_LP_FEE || f.baselineSkimBps > Constants.MAX_BASELINE_SKIM_BPS
                 || f.maxReferralBpsOfVolume > Constants.MAX_REFERRAL_CAP_OF_VOLUME
         ) revert FeeConfigOutOfBounds();
+        // D52: `bountyBps + minProtocolSkimShareBps <= BPS` (the hook refuses
+        // more at init with `BadLegBps`); this cap fails it first with
+        // `BountyBpsTooHigh(bountyBps, max)`.
         uint256 maxBounty = Constants.BPS - minProtocolSkimShareBps;
         if (maxBounty > Constants.MAX_BOUNTY_BPS) maxBounty = Constants.MAX_BOUNTY_BPS;
         // casting to uint16 is safe: maxBounty <= MAX_BOUNTY_BPS (9999)
@@ -562,9 +565,10 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
             referralPayout: referralPayout,
             quoteToken: address(0)
         });
-        // TODO(D52): pass `minProtocolSkimShareBps` once the hook adds the
-        // field to `PoolInitParams` (hook package). until then the launch time
-        // check in `_validateFee` is the only enforcement of the floor.
+        // D52: the hook freezes the protocol floor per pool and caps each
+        // referral at `protocol - floor`; `_validateFee` already made the
+        // launch's referral cap fit above it.
+        p.minProtocolShareBps = minProtocolSkimShareBps;
         return IArtCoinsHookV2(c.pool.hook).initializePool(p);
     }
 
