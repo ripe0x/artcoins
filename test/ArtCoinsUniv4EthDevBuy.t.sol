@@ -98,7 +98,7 @@ contract ArtCoinsUniv4EthDevBuyForkTest is Test {
     }
 
     modifier onlyFork() {
-        if (!_onFork) return;
+        if (!_onFork) vm.skip(true);
         _;
     }
 

@@ -16,7 +16,7 @@ running log for the unattended v2 session. a restarted session should read this 
 
 | # | job | state | notes |
 |---|---|---|---|
-| 1 | deployment registry | in progress | |
+| 1 | deployment registry | registry done; wiring readme/ui/scripts in progress | |
 | 2 | full system review | in progress | |
 | 3 | v2 contracts + fixes | not started | |
 | 4 | ops runbook | not started | |
@@ -26,7 +26,7 @@ running log for the unattended v2 session. a restarted session should read this 
 
 | agent | output | state |
 |---|---|---|
-| registry miner | deployments/mainnet.json, script-js/verify-registry.mjs, .github/workflows/registry.yml, docs/v2/review/registry-notes.md | running |
+| registry | deployments/mainnet.json, script-js/verify-registry.mjs, .github/workflows/registry.yml, docs/v2/review/registry-notes.md | done. verify passes on chain: 56 contracts, 2 coins, 0 drift. current stack matches repo head only under the ci profile (runs 200, with ipfs metadata). 0xf051 has zero coins, reports version 3, still open. broadcast folder: 4 mainnet runs are anvil rehearsals, 0x4959 stack unrecorded. |
 | repo hygiene | docs/v2/review/repo-hygiene.md | done. 25 findings: mirror publishes any tag, origin is the public repo, broadcast has no record of the current stack, ~140 fork tests pass vacuously (return, not skip), foundry.lock mismatches 5 of 8 libs, no secrets in history. |
 | ui review | docs/v2/review/ui.md | done. 25 findings, 8 high: mainnet addresses are zero, deployToken abi stale (wrong selector), deploy fee never sent, sell path always reverts, hook abi stale. ui is a stale fork and cannot launch on any live factory. |
 | scripts and keepers review | docs/v2/review/scripts-and-keepers.md | done. 21 script findings (no script targets the current stack; DeployConversionLockerAndWire hardcodes the open 0xf051 factory and renounces ownership; verify-stack.sh exits 0 on failure); no keeper code exists; 111 swapper eth stranding proved on fork; live 111 has 13,404 coin uncollected. |

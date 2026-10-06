@@ -4,8 +4,8 @@ pragma solidity ^0.8.26;
 import {Test} from "forge-std/Test.sol";
 
 import {Constants} from "../../src/Constants.sol";
-import {IArtCoinsMevModuleBase} from "../../src/interfaces/IArtCoinsMevModuleBase.sol";
 import {IArtCoinsMevModule} from "../../src/interfaces/IArtCoinsMevModule.sol";
+import {IArtCoinsMevModuleBase} from "../../src/interfaces/IArtCoinsMevModuleBase.sol";
 import {IArtCoinsMevSkimV2} from "../../src/v2/interfaces/IArtCoinsMevSkimV2.sol";
 import {IConstantsBound} from "../../src/v2/interfaces/IConstantsBound.sol";
 import {ArtCoinsMevLinearSkimV2} from "../../src/v2/mev-modules/ArtCoinsMevLinearSkimV2.sol";
@@ -38,7 +38,7 @@ contract MevLinearSkimV2Test is Test {
     PoolId internal constant POOL2 = PoolId.wrap(bytes32(uint256(0xB0B)));
 
     uint24 internal constant START = 68_690;
-    uint24 internal constant END = 6_000;
+    uint24 internal constant END = 6000;
     uint32 internal constant WINDOW = 69 minutes;
     uint256 internal constant T0 = 1_800_000_000;
 
@@ -116,7 +116,7 @@ contract MevLinearSkimV2Test is Test {
 
     function test_mevV2_endAboveStart_reverts() public {
         vm.expectRevert(IArtCoinsMevSkimV2.InvalidConfig.selector);
-        hookMock.init(mod, POOL, _cfg3(5_000, WINDOW, 5_001));
+        hookMock.init(mod, POOL, _cfg3(5000, WINDOW, 5001));
     }
 
     function test_mevV2_endAboveBaselineCap_reverts() public {
@@ -308,10 +308,12 @@ contract MevLinearSkimV2Test is Test {
     function test_mevV2_neverUsableAsFeeModule() public {
         assertFalse(mod.supportsInterface(type(IArtCoinsMevModuleBase).interfaceId));
         assertFalse(mod.supportsInterface(type(IArtCoinsMevModule).interfaceId));
-        (bool ok,) = address(mod).call(abi.encodeWithSelector(IArtCoinsMevModule.beforeSwap.selector));
+        (bool ok,) =
+            address(mod).call(abi.encodeWithSelector(IArtCoinsMevModule.beforeSwap.selector));
         assertFalse(ok);
         // the v1 initialize(PoolKey,bytes) selector is not served either
-        (ok,) = address(mod).call(abi.encodeWithSelector(IArtCoinsMevModuleBase.initialize.selector));
+        (ok,) =
+            address(mod).call(abi.encodeWithSelector(IArtCoinsMevModuleBase.initialize.selector));
         assertFalse(ok);
     }
 
@@ -325,7 +327,13 @@ contract MevLinearSkimV2Test is Test {
         uint32 t2
     ) public {
         start = uint24(bound(start, 0, Constants.MAX_SKIM_BPS));
-        end = uint24(bound(end, 0, start < Constants.MAX_BASELINE_SKIM_BPS ? start : Constants.MAX_BASELINE_SKIM_BPS));
+        end = uint24(
+            bound(
+                end,
+                0,
+                start < Constants.MAX_BASELINE_SKIM_BPS ? start : Constants.MAX_BASELINE_SKIM_BPS
+            )
+        );
         window = uint32(bound(window, Constants.MIN_MEV_WINDOW, Constants.MAX_MEV_WINDOW));
         t1 = uint32(bound(t1, 0, uint256(window) * 2));
         t2 = uint32(bound(t2, t1, uint256(window) * 2 + 1));

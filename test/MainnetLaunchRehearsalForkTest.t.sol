@@ -109,7 +109,7 @@ contract MainnetLaunchRehearsalForkTest is Test {
     address internal layerAddr;
 
     modifier onlyFork() {
-        if (!_onFork) return;
+        if (!_onFork) vm.skip(true);
         _;
     }
 

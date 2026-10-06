@@ -83,7 +83,7 @@ contract IntegrationForkTest is Test {
     modifier onlyFork() {
         if (!_onFork) {
             console2.log("SKIPPING: No fork detected. Run with --fork-url (mainnet or Sepolia)");
-            return;
+            vm.skip(true);
         }
         _;
     }

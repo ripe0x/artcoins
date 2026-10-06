@@ -168,7 +168,7 @@ contract FeeAutoSwapperForkTest is Test {
     // ─── setup gate ─────────────────────────────────────────────────────
 
     function test_fork_setup_revertsBeforeFinalized() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         FeeAutoSwapper.Config memory cfg = FeeAutoSwapper.Config({
             poolManager: POOL_MANAGER,
@@ -219,7 +219,7 @@ contract FeeAutoSwapperForkTest is Test {
     // ─── happy path ─────────────────────────────────────────────────────
 
     function test_fork_convert_happyPath_depositToLocker() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         // Credit 10k artcoin to the swapper at the fee locker. This
         // simulates the LP-locker's reward distribution: the LP locker would
@@ -263,7 +263,7 @@ contract FeeAutoSwapperForkTest is Test {
     }
 
     function test_fork_convert_directTransferMode() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         // Redeploy a swapper in `depositToLocker = false` mode so converted
         // WETH lands directly in endRecipient's balance.
@@ -306,7 +306,7 @@ contract FeeAutoSwapperForkTest is Test {
     // ─── slippage / floor / pacing ──────────────────────────────────────
 
     function test_fork_convert_spotFloor_enforced() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         // The spot-derived floor is now built in. We can't trip it with a
         // healthy pool — the swap honestly delivers ~94% of spot (better
@@ -333,7 +333,7 @@ contract FeeAutoSwapperForkTest is Test {
     }
 
     function test_fork_convert_pacing() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         // Deploy a fresh swapper with a deliberately-large pacing window so
         // the second `convert` call lands inside the window and reverts.
@@ -380,7 +380,7 @@ contract FeeAutoSwapperForkTest is Test {
     }
 
     function test_fork_convert_nothingToConvert_reverts() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         vm.expectRevert(IFeeAutoSwapper.NothingToConvert.selector);
         vm.prank(keeper);
@@ -388,7 +388,7 @@ contract FeeAutoSwapperForkTest is Test {
     }
 
     function test_fork_convert_insufficientOutput_reverts() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         uint256 escrowAmount = 1000e18;
         artcoin.mint(address(this), escrowAmount);
@@ -404,7 +404,7 @@ contract FeeAutoSwapperForkTest is Test {
     // ─── partial-fill reconciliation ────────────────────────────────────
 
     function test_fork_convert_partialFill_leftoverStays() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         // Deploy a swapper with tight slippage so a large swap clamps. With
         // seed liquidity of 5e23 at -60k..+60k, a million-token swap will
@@ -466,7 +466,7 @@ contract FeeAutoSwapperForkTest is Test {
     // ─── maxStepIn cap ──────────────────────────────────────────────────
 
     function test_fork_convert_maxStepIn_caps() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         // Deploy a swapper capped at 100e18 per call; escrow 1000e18 — only
         // 100 should convert this call, the rest stays in the locker.
@@ -510,7 +510,7 @@ contract FeeAutoSwapperForkTest is Test {
     // ─── reentrancy ─────────────────────────────────────────────────────
 
     function test_fork_convert_reentrant_artcoin_blocked() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         // Build a parallel swapper pointing at a malicious artcoin token.
         // Reentrancy at the `feeLocker.claim` step (artcoin.transfer
@@ -576,7 +576,7 @@ contract FeeAutoSwapperForkTest is Test {
     // ─── conservation / accounting invariant ────────────────────────────
 
     function test_fork_convert_conservation_acrossManyCalls() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         uint256 amountPerRound = 1000e18;
         uint256 totalEscrowed = 0;

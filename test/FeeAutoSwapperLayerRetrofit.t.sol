@@ -110,7 +110,7 @@ contract FeeAutoSwapperLayerRetrofit is Test {
     // ─── core retrofit: swap against the live LAYER pool ────────────────
 
     function test_fork_layerRetrofit_directTransfer() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         // Simulate the post-retrofit state: the slot admin has already
         // pointed their slot at the FeeAutoSwapper, an LP-locker fee
@@ -169,7 +169,7 @@ contract FeeAutoSwapperLayerRetrofit is Test {
     // ─── verify hook attribution: the live hook DID get called ──────────
 
     function test_fork_layerRetrofit_invokesLiveHook() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         // The point of this test: prove the swap goes through the real
         // mainnet hook contract, not some unconfigured fallback. The hook
@@ -204,7 +204,7 @@ contract FeeAutoSwapperLayerRetrofit is Test {
     // ─── partial-fill reconciliation against the live pool ──────────────
 
     function test_fork_layerRetrofit_partialFill_leftoverStays() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         // Deploy a second swapper with tight slippage so a moderately large
         // swap clamps on the real LAYER pool's actual depth.

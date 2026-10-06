@@ -112,7 +112,7 @@ contract FeeAutoSwapperAuditFixesTest is Test {
     ///         the behavior the docs now describe: extraction beyond
     ///         `maxSlippageBps` IS reachable under same-tx manipulation.
     function test_fork_sameTxManipulation_extractsBelowSpotFloor() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         FeeAutoSwapper swapper = _deployWethSwapper(1000, 1_000_000e18);
         _seedPoolAtPriceOne();
@@ -156,7 +156,7 @@ contract FeeAutoSwapperAuditFixesTest is Test {
     ///         `convert` / `flushPaired` pays out `received` / `pairedOut`,
     ///         NOT `address(this).balance`.
     function test_fork_nativeDonation_stays_stranded() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         FeeAutoSwapper swapper = _deployNativeSwapper();
         _seedNativePoolAtPriceOne();
@@ -194,7 +194,7 @@ contract FeeAutoSwapperAuditFixesTest is Test {
     ///         does NOT explicitly reject FoT tokens, so the operator must
     ///         enforce the token-assumption at deploy.
     function test_fork_feeOnTransferToken_brokenConservation() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         FeeOnTransferAcoin badCoin = new FeeOnTransferAcoin();
         FeeAutoSwapper swapper = _deployWethSwapperForToken(address(badCoin), 1000, 1_000_000e18);
@@ -227,7 +227,7 @@ contract FeeAutoSwapperAuditFixesTest is Test {
     // ─── audit Info: maxStepIn is bounded at type(int128).max ───────────
 
     function test_constructor_rejects_maxStepIn_above_int128_max() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         FeeAutoSwapper.Config memory cfg = _baseWethCfg();
         cfg.maxStepIn = uint256(uint128(type(int128).max)) + 1;
@@ -253,7 +253,7 @@ contract FeeAutoSwapperAuditFixesTest is Test {
     ///         receive() should cause `convert` to revert with
     ///         `NativeSendFailed`, not silently swallow.
     function test_fork_revertingRecipient_surfaces_failure() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         RejectingRecipient bad = new RejectingRecipient();
 

@@ -183,12 +183,12 @@ contract LiquidityLayerAutoForwardExtensionForkTest is Test {
     // ─── tests ────────────────────────────────────────────────────────
 
     function test_setPoolExtension_swapsInNewExtension() public {
-        if (!_onFork) return;
+        if (!_onFork) vm.skip(true);
         _allowlistAndSwapIn();
     }
 
     function test_counter_migration_fromLiveExtension() public {
-        if (!_onFork) return;
+        if (!_onFork) vm.skip(true);
 
         // Read whatever's at the live extension slot today; may be 0 if the
         // pool was deployed without an extension. Either way, the migration
@@ -212,7 +212,7 @@ contract LiquidityLayerAutoForwardExtensionForkTest is Test {
     }
 
     function test_realSwap_invokesAfterSwap_andAdvancesCounter() public {
-        if (!_onFork) return;
+        if (!_onFork) vm.skip(true);
         _allowlistAndSwapIn();
 
         (uint128 b0, uint128 s0) = ext.counts(pid);
@@ -225,7 +225,7 @@ contract LiquidityLayerAutoForwardExtensionForkTest is Test {
     }
 
     function test_realSwap_emptyPipeline_isNoOp() public {
-        if (!_onFork) return;
+        if (!_onFork) vm.skip(true);
         _allowlistAndSwapIn();
 
         // Pipeline state captured before the swap.
@@ -251,7 +251,7 @@ contract LiquidityLayerAutoForwardExtensionForkTest is Test {
     }
 
     function test_realSwap_stage4_firesWhenBurnRouterHasLayer() public {
-        if (!_onFork) return;
+        if (!_onFork) vm.skip(true);
         _allowlistAndSwapIn();
 
         // Move some LAYER from a whale into the BurnRouter so Stage 4 has work.
@@ -274,7 +274,7 @@ contract LiquidityLayerAutoForwardExtensionForkTest is Test {
     }
 
     function test_realSwap_stage3_firesWhenPfcHasWeth() public {
-        if (!_onFork) return;
+        if (!_onFork) vm.skip(true);
         _allowlistAndSwapIn();
 
         // Deal WETH to PFC above threshold, BurnRouter empty so Stage 4 skips.
@@ -291,7 +291,7 @@ contract LiquidityLayerAutoForwardExtensionForkTest is Test {
     }
 
     function test_realSwap_stage2_firesWhenFeeLockerHasPot() public {
-        if (!_onFork) return;
+        if (!_onFork) vm.skip(true);
         _allowlistAndSwapIn();
 
         // Drain higher-priority stages so Stage 2 wins.
@@ -327,7 +327,7 @@ contract LiquidityLayerAutoForwardExtensionForkTest is Test {
     }
 
     function test_pipelineDrains_oneStagePerSwap_endToEnd() public {
-        if (!_onFork) return;
+        if (!_onFork) vm.skip(true);
         _allowlistAndSwapIn();
 
         // Stage all three pipeline stages with work above thresholds.
@@ -389,7 +389,7 @@ contract LiquidityLayerAutoForwardExtensionForkTest is Test {
     }
 
     function test_rendererMigration_endToEnd() public {
-        if (!_onFork) return;
+        if (!_onFork) vm.skip(true);
         _allowlistAndSwapIn();
 
         // Seed historical counts so the renderer has something to display.

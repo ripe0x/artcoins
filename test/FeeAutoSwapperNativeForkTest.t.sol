@@ -124,7 +124,7 @@ contract FeeAutoSwapperNativeForkTest is Test {
     // ─── happy path ─────────────────────────────────────────────────────
 
     function test_fork_nativeConvert_depositToLocker() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         // Credit artcoin to the swapper at the escrow (mimics the LP locker's
         // distribution after a sell-side swap).
@@ -166,7 +166,7 @@ contract FeeAutoSwapperNativeForkTest is Test {
     }
 
     function test_fork_nativeConvert_directTransfer() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         // Redeploy with `depositToLocker = false` so the contract sends ETH
         // directly to the end recipient's balance (no escrow round-trip).
@@ -209,7 +209,7 @@ contract FeeAutoSwapperNativeForkTest is Test {
     // ─── partial fill ───────────────────────────────────────────────────
 
     function test_fork_nativeConvert_partialFill_conservation() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         // Tight slippage so a large swap clamps.
         FeeAutoSwapper.Config memory cfg = FeeAutoSwapper.Config({
@@ -251,7 +251,7 @@ contract FeeAutoSwapperNativeForkTest is Test {
     // ─── paired-side passthrough via flushPaired ────────────────────────
 
     function test_fork_flushPaired_native_drainsAndForwards() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         // Simulate the LP locker depositing buy-side LP fees (paid in native
         // ETH on a native-paired pool) into the swapper's escrow slot.
@@ -281,7 +281,7 @@ contract FeeAutoSwapperNativeForkTest is Test {
     }
 
     function test_fork_flushPaired_nothingToFlush_reverts() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         vm.expectRevert(IFeeAutoSwapper.NothingToFlush.selector);
         vm.prank(keeper);
@@ -291,7 +291,7 @@ contract FeeAutoSwapperNativeForkTest is Test {
     // ─── verify swap output is actually native ETH, not WETH ────────────
 
     function test_fork_nativeConvert_outputIsNativeEth() public {
-        if (!onFork) return;
+        if (!onFork) vm.skip(true);
 
         uint256 escrowAmount = 1000e18;
         artcoin.mint(address(this), escrowAmount);

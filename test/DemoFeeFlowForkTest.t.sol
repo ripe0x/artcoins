@@ -255,7 +255,7 @@ contract DemoFeeFlowForkTest is Test {
     // ─── the demo ────────────────────────────────────────────────────────
 
     function test_fork_demoFeeFlow() public {
-        if (!_onFork) return;
+        if (!_onFork) vm.skip(true);
 
         console2.log("\n========================================================");
         console2.log("DEMO: LAYER + ART fee distribution on real mainnet fork");
