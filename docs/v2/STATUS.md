@@ -41,7 +41,7 @@ note: the first five wave 1 agents were killed by a session interrupt at 02:3x u
 
 note: a container restart at about 05:10 utc killed ten running agents; all were relaunched as resume agents on their on disk files at 05:20 utc.
 
-wave 2 running (from 03:40 utc): a0 constants+interfaces done; k1 keeper for 111 done (src/v2/keepers/CollectFlushKeeperV1.sol, 7/7 fork tests, docs/v2/review/keeper-111.md); m1 mev done; u1 ui done (v2 abis and encoder, deploy gating on deprecated()/deployFee(), native pool swaps, sell path proved on fork, build and lint green, docs/v2/review/ui-fixes.md); h1 hook, t1 token, l1 locker/escrow/delivery, p1 periphery, r1 renderers, f1 factory, e1 extensions, k1 part 2 in progress.
+wave 2 running (from 03:40 utc): a0 constants+interfaces done; k1 keeper for 111 done (src/v2/keepers/CollectFlushKeeperV1.sol, 7/7 fork tests, docs/v2/review/keeper-111.md); m1 mev done; u1 ui done (v2 abis and encoder, deploy gating on deprecated()/deployFee(), native pool swaps, sell path proved on fork, build and lint green, docs/v2/review/ui-fixes.md); l1 locker/escrow/delivery done (53 fork tests, LF-01 regression, sizes 13,411 / 3,883); h1 hook, t1 token, p1 periphery, r1 renderers, f1 factory, e1 extensions, k1 part 2 in progress.
 
 wave 2 plan was: v2 implementation packages from DESIGN.md, registry wiring into readme/ui/scripts, runbook, keeper helper. wave 3: independent reviews of v2 with proof tests, regression tests, SYSTEM-REVIEW.md, pr.
 
