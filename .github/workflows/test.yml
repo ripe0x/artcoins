@@ -29,7 +29,7 @@ jobs:
   check:
     name: Foundry project (no network)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     permissions:
       contents: read
     env:
@@ -54,8 +54,17 @@ jobs:
       - name: Run Forge fmt
         run: forge fmt --check
 
-      - name: Run Forge build (sizes)
-        run: forge build --sizes
+      # Compile in batches. One cold `forge build` of the whole tree (431 files,
+      # via-IR, one solc input) was killed on the hosted runner after 13 to 17
+      # minutes (exit 143, runner shutdown signal: memory). Every batch below
+      # peaks under 4 GB locally. The cache carries src between steps, so each
+      # later step only compiles its own files. See docs/v2/review/hygiene-fixes.md,
+      # "github ci run".
+      - name: Run Forge build (src only, sizes)
+        run: forge build --sizes --skip test --skip script
+
+      - name: Run Forge build (scripts)
+        run: forge build --skip test
 
       - name: Size gate, ArtCoinsHookV2 headroom
         # The hook only fits EIP-170 (24,576 bytes) at the ci / tune profile
@@ -82,13 +91,22 @@ jobs:
             exit 1
           fi
 
-      - name: Run Forge tests
-        # Deterministic, network free suite. Two suites call `vm.createSelectFork`
-        # unconditionally and are excluded; run them locally with a fork url when
-        # needed. Everything else that needs a fork skips and shows as skipped.
-        # The whole v2 tree is left to the next step and the fork jobs: its review
-        # proofs fork in setUp and would fail without a network.
-        run: forge test --no-match-contract "AutoBurnOpenTab|DeployConversionLockerAndWire" --no-match-path "test/v2/**" -vvv
+      # Deterministic, network free v1 suite, in three batches by file name (one
+      # compile per batch, see the build note above). Two suites call
+      # `vm.createSelectFork` unconditionally and are excluded; run them locally
+      # with a fork url when needed. Everything else that needs a fork skips and
+      # shows as skipped. The whole v2 tree is left to the next step and the fork
+      # jobs: its review proofs fork in setUp and would fail without a network.
+      # Batch 3 is the complement of 1 and 2 (minus v2), so a new test file is
+      # never left out.
+      - name: Run Forge tests (v1, batch 1 of 3, test/A*)
+        run: forge test --match-path "test/A*.t.sol" --no-match-contract "AutoBurnOpenTab|DeployConversionLockerAndWire" -vvv
+
+      - name: Run Forge tests (v1, batch 2 of 3, test/[B-K]*)
+        run: forge test --match-path "test/[B-K]*.t.sol" --no-match-contract "AutoBurnOpenTab|DeployConversionLockerAndWire" -vvv
+
+      - name: Run Forge tests (v1, batch 3 of 3, the rest incl. test/legacy)
+        run: forge test --no-match-path "test/{[A-K]*.t.sol,v2/**}" --no-match-contract "AutoBurnOpenTab|DeployConversionLockerAndWire" -vvv
 
       - name: Run v2 unit suites (no fork)
         # The v2 suites that need no fork. They run here and nowhere else: the

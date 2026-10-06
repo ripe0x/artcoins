@@ -69,26 +69,16 @@ contract CollectFlushKeeperLayer {
 
     event KeeperRun(address indexed caller, uint256[5] amounts); // same order as `run` returns
     /// @dev step 2 claim, 3 processFees, 4 processBurnLayer, 5 processBurnWeth; `reason` is the revert data
-    ///      (`MinLayerOutBelowFloor`, `V4TooLittleReceived`, ...) or "floor 0"
     event StepSkipped(uint8 indexed step, address indexed target, bytes reason);
     /// @dev gas shortfall at `step` (1 collect .. 5 burn weth): reverts so estimateGas never finds a skip path
     error InsufficientGas(uint8 step);
     error EthTransferFailed();
 
-    constructor(
-        address locker_,
-        address layer_,
-        address weth_,
-        address feeLocker_,
-        address controller_,
-        address[3] memory routers_
-    ) {
-        locker = IArtCoinsLpLocker(locker_);
-        layer = layer_;
-        weth = weth_;
-        feeLocker = IArtCoinsFeeLocker(feeLocker_);
-        controller = controller_;
-        (router0, router1, router2) = (routers_[0], routers_[1], routers_[2]);
+    /// @dev (legacy locker, LAYER, weth, fee locker, controller, [router0, router1, router2])
+    constructor(address lk, address lyr, address w, address fl, address pfc, address[3] memory r) {
+        (locker, layer, weth) = (IArtCoinsLpLocker(lk), lyr, w);
+        (feeLocker, controller) = (IArtCoinsFeeLocker(fl), pfc);
+        (router0, router1, router2) = (r[0], r[1], r[2]);
     }
 
     receive() external payable {}
@@ -97,17 +87,11 @@ contract CollectFlushKeeperLayer {
     /// @param minLayerOutPerWeth caller floor in LAYER per 1e18 weth (the routers' unit); the keeper passes
     ///        `max(it, router owner floor) * balance / 1e18`, so 0 means the router's own floor
     /// @param unwrap send weth the keeper received as eth
-    /// @dev returns fees credited to the fee locker by the collect (all slots), LAYER burned directly, and the
-    ///      weth in / LAYER out of the weth burns
+    /// @return lCol LAYER and `wCol` weth the collect credited to the fee locker (all three slots)
+    /// @return lBurn LAYER burned directly (`processBurnLayer`); `wBurn` weth in and `lBought` LAYER out of burns
     function run(bool doBurn, uint256 minLayerOutPerWeth, bool unwrap)
         external
-        returns (
-            uint256 layerCollected,
-            uint256 wethCollected,
-            uint256 layerBurned,
-            uint256 wethBurned,
-            uint256 layerBought
-        )
+        returns (uint256 lCol, uint256 wCol, uint256 lBurn, uint256 wBurn, uint256 lBought)
     {
         uint256 l0 = IERC20(layer).balanceOf(address(feeLocker));
         uint256 w0 = IERC20(weth).balanceOf(address(feeLocker));
@@ -119,15 +103,17 @@ contract CollectFlushKeeperLayer {
                 revert(add(r, 0x20), mload(r))
             }
         }
-        layerCollected = IERC20(layer).balanceOf(address(feeLocker)) - l0;
-        wethCollected = IERC20(weth).balanceOf(address(feeLocker)) - w0;
+        lCol = IERC20(layer).balanceOf(address(feeLocker)) - l0;
+        wCol = IERC20(weth).balanceOf(address(feeLocker)) - w0;
 
         address[2] memory tokens = [layer, weth];
         address[2] memory slots = [controller, router0];
         for (uint256 i; i < 4; ++i) {
             (address slot, address token) = (slots[i / 2], tokens[i % 2]);
             bytes memory c = abi.encodeCall(IArtCoinsFeeLocker.claim, (slot, token));
-            if (feeLocker.availableFees(slot, token) > 0) _step(2, CLAIM_GAS, address(feeLocker), c);
+            if (feeLocker.availableFees(slot, token) > 0) {
+                _step(2, CLAIM_GAS, address(feeLocker), c);
+            }
         }
         for (uint256 i; i < 2; ++i) {
             bytes memory c = abi.encodeCall(ILayerFeeController.processFees, (tokens[i]));
@@ -140,30 +126,25 @@ contract CollectFlushKeeperLayer {
             bytes memory c = abi.encodeCall(ILayerBurnRouter.processBurnLayer, ());
             if (IERC20(layer).balanceOf(r) > 0) {
                 (bool ok, bytes memory ret) = _step(4, BURN_LAYER_GAS, r, c);
-                if (ok) layerBurned += abi.decode(ret, (uint256));
+                if (ok) lBurn += abi.decode(ret, (uint256));
             }
             uint256 bal = IERC20(weth).balanceOf(r) + r.balance;
             if (!doBurn || bal == 0 || bal < ILayerBurnRouter(r).minProcessThreshold()) continue;
             uint256 minOut = Math.mulDiv(bal, minLayerOutPerWeth, 1e18);
-            try ILayerBurnRouter(r).minLayerOutPerWeth() returns (uint256 floor) {
-                if (floor == 0) {
-                    emit StepSkipped(5, r, "floor 0");
-                    continue;
-                }
-                minOut = Math.max(minOut, Math.mulDiv(bal, floor, 1e18));
-            } catch {} // current stack router: no owner floor, it enforces its spot floor itself
+            // owner floor 0 (paused) reverts `SlippageFloorNotSet` in the router; no floor getter: spot floor
+            try ILayerBurnRouter(r).minLayerOutPerWeth() returns (uint256 f) {
+                minOut = Math.max(minOut, Math.mulDiv(bal, f, 1e18));
+            } catch {}
             c = abi.encodeCall(ILayerBurnRouter.processBurnWeth, (minOut));
             (bool ok2, bytes memory ret2) = _step(5, BURN_WETH_GAS, r, c);
             if (ok2) {
                 (uint256 wIn, uint256 lOut) = abi.decode(ret2, (uint256, uint256));
-                wethBurned += wIn;
-                layerBought += lOut;
+                wBurn += wIn;
+                lBought += lOut;
             }
         }
         _forward(unwrap);
-        emit KeeperRun(
-            msg.sender, [layerCollected, wethCollected, layerBurned, wethBurned, layerBought]
-        );
+        emit KeeperRun(msg.sender, [lCol, wCol, lBurn, wBurn, lBought]);
     }
 
     function _step(uint8 step, uint256 floor, address target, bytes memory data)
@@ -229,12 +210,9 @@ contract CollectFlushKeeperLayer {
         }
         bool layer0 = Currency.unwrap(info.poolKey.currency0) == layer;
         (uncollectedLayer, uncollectedWeth) = layer0 ? (f0, f1) : (f1, f0);
-        claimable = [
-            feeLocker.availableFees(controller, layer),
-            feeLocker.availableFees(controller, weth),
-            feeLocker.availableFees(router0, layer),
-            feeLocker.availableFees(router0, weth)
-        ];
+        for (uint256 i; i < 4; ++i) {
+            claimable[i] = feeLocker.availableFees(i < 2 ? controller : router0, i % 2 == 0 ? layer : weth);
+        }
         address[3] memory rs = [router0, router1, router2];
         for (uint256 i; i < 3; ++i) {
             if (rs[i] == address(0)) continue;

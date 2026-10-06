@@ -73,8 +73,10 @@ export async function connectWallet(page: Page, address: string): Promise<void> 
   await expect(dialog).toBeVisible();
   // the eip-6963 announcement shows as "E2E Wallet"; fall back to the injected MetaMask entry
   const e2e = dialog.getByRole('button', { name: /E2E Wallet/i });
-  if (await e2e.count()) await e2e.first().click();
+  const via6963 = (await e2e.count()) > 0;
+  if (via6963) await e2e.first().click();
   else await dialog.getByRole('button', { name: /metamask/i }).first().click();
+  test.info().annotations.push({ type: 'connector', description: via6963 ? 'eip-6963 "E2E Wallet"' : 'injected via MetaMask entry' });
   await expect(page.getByRole('button', { name: short }).first()).toBeVisible({ timeout: 30_000 });
 }
 

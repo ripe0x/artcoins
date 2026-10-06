@@ -234,7 +234,7 @@ contract KeeperLayer_ForkTest is ForkBase {
         keeper.run(true, 0, false);
         (n, reason) = _skips(vm.getRecordedLogs(), 5, R0);
         assertEq(n, 1);
-        assertEq(reason, bytes("floor 0"));
+        assertEq(bytes4(reason), bytes4(keccak256("SlippageFloorNotSet()")), "router guard reported");
     }
 
     /// @dev the caller's rate only tightens: an impossible rate makes the burn skip, not the run revert.
