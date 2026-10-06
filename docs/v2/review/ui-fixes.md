@@ -127,3 +127,13 @@ scope: `ui/**` and this file. `deployments.generated.ts` untouched. no dependenc
 | the owner must allowlist (`setExemptAllowed`) the fee swapper, burn router and any venue helper before launches can exempt them. the form only shows what the factory says | launcher owner |
 | the referral page matches the escrow through `enabledEscrows`: the escrow must be enabled on the factory (`setEscrow(escrow, true)` in the deploy script) or `VITE_V2_ESCROW` set | deploy script, config |
 | escrow admin ui (`setSelfClaimOnly`, `claimTo` buttons), vault and airdrop claim pages, tax venue admin actions | product decision |
+
+### follow up: refund address in swap hookData (D58, V2H-03)
+
+| item | detail |
+|---|---|
+| change | every swap the ui sends or quotes through the v2 hook now carries `mevModuleSwapData = abi.encode(connected wallet)` inside `PoolSwapData`. without it a price limited partial fill's skim refund is credited in the escrow to the universal router and stranded |
+| how | `encodeSwapHookData({referrer, refundTo})` in `lib/attribution.ts`. the attribution part (`poolExtensionSwapData`) is unchanged byte for byte. `components/SwapWidget.tsx` sets `refundTo` only when the pool's hook equals the configured v2 hook, so v1 pools keep their old hookData. same bytes go to the quoter and the swap |
+| no wallet | with no connected wallet there is no refund address, the quote is read without one, the send path needs a wallet anyway |
+| tests | `test/hookData.test.ts`: the encoded hookData decodes to the user through a port of `HookCalldata.refundTo` (same offsets and checks), `mevModuleSwapData` is exactly 32 bytes, attribution unchanged with a referrer, zero or invalid refund address never encoded, plain `0x` with neither. `npm test` 51 pass, build and lint pass |
+| not verified | against deployed bytecode or the live universal router: needs the v2 deploy. the i1 fork tests already cover the hook side (`test_i1_partialFill_universalRouter_withRefundAddress_nothingStranded`) |
