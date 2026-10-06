@@ -45,7 +45,8 @@ test('v2 quote via eth_simulateV1: SwapperServiced decoded, reverts surface as S
     assert.equal(k.address, KV2);
     const serviced = await io.simulateZero(k);
     assert.deepEqual(serviced.map((s) => [getAddress(s.swapper), s.flushed, s.converted]), [[getAddress(SWAPPER), 7n, 2_000_000n]]);
-    assert.deepEqual(argsV2(COIN_V2, serviced, k.slippageBps), [COIN_V2, true, 1_980_000n]);
+    const market = { swappers: [{ address: SWAPPER, accruedArtCoin: 2_000_000n, maxStepIn: 10n ** 30n, sqrtPriceX96: 1n << 96n, lpFeePpm: 0, skimPpm: 0 }] };
+    assert.deepEqual(argsV2(COIN_V2, serviced, k.slippageBps, market).args, [COIN_V2, true, 1_980_000n]);
     await assert.rejects(io.simulateZero({ ...k, address: REVERTER }), (e) => e instanceof SimRevert && e.description === 'InsufficientGas(3: convert)');
     // the 111 and LAYER path (simulateContract) decodes the same way
     await assert.rejects(io.simulateZero({ ...k, kind: '111', address: REVERTER, gas: 1_200_000n }), (e) => e instanceof SimRevert && e.description === 'InsufficientGas(3: convert)');

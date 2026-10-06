@@ -1,6 +1,6 @@
 # fly.io config for the artcoins keeper runner (one machine, state on a 1 gb volume). deploy from the repo root:
 #   fly deploy . --config keeper/fly.toml --dockerfile keeper/Dockerfile --ignorefile keeper/.dockerignore --ha=false
-# secrets (never in this file): fly secrets set KEEPER_PRIVATE_KEY=... MAINNET_RPC_URL=... PRIVATE_RPC_URL=...
+# secrets (never in this file): fly secrets set KEEPER_PRIVATE_KEY=... MAINNET_RPC_URL=... PRIVATE_RPC_URL=... STATUS_TOKEN=...
 # see keeper/README.md
 app = "artcoins-keeper"
 primary_region = "iad"
@@ -12,13 +12,19 @@ kill_timeout = "30s"
   ignorefile = ".dockerignore"
 
 [env]
+  # loop tick (settles and replaces a tx in flight). each keeper is read on its own runbook cadence
+  # (KEEPER_<ID>_CHECK_INTERVAL_SECONDS: 111 3600, LAYER 86400, v2 3600) and runs at most every
+  # KEEPER_<ID>_MIN_RUN_INTERVAL_SECONDS (111 21600, LAYER 86400, v2 21600)
   INTERVAL_SECONDS = "600"
-  MAX_GAS_GWEI = "30"
+  # funding need = 3,500,000 (LAYER gas limit) x MAX_GAS_GWEI: 14 gwei -> 0.049 eth, under the 0.05 eth hot key limit
+  MAX_GAS_GWEI = "14"
   MAX_PRIORITY_GWEI = "2"
   STATE_PATH = "/data/state.json"
   PORT = "8080"
   KEEPERS = "111,layer,v2"
-  PRIVATE_RPC_KEEPERS = "111"
+  # every send through PRIVATE_RPC_URL. live 111 without the relay refuses to start unless ALLOW_PUBLIC_MEMPOOL = "1"
+  PRIVATE_RPC_KEEPERS = "111,layer,v2"
+  # anything but "0", "false" or empty is a dry run
   DRY_RUN = "0"
   # until the keepers are recorded in deployments/mainnet.json (then remove these and redeploy):
   # KEEPER_111 = "0x..."
@@ -29,6 +35,8 @@ kill_timeout = "30s"
   destination = "/data"
   initial_size = "1gb"
 
+# public: /healthz only says {ok, lastTickAgeSeconds}. /status and /metrics need `authorization: Bearer $STATUS_TOKEN`
+# and answer 404 without the secret
 [http_service]
   internal_port = 8080
   force_https = true

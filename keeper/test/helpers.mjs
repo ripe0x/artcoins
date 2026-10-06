@@ -23,13 +23,27 @@ export function registryWithV2({ keeper = true, status = 'current' } = {}) {
   return reg;
 }
 
+// ALLOW_PUBLIC_MEMPOOL: unit tests send nowhere (KR-08 refuses live 111 without a relay otherwise)
 export const baseEnv = (dir, extra = {}) => ({
   KEEPER_PRIVATE_KEY: TEST_KEY,
   KEEPER_111: K111,
   KEEPER_LAYER: KLAYER,
   STATE_PATH: path.join(dir, 'state.json'),
+  ALLOW_PUBLIC_MEMPOOL: '1',
   ...extra,
 });
+
+// fake pool state for the independent floor. `price` is output per input at spot (1e18 scaled when `scaled`)
+export const Q96 = 1n << 96n;
+export function isqrt(n) {
+  if (n < 2n) return n;
+  let x = n;
+  let y = (x + 1n) / 2n;
+  while (y < x) { x = y; y = (x + n / x) / 2n; }
+  return x;
+}
+/// sqrtPriceX96 for a pool where `perToken0` units of token1 buy one token0 (1e18 fixed point)
+export const sqrtFor = (perToken0E18) => isqrt((perToken0E18 * (1n << 192n)) / 10n ** 18n);
 
 export const silentLog = () => {
   const lines = [];

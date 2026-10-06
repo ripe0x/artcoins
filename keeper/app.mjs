@@ -2,7 +2,7 @@
 import { getAddress } from 'viem';
 import { loadConfig, readRegistry, DEFAULT_REGISTRY } from './config.mjs';
 import { createIo } from './chain.mjs';
-import { loadState } from './state.mjs';
+import { loadState, checkStateDir } from './state.mjs';
 import { Metrics } from './metrics.mjs';
 import { tick } from './runner.mjs';
 import * as L from './log.mjs';
@@ -10,6 +10,10 @@ import * as L from './log.mjs';
 export async function createRuntime(env = process.env, { io: ioOverride, registry } = {}) {
   const reg = registry ?? readRegistry(env.REGISTRY_PATH || DEFAULT_REGISTRY);
   const cfg = loadConfig(env, reg);
+  // KR-13: the key lives in the viem account from here on, not in the process environment
+  if (env === process.env) delete process.env.KEEPER_PRIVATE_KEY;
+  // KR-10: refuse a missing volume instead of starting from empty state
+  checkStateDir(cfg.statePath, cfg.ephemeralState);
   const metrics = new Metrics();
   const io = ioOverride ?? createIo(cfg, {
     onRetry: (err, attempt, wait) => {
@@ -35,8 +39,11 @@ export async function preflight(ctx) {
     address: io.address, rpc: new URL(cfg.rpcUrl).host, privateRpc: cfg.privateRpcUrl ? new URL(cfg.privateRpcUrl).host : null,
     keepers: cfg.keepers.map((k) => ({ id: k.id, address: k.address, token: k.token, gas: k.gas, slippageBps: k.slippageBps })),
     v2: cfg.v2.live ? `v2 stack live, ${cfg.v2.coins.length} coins` : 'no v2 stack in the registry, v2 keeper skipped',
-    dryRun: cfg.dryRun, intervalSeconds: cfg.intervalSeconds, maxGasWei: cfg.maxGasWei,
+    dryRun: cfg.dryRun, intervalSeconds: cfg.intervalSeconds, maxGasWei: cfg.maxGasWei, requiredBalanceWei: cfg.requiredBalanceWei,
+    privateKeepers: [...cfg.privateKeepers], publicMempool: cfg.allowPublicMempool, statusRoutes: Boolean(cfg.statusToken),
+    cadence: cfg.keepers.map((k) => ({ id: k.id, checkIntervalSeconds: k.checkIntervalSeconds, minRunIntervalSeconds: k.minRunIntervalSeconds })),
   });
+  if (!cfg.privateRpcUrl) L.warn('no PRIVATE_RPC_URL: every send goes through the public mempool', { allowPublicMempool: cfg.allowPublicMempool });
 }
 
 export async function safeTick(ctx) {

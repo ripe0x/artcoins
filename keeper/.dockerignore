@@ -8,3 +8,4 @@ keeper/test
 keeper/state.json
 keeper/*.tmp
 keeper/fly.toml
+keeper/.env*
