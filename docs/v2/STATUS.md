@@ -61,7 +61,7 @@ wave 2 plan was: v2 implementation packages from DESIGN.md, registry wiring into
 
 | item | output | state |
 |---|---|---|
-| k3 weth aware keeper for LAYER | src/v2/keepers/CollectFlushKeeperLayer.sol, test/v2/KeeperLayer.fork.t.sol, script/v2/RunKeeperLayer.s.sol, RUNBOOK action 2b | running |
+| k3 weth aware keeper for LAYER | src/v2/keepers/CollectFlushKeeperLayer.sol, test/v2/KeeperLayer.fork.t.sol, script/v2/RunKeeperLayer.s.sol, keeper-111.md (LAYER keeper), RUNBOOK action 2b and gate 9b | done: 11/11 fork tests at the pin. collect, claim router and controller slots, split, burn LAYER and weth on 0x2eDB, 0xE600, 0x0EB2; owner slot never claimed. no LF-02 shape on LAYER (recipients book by balance). gas sweep 23 completed, 24 reverted, 0 skipped. run arg is a LAYER per weth rate, not an absolute minOut |
 | github ci red on v2 | .github/workflows/test.yml fixes, docs/v2/review/hygiene-fixes.md | running |
 | registry verifier profile aware bytecode compare | script-js/verify-registry.mjs, deployments/mainnet.json source.profile, registry.yml | running |
 | ui airdrop claim v2 abi (V2B-04), S-01 renounce guard, keeper test decoupled from swapper Config | ui/, script/DeployConversionLockerAndWire.s.sol, test/v2/DeployV2Stack.fork.t.sol | running |

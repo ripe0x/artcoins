@@ -154,3 +154,121 @@ known limit: a recipient that answers erc165 and then burns all gas in `flushPai
 | collect revert | bubbles (fork test `test_keeperV1_collectRevert_bubbles`), out of gas reports `InsufficientGas(1)` |
 | flush and convert revert | reported with `FlushSkipped(bytes reason)` and `ConvertSkipped(bytes reason)`, returned 0. `test_keeperV1_convertTooEarly_isSwallowed` now also asserts the `ConvertSkipped` log carries the revert data |
 | sweep | `test_keeperV1_lowGas_neverSilentlySkips` still passes on fork (8 completed, 33 reverted, none completed without converting) |
+
+## LAYER keeper (CollectFlushKeeperLayer)
+
+package k3. contract `src/v2/keepers/CollectFlushKeeperLayer.sol` (199 lines), proofs `test/v2/KeeperLayer.fork.t.sol` (11 tests, pinned block 26_130_269, ForkBase), scripts `script/v2/RunKeeperLayer.s.sol` (`DeployKeeperLayer`, `RunKeeperLayer`, both refuse mainnet unless `ALLOW_SUPERSEDED=1`: the legacy stack is superseded in the registry). addresses come from `script/Addresses.sol`.
+
+### live readings (cast, head block 26_132_909, 2026-10-06)
+
+| item | value |
+|---|---|
+| LAYER | 0xb7287e4A5b605aB92A8589C62af8A4ebD347E6c9, supply 4.7896e26 at the pin |
+| pool (locker `tokenRewards`) | currency0 LAYER, currency1 weth 0xC02a…6Cc2, fee 0x800000 flag, spacing 200, hook 0xA5eA9904…28cc, id 0x85c15a70…1e50. spot at the pin 1.62e25 LAYER per weth, liquidity 7.49e22 |
+| legacy locker 0x75BE…1118 | 12 positions from id 252351. no keeper reward (source has none). `collectRewards(address)` permissionless, sends every slot's share to the fee locker via `storeFees`, never to the recipient |
+| hook 0xA5eA | `_beforeSwap` runs `locker.collectRewardsWithoutUnlock(LAYER)` on every swap, `_afterSwap` runs the autoforward extension. so the pending lp fee is only the last swap's fee, in that swap's input currency |
+| slot 0 | 3800 bps, recipient 0xCB43…17F9 (owner), admin owner. type: eoa with an eip 7702 delegation (code `0xef0100612373d7003d694220f7800eeaf8e3924c0951d3`, 23 bytes) |
+| slot 1 | 4200 bps, recipient burn router 0x2eDB…2000, admin owner |
+| slot 2 | 2000 bps, recipient protocol fee controller 0x5fDc…0A60, admin legacy factory 0xd159 |
+| fee locker 0x1143…6b05 | `claim(feeOwner, token)` permissionless, nonReentrant, `safeTransfer` to `feeOwner` only. reverts `NoFeesToClaim` at 0 |
+| fee locker claimable | owner 3,315,375.59 LAYER and 0.47962 weth. router 0 and 0. controller 4,849.42 LAYER and 0.000489 weth |
+| controller 0x5fDc | treasury 0x41c3…A6A4 (0xSplits pass through wallet, passThrough 0x7C66…39B5, owner 0xCB43), burnRouter 0x2eDB, split 6000 treasury / 4000 burn / 0 rewards. `processFees(token)` permissionless, splits its whole balance. holds 0 |
+| router 0x2eDB (legacy source) | weth 0.000186, eth 0, LAYER 0. threshold 0.01 weth. owner floor `minLayerOutPerWeth` 5e24 (31% of spot). no keeper reward. swaps through the universal router |
+| router 0xE600 (open stack) | weth 0, eth 0.005676. threshold 0.01. owner floor 1.0353e25 (64% of spot, the view nets the 0.5% reward, LF-12). reward 50 bps capped 0.01 eth, paid in eth to msg.sender. fed by the open factory team fee (no coins), not on the LAYER fee path |
+| router 0x0EB2 (current stack) | weth 0, eth 0.005199. threshold 0.01. no owner floor: 1% impact clamp and an 80% of spot floor on the consumed amount. reward 50 bps capped 0.01 eth. fed by the 111 controller 0xd8C6 (13.33% burn share), not by LAYER fees |
+| autoforward extension 0x38d0 | bound to hook 0xA5eA, locker, fee locker, controller, router 0x2eDB. thresholds 0.01 weth and 100,000 LAYER for both the fee locker slots and the controller. owner 0xCB43. no permissionless function: `afterSwap` is onlyHook, setters onlyOwner. per swap it runs at most one of: processBurnLayer, processFees, claim. never processBurnWeth |
+| at the pin (26_130_269) | router 0x2eDB weth+eth 0.000128, router weth slot 0.0000582, controller slots 4,849 LAYER and 0.000489 weth, routers 0xE600 0.005676 and 0x0EB2 0.005199 eth. every router below its threshold |
+
+### the LAYER fee path
+
+| hop | from | to | call | who | keeper step |
+|---|---|---|---|---|---|
+| 1 | lp positions | fee locker: 38% owner, 42% router, 20% controller | `collectRewards(LAYER)`, also every swap via the hook | anyone | 1 |
+| 2a | fee locker owner slot | owner | `claim(owner, token)` | anyone, pays the owner only | never. owner decision (RUNBOOK action 8) |
+| 2b | fee locker router slot | router 0x2eDB balance | `claim(router, token)` | anyone | 2 |
+| 2c | fee locker controller slot | controller balance | `claim(controller, token)` | anyone | 2 |
+| 3 | controller balance | 60% treasury 0x41c3, 40% router 0x2eDB | `processFees(token)` | anyone | 3 |
+| 4 | router LAYER | burned | `processBurnLayer()` | anyone | 4 |
+| 5 | router weth and eth | LAYER bought on the LAYER pool, burned | `processBurnWeth(minLayerOut)` at or above 0.01 weth and the owner floor | anyone | 5, only with `doBurn` |
+| 5' | routers 0xE600 and 0x0EB2 | same, reward to caller | `processBurnWeth` | anyone | 5, same loop |
+| ext | the extension advances 2 to 4 one stage per swap above its thresholds | | swap | hook | the keeper does 2 to 4 without thresholds |
+
+LF-02 stranding shape check (never push a claim into a contract that cannot forward it): none on this path. the two pushed recipients book by balance: `processBurnWeth` wraps eth and reads `balanceOf(weth)`, `processBurnLayer` and `processFees` read `balanceOf`. a third party claim therefore strands nothing, it only moves the balance one hop early. proved by `test_layerKeeper_thirdPartyClaim_doesNotStrand` (griefer claims router and controller slots, then the keeper burns and splits all of it; the owner slot claim pays only the owner). the keeper never claims the owner slot.
+
+### what `run(bool doBurn, uint256 minLayerOutPerWeth, bool unwrap)` does
+
+| step | call | skip rule (no call) | on non gas revert | floor (D49) |
+|---|---|---|---|---|
+| 1 | `locker.collectRewards(LAYER)` | none | bubbles | 640k + 50k |
+| 2 | `feeLocker.claim(slot, token)` for controller and router0, LAYER and weth (controller first) | slot is 0 | `StepSkipped(2, feeLocker, reason)` | 60k + 50k |
+| 3 | `controller.processFees(token)` for LAYER and weth | controller balance 0 | `StepSkipped(3, …)` | 80k + 50k |
+| 4 | `router.processBurnLayer()` per router | router holds no LAYER | `StepSkipped(4, …)` | 60k + 50k |
+| 5 | `router.processBurnWeth(minOut)` per router, if `doBurn` | weth+eth under `minProcessThreshold` | `StepSkipped(5, …)` (`MinLayerOutBelowFloor`, `SlippageFloorNotSet`, `V4TooLittleReceived`, `InsufficientLayerOut`) | 900k + 50k |
+| 6 | forward weth (unwrapped if `unwrap`), LAYER and eth the keeper holds to `msg.sender` | | eth send failure reverts `EthTransferFailed` | n/a |
+
+`minOut` per router: with an owner floor (0x2eDB, 0xE600), `max(minLayerOutPerWeth, minLayerOutPerWeth())` times balance over 1e18 (the setter value, not the view, LF-12). floor 0 is passed through and the router reverts `SlippageFloorNotSet`, reported. without a floor getter (0x0EB2) the keeper passes 0: that router enforces its own 1% clamp and spot floor on the consumed amount, and a caller minimum on the full balance would trip on a partial fill. a step revert that leaves gas under its floor reverts `InsufficientGas(step)` (0x969aeb08). returns `(lCol, wCol, lBurn, wBurn, lBought)`: fees credited by the collect, LAYER burned directly, weth in and LAYER out of the weth burns. `preview()` returns `(uncollectedLayer, uncollectedWeth, claimable[4], routerWeth[3], routerThreshold[3])`, claimable order controller LAYER, controller weth, router0 LAYER, router0 weth.
+
+deviations from the brief: the second argument is a rate (LAYER per 1e18 weth, the routers' own unit), not an absolute `minLayerOut`, because the weth each router burns is only known after the claims and splits inside the run and up to three routers burn in one call. `unwrap` is the third argument. constructor `(locker, LAYER, weth, feeLocker, controller, [router0, router1, router2])`, all three routers required (no zero slots).
+
+### measured on fork (tests)
+
+| measure | value |
+|---|---|
+| collect (12 positions) | 590k cold, 332k warm |
+| claim, processFees, processBurnLayer | 9k to 37k, 17k to 27k, 18k to 20k each |
+| processBurnWeth | 0x2eDB 345k, 0xE600 474k, 0x0EB2 511k (each swap runs the hook's own collect) |
+| full path, 0x2eDB burn (collect, 4 claims, 2 splits, LAYER burn, weth burn) | 853k (warm, after the test swaps) |
+| collect cold plus two reward router burns | 1.84M |
+| idle run (nothing pending) | 228k warm, about 0.65M cold (the collect walks 12 positions) |
+| sweep 2.6M to 0.3M, step 50k, fees pending and router0 due | 23 completed (all collected, claimed and burned), 24 reverted, 0 skipped. lowest limit that completed 1.5M |
+| gas limit to set | 3,500,000 (all three routers due); unused gas is not charged |
+| burn result, 3 weth round trip | 0.0204 weth burned for 293,849 LAYER (1.44e25 per weth, above the 5e24 floor), 211,221 LAYER burned directly |
+| reward | 0x2eDB pays 0. 0xE600 and 0x0EB2 pay 0.5% (0.000254 eth for 0.0257 + 0.0252 weth burned) |
+| script quote at default 200 bps | 1.413e25 LAYER per weth after the round trip, burns |
+| runtime size (ci profile) | 8,093 bytes |
+| no rpc | `SKIP_FORK_TESTS=true` or an unreachable rpc: all 11 report SKIP |
+
+### deploy and run
+
+```bash
+source /tmp/claude-0/env.sh   # or export MAINNET_RPC_URL=https://mainnet.gateway.tenderly.co
+export ALLOW_SUPERSEDED=1     # the scripts target the superseded legacy stack and refuse mainnet without it
+# deploy (dry run, then broadcast with the keeper hot key)
+forge script script/v2/RunKeeperLayer.s.sol:DeployKeeperLayer --rpc-url $MAINNET_RPC_URL
+forge script script/v2/RunKeeperLayer.s.sol:DeployKeeperLayer --rpc-url $MAINNET_RPC_URL --broadcast --account <keystore>
+
+# run: prints preview, simulates with rate 0, quotes realized rate minus KEEPER_SLIPPAGE_BPS (default 200)
+export KEEPER_LAYER=<deployed keeper>
+forge script script/v2/RunKeeperLayer.s.sol:RunKeeperLayer --rpc-url $MAINNET_RPC_URL
+forge script script/v2/RunKeeperLayer.s.sol:RunKeeperLayer --rpc-url $MAINNET_RPC_URL --broadcast --account <keystore> --gas-limit 3500000
+# env: KEEPER_DO_BURN (default true), KEEPER_UNWRAP (default true)
+
+# read only
+cast call $KEEPER_LAYER "preview()(uint256,uint256,uint256[4],uint256[3],uint256[3])" --rpc-url $MAINNET_RPC_URL
+```
+
+proof run: `forge.sh test --match-path test/v2/KeeperLayer.fork.t.sol --skip "test/v2/review/**" --skip "test/v2/review-v2/**" -vv` (11 pass at the pin).
+
+### cadence
+
+the hook already collects on every swap, so the LF-01 exposure on LAYER is one swap's fee and the collect step is cheap insurance. the job is burning weth, which nothing else does (the extension never calls `processBurnWeth`).
+
+| rule | value |
+|---|---|
+| cron | daily: read `preview()`, run when any `routerWeth[i] >= routerThreshold[i]`, or when `routerWeth[0] + claimable[3] + 0.4 * (claimable[1] + controller weth)` reaches 0.01 weth |
+| weekly | run regardless (pushes the controller and router LAYER slots below the 100k extension threshold and burns them) |
+| before a run | router floors fresh (RUNBOOK action 5). the script's simulated rate minus 200 bps protects the runner even with a stale floor |
+| skip | when nothing is due: an idle run costs about 0.65M gas for no effect |
+| economics | at current volume nobody earns enough to run it: 0x2eDB pays nothing, the reward routers pay 0.5% of a 0.01 weth burn (0.00005 eth) against about 0.5M gas. owner funded, hot key under 0.05 eth |
+
+### what it cannot do
+
+| limit | detail |
+|---|---|
+| owner slot | 3.3M LAYER and 0.48 weth stay at the fee locker. claiming is the owner's decision (action 8) |
+| treasury | the controller's 60% sits in the pass through wallet 0x41c3 (now 0.0216 weth, 1.0M LAYER); moving it is the treasury's `passThroughTokens`, not this keeper |
+| dust | weth under 0.01 at a router waits; LAYER of any size is burned |
+| stale floors | the keeper can only tighten a floor. a third party can still call `processBurnWeth` with the owner floor as the minimum (LF-09); keep floors fresh |
+| LF-01 | cannot stop a diversion of the pending fee, it only keeps it at one swap's worth |
+| recipient changes | slots 0 and 1 are owner administered. if slot 1 is repointed (v2 router), redeploy the keeper with the new router0; the old one keeps working on whatever lands at the old router |
+| gas | a run with all three routers due needs about 2.8M of headroom because each weth burn needs 985k free to start. a shortfall reverts `InsufficientGas(5)`, it never drops the burn |
