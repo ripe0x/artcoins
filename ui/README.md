@@ -59,7 +59,7 @@ snapshots the fork and reverts it at the end (`E2E_KEEP_STATE=1` keeps the state
 | step | command |
 |---|---|
 | fork | `anvil --fork-url "$MAINNET_RPC_URL" --fork-block-number 26130269 --port 8545 --compute-units-per-second 100` |
-| v2 stack (optional, project `v2`) | from the repo root: `cast rpc anvil_setCode 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 0x --rpc-url http://127.0.0.1:8545` (drops the mainnet 7702 delegation on anvil account 0), then `script/v2/deploy.sh local` (env file `script/v2/env/local.env`, owner is anvil account 0, `RPC_URL` overrides the port), which writes the record `tmp/v2-local-1.json`, then in `ui/`: `node e2e/v2-env.mjs ../tmp/v2-local-1.json e2e/.local/v2-env.json` |
+| v2 stack (optional, project `v2`) | from the repo root: `cast rpc anvil_setCode 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 0x --rpc-url http://127.0.0.1:8545` (drops the mainnet 7702 delegation on anvil account 0), then `DRY_RUN=0 script/v2/deploy.sh local` (env file `script/v2/env/local.env`, owner is anvil account 0, `RPC_URL` overrides the port), which writes the record `tmp/v2-local-1.json`, then in `ui/`: `node e2e/v2-env.mjs ../tmp/v2-local-1.json e2e/.local/v2-env.json` |
 | run | `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers E2E_V2_JSON=$PWD/e2e/.local/v2-env.json npm run test:e2e` (leave `E2E_V2_JSON` unset to run the fork project only) |
 | one file | `npm run test:e2e -- 03` |
 

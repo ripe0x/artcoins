@@ -217,9 +217,9 @@ about 29.5m gas over 30 txs (0.011 eth at 0.38 gwei, measured on a fork at block
 
 | step | rehearsal, no key | command |
 |---|---|---|
-| 0a | dry run on a fork | `RPC_URL=$ETH_RPC_URL DRY_RUN=1 script/v2/deploy.sh mainnet` (guards, warm ci build, simulation, no wallet) |
+| 0a | dry run on a fork | `RPC_URL=$ETH_RPC_URL script/v2/deploy.sh mainnet` (`DRY_RUN` defaults to 1: guards, warm ci build, simulation only) |
 | 0b | harness rehearsal, broadcaster differs from OWNER, then accept | `FOUNDRY_PROFILE=ci forge test --match-path "test/v2/DeployV2Stack.fork.t.sol" --fork-url $ETH_RPC_URL -vv`. record the block |
-| 0c | broadcast | `RPC_URL=$ETH_RPC_URL script/v2/deploy.sh mainnet` (`--account ripe0x --slow`, forge prompts for the keystore password) |
+| 0c | broadcast | `RPC_URL=$ETH_RPC_URL DRY_RUN=0 script/v2/deploy.sh mainnet` (keystore address must equal OWNER, typed confirmation, `--account ripe0x --slow`, forge prompts for the keystore password) |
 
 contracts, in the order `DeployV2Lib.deploy` creates them (D38, D36):
 
@@ -274,7 +274,7 @@ per contract: the first line simulates, the second sends, `owner()` must return 
 | step | what | command and check |
 |---|---|---|
 | 14 | verify | `script/v2/verify-v2.sh` (profile ci, run it after the accepts): `forge verify-contract` per contract with the json's constructor args (etherscan with `ETHERSCAN_API_KEY`, else blockscout), then the chain check through `script-js/verify-registry.mjs` on a one stack registry: runtime vs the local ci build with immutables masked, owners equal OWNER, escrow depositors, factory still deprecated. `--dry-run` prints the verify commands, `--skip-source` is chain only. the hook is verified as `src/v2/hooks/ArtCoinsHookV2.sol:ArtCoinsHookV2` (v1 has the same contract name). exit 0 |
-| 15 | registry | `deploy.sh` wrote the record `deployments/1.v2.json` (stack `v2`, contracts with deploy block, tx hash and date). merge it: `node script-js/merge-v2.mjs deployments/1.v2.json --build`, which replaces the planned `v2` entries of `deployments/mainnet.json` (template `deployments/v2.template.json`), sets the stack to `deployed` so the `0x4959` stack stays `current`, and runs `verify-registry.mjs`. then `node script-js/verify-registry.mjs --fill --update-blocks` and `node script-js/verify-registry.mjs --require-artifacts` (exit 0), and `cd script-js && npm run gen:addresses` (constants per stack id: `V2_*`, `ACTIVE_*`, ts `V2`). cutover to `v2` as the live stack is `node script-js/merge-v2.mjs deployments/1.v2.json --cutover --build` (D67). commit the broadcast record (H4) |
+| 15 | registry | `deploy.sh` wrote the record `deployments/1.v2.json`. after the `acceptOwnership` calls run `script/v2/verify-v2.sh` and `node script-js/v2-record.mjs tmp/v2-deploy-1.json broadcast/DeployV2Stack.s.sol/1/run-latest.json deployments/1.v2.json --verified`. merge: `node script-js/merge-v2.mjs deployments/1.v2.json --build` replaces the planned `v2` entries of `deployments/mainnet.json` (template `deployments/v2.template.json`), sets status `deployed` (the `0x4959` stack stays `current`) and runs `verify-registry.mjs` on a temporary file first. then `node script-js/verify-registry.mjs --fill --update-blocks`, `node script-js/verify-registry.mjs --require-artifacts` (exit 0) and `cd script-js && npm run gen:addresses` (`V2_*` constants, `ACTIVE_*` for the stack whose status is current). cutover: `node script-js/merge-v2.mjs deployments/1.v2.json --cutover --build` (D67) makes v2 `current` and the `0x4959` stack `superseded`, `node script-js/merge-v2.mjs --rollback` reverses it. commit the broadcast record (H4) |
 
 ### 2b. launch the first coin (credits engine coin), factory still owner only
 

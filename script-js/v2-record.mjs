@@ -2,7 +2,10 @@
 // Builds the deployments record of a v2 broadcast: the registry fragment {chainId, repoCommit, owner, stacks,
 // contracts} with deployTxHash, deployBlock, deployedAt and source.commit filled from the forge broadcast file.
 //   node script-js/v2-record.mjs <tmp/v2-deploy-1.json> <broadcast/DeployV2Stack.s.sol/1/run-latest.json> <out.json> [--verified]
-// --verified records source.bytecodeMatch verified (the verify-v2.sh chain check passed).
+// --verified records source.bytecodeMatch verified and ownershipPending false: run it after the verify-v2.sh chain check
+// passed, which compares every owner with OWNER. Without it the record carries ownershipPending from the deploy json.
+// The broadcast file must be this run: same chain, same commit when recorded, every transaction confirmed (status 0x1)
+// with one receipt per transaction, and created within 10 minutes of the deploy json.
 import fs from 'node:fs';
 import { execSync } from 'node:child_process';
 
@@ -13,6 +16,12 @@ const b = JSON.parse(fs.readFileSync(broadcastJson, 'utf8'));
 const die = (m) => { console.error('v2-record: ' + m); process.exit(1); };
 const low = (a) => String(a).toLowerCase();
 const commit = execSync('git rev-parse HEAD').toString().trim();
+if (Number(b.chain) !== Number(d.chainId)) die(`broadcast chain ${b.chain}, deploy json chain ${d.chainId}`);
+if (b.commit && !commit.startsWith(String(b.commit))) die(`broadcast commit ${b.commit}, HEAD ${commit.slice(0, 8)}`);
+if (Math.abs(b.timestamp - fs.statSync(deployJson).mtimeMs) > 600_000) die('broadcast file and deploy json are more than 10 minutes apart: not the same run');
+if (b.receipts.length !== b.transactions.length) die(`${b.receipts.length} receipts for ${b.transactions.length} transactions`);
+const failed = b.receipts.filter((r) => r.status !== '0x1' && r.status !== 1);
+if (failed.length) die('receipts with status other than 0x1: ' + failed.map((r) => r.transactionHash));
 const date = new Date(b.timestamp).toISOString().slice(0, 10);
 const blockOf = Object.fromEntries(b.receipts.map((r) => [low(r.transactionHash), Number(BigInt(r.blockNumber))]));
 
@@ -25,5 +34,5 @@ const contracts = d.contracts.map((c) => {
 });
 const factory = contracts.find((c) => c.role === 'factory');
 const stacks = Object.fromEntries(Object.entries(d.stack).map(([id, s]) => [id, { ...s, deployedAt: date }]));
-fs.writeFileSync(out, JSON.stringify({ chainId: d.chainId, repoCommit: commit, owner: d.owner, stacks, contracts }, null, 2) + '\n');
+fs.writeFileSync(out, JSON.stringify({ chainId: d.chainId, repoCommit: commit, owner: d.owner, ownershipPending: opt === '--verified' ? false : d.ownershipPending, stacks, contracts }, null, 2) + '\n');
 console.log(`v2-record: ${out} (${contracts.length} contracts, factory block ${factory.deployBlock})`);

@@ -63,8 +63,19 @@ export const CURRENT = {
 /** addresses by stack id, for the stacks with a table here */
 export const STACK_ADDRESSES = { current: CURRENT } as const;
 
-/** addresses of the stack whose registry status is current */
-export const ACTIVE = STACK_ADDRESSES.current;
+/** addresses of the stack whose registry status is current, for the roles every stack has */
+export const ACTIVE = {
+  factory: STACK_ADDRESSES.current.factory,
+  hook: STACK_ADDRESSES.current.hook,
+  locker: STACK_ADDRESSES.current.locker,
+  escrow: STACK_ADDRESSES.current.escrow,
+  allowlist: STACK_ADDRESSES.current.poolExtensionAllowlist,
+  mevModule: STACK_ADDRESSES.current.mevLinearSkim,
+  deployer: STACK_ADDRESSES.current.deployerLib,
+  burnRouter: STACK_ADDRESSES.current.burnRouter,
+  protocolFeeController: STACK_ADDRESSES.current.protocolFeeController,
+  deployBlock: STACKS.current.deployBlock,
+} as const;
 
 /** external infra (not in the registry) */
 export const INFRA = {
