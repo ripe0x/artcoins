@@ -10,14 +10,13 @@ import ReviewAndDeploy from '../components/ReviewAndDeploy';
 import type { LaunchForm } from '../lib/types';
 import { CURRENT } from '../lib/deployments.generated';
 import { getV2Stack } from '../lib/v2';
-import { useFactoryStateV1, useFactoryStateV2, type FactoryState } from '../lib/factoryState';
+import { useExemptStatus, useFactoryStateV1, useFactoryStateV2, type FactoryState } from '../lib/factoryState';
+import { factoryV2Abi } from '../lib/abi/v2/factory';
+import { maxReferralCapSkim } from '../lib/launchRules';
 import { useAddressesOrNull } from '../lib/useChain';
 import { defaultLaunchForm } from '../lib/launchForm';
-import { generateSalt, projectSideBps, validateLaunch, type LaunchContext } from '../lib/encodeV2';
+import { generateSalt, percentToBps, percentToSkim, projectSideBps, skimToPercent, validateLaunch, type LaunchContext } from '../lib/encodeV2';
 import { ZERO_ADDRESS } from '../lib/constants';
-import { skimToPercent } from '../lib/encodeV2';
-
-const ownerAbi = [{ type: 'function', name: 'owner', inputs: [], outputs: [{ type: 'address' }], stateMutability: 'view' }] as const;
 
 function StepCard({
   step,
@@ -73,7 +72,7 @@ export default function DeployPage() {
   const st2 = useFactoryStateV2(v2?.factory);
   const { data: owner } = useReadContract({
     address: v2?.factory,
-    abi: ownerAbi,
+    abi: factoryV2Abi,
     functionName: 'owner',
     query: { enabled: !!v2 },
   });
@@ -86,6 +85,7 @@ export default function DeployPage() {
         deployFee: cur.deployFee,
         defaultProtocolFeeBps: cur.defaultProtocolFeeBps,
         minProtocolSkimShareBps: 0,
+        minLpFee: 0,
         refetch: () => undefined,
       };
 
@@ -106,6 +106,13 @@ export default function DeployPage() {
     }
   }
 
+  // D47: every exempt entry is checked against the factory's allowlist (VENUE mode only, HARD sends none)
+  const exemptEntries = useMemo(
+    () => (form.tax.mode === 1 ? form.tax.exempt.split(/[\s,]+/).filter(Boolean) : []),
+    [form.tax.mode, form.tax.exempt]
+  );
+  const exemptStatus = useExemptStatus(v2?.factory, exemptEntries, v2?.locker ?? ZERO_ADDRESS, v2?.hook ?? ZERO_ADDRESS);
+
   const ctx: LaunchContext = useMemo(
     () => ({
       sender: address ?? ZERO_ADDRESS,
@@ -118,10 +125,12 @@ export default function DeployPage() {
       poolExtension: v2?.poolExtension ?? ZERO_ADDRESS,
       protocolBps: state.defaultProtocolFeeBps,
       minProtocolSkimShareBps: state.minProtocolSkimShareBps,
+      minLpFee: state.minLpFee,
+      exemptStatus,
       deployFee: state.deployFee,
       salt,
     }),
-    [address, v2, state.defaultProtocolFeeBps, state.minProtocolSkimShareBps, state.deployFee, salt]
+    [address, v2, state.defaultProtocolFeeBps, state.minProtocolSkimShareBps, state.minLpFee, exemptStatus, state.deployFee, salt]
   );
   const issues = useMemo(() => validateLaunch(form, ctx), [form, ctx]);
 
@@ -135,6 +144,9 @@ export default function DeployPage() {
   else if (state.deprecated && !isOwner)
     pageBlock = 'Launches are owner only on the current factory (deprecated() is true). Only the factory owner can launch until it is reopened.';
 
+  // the most a referrer may be paid for the fees on the form (D52), shown next to the factory numbers
+  const refCapMaxPercent =
+    maxReferralCapSkim(percentToSkim(form.pool.baselineSkimPercent), percentToBps(form.pool.bountyPercent), state.minProtocolSkimShareBps) / 1_000;
   const supplyWhole = Number(form.token.totalSupply) > 0 ? Number(form.token.totalSupply) : 1_000_000_000;
   const toggle = (step: number) => setOpenStep((prev) => (prev === step ? 0 : step));
   const patch = <K extends keyof LaunchForm>(k: K) => (v: LaunchForm[K]) => setForm((f) => ({ ...f, [k]: v }));
@@ -154,10 +166,12 @@ export default function DeployPage() {
         </div>
       )}
       {state.ok && (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-xs text-zinc-400 grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-xs text-zinc-400 grid grid-cols-2 sm:grid-cols-3 gap-2">
           <span>Deploy fee: <span className="text-zinc-200">{Number(state.deployFee) / 1e18} ETH</span></span>
           <span>Protocol slot: <span className="text-zinc-200">{state.defaultProtocolFeeBps / 100}%</span></span>
           <span>Min protocol skim share: <span className="text-zinc-200">{state.minProtocolSkimShareBps / 100}%</span></span>
+          <span>Min lp fee: <span className="text-zinc-200">{state.minLpFee / 10_000}%</span></span>
+          <span>Referral cap max (these fees): <span className="text-zinc-200">{refCapMaxPercent}% of volume</span></span>
           <span>Public launches: <span className="text-zinc-200">{state.deprecated ? 'closed' : 'open'}</span></span>
         </div>
       )}
@@ -167,7 +181,7 @@ export default function DeployPage() {
       </StepCard>
 
       <StepCard step={2} title="Pool and fees" subtitle="Start price, lp fee, skim, referral cap" isOpen={openStep === 2} onToggle={() => toggle(2)}>
-        <PoolConfigForm value={form.pool} onChange={patch('pool')} issues={issues} supplyWhole={supplyWhole} minProtocolSkimShareBps={state.minProtocolSkimShareBps} connectedAddress={address} />
+        <PoolConfigForm value={form.pool} onChange={patch('pool')} issues={issues} supplyWhole={supplyWhole} minProtocolSkimShareBps={state.minProtocolSkimShareBps} minLpFee={state.minLpFee} connectedAddress={address} />
       </StepCard>
 
       <StepCard step={3} title="Anti-sniper" subtitle="Skim that decays after launch" isOpen={openStep === 3} onToggle={() => toggle(3)}>
@@ -175,7 +189,7 @@ export default function DeployPage() {
       </StepCard>
 
       <StepCard step={4} title="Token tax" subtitle="Optional, fixed at launch" isOpen={openStep === 4} onToggle={() => toggle(4)}>
-        <TaxForm value={form.tax} onChange={patch('tax')} issues={issues} />
+        <TaxForm value={form.tax} onChange={patch('tax')} issues={issues} exemptStatus={exemptStatus} factoryConfigured={!!v2} />
       </StepCard>
 
       <StepCard step={5} title="LP rewards" subtitle="Who earns the fees, and the position ranges" isOpen={openStep === 5} onToggle={() => toggle(5)}>

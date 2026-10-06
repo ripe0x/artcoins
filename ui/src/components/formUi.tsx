@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { Issue } from '../lib/encodeV2';
 
 import { hintClass, labelClass } from './formStyles';
+import { utf8ByteLength } from '../lib/launchRules';
 
 export function Toggle({ enabled, onToggle, label }: { enabled: boolean; onToggle: () => void; label: string }) {
   return (
@@ -38,4 +39,10 @@ export function Field({ label, hint, children }: { label: string; hint?: ReactNo
       {hint && <p className={hintClass}>{hint}</p>}
     </div>
   );
+}
+
+/** Live utf8 byte counter next to a capped string field. The chain caps bytes, not characters. */
+export function ByteCount({ value, cap }: { value: string; cap: number }) {
+  const n = utf8ByteLength(value);
+  return <span className={n > cap ? 'text-red-400' : 'text-zinc-500'}>{n} / {cap} bytes</span>;
 }

@@ -4,8 +4,9 @@ import { Field, Issues } from './formUi';
 import { hintClass, inputClass, selectClass } from './formStyles';
 import { impliedFdvEth, startPriceEthPerCoin } from '../lib/curve';
 import { formatPrice } from '../lib/format';
-import { maxBountyBps } from '../lib/encodeV2';
-import { MAX_BASELINE_SKIM_BPS, MAX_LP_FEE, MAX_REFERRAL_CAP_OF_VOLUME } from '../lib/constants';
+import { maxBountyBps, percentToBps, percentToSkim } from '../lib/encodeV2';
+import { maxReferralCapSkim } from '../lib/launchRules';
+import { MAX_BASELINE_SKIM_BPS, MAX_LP_FEE } from '../lib/constants';
 
 interface Props {
   value: PoolFormState;
@@ -13,6 +14,8 @@ interface Props {
   issues: Issue[];
   supplyWhole: number;
   minProtocolSkimShareBps: number;
+  /** factory.minLpFee(), pips */
+  minLpFee: number;
   connectedAddress: string | undefined;
 }
 
@@ -50,11 +53,16 @@ function Slider({
   );
 }
 
-export default function PoolConfigForm({ value, onChange, issues, supplyWhole, minProtocolSkimShareBps, connectedAddress }: Props) {
+export default function PoolConfigForm({ value, onChange, issues, supplyWhole, minProtocolSkimShareBps, minLpFee, connectedAddress }: Props) {
   const set = <K extends keyof PoolFormState>(field: K, val: PoolFormState[K]) => onChange({ ...value, [field]: val });
   const price = startPriceEthPerCoin(value.startingTick);
   const fdv = impliedFdvEth(value.startingTick, supplyWhole);
   const maxBounty = maxBountyBps(minProtocolSkimShareBps) / 100;
+  const minLpFeePercent = minLpFee / 10_000;
+  // D52: the same formula the factory runs, floor(baseline * (BPS - bounty - protocol floor) / BPS)
+  const capMaxSkim = maxReferralCapSkim(percentToSkim(value.baselineSkimPercent), percentToBps(value.bountyPercent), minProtocolSkimShareBps);
+  const capMax = capMaxSkim / 1_000;
+  const protocolFloorPct = minProtocolSkimShareBps / 100;
 
   return (
     <div className="space-y-5">
@@ -79,10 +87,16 @@ export default function PoolConfigForm({ value, onChange, issues, supplyWhole, m
         <span>Launch fdv {Number.isFinite(fdv) ? fdv.toLocaleString(undefined, { maximumFractionDigits: 3 }) : '-'} ETH at {supplyWhole.toLocaleString()} coins</span>
       </div>
 
-      <Slider label="LP fee" value={value.lpFeePercent} min={0} max={MAX_LP_FEE / 10_000} step={0.05} unit="%" onChange={(v) => set('lpFeePercent', v)} hint="Charged on every swap, paid to the LP reward recipients." />
+      <Slider label="LP fee" value={value.lpFeePercent} min={minLpFeePercent} max={MAX_LP_FEE / 10_000} step={0.05} unit="%" onChange={(v) => set('lpFeePercent', v)} hint={`Charged on every swap, paid to the LP reward recipients and the protocol's lp slot. The launcher owner sets a minimum of ${minLpFeePercent}% (read from the factory), a launch below it is rejected.`} />
       <Slider label="Baseline skim" value={value.baselineSkimPercent} min={0} max={MAX_BASELINE_SKIM_BPS / 1_000} step={0.1} unit="%" onChange={(v) => set('baselineSkimPercent', v)} hint="Taken from the ETH side of every swap, split between the bounty recipient and the protocol." />
-      <Slider label="Bounty share of the skim" value={value.bountyPercent} min={0} max={maxBounty} step={0.01} unit="%" onChange={(v) => set('bountyPercent', v)} hint={`The protocol keeps at least ${minProtocolSkimShareBps / 100}% of the skim (read from the factory), so the bounty share is capped at ${maxBounty}%.`} />
-      <Slider label="Referral cap" value={value.referralCapPercent} min={0} max={MAX_REFERRAL_CAP_OF_VOLUME / 1_000} step={0.05} unit="%" onChange={(v) => set('referralCapPercent', v)} hint="Most of the volume a swap referrer can earn. It is paid out of the protocol's share, not by the trader." />
+      <Slider label="Bounty share of the skim" value={value.bountyPercent} min={0} max={maxBounty} step={0.01} unit="%" onChange={(v) => set('bountyPercent', v)} hint={`The protocol keeps at least ${protocolFloorPct}% of the skim on every swap, referred or not (read from the factory), so the bounty share is capped at ${maxBounty}%.`} />
+      <Slider label="Referral cap" value={value.referralCapPercent} min={0} max={capMax} step={0.001} unit="%" onChange={(v) => set('referralCapPercent', v)} hint={`Most of the volume a swap referrer can earn. It is paid out of the protocol's share, not by the trader, and the protocol still keeps at least ${protocolFloorPct}% of the skim. Maximum for these fees: ${capMax}% of volume = baseline skim x (100% - bounty share - ${protocolFloorPct}%). Referrers claim their earnings from the fee escrow.`} />
+      {value.referralCapPercent > capMax && (
+        <p className="text-xs text-amber-400">
+          The referral cap of {value.referralCapPercent}% is above the maximum of {capMax}% for these fees. The factory would reject the launch.{' '}
+          <button type="button" className="underline" onClick={() => set('referralCapPercent', capMax)}>Set it to {capMax}%</button>
+        </p>
+      )}
 
       <Field label="Bounty recipient" hint="Receives the bounty share of the skim. Defaults to your wallet.">
         <input type="text" className={inputClass} placeholder={connectedAddress ?? '0x...'} value={value.bountyRecipient} onChange={(e) => set('bountyRecipient', e.target.value)} />

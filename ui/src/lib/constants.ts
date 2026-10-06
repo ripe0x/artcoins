@@ -34,6 +34,16 @@ export const MAX_TAX_VENUES = 32;
 export const MAX_TAX_EXEMPT = 16;
 export const DEAD = '0x000000000000000000000000000000000000dEaD' as const;
 
+/**
+ * ArtCoinsTokenV2.MAX_*_BYTES (the factory checks the same caps before deploying). Utf8 BYTES, not
+ * characters. test/launchRules.test.ts reads src/v2/ArtCoinsTokenV2.sol and fails when these drift.
+ */
+export const MAX_NAME_BYTES = 64;
+export const MAX_SYMBOL_BYTES = 16;
+export const MAX_IMAGE_BYTES = 2_048;
+export const MAX_METADATA_BYTES = 4_096;
+export const MAX_CONTEXT_BYTES = 4_096;
+
 export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
 
 /** v4 TickMath bounds */

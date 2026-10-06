@@ -14,6 +14,7 @@ import {
   formatEther,
 } from 'viem';
 
+import EscrowClaim from '../components/EscrowClaim';
 import InfoCard from '../components/InfoCard';
 import InfoRow from '../components/InfoRow';
 import CopyableAddress from '../components/CopyableAddress';
@@ -24,6 +25,7 @@ import { factoryV2Abi } from '../lib/abi/v2/factory';
 import { shortAddr } from '../lib/format';
 import { normalizeSkim, skimPercent } from '../lib/poolReads';
 import { useToken } from '../lib/useTokens';
+import { getV2Stack } from '../lib/v2';
 import { useAddressesOrNull, useWalletGate } from '../lib/useChain';
 import { cleanText, MAX_SYMBOL } from '../lib/security';
 
@@ -88,6 +90,20 @@ export default function ReferralsPage() {
     functionName: 'referralPayout',
     query: { enabled: event?.version === 2 },
   });
+  // D57: the v2 default payout is the fee escrow, claimed with claim(referrer, address(0)). the factory
+  // knows its escrows, so ask it instead of assuming the address
+  const { data: payoutIsEscrow } = useReadContract({
+    address: event?.factory,
+    abi: factoryV2Abi,
+    functionName: 'enabledEscrows',
+    args: referralPayoutAddr ? [referralPayoutAddr] : undefined,
+    query: { enabled: event?.version === 2 && !!referralPayoutAddr },
+  });
+  const stackEscrow = getV2Stack(chainId)?.escrow;
+  const isEscrow =
+    event?.version === 2 &&
+    !!referralPayoutAddr &&
+    (payoutIsEscrow === true || (!!stackEscrow && stackEscrow.toLowerCase() === referralPayoutAddr.toLowerCase()));
   const payoutTrusted =
     event?.version === 2 &&
     !!factoryPayout &&
@@ -179,7 +195,9 @@ export default function ReferralsPage() {
             '...'
           )}{' '}
           of swap volume to that address, pulled exclusively from the protocol
-          fee leg. URL parameter <code className="text-xs">?ref=0x...</code> on
+          fee leg. The protocol still keeps at least the floor the factory set
+          for the launch, so a referral never takes the whole protocol share.
+          URL parameter <code className="text-xs">?ref=0x...</code> on
           the swap page sets the referrer; or build your own UI and pass{' '}
           <Link to="/" className="text-violet-300 hover:text-violet-200">
             attribution hookData
@@ -188,102 +206,108 @@ export default function ReferralsPage() {
         </p>
       </div>
 
-      <InfoCard title="Your balance">
-        <InfoRow
-          label="Pool ReferralPayout"
-          value={
-            referralPayoutAddr ? (
-              <CopyableAddress address={referralPayoutAddr} />
-            ) : (
-              <span className="text-zinc-500">unknown</span>
-            )
-          }
-        />
-        {wallet && (
-          <InfoRow
-            label="Your address"
-            value={<CopyableAddress address={wallet} />}
-          />
-        )}
-        <InfoRow
-          label="Claimable balance"
-          value={
-            <span className="font-mono text-zinc-100">
-              {formatEther(ledgerBalance)} ETH
-            </span>
-          }
-        />
-      </InfoCard>
-
-      {referralPayoutAddr && !payoutTrusted && (
-        <label className="flex items-start gap-2 rounded-xl border border-amber-800 bg-amber-950/20 p-3 text-xs text-amber-200">
-          <input type="checkbox" checked={payoutConfirmed} onChange={(e) => setPayoutConfirmed(e.target.checked)} className="mt-0.5" />
-          <span>
-            The ledger at <span className="font-mono">{referralPayoutAddr}</span> was chosen by this token's deployer, not by the
-            factory. Confirm you recognise it before claiming.
-          </span>
-        </label>
-      )}
-      {payoutTrusted && <p className="text-xs text-emerald-300">This is the payout contract the factory itself wired in.</p>}
-
-      {!isConnected ? (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 flex items-center justify-between">
-          <p className="text-sm text-zinc-400">
-            Connect to view your balance and claim.
-          </p>
-          <ConnectButton />
-        </div>
+      {isEscrow && referralPayoutAddr ? (
+        <EscrowClaim escrow={referralPayoutAddr} chainId={chainId} />
       ) : (
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <button
-            type="button"
-            onClick={onClaim}
-            disabled={
-              !gate.ok ||
-              ledgerBalance === 0n ||
-              (!payoutTrusted && !payoutConfirmed) ||
-              tx.kind === 'awaitingSig' ||
-              tx.kind === 'pending'
+        <>
+        <InfoCard title="Your balance">
+          <InfoRow
+            label="Pool ReferralPayout"
+            value={
+              referralPayoutAddr ? (
+                <CopyableAddress address={referralPayoutAddr} />
+              ) : (
+                <span className="text-zinc-500">unknown</span>
+              )
             }
-            className="flex-1 rounded-xl border border-violet-600/40 bg-violet-950/20 hover:border-violet-500 hover:bg-violet-900/30 disabled:opacity-50 disabled:cursor-not-allowed px-5 py-3 text-sm font-medium text-violet-200 hover:text-white"
-          >
-            {tx.kind === 'awaitingSig'
-              ? 'Confirm in wallet...'
-              : tx.kind === 'pending'
-                ? 'Claiming...'
-                : `Claim ${formatEther(ledgerBalance)} ETH`}
-          </button>
-        </div>
-      )}
+          />
+          {wallet && (
+            <InfoRow
+              label="Your address"
+              value={<CopyableAddress address={wallet} />}
+            />
+          )}
+          <InfoRow
+            label="Claimable balance"
+            value={
+              <span className="font-mono text-zinc-100">
+                {formatEther(ledgerBalance)} ETH
+              </span>
+            }
+          />
+        </InfoCard>
 
-      {tx.kind === 'pending' && (
-        <p className="text-xs text-zinc-500">
-          Tx pending —{' '}
-          <a
-            href={explorerTxUrl(chainId, tx.hash)}
-            target="_blank"
-            rel="noreferrer"
-            className="text-violet-300 hover:text-violet-200"
-          >
-            {shortAddr(tx.hash)}
-          </a>
-        </p>
-      )}
-      {tx.kind === 'confirmed' && (
-        <p className="text-xs text-emerald-300">
-          Confirmed —{' '}
-          <a
-            href={explorerTxUrl(chainId, tx.hash)}
-            target="_blank"
-            rel="noreferrer"
-            className="text-emerald-200 hover:text-emerald-100"
-          >
-            {shortAddr(tx.hash)}
-          </a>
-        </p>
-      )}
-      {tx.kind === 'error' && (
-        <p className="text-xs text-red-400">{tx.message}</p>
+        {referralPayoutAddr && !payoutTrusted && (
+          <label className="flex items-start gap-2 rounded-xl border border-amber-800 bg-amber-950/20 p-3 text-xs text-amber-200">
+            <input type="checkbox" checked={payoutConfirmed} onChange={(e) => setPayoutConfirmed(e.target.checked)} className="mt-0.5" />
+            <span>
+              The ledger at <span className="font-mono">{referralPayoutAddr}</span> was chosen by this token's deployer, not by the
+              factory. Confirm you recognise it before claiming.
+            </span>
+          </label>
+        )}
+        {payoutTrusted && <p className="text-xs text-emerald-300">This is the payout contract the factory itself wired in.</p>}
+
+        {!isConnected ? (
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 flex items-center justify-between">
+            <p className="text-sm text-zinc-400">
+              Connect to view your balance and claim.
+            </p>
+            <ConnectButton />
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <button
+              type="button"
+              onClick={onClaim}
+              disabled={
+                !gate.ok ||
+                ledgerBalance === 0n ||
+                (!payoutTrusted && !payoutConfirmed) ||
+                tx.kind === 'awaitingSig' ||
+                tx.kind === 'pending'
+              }
+              className="flex-1 rounded-xl border border-violet-600/40 bg-violet-950/20 hover:border-violet-500 hover:bg-violet-900/30 disabled:opacity-50 disabled:cursor-not-allowed px-5 py-3 text-sm font-medium text-violet-200 hover:text-white"
+            >
+              {tx.kind === 'awaitingSig'
+                ? 'Confirm in wallet...'
+                : tx.kind === 'pending'
+                  ? 'Claiming...'
+                  : `Claim ${formatEther(ledgerBalance)} ETH`}
+            </button>
+          </div>
+        )}
+
+        {tx.kind === 'pending' && (
+          <p className="text-xs text-zinc-500">
+            Tx pending —{' '}
+            <a
+              href={explorerTxUrl(chainId, tx.hash)}
+              target="_blank"
+              rel="noreferrer"
+              className="text-violet-300 hover:text-violet-200"
+            >
+              {shortAddr(tx.hash)}
+            </a>
+          </p>
+        )}
+        {tx.kind === 'confirmed' && (
+          <p className="text-xs text-emerald-300">
+            Confirmed —{' '}
+            <a
+              href={explorerTxUrl(chainId, tx.hash)}
+              target="_blank"
+              rel="noreferrer"
+              className="text-emerald-200 hover:text-emerald-100"
+            >
+              {shortAddr(tx.hash)}
+            </a>
+          </p>
+        )}
+        {tx.kind === 'error' && (
+          <p className="text-xs text-red-400">{tx.message}</p>
+        )}
+        </>
       )}
     </div>
   );

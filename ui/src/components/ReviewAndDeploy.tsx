@@ -4,7 +4,8 @@ import { usePublicClient, useWaitForTransactionReceipt, useWriteContract } from 
 import { useQueryClient } from '@tanstack/react-query';
 import { formatEther, parseEventLogs, type Address } from 'viem';
 import { factoryV2Abi } from '../lib/abi/v2/factory';
-import { buildLaunchConfigV2, validateLaunch, type LaunchContext } from '../lib/encodeV2';
+import { buildLaunchConfigV2, percentToBps, percentToSkim, validateLaunch, type LaunchContext } from '../lib/encodeV2';
+import { maxReferralCapSkim } from '../lib/launchRules';
 import type { LaunchForm } from '../lib/types';
 import type { V2Stack } from '../lib/v2';
 import type { FactoryState } from '../lib/factoryState';
@@ -129,7 +130,7 @@ export default function ReviewAndDeploy({ form, ctx, v2, state, pageBlock, suppl
   };
 
   const mev = form.mev;
-  const taxLabel = form.tax.mode === 0 ? 'None' : form.tax.mode === 1 ? `Venue tax ${form.tax.taxPercent}% (max ${form.tax.maxPercent}%) to ${form.tax.sink === 'dead' ? 'burn' : 'bounty recipient'}` : 'Hard mode';
+  const taxLabel = form.tax.mode === 0 ? 'None' : form.tax.mode === 1 ? `Venue tax, side pools taxed: ${form.tax.taxPercent}% (max ${form.tax.maxPercent}%) to ${form.tax.sink === 'dead' ? 'burn' : 'bounty recipient'}` : 'Hard mode, side pools blocked (a v2 pair listed later traps its lps)';
   const totalExt =
     (form.extensions.vault.enabled ? form.extensions.vault.allocationPercent : 0) + (form.extensions.airdrop.enabled ? form.extensions.airdrop.allocationPercent : 0);
   const sumRewards = form.rewards.recipients.reduce((s, r) => s + r.bps, 0);
@@ -150,10 +151,14 @@ export default function ReviewAndDeploy({ form, ctx, v2, state, pageBlock, suppl
           <Row label="Paired with" value="native ETH" />
           <Row label="Tick spacing / start tick" value={`${form.pool.tickSpacing} / ${form.pool.startingTick}`} />
           <Row label="Launch fdv" value={`${impliedFdvEth(form.pool.startingTick, supplyWhole).toLocaleString(undefined, { maximumFractionDigits: 3 })} ETH`} />
-          <Row label="LP fee" value={pct(form.pool.lpFeePercent)} />
+          <Row label="LP fee" value={`${pct(form.pool.lpFeePercent)} (factory minimum ${pct(ctx.minLpFee / 10_000)})`} />
           <Row label="Baseline skim" value={`${pct(form.pool.baselineSkimPercent)} of volume`} />
           <Row label="Bounty share of skim" value={pct(form.pool.bountyPercent)} />
-          <Row label="Referral cap" value={`${pct(form.pool.referralCapPercent)} of volume`} />
+          <Row
+            label="Referral cap"
+            value={`${pct(form.pool.referralCapPercent, 3)} of volume (maximum for these fees ${pct(maxReferralCapSkim(percentToSkim(form.pool.baselineSkimPercent), percentToBps(form.pool.bountyPercent), ctx.minProtocolSkimShareBps) / 1_000, 3)}), claimed from the fee escrow`}
+          />
+          <Row label="Protocol keeps at least" value={`${pct(ctx.minProtocolSkimShareBps / 100)} of the skim`} />
           <Row label="Anti sniper" value={mev.enabled ? `${pct(mev.startPercent)} decaying to ${pct(form.pool.baselineSkimPercent)} over ${mev.windowMin} min` : 'Off'} />
           <Row label="Tax" value={taxLabel} />
         </Section>

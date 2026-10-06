@@ -48,6 +48,13 @@ import {
   ZERO_ADDRESS,
 } from './constants';
 import type { LaunchForm } from './types';
+import {
+  EXEMPT_NOT_ALLOWED,
+  maxReferralCapSkim,
+  referralCapWithinFloor,
+  stringCapIssue,
+  type ExemptStatusMap,
+} from './launchRules';
 
 // ── config types, field for field the interface structs ─────────────────────────────────────────
 
@@ -138,6 +145,14 @@ export interface LaunchContext {
   protocolBps: number;
   /** factory.minProtocolSkimShareBps(), caps the bounty share */
   minProtocolSkimShareBps: number;
+  /** factory.minLpFee() in pips (D53): the launch lp fee may not be lower */
+  minLpFee: number;
+  /**
+   * factory allowlist answers for the tax exempt entries, keyed by lowercase address
+   * (`classifyExempt` over exemptAllowed, enabledEscrows, enabledExtensions). null only when no factory
+   * is configured (preview): launching is blocked then anyway.
+   */
+  exemptStatus: ExemptStatusMap | null;
   /** factory.deployFee() */
   deployFee: bigint;
   salt: Hex;
@@ -257,6 +272,17 @@ export function validateLaunch(form: LaunchForm, ctx: LaunchContext): Issue[] {
   // token
   if (!token.name.trim()) out.push(err('token.name', 'name is required'));
   if (!token.symbol.trim()) out.push(err('token.symbol', 'symbol is required'));
+  // the factory and the token cap every string in utf8 bytes (D30). check what the builder sends
+  for (const [field, value] of [
+    ['name', token.name.trim()],
+    ['symbol', token.symbol.trim()],
+    ['image', token.image.trim()],
+    ['metadata', token.metadata],
+    ['context', token.context],
+  ] as const) {
+    const issue = stringCapIssue(field, value);
+    if (issue) out.push(err(`token.${field}`, issue));
+  }
   if (token.admin.trim() && !parseAddress(token.admin)) out.push(err('token.admin', 'not a valid address (check the checksum)'));
   if (token.renderer.trim()) {
     const r = parseAddress(token.renderer);
@@ -282,10 +308,24 @@ export function validateLaunch(form: LaunchForm, ctx: LaunchContext): Issue[] {
   const bounty = percentToBps(pool.bountyPercent);
   const refCap = percentToSkim(pool.referralCapPercent);
   if (lpFee < 0 || lpFee > MAX_LP_FEE) out.push(err('pool.lpFee', `lp fee must be 0 to ${MAX_LP_FEE / 10_000}%`));
+  else if (lpFee < ctx.minLpFee) out.push(err('pool.lpFee', `lp fee must be at least ${ctx.minLpFee / 10_000}% (the launcher's minimum, so the protocol's lp slot is never worthless)`));
   if (baseline < 0 || baseline > MAX_BASELINE_SKIM_BPS) out.push(err('pool.baselineSkim', `baseline skim must be 0 to ${MAX_BASELINE_SKIM_BPS / 1_000}% of volume`));
   if (refCap < 0 || refCap > MAX_REFERRAL_CAP_OF_VOLUME) out.push(err('pool.referralCap', `referral cap must be 0 to ${MAX_REFERRAL_CAP_OF_VOLUME / 1_000}% of volume`));
   const maxBounty = maxBountyBps(ctx.minProtocolSkimShareBps);
   if (bounty < 0 || bounty > maxBounty) out.push(err('pool.bounty', `bounty share must be 0 to ${maxBounty / 100}% (the protocol keeps at least ${ctx.minProtocolSkimShareBps / 100}% of the skim)`));
+  // referral cap: the referral leg is carved from the protocol leg and may not take it below the floor
+  const bountyOk = bounty >= 0 && bounty <= maxBounty;
+  if (bountyOk && refCap >= 0 && refCap <= MAX_REFERRAL_CAP_OF_VOLUME && baseline >= 0 && baseline <= MAX_BASELINE_SKIM_BPS) {
+    if (!referralCapWithinFloor(refCap, baseline, bounty, ctx.minProtocolSkimShareBps)) {
+      const capMax = maxReferralCapSkim(baseline, bounty, ctx.minProtocolSkimShareBps);
+      out.push(
+        err(
+          'pool.referralCap',
+          `referral cap is above the maximum of ${capMax / 1_000}% of volume for these fees (baseline skim x (100% - bounty share - protocol floor of ${ctx.minProtocolSkimShareBps / 100}%)). Lower the cap, the bounty share, or raise the baseline skim`
+        )
+      );
+    }
+  }
   const bountyRecipient = pool.bountyRecipient.trim() ? parseAddress(pool.bountyRecipient) : ctx.sender;
   if (!bountyRecipient || isZeroAddr(bountyRecipient)) out.push(err('pool.bountyRecipient', 'bounty recipient must be a valid nonzero address'));
 
@@ -310,8 +350,21 @@ export function validateLaunch(form: LaunchForm, ctx: LaunchContext): Issue[] {
     const ex = tax.exempt.split(/[\s,]+/).filter(Boolean);
     if (tax.mode === TAX_MODE_VENUE && ex.length > MAX_TAX_EXEMPT) out.push(err('tax.exempt', `at most ${MAX_TAX_EXEMPT} exempt addresses`));
     for (const a of ex) if (!parseAddress(a) || isZeroAddr(a)) out.push(err('tax.exempt', `${a} is not a valid nonzero address`));
+    // VENUE only (HARD sends no exempt set): duplicates and the factory allowlist (D47)
+    if (tax.mode === TAX_MODE_VENUE) {
+      const seen = new Set<string>();
+      for (const a of ex) {
+        const k = a.toLowerCase();
+        if (seen.has(k)) out.push(err('tax.exempt.dup', `${a} is listed twice`));
+        seen.add(k);
+        if (!parseAddress(a) || isZeroAddr(a) || !ctx.exemptStatus) continue;
+        const st = ctx.exemptStatus[k] ?? 'unknown';
+        if (st === 'not-allowed') out.push(err('tax.exempt.allowlist', `${a}: ${EXEMPT_NOT_ALLOWED}`));
+        else if (st === 'unknown') out.push(err('tax.exempt.allowlist', `${a}: could not check the launcher allowlist yet`));
+      }
+    }
     if (tax.venueAdmin.trim() && !parseAddress(tax.venueAdmin)) out.push(err('tax.venueAdmin', 'not a valid address (check the checksum)'));
-    if (tax.mode === TAX_MODE_HARD) out.push(warn('tax.mode', 'hard mode blocks every pool manager flow the canonical hook did not grant, and every transfer touching a listed venue'));
+    if (tax.mode === TAX_MODE_HARD) out.push(warn('tax.mode', 'hard mode blocks side pools: every pool manager flow the canonical hook did not grant and every transfer touching a listed venue reverts. listing a v2 pair for this coin later also traps its lps (they cannot withdraw, their weth is stuck too)'));
   }
 
   // rewards
