@@ -8,7 +8,7 @@ shared base for every v2 test. forks mainnet at one pinned block, deploys the cu
 |---|---|
 | `test/v2/harness/ForkBase.sol` | abstract `Test`. `forkMainnet()`, `skipUnlessFork()` / `onlyFork`, pinned `FORK_BLOCK`, infra + live address constants, `dealWeth`, `swapExactIn`, `addLiquidity`, `readSlot0`, `readLiquidity`. deploys `PoolSwapTest` + `PoolModifyLiquidityTest` on the fork. |
 | `test/v2/harness/ForkStack.sol` | abstract, extends ForkBase. `deployFreshStack()`, `defaultLaunchParams()`, `launchToken(LaunchParams)`, `liveStack()`. |
-| `test/v2/harness/Harness.t.sol` | proof suite (6 tests). |
+| `test/v2/harness/Harness.t.sol` | proof suite (8 tests, 2 of them pin a hook bug as known issue). |
 
 ## usage
 
@@ -42,15 +42,16 @@ notes: ForkBase defines `receive() external payable virtual`; override, do not r
 source /tmp/claude-0/env.sh   # sets MAINNET_RPC_URL (defaults to tenderly public gateway)
 
 # harness proof suite (forks itself via vm.createSelectFork at FORK_BLOCK)
-/tmp/claude-0/forge.sh test --match-path "test/v2/harness/**" --skip "test/v2/review/**" -vv
+/tmp/claude-0/forge.sh test --match-path "test/v2/harness/**" --skip "test/v2/review/**" --skip script -vv
 
 # legacy style suites that need a cli fork: pin the block + retry
 /tmp/claude-0/forge.sh test --fork-url $MAINNET_RPC_URL --fork-block-number 26130269 \
-  --fork-retries 8 --fork-retry-backoff 2000 --skip "test/v2/review/**" \
+  --fork-retries 8 --fork-retry-backoff 2000 --skip "test/v2/review/**" --skip script \
   --match-path test/ArtCoinsHookSkimFeeForkTest.t.sol -vv
+# same flags with --match-path test/MainnetLaunchRehearsalForkTest.t.sol
 
 # no network / ci opt out: tests report as skipped
-SKIP_FORK_TESTS=true /tmp/claude-0/forge.sh test --match-path "test/v2/harness/**" -vv
+SKIP_FORK_TESTS=true /tmp/claude-0/forge.sh test --match-path "test/v2/harness/**" --skip "test/v2/review/**" --skip script -vv
 ```
 
 | knob | effect |
@@ -58,7 +59,7 @@ SKIP_FORK_TESTS=true /tmp/claude-0/forge.sh test --match-path "test/v2/harness/*
 | `MAINNET_RPC_URL` | rpc. unset or empty falls back to `https://mainnet.gateway.tenderly.co`. |
 | `FORK_BLOCK` (env) | overrides the pinned block. leave unset so everyone shares the rpc cache. |
 | `SKIP_FORK_TESTS=true` | never touch the network; every `onlyFork` test is skipped. |
-| `--skip "test/v2/review/**"` | `forge test --match-path` still compiles every test file. one broken file anywhere (another agent's work in progress) fails the whole build. skip directories you do not need. |
+| `--skip "test/v2/review/**" --skip script` | `forge test --match-path` still compiles every test and script file. one broken file anywhere (another agent's work in progress: seen `test/v2/review/hooks-mev/LiveStack.t.sol` and `script/v2/RunKeeper111.s.sol`) fails the whole build. skip what you do not need. |
 
 `--fork-retries` / `--fork-retry-backoff` require `--fork-url` (forge 1.7.1 rejects them otherwise with "required arguments were not provided: --rpc-url"), and there is no `fork_retries` config key in this forge version, so tests that fork in `setUp` via cheatcode use foundry's default retry policy. the pinned block plus the on disk cache is what actually keeps call counts low.
 
@@ -127,17 +128,45 @@ build profile caveat: tests compile at the default profile (optimizer_runs 20_00
 | rewards | 3800 artist / 4200 project + 2000 protocol slot appended by the factory | LaunchLayer ARTIST_BPS / PROJECT_BURN_BPS, factory default |
 | skim fee data | lpFee 5000, baseline 6000, bounty 8333, maxRef 250 | live 111 `skimConfig` |
 | mev skim | 90_000 -> 6000 over 30 min | live 111 `skimConfigs` on the linear skim module |
+| bounty recipient | fresh `PreSwapStreamSink` contract (implements `streamForward`, like the live 111 bounty recipient 0x8C72..) | required: an eoa bricks the pool, see known issue |
 | tax | off; `taxBps > 0` uses `deployTokenWithProtocolBpsAndTax` with max 2000, burn 0xdEaD, canonical = fresh hook | live 111 shape (111 uses 1500 / 2000, burn sink 0xf5c3eC7e185d0a592264791D523496EA6e368753) |
 
 coin 111 live facts read at FORK_BLOCK: reward slots `[10000]` to 0xeBD9B74A4c26C6E54e83C84CB247c069eC42A961 (admin 0xdEaD, so frozen), 14 positions, no protocol slot (deployed with protocolBps 0), token admin 0xA96a11257890ED1C43C16c098E286e18e45E6258, bounty recipient 0x8C72FBc2bB32e76aa54243F76745266a0F92CD01, protocol recipient 0xed3E9D3Bf693372060b7ce62aDB49650145b2ba9, referral payout 0xB03Cbd862F47059e928C113182814c676eA29d4c, total supply 1.11e27.
 
 ## proof suite results
 
-RESULTS_PLACEHOLDER
+run at FORK_BLOCK, 2026-10-06: **8 passed, 0 failed**. second run of the whole suite takes about 1.2s of test time (rpc cache warm); compile about 1 min if only harness files changed.
+
+| test | proves |
+|---|---|
+| test_fork_pinnedBlock_liveStackWiring | block == FORK_BLOCK; live factory owner / deprecated / version / deployFee / enabled hook, locker, mev; escrow depositors; 111 pool key (native eth, dynamic fee, spacing 200, live hook) read from the live locker; pool initialized with liquidity; older + legacy factory owners |
+| test_freshStack_wiringMatchesLive | fresh stack matches live on version, protocol bps, deployFee, teamFeeRecipient == owner, keeperRewardBps, hook permission bits, depositors |
+| test_freshStack_launchBuySell_feeFlows | launch pays 0.069 eth deploy fee to team; 12 positions; t0 buy: bounty = baseline share + anti sniper extra, protocol leg escrowed (exact to 2 wei at 90% skim); post window buy baseline only; sell skims both legs; `locker.collectRewards` credits artist, project and protocol slot in eth and token; escrow `claim` pays out |
+| test_freshStack_taxedLaunch_canonicalBuyUntaxed | 111 style taxed launch: hook auto detects tax, canonical buy pays no tax to the burn sink |
+| test_freshStack_addLiquidity_blockedInWindow_openAfter | `addLiquidity` reverts inside the skim window, succeeds after (one sided eth range) |
+| test_live111_buySell_skimCreditedToLiveRecipients | swap the real 111 pool with live bytecode: 0.1 eth buy credits bounty 0x8C72.. and escrows protocol for 0xed3E.. in LIVE_ESCROW, matching skimConfig math to 2 wei (baseline 6000, bounty 8333); sell back skims both legs again |
+| test_knownIssue_eoaBountyRecipientBricksSwaps | see findings |
+| test_knownIssue_fallbackBountyRecipientBricksSwaps | see findings |
+
+skip behavior verified: `SKIP_FORK_TESTS=true` gives 8 skipped; `MAINNET_RPC_URL=http://127.0.0.1:9` gives skipped ("fork unavailable") in under 4s.
+
+## findings from building the harness
+
+| # | severity | finding | proof |
+|---|---|---|---|
+| 1 | high | `ArtCoinsHookSkimFee._beforeSwap` calls `try IPreSwapStream(br).streamForward() {} catch {}` once the bounty recipient holds >= 0.01 eth. solidity try/catch does not catch the caller side extcodesize check (eoa recipient: "call to non-contract address") nor the caller side return data decode (contract whose fallback returns nothing, e.g. a Safe). result: every swap on that pool reverts `HookCallFailed`, permanently, and anyone can trigger it by sending the recipient 0.01 eth. the IPreSwapStream natspec claims a non implementing recipient "can never brick a swap"; false. live 111 is not affected (its bounty recipient implements streamForward), but any future launch on the skim hook with an eoa or Safe bounty recipient is. fix: low level `call` with gas cap, ignore result, or `br.code.length != 0` plus returndata length check. | `test_knownIssue_*` (pinned as current behavior; flip when fixed) |
+| 2 | low | `placeLiquidity` leaves wei level coin dust in the locker (8767 wei on the default 12 position launch). owner only sweep. | `test_freshStack_launchBuySell_feeFlows` asserts < 1e9 |
+| 3 | info | live deployFee 0.069 eth vs DeployV1Stack setting 0 | cast, see parity table |
+| 4 | info | mainnet StateView is not recorded anywhere in the repo (ui has zero) | cast |
 
 ## existing fork suites on the pinned block
 
-EXISTING_PLACEHOLDER
+| suite | command flags | result | cause of failures |
+|---|---|---|---|
+| test/ArtCoinsHookSkimFeeForkTest.t.sol | `--fork-url $MAINNET_RPC_URL --fork-block-number 26130269 --fork-retries 8 --fork-retry-backoff 2000` | 13 passed, 0 failed | none |
+| test/MainnetLaunchRehearsalForkTest.t.sol | same | 10 passed, 1 failed | `test_rehearsal_s06_highSuccess_burnCadence` reverts `InsufficientLayerOut(1.043e24, 1.331e24)` in `BurnRouter.processBurnWeth(0)`. not rpc related: the suite deploys its own legacy LAYER stack, so the result is block independent. after 5 x 10 eth buys the burn swap at t=800s (still inside the 900s stepped sniper window) realizes about 78% of the spot derived floor (`_referenceFloor`), so the router's own floor rejects it. the floor ignores the pool fee plus sniper extra and the clamp. belongs to the locker/fees review. |
+
+no 429s hit during these runs (pinned block, serialized runs). first run of a cold block pulls a few hundred rpc calls; later runs read the disk cache.
 
 ## rate limits
 

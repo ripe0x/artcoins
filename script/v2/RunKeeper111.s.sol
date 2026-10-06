@@ -2,16 +2,7 @@
 pragma solidity ^0.8.26;
 
 import {CollectFlushKeeperV1} from "../../src/v2/keepers/CollectFlushKeeperV1.sol";
-import {IFeeAutoSwapper} from "../../src/interfaces/IFeeAutoSwapper.sol";
-import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
-import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
-import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
-import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {Script, console2} from "forge-std/Script.sol";
-
-interface ISwapperLimits {
-    function maxStepIn() external view returns (uint256);
-}
 
 /// @notice Deploys `CollectFlushKeeperV1` pinned to the live coin 111 stack. Dry run unless the operator
 ///         passes `--broadcast` (and a signer: `--account`, `--ledger` or `--private-key`).
@@ -39,9 +30,6 @@ contract DeployKeeper111 is Script {
 ///         Nothing is sent unless `--broadcast` is passed. Give the tx at least 1.2M gas (the keeper reverts
 ///         on a gas shortfall rather than skipping a step).
 contract RunKeeper111 is Script {
-    using PoolIdLibrary for PoolKey;
-
-    IPoolManager internal constant POOL_MANAGER = IPoolManager(0x000000000004444c5dc75cB358380D2e3dE08A90);
 
     receive() external payable {}
 
@@ -62,21 +50,15 @@ contract RunKeeper111 is Script {
         if (converted == 0) console2.log("convert skipped (min blocks, nothing to convert or minOut not met)");
     }
 
-    /// @notice minOut for `convert`: simulate collect (state reverted after), take the coin the swapper will
-    ///         convert (capped by maxStepIn), value it at pool spot, subtract `slippageBps`. Spot ignores the
-    ///         pool fee and coin tax, so a tight slippage makes convert revert (swallowed, converted 0).
+    /// @notice minOut for `convert`: simulate the whole run at the current state (state reverted after) with
+    ///         minOut 0, take the eth the swap would return, subtract `slippageBps`. A spot quote is not used:
+    ///         the live pool's dynamic fee, skim and coin tax put realized output several percent under spot.
+    ///         Returns 0 when the simulation converts nothing (min blocks not elapsed, no coin).
     function quoteMinOut(CollectFlushKeeperV1 keeper, uint256 slippageBps) public returns (uint256) {
-        IFeeAutoSwapper swapper = keeper.swapper();
         uint256 snap = vm.snapshotState();
-        keeper.run(false, 0);
-        uint256 coinIn = swapper.accruedArtCoin();
+        (,, uint256 simulated) = keeper.run(true, 0);
         vm.revertToState(snap);
-        uint256 cap = ISwapperLimits(address(swapper)).maxStepIn();
-        if (coinIn > cap) coinIn = cap;
-        (uint160 sqrtP,,,) = POOL_MANAGER.getSlot0(swapper.poolKey().toId());
-        // coin is currency1: price(coin per eth) = sqrtP^2 / 2^192, so eth = coin * 2^192 / sqrtP^2
-        uint256 ethAtSpot = FullMath.mulDiv(FullMath.mulDiv(coinIn, 1 << 96, sqrtP), 1 << 96, sqrtP);
-        return ethAtSpot * (10_000 - slippageBps) / 10_000;
+        return simulated * (10_000 - slippageBps) / 10_000;
     }
 
     function _logPreview(CollectFlushKeeperV1 keeper) internal view {

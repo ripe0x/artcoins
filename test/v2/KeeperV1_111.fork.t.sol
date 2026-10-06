@@ -210,28 +210,24 @@ contract KeeperV1_111_ForkTest is Test {
         assertGt(reverted, 0);
     }
 
-    /// @dev the runner script's quote: spot minus slippage. Documents what slippage the live pool needs.
+    /// @dev the runner script's quote (simulate, minus slippage) converts at the default 100 bps, and a
+    ///      minOut above the simulated output makes convert skip (swallowed) instead of reverting the run.
     function test_keeperV1_scriptQuote_convertsAtDefaultSlippage() public onlyFork {
         _makeFees();
         vm.roll(block.number + 60);
         RunKeeper111 script = new RunKeeper111();
+        uint256 minOut = script.quoteMinOut(keeper, 100);
+        assertGt(minOut, 0);
         uint256 snap = vm.snapshotState();
-        uint256 coinConverted;
-        for (uint256 bps = 100; bps <= 500; bps += 100) {
-            uint256 minOut = script.quoteMinOut(keeper, bps);
-            vm.prank(CALLER);
-            (,, uint256 converted) = keeper.run(true, minOut);
-            console2.log("slippage bps", bps);
-            console2.log("minOut", minOut);
-            console2.log("converted", converted);
-            if (converted > 0) {
-                coinConverted = bps;
-                break;
-            }
-            vm.revertToState(snap);
-            snap = vm.snapshotState();
-        }
-        assertGt(coinConverted, 0, "convert never met the quote up to 500 bps");
+        vm.prank(CALLER);
+        (,, uint256 converted) = keeper.run(true, minOut);
+        assertGe(converted, minOut);
+        assertGt(converted, 0);
+        vm.revertToState(snap);
+        vm.prank(CALLER);
+        (uint256 collected,, uint256 skipped) = keeper.run(true, type(uint256).max);
+        assertGt(collected, 0, "collect and flush still ran");
+        assertEq(skipped, 0, "impossible minOut: convert skipped, run succeeded");
     }
 
     function test_keeperV1_nothingToFlush_noRevert() public onlyFork {

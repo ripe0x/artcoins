@@ -157,7 +157,7 @@ const fail = (who, what, exp, got) => fails.push({ who, what, exp: String(exp), 
 const drift = { owner: new Map(), state: new Map(), match: new Map() };
 
 for (let i = 0; i < C.length; i++) {
-  const c = C[i]; const who = `${c.name} ${c.address.slice(0, 8)}`; const code = codes[i]; const row = { c, code: 'ok', owner: '-', state: '-', bc: '-', wiring: 'ok' };
+  const c = C[i]; const who = `${c.name} ${c.address.slice(0, 8)}`; const code = codes[i]; const row = { c, code: 'ok', owner: 'n/a', state: 'n/a', bc: 'n/a', wiring: 'ok' };
   rows.push(row);
   if (!code || code === '0x') { row.code = 'NONE'; fail(who, 'code exists', 'yes', 'no code'); continue; }
   const bc = bytecode(c, code); row.bc = bc.m; row.bcDetail = bc.d;
@@ -177,7 +177,7 @@ for (let i = 0; i < C.length; i++) {
       if (want !== c.state) fail(who, 'state', c.state, want);
     } else if (p.kind === 'owner') {
       const v = val(p.key); drift.owner.set(c, v ?? null);
-      row.owner = !v ? (p.exp ? 'DRIFT' : '-') : p.exp && eq(v, p.exp) ? 'ok' : 'DRIFT';
+      row.owner = !v ? (p.exp ? 'DRIFT' : 'n/a') : p.exp && eq(v, p.exp) ? 'ok' : 'DRIFT';
       if (row.owner === 'DRIFT') fail(who, 'owner()', p.exp ?? 'none (no getter)', v ?? 'reverted');
     } else if (p.kind.startsWith('link:')) {
       const v = val(p.key); if (v === undefined) continue; // getter absent on this contract: not wiring
@@ -252,7 +252,7 @@ console.log('\n' + [pad('coin', 8), pad('address', 11), pad('stack', 8), pad('na
 for (const r of coinRows) console.log([pad(r.k.symbol, 8), pad(r.k.address.slice(0, 10), 11), pad(r.k.stack, 8), pad(r.ok, 17), `${rows.stackCoins[r.k.stack]} coin(s) in ${r.k.stack} factory logs`].join(' '));
 console.log('stack coin counts: ' + Object.entries(rows.stackCoins).map(([s, n]) => `${s}=${n}`).join(' '));
 for (const w of warn) console.log('WARN ' + w);
-const hard = flag('--fill') ? fails.filter((f) => !['bytecodeMatch', 'state', 'owner()', 'deployBlock', 'launchBlock'].includes(f.what)) : fails;
+const hard = flag('--fill') ? fails.filter((f) => !['bytecodeMatch', 'state', 'owner()', 'deployBlock', 'launchBlock', 'launch tx/block'].includes(f.what)) : fails;
 if (hard.length) {
   console.log('\nDRIFT');
   console.log([pad('who', 36), pad('check', 28), pad('registry', 44), 'chain'].join(' '));

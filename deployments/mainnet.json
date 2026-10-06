@@ -1,7 +1,7 @@
 {
   "chainId": 1,
-  "generatedAt": "2026-10-06T02:46:01.466Z",
-  "repoCommit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+  "generatedAt": "2026-10-06T02:54:43.781Z",
+  "repoCommit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
   "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
   "stacks": {
     "legacy": {
@@ -38,7 +38,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/utils/ArtCoinsDeployer.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "mismatch"
       },
       "etherscanVerified": "unknown",
@@ -60,7 +60,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/legacy/ArtCoinsFeeLocker.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "verified"
       },
       "etherscanVerified": "unknown",
@@ -82,7 +82,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/legacy/ArtCoinsFactory.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "mismatch"
       },
       "etherscanVerified": "unknown",
@@ -104,7 +104,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/hooks/ArtCoinsPoolExtensionAllowlist.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "verified"
       },
       "etherscanVerified": "unknown",
@@ -126,7 +126,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/hooks/legacy/ArtCoinsHookStaticFeeV2.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "mismatch"
       },
       "etherscanVerified": "unknown",
@@ -148,7 +148,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/lp-lockers/legacy/ArtCoinsLpLockerMultiple.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "verified"
       },
       "etherscanVerified": "unknown",
@@ -170,7 +170,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/mev-modules/ArtCoinsMevTimeDelay.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "mismatch"
       },
       "etherscanVerified": "unknown",
@@ -192,7 +192,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/mev-modules/ArtCoinsMevDescendingFees.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "mismatch"
       },
       "etherscanVerified": "unknown",
@@ -214,7 +214,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/mev-modules/ArtCoinsMevLinearFees.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "mismatch"
       },
       "etherscanVerified": "unknown",
@@ -236,7 +236,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/mev-modules/ArtCoinsMevSniperSteppedFees.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "mismatch"
       },
       "etherscanVerified": "unknown",
@@ -258,7 +258,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/extensions/ArtCoinsVault.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "verified"
       },
       "etherscanVerified": "unknown",
@@ -280,7 +280,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/extensions/ArtCoinsAirdrop.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "verified"
       },
       "etherscanVerified": "unknown",
@@ -302,7 +302,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/extensions/BurnExtension.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "verified"
       },
       "etherscanVerified": "unknown",
@@ -324,7 +324,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/extensions/legacy/ArtCoinsUniv4EthDevBuy.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "mismatch"
       },
       "etherscanVerified": "unknown",
@@ -346,7 +346,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/renderer/DefaultMetadataRenderer.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "mismatch"
       },
       "etherscanVerified": "unknown",
@@ -368,7 +368,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/extensions/LiquidityLayerCounterPoolExtension.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "verified"
       },
       "etherscanVerified": "unknown",
@@ -522,7 +522,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/extensions/LiquidityLayerOnchainRenderer.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "mismatch"
       },
       "etherscanVerified": "unknown",
@@ -566,7 +566,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/protocol-fee/legacy/BurnRouter.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "verified"
       },
       "etherscanVerified": "unknown",
@@ -588,7 +588,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/protocol-fee/legacy/ProtocolFeeController.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "verified"
       },
       "etherscanVerified": "unknown",
@@ -610,7 +610,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/ArtCoinsToken.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "mismatch"
       },
       "etherscanVerified": "unknown",
@@ -632,7 +632,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/extensions/LiquidityLayerAutoForwardExtension.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "verified"
       },
       "etherscanVerified": "unknown",
@@ -654,7 +654,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/extensions/LiquidityLayerOnchainRenderer.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "mismatch"
       },
       "etherscanVerified": "unknown",
@@ -742,7 +742,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/ArtCoinsFactory.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "mismatch"
       },
       "etherscanVerified": "unknown",
@@ -764,7 +764,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/hooks/ArtCoinsPoolExtensionAllowlist.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "verified"
       },
       "etherscanVerified": "unknown",
@@ -786,7 +786,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/ArtCoinsFeeEscrow.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "verified"
       },
       "etherscanVerified": "unknown",
@@ -808,7 +808,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/lp-lockers/ArtCoinsLpLocker.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "mismatch"
       },
       "etherscanVerified": "unknown",
@@ -830,7 +830,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/protocol-fee/BurnRouter.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "mismatch"
       },
       "etherscanVerified": "unknown",
@@ -852,7 +852,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/hooks/ArtCoinsHookStaticFee.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "mismatch"
       },
       "etherscanVerified": "unknown",
@@ -874,7 +874,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/protocol-fee/BurnRouter.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "mismatch"
       },
       "etherscanVerified": "unknown",
@@ -918,7 +918,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/utils/ArtCoinsDeployer.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "verified"
       },
       "etherscanVerified": "unknown",
@@ -940,7 +940,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/hooks/libraries/SkimFeeInitLib.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "verified"
       },
       "etherscanVerified": "unknown",
@@ -962,7 +962,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/ArtCoinsFactory.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "verified"
       },
       "etherscanVerified": "unknown",
@@ -984,7 +984,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/ArtCoinsFeeEscrow.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "verified"
       },
       "etherscanVerified": "unknown",
@@ -1006,7 +1006,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/hooks/ArtCoinsHookSkimFee.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "verified"
       },
       "etherscanVerified": "unknown",
@@ -1028,7 +1028,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/mev-modules/ArtCoinsMevLinearSkim.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "verified"
       },
       "etherscanVerified": "unknown",
@@ -1050,7 +1050,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/protocol-fee/ProtocolFeeController.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "verified"
       },
       "etherscanVerified": "unknown",
@@ -1072,7 +1072,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/lp-lockers/ArtCoinsLpLocker.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "verified"
       },
       "etherscanVerified": "unknown",
@@ -1204,7 +1204,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/FeeAutoSwapper.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "mismatch"
       },
       "etherscanVerified": "unknown",
@@ -1226,7 +1226,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/ArtCoinsToken.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "verified"
       },
       "etherscanVerified": "unknown",
@@ -1248,7 +1248,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/protocol-fee/BurnRouter.sol",
-        "commit": "d469762341b1c03f6b9263c10d5e61fd9751c504",
+        "commit": "f99442250a7ac9e6f1c2d4b422d992dc8e32270b",
         "bytecodeMatch": "verified"
       },
       "etherscanVerified": "unknown",
