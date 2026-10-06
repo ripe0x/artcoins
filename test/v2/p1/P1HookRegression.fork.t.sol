@@ -237,41 +237,46 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
         assertEq(address(s).balance, 0);
     }
 
-    /// @notice 3% taken beyond the known fees (modelled by the hook reporting
-    ///         a 6% baseline while charging 9%, e.g. a skim above baseline).
-    ///         A floor that leaves less than 3% tolerance reverts; the default
-    ///         95% leaves 5% minus impact and lets it through.
-    function test_swapperV2_feeAwareFloor_3pctBeyondKnownFees() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(Constants.TAX_MODE_NONE, 9000);
+    function _swapperBelieving(PoolKey memory key, ArtCoinsTokenV2 token, uint24 believedSkim)
+        internal
+        returns (FeeAutoSwapperV2 s)
+    {
         IArtCoinsHookV2.SkimConfig memory cfg = hook.skimConfig(key.toId());
-        assertEq(cfg.baselineSkimBps, 9000);
-        cfg.baselineSkimBps = 6000; // the swapper believes 6%
+        cfg.baselineSkimBps = believedSkim;
         vm.mockCall(
             address(hook),
             abi.encodeWithSelector(IArtCoinsHookV2.skimConfig.selector, key.toId()),
             abi.encode(cfg)
         );
-        P1HookSink end = new P1HookSink();
-        FeeAutoSwapperV2 s = _swapper(key, address(token), address(end), 1e18);
+        s = _swapper(key, address(token), address(new P1HookSink()), 1e18);
         vm.clearMockedCalls();
-        assertEq(s.poolBaselineSkimBps(), 6000);
-        token.transfer(address(s), 2e18);
+        assertEq(s.poolBaselineSkimBps(), believedSkim);
+        token.transfer(address(s), 1e18);
+    }
+
+    /// @notice Charges beyond the pool's known fees (modelled by a swapper
+    ///         that believes a lower baseline than the hook's real 9%, e.g. a
+    ///         skim above baseline). The floor is at most 95%
+    ///         (`SPOT_FLOOR_MAX_BPS`) of the fee net spot, so it tolerates
+    ///         about 5% minus impact: 3% beyond the known fees converts, 6%
+    ///         reverts. A same tx sandwich moves the spot the floor reads, so
+    ///         no spot floor catches it; the D39 impact cap bounds it instead
+    ///         (`test_swapperV2_sandwich_boundedByImpactCap`).
+    function test_swapperV2_feeAwareFloor_chargesBeyondKnownFees() public onlyFork {
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(Constants.TAX_MODE_NONE, 9000);
+        assertEq(hook.skimConfig(key.toId()).baselineSkimBps, 9000);
+        FeeAutoSwapperV2 three = _swapperBelieving(key, token, 6000);
+        FeeAutoSwapperV2 six = _swapperBelieving(key, token, 3000);
         vm.roll(block.number + 1);
 
-        s.setSpotFloorBps(9700);
+        assertGt(three.convert(0), 0, "3% beyond known fees: within the 95% tolerance");
         vm.expectPartialRevert(IFeeAutoSwapperV2.MinOutBelowFloor.selector);
-        s.convert(0);
-
-        s.setSpotFloorBps(9500);
-        uint256 out = s.convert(0);
-        assertGt(out, 0, "default tolerance absorbs 3%");
+        six.convert(0);
 
         // anyone resyncs to the hook's real 9%; the floor follows
-        vm.roll(block.number + 100);
-        s.syncPoolFees();
-        assertEq(s.poolBaselineSkimBps(), 9000);
-        s.setSpotFloorBps(9700);
-        s.convert(0);
+        six.syncPoolFees();
+        assertEq(six.poolBaselineSkimBps(), 9000);
+        assertGt(six.convert(0), 0, "converts once the known fees are right");
     }
 
     /// @notice Router side: fees stored at initialize, floor view nets them out.

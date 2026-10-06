@@ -1,0 +1,238 @@
+{
+  "chainId": 1,
+  "generatedAt": "2026-10-06T00:00:00.000Z",
+  "repoCommit": "eb52e19d6866374ee8ad3ff9163a03d8757ad2f8",
+  "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+  "stacks": {
+    "v2": {
+      "label": "v2 stack (skim hook v2, constants bound)",
+      "status": "planned",
+      "factory": null,
+      "deployedAt": null,
+      "notes": "skeleton. fill from the json script/v2/DeployV2Stack.s.sol prints (tmp/v2-deploy-1.json): addresses, deployer, deployBlock and deployTxHash (verify-registry --fill --update-blocks), status current, provenance broadcast. see script/v2/README.md"
+    }
+  },
+  "contracts": [
+    {
+      "name": "ArtCoinsFeeEscrowV2",
+      "address": null,
+      "stack": "v2",
+      "role": "escrow",
+      "deployBlock": null,
+      "deployTxHash": null,
+      "deployedAt": null,
+      "deployer": null,
+      "source": {
+        "repoPath": "src/v2/ArtCoinsFeeEscrowV2.sol",
+        "commit": null,
+        "bytecodeMatch": "unverified"
+      },
+      "etherscanVerified": "unknown",
+      "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "state": "unknown",
+      "status": "planned",
+      "provenance": "planned",
+      "chainVerified": false,
+      "notes": "core depositors: hook, locker. non core: controller and every per coin fee swapper (D33, D36)"
+    },
+    {
+      "name": "ArtCoinsPoolExtensionAllowlist",
+      "address": null,
+      "stack": "v2",
+      "role": "allowlist",
+      "deployBlock": null,
+      "deployTxHash": null,
+      "deployedAt": null,
+      "deployer": null,
+      "source": {
+        "repoPath": "src/hooks/ArtCoinsPoolExtensionAllowlist.sol",
+        "commit": null,
+        "bytecodeMatch": "unverified"
+      },
+      "etherscanVerified": "unknown",
+      "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "state": "unknown",
+      "status": "planned",
+      "provenance": "planned",
+      "chainVerified": false,
+      "notes": "new instance bound to the v2 hook (do not reuse 0xd6D5, it serves the v1 hook)"
+    },
+    {
+      "name": "ArtCoinsHookV2",
+      "address": null,
+      "stack": "v2",
+      "role": "hook",
+      "deployBlock": null,
+      "deployTxHash": null,
+      "deployedAt": null,
+      "deployer": null,
+      "source": {
+        "repoPath": "src/v2/hooks/ArtCoinsHookV2.sol",
+        "commit": null,
+        "bytecodeMatch": "unverified"
+      },
+      "etherscanVerified": "unknown",
+      "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "state": "enabled",
+      "status": "planned",
+      "provenance": "planned",
+      "chainVerified": false,
+      "notes": "CREATE2 via 0x4e59b44847b379578588920cA78FbF26c0B4956C, low 14 bits 0x2DCC, salt in the deploy json"
+    },
+    {
+      "name": "ArtCoinsLpLockerV2",
+      "address": null,
+      "stack": "v2",
+      "role": "locker",
+      "deployBlock": null,
+      "deployTxHash": null,
+      "deployedAt": null,
+      "deployer": null,
+      "source": {
+        "repoPath": "src/v2/lp-lockers/ArtCoinsLpLockerV2.sol",
+        "commit": null,
+        "bytecodeMatch": "unverified"
+      },
+      "etherscanVerified": "unknown",
+      "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "state": "unknown",
+      "status": "planned",
+      "provenance": "planned",
+      "chainVerified": false,
+      "notes": "keeper reward 0 bps (D28)"
+    },
+    {
+      "name": "ArtCoinsMevLinearSkimV2",
+      "address": null,
+      "stack": "v2",
+      "role": "mevModule",
+      "deployBlock": null,
+      "deployTxHash": null,
+      "deployedAt": null,
+      "deployer": null,
+      "source": {
+        "repoPath": "src/v2/mev-modules/ArtCoinsMevLinearSkimV2.sol",
+        "commit": null,
+        "bytecodeMatch": "unverified"
+      },
+      "etherscanVerified": "unknown",
+      "owner": null,
+      "state": "enabled",
+      "status": "planned",
+      "provenance": "planned",
+      "chainVerified": false,
+      "notes": "bound to the v2 hook, ownerless"
+    },
+    {
+      "name": "ArtCoinsFactoryV2",
+      "address": null,
+      "stack": "v2",
+      "role": "factory",
+      "deployBlock": null,
+      "deployTxHash": null,
+      "deployedAt": null,
+      "deployer": null,
+      "source": {
+        "repoPath": "src/v2/ArtCoinsFactoryV2.sol",
+        "commit": null,
+        "bytecodeMatch": "unverified"
+      },
+      "etherscanVerified": "unknown",
+      "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "state": "deprecated",
+      "status": "planned",
+      "provenance": "planned",
+      "chainVerified": false,
+      "notes": "ships deprecated (owner only), deploy fee 0.069 eth, default protocol bps 2000"
+    },
+    {
+      "name": "ArtCoinsDeployerV2",
+      "address": null,
+      "stack": "v2",
+      "role": "other",
+      "deployBlock": null,
+      "deployTxHash": null,
+      "deployedAt": null,
+      "deployer": null,
+      "source": {
+        "repoPath": "src/v2/utils/ArtCoinsDeployerV2.sol",
+        "commit": null,
+        "bytecodeMatch": "unverified"
+      },
+      "etherscanVerified": "unknown",
+      "owner": null,
+      "state": "unknown",
+      "status": "planned",
+      "provenance": "planned",
+      "chainVerified": false,
+      "notes": "token deployer bound to the factory (D38), ownerless"
+    },
+    {
+      "name": "BurnRouterV2",
+      "address": null,
+      "stack": "v2",
+      "role": "router",
+      "deployBlock": null,
+      "deployTxHash": null,
+      "deployedAt": null,
+      "deployer": null,
+      "source": {
+        "repoPath": "src/v2/protocol-fee/BurnRouterV2.sol",
+        "commit": null,
+        "bytecodeMatch": "unverified"
+      },
+      "etherscanVerified": "unknown",
+      "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "state": "unknown",
+      "status": "planned",
+      "provenance": "planned",
+      "chainVerified": false,
+      "notes": "initialize(coin, key) after the first launch"
+    },
+    {
+      "name": "ProtocolFeeControllerV2",
+      "address": null,
+      "stack": "v2",
+      "role": "controller",
+      "deployBlock": null,
+      "deployTxHash": null,
+      "deployedAt": null,
+      "deployer": null,
+      "source": {
+        "repoPath": "src/v2/protocol-fee/ProtocolFeeControllerV2.sol",
+        "commit": null,
+        "bytecodeMatch": "unverified"
+      },
+      "etherscanVerified": "unknown",
+      "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "state": "unknown",
+      "status": "planned",
+      "provenance": "planned",
+      "chainVerified": false,
+      "notes": "factory protocolRecipient, treasury OWNER, 9000/1000 treasury/burn"
+    },
+    {
+      "name": "ArtCoinsKeeperV2",
+      "address": null,
+      "stack": "v2",
+      "role": "other",
+      "deployBlock": null,
+      "deployTxHash": null,
+      "deployedAt": null,
+      "deployer": null,
+      "source": {
+        "repoPath": "src/v2/keepers/ArtCoinsKeeperV2.sol",
+        "commit": null,
+        "bytecodeMatch": "unverified"
+      },
+      "etherscanVerified": "unknown",
+      "owner": null,
+      "state": "unknown",
+      "status": "planned",
+      "provenance": "planned",
+      "chainVerified": false,
+      "notes": "stateless keeper bound to the factory, ownerless"
+    }
+  ],
+  "coins": []
+}

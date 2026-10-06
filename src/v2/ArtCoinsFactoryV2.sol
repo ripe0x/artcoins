@@ -562,6 +562,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
             referralPayout: referralPayout,
             quoteToken: address(0)
         });
+        // TODO(D52): pass `minProtocolSkimShareBps` once the hook adds the
+        // field to `PoolInitParams` (hook package). until then the launch time
+        // check in `_validateFee` is the only enforcement of the floor.
         return IArtCoinsHookV2(c.pool.hook).initializePool(p);
     }
 
@@ -791,8 +794,6 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         defaultProtocolFeeBps = bps;
     }
 
-    /// @inheritdoc IArtCoinsFactoryV2
-    /// @dev <= BPS. Launch bountyBps is capped at min(MAX_BOUNTY_BPS, BPS - this).
     /// @notice D53: launch lp fee floor. Affects new launches only.
     function setMinLpFee(uint24 fee) external onlyOwner {
         if (fee > Constants.MAX_LP_FEE) revert MinLpFeeTooHigh();
@@ -801,6 +802,8 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     }
 
     /// @inheritdoc IArtCoinsFactoryV2
+    /// @dev <= BPS. Launch bountyBps is capped at min(MAX_BOUNTY_BPS, BPS - this),
+    ///      and the referral cap must fit above this floor (D52).
     function setMinProtocolSkimShareBps(uint16 bps) external onlyOwner {
         if (bps > Constants.BPS) revert MinProtocolSkimShareTooHigh();
         emit MinProtocolSkimShareBpsSet(minProtocolSkimShareBps, bps);

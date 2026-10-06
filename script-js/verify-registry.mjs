@@ -2,7 +2,9 @@
 // Verifies deployments/mainnet.json against the chain and the local foundry artifacts.
 //   node script-js/verify-registry.mjs [--shape] [--fill] [--update-blocks] [--require-artifacts]
 //        [--file deployments/mainnet.json] [--artifacts foundry-out,out/ci]
-// --shape: schema check only, no rpc. --fill: write discovered values back (owner, state, bytecodeMatch,
+// --shape: schema check only, no rpc. A stack with status "planned" (not deployed yet, e.g. the v2 skeleton
+// in deployments/v2.template.json) may hold null addresses and dates; it passes the schema and is skipped by
+// every chain and bytecode check. --fill: write discovered values back (owner, state, bytecodeMatch,
 // coin fields, commit). --update-blocks: re-derive deployBlock/deployedAt by bisecting eth_getCode (archive rpc).
 // Exit 1 on drift, 2 on rpc/runtime errors. Missing artifacts are reported as UNCHECKED (never a silent pass); with
 // --require-artifacts they fail. Env: MAINNET_RPC_URL (default: tenderly public gateway).
@@ -37,23 +39,25 @@ function shape(r) {
   const keys = (o, ks, w) => { need(o && typeof o === 'object' && Object.keys(o).sort().join() === [...ks].sort().join(), `${w}: keys must be exactly ${ks.join(',')}`); };
   keys(r, ['chainId', 'generatedAt', 'repoCommit', 'owner', 'stacks', 'contracts', 'coins'], 'root');
   need(r.chainId === 1, 'chainId must be 1'); need(addr(r.owner), 'owner address'); need(/^[0-9a-f]{40}$/.test(r.repoCommit), 'repoCommit sha');
+  const planned = (id) => r.stacks?.[id]?.status === 'planned';
   for (const [id, s] of Object.entries(r.stacks || {})) {
     keys(s, ['label', 'status', 'factory', 'deployedAt', 'notes'], `stack ${id}`);
-    need(['current', 'superseded', 'legacy'].includes(s.status) && addr(s.factory) && date(s.deployedAt), `stack ${id} values`);
+    need(['current', 'superseded', 'legacy', 'planned'].includes(s.status) && addr(s.factory, planned(id)) && date(s.deployedAt), `stack ${id} values`);
   }
   const seen = new Set();
   for (const c of r.contracts || []) {
     const w = `contract ${c.name}@${String(c.address).slice(0, 8)}`;
     keys(c, ['name', 'address', 'stack', 'role', 'deployBlock', 'deployTxHash', 'deployedAt', 'deployer', 'source', 'etherscanVerified', 'owner', 'state', 'status', 'provenance', 'chainVerified', 'notes'], w);
     keys(c.source, ['repoPath', 'commit', 'bytecodeMatch'], w + ' source');
-    need(addr(c.address) && !seen.has(String(c.address).toLowerCase()), w + ' address unique'); seen.add(String(c.address).toLowerCase());
+    const pl = planned(c.stack); need(pl ? c.status === 'planned' : c.status !== 'planned', w + ' planned only in a planned stack');
+    need(addr(c.address, pl) && (c.address === null || !seen.has(String(c.address).toLowerCase())), w + ' address unique'); if (c.address !== null) seen.add(String(c.address).toLowerCase());
     need(r.stacks?.[c.stack] && ROLES.includes(c.role), w + ' stack/role');
     need(int(c.deployBlock) && hash(c.deployTxHash) && date(c.deployedAt) && addr(c.deployer, true) && addr(c.owner, true), w + ' deploy fields');
     need(['yes', 'no', 'unknown'].includes(c.etherscanVerified) && ['enabled', 'deprecated', 'unknown'].includes(c.state), w + ' enums');
-    need(['current', 'superseded', 'legacy'].includes(c.status) && ['chain', 'broadcast', 'brief'].includes(c.provenance) && typeof c.chainVerified === 'boolean', w + ' enums2');
+    need(['current', 'superseded', 'legacy', 'planned'].includes(c.status) && ['chain', 'broadcast', 'brief', 'planned'].includes(c.provenance) && typeof c.chainVerified === 'boolean', w + ' enums2');
     need(['verified', 'unverified', 'mismatch'].includes(c.source?.bytecodeMatch) && (c.source?.repoPath === null || /^src\//.test(c.source.repoPath)), w + ' source');
   }
-  for (const [id, s] of Object.entries(r.stacks || {})) need((r.contracts || []).some((c) => c.role === 'factory' && c.stack === id && eq(c.address, s.factory)), `stack ${id} factory is a contract entry`);
+  for (const [id, s] of Object.entries(r.stacks || {})) need(planned(id) || (r.contracts || []).some((c) => c.role === 'factory' && c.stack === id && eq(c.address, s.factory)), `stack ${id} factory is a contract entry`);
   const seenCoin = new Set();
   for (const k of r.coins || []) {
     const w = `coin ${k.symbol}`;
@@ -116,14 +120,15 @@ const A = (s) => parseAbi(['function ' + s]);
 const ABI = {
   owner: A('owner() view returns (address)'), deprecated: A('deprecated() view returns (bool)'), name: A('name() view returns (string)'), symbol: A('symbol() view returns (string)'),
   enabledHooks: A('enabledHooks(address) view returns (bool)'), enabledMevModules: A('enabledMevModules(address) view returns (bool)'), enabledExtensions: A('enabledExtensions(address) view returns (bool)'),
-  enabledLockers: A('enabledLockers(address,address) view returns (bool)'), allowedDepositors: A('allowedDepositors(address) view returns (bool)'),
+  enabledLockers: A('enabledLockers(address,address) view returns (bool)'), allowedDepositors: A('allowedDepositors(address) view returns (bool)'), isDepositor: A('isDepositor(address) view returns (bool)'),
   tokenRewards: A('tokenRewards(address) view returns ((address token,(address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks) poolKey,uint256 positionId,uint256 numPositions,uint16[] rewardBps,address[] rewardAdmins,address[] rewardRecipients))'),
 };
 for (const g of ['factory', 'feeLocker', 'feeEscrow', 'hook', 'burnRouter', 'poolExtensionAllowlist']) ABI[g] = A(`${g}() view returns (address)`);
 const getters = { hook: ['factory', 'feeEscrow', 'poolExtensionAllowlist'], locker: ['factory', 'feeLocker'], extension: ['factory', 'hook', 'feeLocker', 'burnRouter'], swapper: ['hook', 'feeLocker'], controller: ['burnRouter'] };
 const calls = []; const keyOf = new Map();
 function rd(fn, address, args = []) { const k = `${fn}|${address}|${args.join()}`; if (!keyOf.has(k)) { keyOf.set(k, calls.length); calls.push({ address, abi: ABI[fn], functionName: fn, args }); } return k; }
-const C = reg.contracts; const inStack = (s, role) => C.filter((c) => c.stack === s && c.role === role);
+const isPlanned = (id) => reg.stacks[id]?.status === 'planned';
+const C = reg.contracts.filter((c) => !isPlanned(c.stack)); const inStack = (s, role) => C.filter((c) => c.stack === s && c.role === role);
 const stackFactory = (s) => reg.stacks[s].factory;
 const plan = [];  // { c, kind, key, exp?, set? }
 for (const c of C) {
@@ -138,7 +143,8 @@ for (const c of C) {
   const set = (g) => ({ factory: [sf], feeLocker: inStack(c.stack, 'escrow').map((x) => x.address), feeEscrow: inStack(c.stack, 'escrow').map((x) => x.address), hook: inStack(c.stack, 'hook').map((x) => x.address),
     burnRouter: inStack(c.stack, 'router').map((x) => x.address), poolExtensionAllowlist: C.filter((x) => x.role === 'allowlist').map((x) => x.address) }[g]);
   for (const g of getters[c.role] || []) plan.push({ c, kind: 'link:' + g, key: rd(g, a), set: set(g), optional: true });
-  if (c.role === 'escrow') for (const x of [...inStack(c.stack, 'locker'), ...inStack(c.stack, 'hook')]) plan.push({ c, kind: 'depositor:' + x.name, key: rd('allowedDepositors', a, [x.address]), exp: true, hookOnlyIfLinked: x.role === 'hook' ? x.address : null });
+  // v1 escrows answer allowedDepositors, v2 escrows isDepositor: either one true passes
+  if (c.role === 'escrow') for (const x of [...inStack(c.stack, 'locker'), ...inStack(c.stack, 'hook')]) plan.push({ c, kind: 'depositor:' + x.name, key: rd('allowedDepositors', a, [x.address]), key2: rd('isDepositor', a, [x.address]), exp: true, hookOnlyIfLinked: x.role === 'hook' ? x.address : null });
 }
 for (const k of reg.coins) {
   plan.push({ c: k, kind: 'coin:name', key: rd('name', k.address), exp: k.name }, { c: k, kind: 'coin:symbol', key: rd('symbol', k.address), exp: k.symbol });
@@ -183,7 +189,7 @@ for (let i = 0; i < C.length; i++) {
       const v = val(p.key); if (v === undefined) continue; // getter absent on this contract: not wiring
       if (!p.set.some((s) => eq(s, v))) { row.wiring = 'DRIFT'; fail(who, p.kind.slice(5) + '()', p.set.join('|') || 'none registered', v); }
     } else if (p.kind.startsWith('depositor:')) {
-      const v = val(p.key);
+      const v = val(p.key) === true || val(p.key2) === true ? true : val(p.key);
       if (p.hookOnlyIfLinked && !plan.some((q) => q.c === C.find((x) => eq(x.address, p.hookOnlyIfLinked)) && q.kind === 'link:feeEscrow' && val(q.key) && eq(val(q.key), c.address))) continue;
       if (v !== true) { row.wiring = 'DRIFT'; fail(who, `allowedDepositors(${p.kind.slice(10)})`, true, v); }
     }
@@ -203,7 +209,7 @@ for (const k of reg.coins) {
   row.pool = got;
 }
 const fromBlock = (s) => BigInt(C.find((c) => c.role === 'factory' && c.stack === s).deployBlock);
-for (const s of Object.keys(reg.stacks)) {
+for (const s of Object.keys(reg.stacks).filter((id) => !isPlanned(id))) {
   const logs = await client.getLogs({ address: stackFactory(s), event: ev, fromBlock: fromBlock(s), toBlock: head });
   const onchain = logs.map((l) => l.args.tokenAddress.toLowerCase()).sort(); const listed = reg.coins.filter((k) => k.stack === s).map((k) => k.address.toLowerCase()).sort();
   if (onchain.join() !== listed.join()) fail(`stack ${s}`, 'coins launched by factory', listed.join(',') || 'none', onchain.join(',') || 'none');

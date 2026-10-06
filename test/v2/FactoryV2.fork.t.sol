@@ -731,6 +731,8 @@ contract FactoryV2ForkTest is ForkBase {
             )
         );
         c.fee.bountyBps = 8000;
+        // at the max bounty nothing is left above the protocol floor (D52)
+        c.fee.maxReferralBpsOfVolume = 0;
         address t = _deploy(alice, c);
         assertEq(hook.skimConfig(factory.deploymentInfo(t).poolId).bountyBps, 8000);
 
@@ -1029,6 +1031,73 @@ contract FactoryV2ForkTest is ForkBase {
         );
         assertEq(IERC20(t).balanceOf(address(this)), before + bought - bought / 2, "sold");
         assertGt(address(this).balance, ethBefore, "eth back");
+    }
+
+    /// D52 / V2F-01: maxReferral * BPS <= baseline * (BPS - bounty - minShare).
+    function test_referralCap_protocolFloor_boundary() public onlyFork {
+        factory.setMinProtocolSkimShareBps(1000);
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
+        // baseline 6000, bounty 8000, floor 1000: room = 6000 * 1000 / 10000 = 600
+        c.fee.baselineSkimBps = 6000;
+        c.fee.bountyBps = 8000;
+        c.fee.maxReferralBpsOfVolume = 601;
+        _expectRevertDeploy(
+            c, abi.encodeWithSelector(ArtCoinsFactoryV2.ReferralCapAboveProtocolFloor.selector)
+        );
+        c.fee.maxReferralBpsOfVolume = 600; // boundary passes
+        address t = _deploy(alice, c);
+        assertEq(hook.skimConfig(factory.deploymentInfo(t).poolId).maxReferralBpsOfVolume, 600);
+
+        // the reviewer's V2F-01 shape: baseline 1%, max bounty, max referral
+        c = _cfg();
+        c.fee.baselineSkimBps = 1000;
+        c.fee.bountyBps = 9000;
+        c.fee.maxReferralBpsOfVolume = Constants.MAX_REFERRAL_CAP_OF_VOLUME;
+        _expectRevertDeploy(
+            c, abi.encodeWithSelector(ArtCoinsFactoryV2.ReferralCapAboveProtocolFloor.selector)
+        );
+
+        // with no floor the whole protocol leg is the room
+        factory.setMinProtocolSkimShareBps(0);
+        c = _cfg();
+        c.fee.baselineSkimBps = 1000;
+        c.fee.bountyBps = 0;
+        c.fee.maxReferralBpsOfVolume = 1000; // = baseline
+        c.token.salt = bytes32(uint256(41));
+        _deploy(alice, c);
+        c.fee.baselineSkimBps = 999;
+        _expectRevertDeploy(
+            c, abi.encodeWithSelector(ArtCoinsFactoryV2.ReferralCapAboveProtocolFloor.selector)
+        );
+    }
+
+    /// D53 / V2F-02: owner set lp fee floor.
+    function test_minLpFee_boundaryAndSetter() public onlyFork {
+        assertEq(factory.minLpFee(), 3000, "default 0.3%");
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
+        c.fee.lpFee = 2999;
+        _expectRevertDeploy(c, abi.encodeWithSelector(ArtCoinsFactoryV2.LpFeeBelowMinimum.selector));
+        c.fee.lpFee = 0;
+        _expectRevertDeploy(c, abi.encodeWithSelector(ArtCoinsFactoryV2.LpFeeBelowMinimum.selector));
+        c.fee.lpFee = 3000; // boundary passes
+        address t = _deploy(alice, c);
+        assertEq(hook.skimConfig(factory.deploymentInfo(t).poolId).lpFee, 3000);
+
+        // setter: bounds, owner only, event
+        vm.expectRevert(ArtCoinsFactoryV2.MinLpFeeTooHigh.selector);
+        factory.setMinLpFee(Constants.MAX_LP_FEE + 1);
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
+        factory.setMinLpFee(0);
+        vm.expectEmit(false, false, false, true, address(factory));
+        emit ArtCoinsFactoryV2.MinLpFeeSet(3000, Constants.MAX_LP_FEE);
+        factory.setMinLpFee(Constants.MAX_LP_FEE);
+        c = _cfg();
+        c.fee.lpFee = Constants.MAX_LP_FEE - 1;
+        _expectRevertDeploy(c, abi.encodeWithSelector(ArtCoinsFactoryV2.LpFeeBelowMinimum.selector));
+        factory.setMinLpFee(0);
+        c.fee.lpFee = 0;
+        _deploy(alice, c);
     }
 
     /// D30: string caps are checked before any deploy work, same error as the token.
