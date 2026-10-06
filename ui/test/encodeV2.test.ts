@@ -62,7 +62,7 @@ test('default form builds a config that encodes and decodes through the factory 
   assert.equal(data.slice(0, 10), '0x73dd3f0f');
   const back = decodeFunctionData({ abi: factoryV2Abi, data });
   assert.equal(back.functionName, 'deployToken');
-  const cfg = (back.args as unknown[])[0] as typeof built.config;
+  const cfg = (back.args as readonly unknown[])[0] as typeof built.config;
   assert.equal(cfg.token.tokenAdmin, '0x1111111111111111111111111111111111111111');
   assert.equal(cfg.token.renderer, '0x0000000000000000000000000000000000000000');
   assert.equal(cfg.pool.tickIfToken0IsArtCoin, -230400);

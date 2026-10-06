@@ -1,73 +1,49 @@
-# React + TypeScript + Vite
+# artcoins launcher ui
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Static single page app (vite, react, wagmi, rainbowkit). Mainnet only. It reads the deployment registry,
+lists tokens, trades them against their native eth pools, and launches new coins through the v2 factory.
 
-Currently, two official plugins are available:
+## commands
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+| command | what |
+|---|---|
+| `npm ci` | install (lockfile pinned) |
+| `npm run build` | `tsc -b` then `vite build` |
+| `npm run lint` | eslint |
+| `npm test` | unit tests (`node --test` through tsx): encoder units and struct layout, swap commands, curve math, url and referrer validation |
+| `npm run smoke` | server renders every page with no wallet, catches render time errors |
+| `npm run gen:abi` / `npm run check:abi` | regenerate or verify `src/lib/abi/{v1,v2}/*.ts` from the forge artifacts (`forge build` at the repo root first) |
+| `npx tsx scripts/fork-swap-sim.ts` | buy then sell coin 111 through the universal router on a mainnet fork (see the file header) |
+| `npx tsx scripts/check-discovery.ts` | live token discovery against the mainnet rpc |
 
-## React Compiler
+## where things come from
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+| item | source |
+|---|---|
+| current stack addresses, deploy blocks | `src/lib/deployments.generated.ts`, generated from `deployments/mainnet.json` (`cd script-js && npm run gen:addresses`). Never edit it |
+| v2 stack | a `V2` export of that file once the generator emits one, else `VITE_V2_*` env (see `.env.example`). With neither, the deploy page is closed and only the current stack is listed |
+| contract abis | `src/lib/abi/v1` (current stack contracts) and `src/lib/abi/v2` (the frozen v2 interfaces), generated. `src/lib/abi.ts` keeps only hand written abis for contracts this repo does not compile (uniswap, permit2, erc20, ReferralPayout, v1 airdrop) |
+| fee numbers on the deploy page | read from the factory (`deprecated`, `deployFee`, `defaultProtocolFeeBps`, `minProtocolSkimShareBps`), never hardcoded |
+| constants | `src/lib/constants.ts` mirrors `src/Constants.sol`, pinned by tests |
 
-## Expanding the ESLint configuration
+## secrets and privacy
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+Everything prefixed `VITE_` is compiled into the public bundle.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+| variable | policy |
+|---|---|
+| `VITE_WALLETCONNECT_PROJECT_ID` | public by design, restrict the allowed domains in the WalletConnect dashboard |
+| `VITE_MAINNET_RPC_URL` | optional read rpc with no key in the url, preferred |
+| `VITE_ALCHEMY_API_KEY` | ignored unless `VITE_ALCHEMY_KEY_RESTRICTED=1`, which asserts the key is restricted to this site's domains. An unrestricted key in a public bundle can be used by anyone |
+| default | the tenderly public gateway the rest of the repo uses (rate limited) |
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+Reads go to the configured rpc, so it sees the visitor's ip and addresses. Run your own proxy if that matters.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## trust model of what the ui shows
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+| signal | meaning |
+|---|---|
+| "artcoins factory v1 / v2" badge | the token was announced by a factory in the registry. Says nothing about the creator or the token |
+| "creator flag" | the token's own `isVerified()`, set by its admin. Not a trust signal |
+| "similar name" | another listed token has the same normalised name or symbol |
+| images | only `https:`, `ipfs:`, `ar:` and `data:image/` urls are loaded, with no referrer. Names and text are stripped of control and bidi characters and clamped |

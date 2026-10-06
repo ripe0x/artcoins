@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "node --import tsx --test test/*.test.ts",
     "gen:abi": "node scripts/gen-abis.mjs",
-    "check:abi": "node scripts/gen-abis.mjs --check"
+    "check:abi": "node scripts/gen-abis.mjs --check",
+    "smoke": "node scripts/ssr-smoke.mjs"
   },
   "dependencies": {
     "@irys/web-upload": "^0.0.15",
