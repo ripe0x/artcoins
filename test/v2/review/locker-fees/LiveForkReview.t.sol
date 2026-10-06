@@ -116,9 +116,11 @@ contract LiveForkReviewTest is Test {
         uint256 coin0 = IERC20(COIN_111).balanceOf(address(thief));
         thief.attack(l.tokenRewards(COIN_111).poolKey, COIN_111, f0, f1);
         assertEq(address(thief).balance - eth0, f0, "thief has the eth fees");
-        assertGe(
-            IERC20(COIN_111).balanceOf(address(thief)) - coin0, f1 * 99 / 100, "thief has the coin fees"
-        );
+        // 111 taxes transfers to non-exempt addresses, so the thief nets f1 minus the
+        // coin's own transfer tax; the full f1 still leaves the position
+        uint256 got1 = IERC20(COIN_111).balanceOf(address(thief)) - coin0;
+        console2.log("thief coin received (after 111 transfer tax)", got1);
+        assertGe(got1, f1 * 80 / 100, "thief has the coin fees net of tax");
         assertEq(e.feesToClaim(SWAPPER_111, address(0)), c0, "swapper credited nothing");
         assertEq(e.feesToClaim(SWAPPER_111, COIN_111), c1, "swapper credited nothing");
         (uint256 r0, uint256 r1) = _pending111();
