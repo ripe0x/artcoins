@@ -22,7 +22,8 @@ import {IReferralPayoutForHook} from "../../src/v2/interfaces/IReferralPayoutFor
 ///         here; any edit to a hashed constant also changes the golden hash.
 contract ConstantsV2Test is Test {
     /// @dev Update only together with an intended change to a hashed constant.
-    bytes32 internal constant GOLDEN_HASH = bytes32(0);
+    bytes32 internal constant GOLDEN_HASH =
+        0x0043610e634c3c3433ed1d5f6eaa5a90af502ba9d9bfa503deda2b1064d35684;
 
     function _literalHash() internal pure returns (bytes32) {
         bytes32 pool = keccak256(

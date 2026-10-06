@@ -111,7 +111,7 @@ function bytecode(c, code) {
 }
 
 // ---------- chain reads ----------
-const client = createPublicClient({ chain: mainnet, transport: http(URL, { batch: { wait: 20 }, retryCount: 8, retryDelay: 1500, timeout: 60000 }) });
+const client = createPublicClient({ chain: mainnet, transport: http(URL, { batch: { wait: 20 }, retryCount: 6, retryDelay: 1500, timeout: 60000 }) });
 const A = (s) => parseAbi(['function ' + s]);
 const ABI = {
   owner: A('owner() view returns (address)'), deprecated: A('deprecated() view returns (bool)'), name: A('name() view returns (string)'), symbol: A('symbol() view returns (string)'),
@@ -212,8 +212,8 @@ for (const s of Object.keys(reg.stacks)) {
 }
 
 // commit staleness (warn only): src/ changed since the commit the registry was verified at
-const stale = git(`diff --name-only ${reg.repoCommit} HEAD -- src`);
-if (stale) warn.push(`src changed since repoCommit ${reg.repoCommit.slice(0, 8)}: ${stale.split('\n').length} file(s); bytecode checks above are against the working tree`);
+const stale = git(`diff --name-only --diff-filter=MD ${reg.repoCommit} HEAD -- src`);
+if (stale) warn.push(`src modified since repoCommit ${reg.repoCommit.slice(0, 8)}: ${stale.split('\n').length} file(s); bytecode checks above are against the working tree`);
 
 // ---------- optional: block bisect ----------
 const blockTs = async (n) => new Date(Number((await client.getBlock({ blockNumber: BigInt(n) })).timestamp) * 1000).toISOString().slice(0, 10);
@@ -236,7 +236,8 @@ if (flag('--fill')) {
   for (const [c, s] of drift.state) c.state = s;
   for (const [c, m] of drift.match) { c.source.bytecodeMatch = m.m; c.source.commit = m.m === 'unverified' ? null : git('rev-parse HEAD'); if (m.m !== 'unverified') c.notes = (c.notes || '').replace(/\s*\|\s*bytecode: .*$/, '') + ` | bytecode: ${m.d}`; }
   for (const { e, found } of blockFixes) { e.c[e.f] = found; if (e.t) e.c[e.t] = await blockTs(found); }
-  for (const r of coinRows) if (r.pool) Object.assign(r.k.pool, r.pool);
+  for (const r of coinRows) { if (r.pool) Object.assign(r.k.pool, r.pool); r.k.chainVerified = r.ok === 'ok'; }
+  for (const r of rows) r.c.chainVerified = r.code === 'ok' && r.wiring === 'ok';
   reg.repoCommit = git('rev-parse HEAD') || reg.repoCommit; reg.generatedAt = new Date().toISOString();
   fs.writeFileSync(FILE, JSON.stringify(reg, null, 2) + '\n'); console.log(`filled ${FILE}`);
 }

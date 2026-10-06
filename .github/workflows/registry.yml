@@ -1,0 +1,93 @@
+name: Registry
+
+# Keeps deployments/mainnet.json honest. Job "shape" needs no rpc. Job "chain" compares the registry
+# with live mainnet state and a fresh foundry build, and FAILS on drift (it never skips). When the
+# MAINNET_RPC_URL secret is empty (forks, pull requests from forks) it falls back to the tenderly
+# public gateway, so the job always runs.
+
+permissions: {}
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1" # weekly, mondays 06:17 utc
+
+jobs:
+  shape:
+    name: Registry schema
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install script deps
+        working-directory: script-js
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: "true"
+        # script-js/package-lock.json is git-ignored today, so `npm ci` is not possible.
+        # Un-ignore the lockfile and switch to `npm ci` for reproducible installs.
+        run: npm install --ignore-scripts --no-audit --no-fund
+
+      - name: Check registry shape (no rpc)
+        run: node script-js/verify-registry.mjs --shape
+
+  chain:
+    name: Registry vs chain and bytecode
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      MAINNET_RPC_URL: ${{ secrets.MAINNET_RPC_URL || 'https://mainnet.gateway.tenderly.co' }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.5.0
+
+      - name: Install script deps
+        working-directory: script-js
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: "true"
+        run: npm install --ignore-scripts --no-audit --no-fund
+
+      # Two artifact sets. foundry-out: default profile (the legacy stack was built this way).
+      # out/ci: profile ci (optimizer_runs 200) with metadata on, the settings the current stack
+      # (factory 0x4959, hook 0x636c, locker, escrow, libraries) was built with.
+      - name: Build artifacts, default profile
+        run: forge build --skip 'test/**' --skip 'script/**'
+
+      - name: Build artifacts, ci profile with metadata
+        env:
+          FOUNDRY_PROFILE: ci
+          FOUNDRY_BYTECODE_HASH: ipfs
+          FOUNDRY_CBOR_METADATA: "true"
+        run: forge build --skip 'test/**' --skip 'script/**' --out out/ci --cache-path cache/ci
+
+      - name: Verify registry against chain
+        # exit 1 = drift (fail at once), exit 2 = rpc/runtime error (retry, then fail)
+        run: |
+          for attempt in 1 2 3; do
+            node script-js/verify-registry.mjs --require-artifacts && exit 0
+            code=$?
+            if [ "$code" -ne 2 ]; then exit "$code"; fi
+            echo "rpc error on attempt $attempt, retrying in 30s"; sleep 30
+          done
+          exit 2
