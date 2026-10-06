@@ -59,7 +59,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     IPermit2 public immutable permit2;
 
     /// @inheritdoc IArtCoinsLpLockerV2
-    uint256 public keeperRewardBps = 50;
+    uint256 public keeperRewardBps;
     /// @inheritdoc IArtCoinsLpLockerV2
     uint256 public keeperRewardCap = 0.01 ether;
     /// @inheritdoc IArtCoinsLpLockerV2

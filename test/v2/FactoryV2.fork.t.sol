@@ -1458,4 +1458,29 @@ contract FactoryV2ForkTest is ForkBase {
         }
         revert("TokenCreatedV2 not found");
     }
+
+    function test_launch_rewardRecipientIsFactory_reverts() public onlyFork {
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
+        c.locker.rewardRecipients[0] = address(factory);
+        _expectRevertDeploy(
+            c, abi.encodeWithSelector(IArtCoinsFactoryV2.RecipientCannotReceive.selector, factory)
+        );
+    }
+
+    /// @dev The coin address depends on the config hash, so a recipient cannot
+    ///      be set to it ahead of time. The deployer result is mocked to put
+    ///      the coin address on the recipient.
+    function test_launch_rewardRecipientIsCoin_reverts() public onlyFork {
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
+        address coin = makeAddr("fv2-coin");
+        c.locker.rewardRecipients[0] = coin;
+        vm.mockCall(
+            factory.tokenDeployer(),
+            abi.encodeWithSelector(ArtCoinsDeployerV2.deploy.selector),
+            abi.encode(coin)
+        );
+        _expectRevertDeploy(
+            c, abi.encodeWithSelector(IArtCoinsFactoryV2.RecipientCannotReceive.selector, coin)
+        );
+    }
 }

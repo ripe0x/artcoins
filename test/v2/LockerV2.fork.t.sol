@@ -423,6 +423,10 @@ contract LockerV2ForkTest is ForkBase {
         );
     }
 
+    function test_lockerV2_keeperRewardBps_defaultsToZero() public {
+        assertEq(locker.keeperRewardBps(), 0);
+    }
+
     function test_lockerV2_ownerSetters_bounded() public {
         vm.startPrank(owner);
         vm.expectRevert(
@@ -795,7 +799,7 @@ contract LockerV2ForkTest is ForkBase {
         (uint256 got0,) = _collected(vm.getRecordedLogs());
         assertGt(got0, 0);
         assertEq(address(ro).balance, 0);
-        assertEq(escrow.balances(address(ro), address(0)), got0 - got0 * 50 / 10_000);
+        assertEq(escrow.balances(address(ro), address(0)), got0);
         assertEq(address(locker).balance, 0);
     }
 

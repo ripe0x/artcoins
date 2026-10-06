@@ -25,6 +25,19 @@ contract V2BSink {
     receive() external payable {}
 }
 
+/// @dev Accepts eth only from one sender, so an escrow `claimTo` to it fails.
+contract V2BOnlyFrom {
+    address immutable from;
+
+    constructor(address from_) {
+        from = from_;
+    }
+
+    receive() external payable {
+        require(msg.sender == from, "only from");
+    }
+}
+
 contract V2BPeripheryForkTest is HookV2ForkBase {
     address internal keeper = makeAddr("v2b-keeper");
     address internal griefer = makeAddr("v2b-griefer");
@@ -300,5 +313,30 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
         assertEq(address(d).balance, 0);
         // whatever did not go to the pool or the skim legs came back
         assertLt(100 ether - refundTo.balance - poolIn, 3 ether, "only the fair skim kept");
+    }
+
+    /// two launches through one dev buy contract. launch 1 refunds to a recipient
+    /// that rejects the escrow, launch 2 to a plain recipient. each launch pays
+    /// out only the credit its own swap created.
+    function test_V2B08_devBuy_refundCreditIsPerLaunch() public onlyFork {
+        ArtCoinsUniv4EthDevBuyV2 d = new ArtCoinsUniv4EthDevBuyV2(address(this), POOL_MANAGER);
+        address refund1 = address(new V2BOnlyFrom(address(d)));
+        address refund2 = makeAddr("v2b08-refund2");
+        uint256 kept1;
+        uint256 kept2;
+        for (uint256 i; i < 2; ++i) {
+            ArtCoinsTokenV2 tk = _newToken(Constants.TAX_MODE_NONE, bountyEoa, address(hook));
+            PoolKey memory k = hook.initializePool(_params(_defaults(bountyEoa), address(tk)));
+            _modify(k, -600, 0, int256(LIQ), 0);
+            address refundTo = i == 0 ? refund1 : refund2;
+            uint256 pmEth0 = POOL_MANAGER.balance;
+            _devBuyCall(d, k, address(tk), 100 ether, makeAddr("v2b08-buyer"), refundTo);
+            uint256 kept = 100 ether - refundTo.balance - (POOL_MANAGER.balance - pmEth0);
+            if (i == 0) kept1 = kept;
+            else kept2 = kept;
+            assertEq(escrow.balances(address(d), address(0)), 0, "no credit left in escrow");
+            assertEq(address(d).balance, 0, "nothing retained");
+        }
+        assertApproxEqAbs(kept1, kept2, 0.01 ether, "same refund treatment per launch");
     }
 }

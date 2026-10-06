@@ -452,7 +452,7 @@ review a (`v2-review-a.md`)
 | V2A-04 | low | venue admin not moved by `updateAdmin`, no transfer path | fixed | D48, t1. `test_venue_transferVenueAdmin`, `test_venue_transferVenueAdmin_noneModeReverts` |
 | V2A-05 | low | keeper step gas is a hard ceiling, a large collect reverts `InsufficientGas` forever | fixed | D49, k1. `test_keeperV2_stepsBeyondOldCaps_stillRun`, `test_keeperV2_gasSweep_neverSilentlySkips` |
 | V2A-06 | info | escrow wiring not enforced in code (hook constructor skips the core depositor check) | accepted | D36: deploy order rule, the deploy script asserts it. `test_deployV2Stack_wiringComplete` |
-| V2A-07 | info | locker storage default `keeperRewardBps` is 50, D28 says 0 | mitigated | the deploy wiring sets 0 (runbook 2a, locker step 9) and gate 12 reads it back. the source default is still 50 |
+| V2A-07 | info | locker storage default `keeperRewardBps` is 50, D28 says 0 | fixed (D65) | the storage default is 0 in source. regression `test_lockerV2_keeperRewardBps_defaultsToZero`. the deploy wiring and gate 12 still set and read it back |
 | V2A-08 | info | escrow `storeFees` is `nonReentrant`, a collect from inside a claim callback reverts | accepted | self affecting, nothing lost (reviewer note). no decision id |
 | V2A-09 | info | grants and budget are per tx, not per caller (erc4337 bundles) | accepted | t1 notes, D12: per caller binding is impossible in v4, bounded by the net canonical flow of the tx |
 | V2A-10 | info | keepers read any empty revert as out of gas | fixed | D49 follow up, k1: `gasleft()` after the call decides. `test_keeperV1_collectRevert_bubbles`, `test_keeperV2_flushAndConvertRevert_areReported_notSilent` |
@@ -466,9 +466,9 @@ review b (`v2-review-b.md`)
 | V2B-03 | low | burn router reward and `Burned.ethIn` include refunded skim | fixed | D40, p1. `test_burnV2_skimPool_partialFill_netOfRefund` |
 | V2B-04 | low | ui claim page cannot claim v2 airdrops (v1 abi, no `index`) | open | `ClaimPage` still speaks the v1 abi (inert, no airdrop configured). must be done before any v2 airdrop launches (ui-fixes.md) |
 | V2B-05 | low | same tx sandwich of `processBurn`, bounded by `maxImpactBps` | accepted | D39 (impact 25 to 300 bps). profitability is an estimate only, listed unverified in runbook gate 6 |
-| V2B-06 | info | controller `processFees(token)` is permissionless for any erc20, a false returning token writes junk escrow credits | open | no package note, no fix |
+| V2B-06 | info | controller `processFees(token)` is permissionless for any erc20, a false returning token writes junk escrow credits | fixed (D68) | `FeeDelivery.sendErc20` reverts with `TransferReturnedFalse` on a returned value other than true and writes no credit. regressions `test_delivery_erc20_falseReturn_reverts_noCredit`, `test_pfcV2_processFees_falseReturningToken_reverts_noCredit` |
 | V2B-07 | info | swapper and controller push fallback needs depositor status, nothing on chain checks it | mitigated | D33, D36: runbook 2b steps 1 and 6 (`escrow.isDepositor(feeSwapper)`) |
-| V2B-08 | info | dev buy escrow credit shared across launches | open | no package note, no fix |
+| V2B-08 | info | dev buy escrow credit shared across launches | fixed (D68) | the dev buy measures the credit its own swap added and forwards only that amount. regression `test_V2B08_devBuy_refundCreditIsPerLaunch` |
 | V2B-09 | info | owner levers without upper bound (router threshold, controller `rescue`, router `initialize` key check) | accepted | owner trust, DESIGN section 2, D20 (single eoa) |
 
 review hook (`v2-review-hook.md`)
@@ -496,7 +496,7 @@ review factory (`v2-review-factory.md`)
 | V2F-04 | low | `isArtCoin` no longer implies `ArtCoinsTokenV2` code, the owner can repoint the deployer | accepted | D55: owner trust, the registry records the deployer and the verifier compares its runtime code. `test_tokenDeployer_setAndRequired` |
 | V2F-05 | info | factory comment says rounding dust goes to the pool, the locker sends it to DEAD | open | comment not rechecked (no package note) |
 | V2F-06 | info | launcher chosen code runs inside the launch tx before the module arms (dev buy refund) | open | documented, order kept for v1 parity. launcher's own tx |
-| V2F-07 | info | factory accepts reward recipients that can never be paid (factory, coin) | open | no package note. the hook half is V2H-08 |
+| V2F-07 | info | factory accepts reward recipients that can never be paid (factory, coin) | fixed (D68) | the factory reverts `RecipientCannotReceive` for a reward recipient equal to the factory or the coin. regressions `test_launch_rewardRecipientIsFactory_reverts`, `test_launch_rewardRecipientIsCoin_reverts`. the hook half is V2H-08 |
 | V2F-08 | info | owner can reprice a pending launch (`setDeployFee` up to 1 eth) | accepted | D20 owner trust. the ui sends the exact fee and re reads it before signing (UI-04). an additive `deployTokenWithMaxFee` was not added |
 | V2F-09 | info | no maximum supply | open | no package note |
 
@@ -532,7 +532,7 @@ listed by the reviewers and by the package authors. none of these is hidden by a
 | D44 | router self referral is accepted, bounded by the frozen cap and the D52 floor | not worth the ux cost of a signed referrer |
 | D55 and owner trust (D20, V2F-04, V2F-08, V2B-09, V2H-10) | one eoa, no timelock: it can replace the token deployer (a different token ships under `isArtCoin`), set the deploy fee up to 1 eth, repoint the escrow, manage the exempt allowlist, disable burns with `minProcessThreshold`, `rescue` anything in the controller | principle 2 and D38, the registry compares the deployer's runtime code, nothing enforces it on chain |
 | D54, D56 | a launch at every cap costs about 19.6m gas, above the 16.7m cap. the fee aware floor catches charges beyond known fees above about 5% only, sandwiches are bounded by the impact cap | accepted |
-| V2B-04, V2B-06, V2B-08, V2F-05, V2F-06, V2F-07, V2F-09 | open info and low items with no package fix (9.2) | no owner, not blocking |
+| V2B-04, V2F-05, V2F-06, V2F-09 | open info and low items with no package fix (9.2) | no owner, not blocking |
 | runbook gates 5, 6 | independently unverified: V2H-01 end to end, a nested swap from a recipient, partial fill refunds through a live universal router, the HARD `donate` path, D34 netting with several flows, the locker with the real hook and a taxed coin end to end, V2B-05 profit | listed in section 6 |
 
 this second pass and its fixes are an engineering review. they are not a formal audit and v2 has not had one.

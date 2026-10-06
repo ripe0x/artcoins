@@ -294,6 +294,10 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
             c.token, supply, c.tax, _canon(c), address(this), keccak256(abi.encode(msg.sender, h))
         );
 
+        for (uint256 i; i < c.locker.rewardRecipients.length; ++i) {
+            if (c.locker.rewardRecipients[i] == token) revert RecipientCannotReceive(token);
+        }
+
         PoolKey memory poolKey = _initializePool(c, token);
         PoolId poolId = poolKey.toId();
         _checkCanonical(c, token, poolId);
@@ -420,6 +424,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         uint256 sum = protocolBps;
         for (uint256 i; i < n; ++i) {
             if (l.rewardRecipients[i] == address(0)) revert ZeroAddress();
+            if (l.rewardRecipients[i] == address(this)) {
+                revert RecipientCannotReceive(address(this));
+            }
             if (l.rewardBps[i] == 0) revert InvalidRewardSlots();
             sum += l.rewardBps[i];
         }

@@ -9,7 +9,9 @@ import {Constants} from "../../src/Constants.sol";
 import {ArtCoinsFeeEscrowV2} from "../../src/v2/ArtCoinsFeeEscrowV2.sol";
 import {IArtCoinsFeeEscrowV2} from "../../src/v2/interfaces/IArtCoinsFeeEscrowV2.sol";
 import {IProtocolFeeControllerV2} from "../../src/v2/interfaces/IProtocolFeeControllerV2.sol";
+import {FeeDelivery} from "../../src/v2/libraries/FeeDelivery.sol";
 import {ProtocolFeeControllerV2} from "../../src/v2/protocol-fee/ProtocolFeeControllerV2.sol";
+import {FalseTransferToken} from "./FeeDelivery.t.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
@@ -256,5 +258,15 @@ contract ProtocolFeeControllerV2Test is Test {
         pfc.acceptOwnership();
         assertEq(pfc.owner(), attacker);
         assertEq(pfc.constantsHash(), Constants.hash());
+    }
+
+    function test_pfcV2_processFees_falseReturningToken_reverts_noCredit() public {
+        FalseTransferToken t = new FalseTransferToken();
+        t.mint(address(pfc), 10e18);
+        vm.expectRevert(FeeDelivery.TransferReturnedFalse.selector);
+        pfc.processFees(address(t));
+        assertEq(escrow.balances(address(treasury), address(t)), 0);
+        assertEq(escrow.totalOwed(address(t)), 0);
+        assertEq(t.balanceOf(address(pfc)), 10e18);
     }
 }

@@ -244,13 +244,15 @@ contract FeeDeliveryTest is Test {
         assertEq(t.allowance(address(harness), address(escrow)), 0);
     }
 
-    function test_delivery_erc20_falseReturn_escrowed() public {
+    function test_delivery_erc20_falseReturn_reverts_noCredit() public {
         FalseTransferToken t = new FalseTransferToken();
         t.mint(address(harness), 10e18);
         address to = makeAddr("to");
-        assertFalse(harness.sendErc20(address(t), to, 3e18));
-        assertEq(escrow.balances(to, address(t)), 3e18);
-        assertEq(t.balanceOf(address(escrow)), 3e18);
+        vm.expectRevert(FeeDelivery.TransferReturnedFalse.selector);
+        harness.sendErc20(address(t), to, 3e18);
+        assertEq(escrow.balances(to, address(t)), 0);
+        assertEq(escrow.totalOwed(address(t)), 0);
+        assertEq(t.balanceOf(address(harness)), 10e18);
     }
 
     function test_delivery_erc20_noReturn_pushed() public {

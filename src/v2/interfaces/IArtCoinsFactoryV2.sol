@@ -166,6 +166,9 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     error TaxSinkNotAllowed(address sink);
     error TeamFeeRecipientNotSet();
     error EthTransferFailed();
+    /// @notice A project reward recipient is the factory or the coin being
+    ///         launched. Neither can receive eth or claim an escrow credit.
+    error RecipientCannotReceive(address recipient);
 
     // ── launch ────────────────────────────────────────────────────────────
 

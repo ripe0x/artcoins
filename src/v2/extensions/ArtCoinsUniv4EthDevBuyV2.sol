@@ -49,10 +49,11 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 ///         boundary, so it can fill partially only if the buy exhausts all
 ///         liquidity. Unspent eth is refunded to `refundRecipient` fixed in
 ///         `extensionData`. The hook credits any unused skim to the fee escrow
-///         under this contract (the PoolManager caller); on a partial fill the
-///         contract claims it to `refundRecipient` so nothing is stranded.
-///         This contract has no `receive`, no owner and no rescue: it holds
-///         nothing between transactions.
+///         under this contract (the PoolManager caller). The contract measures
+///         the credit its own swap added, claims the escrow balance to itself
+///         and forwards that amount with the unspent eth to `refundRecipient`.
+///         `receive` accepts the escrow payout. The contract has no owner and
+///         no rescue.
 contract ArtCoinsUniv4EthDevBuyV2 is ReentrancyGuard, IUnlockCallback, IArtCoinsUniv4EthDevBuyV2 {
     /// @notice The only caller of `receiveTokens`.
     address public immutable factory;
@@ -71,6 +72,9 @@ contract ArtCoinsUniv4EthDevBuyV2 is ReentrancyGuard, IUnlockCallback, IArtCoins
         factory = factory_;
         poolManager = IPoolManager(poolManager_);
     }
+
+    /// @dev Receives the escrow claim payout in `receiveTokens`.
+    receive() external payable {}
 
     /// @inheritdoc IArtCoinsExtensionV2
     function receiveTokens(
@@ -97,14 +101,24 @@ contract ArtCoinsUniv4EthDevBuyV2 is ReentrancyGuard, IUnlockCallback, IArtCoins
                 || address(poolKey.hooks) != config.pool.hook
         ) revert InvalidPoolKey();
 
+        address escrow = _escrowOf(poolKey);
+        uint256 creditBefore = _credit(escrow);
+
         (uint256 spent, uint256 out) = abi.decode(
             poolManager.unlock(abi.encode(poolKey, msg.value, recipient, minOut)),
             (uint256, uint256)
         );
 
         uint256 refunded = msg.value - spent;
+        uint256 own = _credit(escrow) - creditBefore;
+        if (own != 0) {
+            try IArtCoinsFeeEscrowV2(escrow).claimTo(address(this), address(0), payable(this)) {}
+            catch {
+                own = 0;
+            }
+        }
+        refunded += own;
         if (refunded != 0) {
-            _claimEscrowDust(poolKey, refundRecipient);
             (bool ok,) = refundRecipient.call{value: refunded}("");
             if (!ok) revert EthRefundFailed();
         }
@@ -150,18 +164,21 @@ contract ArtCoinsUniv4EthDevBuyV2 is ReentrancyGuard, IUnlockCallback, IArtCoins
             || interfaceId == type(IERC165).interfaceId;
     }
 
-    /// @dev Partial fill only. The v2 hook refunds an unused skim share to the
-    ///      swap caller through the fee escrow. Pull it straight to the refund
-    ///      recipient. Best effort: a hookless pool, a foreign hook or an empty
-    ///      balance just skips.
-    function _claimEscrowDust(PoolKey calldata key, address refundRecipient) private {
+    /// @dev Fee escrow of the pool's v2 hook, or zero for a hookless pool, a
+    ///      foreign hook or an escrow without code.
+    function _escrowOf(PoolKey calldata key) private view returns (address escrow) {
         address hook = address(key.hooks);
-        if (hook.code.length == 0) return;
+        if (hook.code.length == 0) return address(0);
         try IArtCoinsHookV2(hook).globals() returns (IArtCoinsHookV2.HookGlobals memory g) {
-            if (g.feeEscrow.code.length == 0) return;
-            try IArtCoinsFeeEscrowV2(g.feeEscrow)
-                .claimTo(address(this), address(0), payable(refundRecipient)) {}
-                catch {}
+            if (g.feeEscrow.code.length != 0) escrow = g.feeEscrow;
         } catch {}
+    }
+
+    /// @dev Native credit of this contract in `escrow`; zero when `escrow` is zero.
+    function _credit(address escrow) private view returns (uint256) {
+        return
+            escrow == address(0)
+                ? 0
+                : IArtCoinsFeeEscrowV2(escrow).balances(address(this), address(0));
     }
 }

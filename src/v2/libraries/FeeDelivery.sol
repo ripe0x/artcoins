@@ -8,12 +8,16 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 /// @notice Push a fee to its recipient; if the push fails, credit the
 ///         recipient in the fee escrow instead. Shared by the v2 hook, locker,
 ///         fee swapper and protocol fee controller (DESIGN d1).
-/// @dev    Invariant: never reverts once the calling contract is an escrow
-///         depositor (and, for erc20, the token lets the escrow pull from the
-///         caller). Every wei reaches `to` or `to`'s escrow balance.
+/// @dev    Invariant: once the calling contract is an escrow depositor (and,
+///         for erc20, the token lets the escrow pull from the caller), every
+///         wei reaches `to` or `to`'s escrow balance. The one revert is an
+///         erc20 `transfer` that returns a value other than true.
 ///         Callers must reject `to == address(0)` before calling: a native
 ///         push to the zero address succeeds and burns the amount.
 library FeeDelivery {
+    /// @notice An erc20 `transfer` returned a value other than true.
+    error TransferReturnedFalse();
+
     /// @notice Sends `amount` wei to `to` forwarding at most `gasCap` gas.
     ///         Returndata is never copied (no returndata bomb). On failure the
     ///         amount is credited to `to` in `escrow`.
@@ -32,15 +36,17 @@ library FeeDelivery {
     }
 
     /// @notice Transfers `amount` of `token` to `to`. Accepts tokens that
-    ///         return nothing or `true`; a `false` return, a revert or a token
-    ///         without code counts as failure. On failure approves the exact
-    ///         amount to `escrow` and calls `storeFees`, which pulls it.
+    ///         return nothing or `true`. A revert or a token without code
+    ///         counts as failure: the exact amount is approved to `escrow` and
+    ///         `storeFees` pulls it. A returned value other than true reverts
+    ///         with `TransferReturnedFalse` and writes no credit.
     /// @return pushed True when `to` received the tokens directly (or `amount == 0`).
     function sendErc20(address escrow, address token, address to, uint256 amount)
         internal
         returns (bool pushed)
     {
         if (amount == 0) return true;
+        bool returnedFalse;
         assembly ("memory-safe") {
             let m := mload(0x40)
             mstore(m, 0xa9059cbb00000000000000000000000000000000000000000000000000000000) // transfer(address,uint256)
@@ -57,7 +63,10 @@ library FeeDelivery {
                     and(iszero(returndatasize()), gt(extcodesize(token), 0))
                 )
             )
+            // a call that succeeded with a returned word other than 1
+            returnedFalse := and(ok, and(gt(returndatasize(), 0x1f), iszero(eq(mload(0x00), 1))))
         }
+        if (returnedFalse) revert TransferReturnedFalse();
         if (!pushed) {
             SafeTransferLib.safeApproveWithRetry(token, escrow, amount);
             IArtCoinsFeeEscrowV2(escrow).storeFees(to, token, amount);
