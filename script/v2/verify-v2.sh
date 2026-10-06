@@ -4,7 +4,7 @@
 # Input: the json DeployV2Stack.s.sol writes (default tmp/v2-deploy-1.json). Its `verify` list
 # holds, per contract, the address, the path qualified name and the abi encoded constructor args.
 #
-#   1. builds src with FOUNDRY_PROFILE=ci (the profile the stack is deployed with) into out/v2-ci
+#   1. builds src with FOUNDRY_PROFILE=ci (the profile the stack is deployed with) into foundry-out-ci
 #   2. `forge verify-contract` for every contract (etherscan when ETHERSCAN_API_KEY is set,
 #      blockscout otherwise). the hook is always `src/v2/hooks/ArtCoinsHookV2.sol:ArtCoinsHookV2`
 #      (src/hooks/legacy/ArtCoinsHookV2.sol has the same contract name)
@@ -43,14 +43,14 @@ done
 export MAINNET_RPC_URL="${MAINNET_RPC_URL:-https://mainnet.gateway.tenderly.co}"
 export FOUNDRY_PROFILE=ci
 FORGE="${FORGE:-forge}"
-OUT=out/v2-ci
+OUT=foundry-out-ci
 
 [ -f "$JSON" ] || { echo "no deploy json at $JSON (run script/v2/DeployV2Stack.s.sol first)" >&2; exit 2; }
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 2; }
 [ "$(jq -r .chainId "$JSON")" = "1" ] || { echo "$JSON is not a mainnet deploy" >&2; exit 2; }
 
 echo "== build (profile ci) =="
-$FORGE build --skip 'test/**' --skip 'script/**' --out "$OUT" --cache-path cache/v2-ci
+$FORGE build --skip 'test/**' --skip 'script/**' --out "$OUT" --cache-path cache/ci
 
 fail=0
 
@@ -92,9 +92,9 @@ if [ "$CHAIN" = 1 ] && [ "$DRY" = 0 ]; then
     . as $d
     | {chainId: 1, generatedAt: $now, repoCommit: $commit, owner: $d.owner, stacks: $d.stack,
        contracts: [$d.contracts[] | .deployBlock = $d.simulatedAtBlock
-                   | .source.bytecodeMatch = "verified"],
+                   | .source.bytecodeMatch = "verified" | .source.profile = "ci" | .source.metadata = "none"],
        coins: []}' "$JSON" > "$reg"
-  if ! node script-js/verify-registry.mjs --file "$reg" --artifacts "$OUT" --require-artifacts; then
+  if ! node script-js/verify-registry.mjs --file "$reg" --no-build --require-artifacts; then
     echo "chain check FAILED (registry file kept at $reg)" >&2
     fail=1
   else

@@ -41,7 +41,7 @@ export const STACKS: Record<StackId, RegistryStack> = {
   },
 };
 
-/** addresses of the current stack */
+/** addresses of the stack with id current */
 export const CURRENT = {
   factory: '0x49596c375c139E79bb937bcf826068a8F78D4e0e',
   hook: '0x636c050296B5Cc528D8785169Bf8923716FCa9cc',
@@ -59,6 +59,12 @@ export const CURRENT = {
   payout: '0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4',
   poolExtensionAllowlist: '0xd6D5fb5CfE386d0eB73a09cba5d190beb802e6E8',
 } as const satisfies Record<string, Address>;
+
+/** addresses by stack id, for the stacks with a table here */
+export const STACK_ADDRESSES = { current: CURRENT } as const;
+
+/** addresses of the stack whose registry status is current */
+export const ACTIVE = STACK_ADDRESSES.current;
 
 /** external infra (not in the registry) */
 export const INFRA = {

@@ -6,13 +6,20 @@ pragma solidity ^0.8.26;
 
 /// @title Addresses
 /// @notice Ethereum mainnet addresses of the artcoins stacks, copied from the registry.
-///         CURRENT_* is the live stack. OPEN_* and LEGACY_* are superseded: scripts that target
-///         them must say so and be gated behind ALLOW_SUPERSEDED=1.
+///         Constants are prefixed with the stack id (CURRENT_*, OPEN_*, LEGACY_*, V2_*). ACTIVE_* repeats
+///         the stack whose registry status is current. Scripts that target a superseded stack must say
+///         so and be gated behind ALLOW_SUPERSEDED=1.
 library Addresses {
     uint256 internal constant CHAIN_ID = 1;
 
     /// @dev owner of nearly every contract below (single eoa).
     address internal constant OWNER = 0xCB43078C32423F5348Cab5885911C3B5faE217F9;
+
+    string internal constant CURRENT_STACK_ID = "current";
+    address internal constant ACTIVE_FACTORY = CURRENT_FACTORY;
+    address internal constant ACTIVE_HOOK = CURRENT_HOOK;
+    address internal constant ACTIVE_LOCKER = CURRENT_LOCKER;
+    address internal constant ACTIVE_ESCROW = CURRENT_ESCROW;
 
     // CURRENT stack (current): current stack (skim fee), factory deployed 2026-06-06
     address internal constant CURRENT_FACTORY = 0x49596c375c139E79bb937bcf826068a8F78D4e0e;
