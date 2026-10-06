@@ -293,6 +293,7 @@ abstract contract V2AStackBase is Test {
 
 /// V2A-01, HARD mode. the "canonical only" wall is bypassed with canonical
 /// liquidity round trips that never trade on the canonical pool.
+/// forge-config: default.isolate = true
 contract V2A01HardTest is V2AStackBase {
     function setUp() public {
         _stack(Constants.TAX_MODE_HARD);
@@ -378,6 +379,7 @@ contract V2A01HardTest is V2AStackBase {
 
 /// V2A-01, VENUE mode. remove then re add of a parked canonical position
 /// attests budget with no net canonical flow; a side pool buy goes untaxed.
+/// forge-config: default.isolate = true
 contract V2A01VenueTest is V2AStackBase {
     function setUp() public {
         _stack(Constants.TAX_MODE_VENUE);

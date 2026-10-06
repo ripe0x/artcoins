@@ -9,6 +9,7 @@ import {FeeDelivery} from "../libraries/FeeDelivery.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {IPermit2} from "@uniswap/permit2/src/interfaces/IPermit2.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
@@ -247,7 +248,12 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         actions[n] = bytes1(uint8(Actions.SETTLE_PAIR));
         params[n] = abi.encode(poolKey.currency0, poolKey.currency1);
 
-        SafeTransferLib.safeApprove(token, address(permit2), poolSupply);
+        // D37: solady tokens (ArtCoinsTokenV2) fix the Permit2 allowance at
+        // infinity and revert any approve to it; skip the erc20 approve and
+        // its reset for them. Other tokens get the exact amount, reset after.
+        bool fixedInfinite = IERC20(token).allowance(address(this), address(permit2))
+            == type(uint256).max;
+        if (!fixedInfinite) SafeTransferLib.safeApprove(token, address(permit2), poolSupply);
         permit2.approve(
             token, address(positionManager), uint160(poolSupply), uint48(block.timestamp)
         );
@@ -255,7 +261,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         positionId = positionManager.nextTokenId();
         positionManager.modifyLiquidities(abi.encode(actions, params), block.timestamp);
 
-        SafeTransferLib.safeApprove(token, address(permit2), 0);
+        if (!fixedInfinite) SafeTransferLib.safeApprove(token, address(permit2), 0);
         permit2.approve(token, address(positionManager), 0, 0);
     }
 

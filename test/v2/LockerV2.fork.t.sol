@@ -9,6 +9,7 @@ import {IArtCoinsFactoryV2} from "../../src/v2/interfaces/IArtCoinsFactoryV2.sol
 import {IArtCoinsLpLockerV2} from "../../src/v2/interfaces/IArtCoinsLpLockerV2.sol";
 import {IConstantsBound} from "../../src/v2/interfaces/IConstantsBound.sol";
 import {ArtCoinsLpLockerV2} from "../../src/v2/lp-lockers/ArtCoinsLpLockerV2.sol";
+import {ArtCoinsTokenV2} from "../../src/v2/ArtCoinsTokenV2.sol";
 import {
     BlockingToken,
     GasBurner,
@@ -520,6 +521,82 @@ contract LockerV2ForkTest is ForkBase {
         );
     }
 
+    /// @dev D37: the real v2 token (solady) fixes the Permit2 allowance at
+    ///      infinity and reverts any approve to Permit2. Placement must skip
+    ///      the erc20 approve and its reset, and the coin must still collect.
+    function test_lockerV2_place_realTokenV2_permit2Infinite() public onlyFork {
+        IArtCoinsFactoryV2.TokenConfigV2 memory t;
+        t.tokenAdmin = makeAddr("tokenAdmin");
+        t.name = "Locker Test";
+        t.symbol = "LKT";
+        IArtCoinsFactoryV2.TaxConfigV2 memory tax; // mode NONE, nothing set
+        ArtCoinsTokenV2.CanonicalPool memory canon = ArtCoinsTokenV2.CanonicalPool({
+            hook: hook,
+            poolManager: POOL_MANAGER,
+            tickSpacing: SPACING,
+            bountyRecipient: address(0)
+        });
+        ArtCoinsTokenV2 coin = new ArtCoinsTokenV2(t, 2 * SUPPLY, tax, canon, launcher);
+        assertEq(coin.allowance(address(locker), PERMIT2), type(uint256).max);
+        // the token rejects approvals to Permit2, which is what broke placement
+        vm.prank(address(locker));
+        vm.expectRevert(bytes4(0x3f68539a)); // Permit2AllowanceIsFixedAtInfinity()
+        coin.approve(PERMIT2, 0);
+        // half the supply to this contract so it can sell
+        vm.prank(launcher);
+        coin.transfer(address(this), SUPPLY);
+
+        PayableRecipient p = new PayableRecipient();
+        (address[] memory r, uint16[] memory b) = _one(address(p));
+        PoolKey memory key = _launch(address(coin), r, b, 3);
+        IArtCoinsLpLockerV2.TokenRewardInfoV2 memory info = locker.tokenRewards(address(coin));
+        assertEq(info.numPositions, 3);
+        for (uint256 i; i < 3; ++i) {
+            assertGt(IPositionManager(POSITION_MANAGER).getPositionLiquidity(info.positionId + i), 0);
+        }
+        assertEq(coin.balanceOf(address(locker)), 0);
+        assertEq(coin.allowance(address(locker), PERMIT2), type(uint256).max);
+        (uint160 p2amount,,) = IAllowanceTransferLike(PERMIT2).allowance(
+            address(locker), address(coin), POSITION_MANAGER
+        );
+        assertEq(p2amount, 0);
+
+        _trade(key);
+        locker.collectRewards(address(coin));
+        assertGt(p.received(), 0);
+        assertGt(coin.balanceOf(address(p)), 0);
+        assertEq(coin.balanceOf(address(locker)), 0);
+    }
+
+    /// @dev D37 other branch: a plain erc20 gets the exact approve to Permit2,
+    ///      reset to 0 after the mint, and the Permit2 allowance is zeroed too.
+    function test_lockerV2_place_plainErc20_approveReset() public onlyFork {
+        MockToken coin = _newCoin();
+        assertEq(coin.allowance(address(locker), PERMIT2), 0);
+        (address[] memory r, uint16[] memory b) = _one(address(new PayableRecipient()));
+        vm.recordLogs();
+        _launch(address(coin), r, b, 2);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        // the exact approve happened (Approval(locker, permit2, SUPPLY)) and was reset
+        bool sawExact;
+        bytes32 approvalSig = keccak256("Approval(address,address,uint256)");
+        for (uint256 i; i < logs.length; ++i) {
+            if (
+                logs[i].emitter == address(coin) && logs[i].topics[0] == approvalSig
+                    && logs[i].topics[1] == bytes32(uint256(uint160(address(locker))))
+                    && logs[i].topics[2] == bytes32(uint256(uint160(PERMIT2)))
+                    && abi.decode(logs[i].data, (uint256)) == SUPPLY
+            ) sawExact = true;
+        }
+        assertTrue(sawExact);
+        assertEq(coin.allowance(address(locker), PERMIT2), 0);
+        (uint160 p2amount,,) = IAllowanceTransferLike(PERMIT2).allowance(
+            address(locker), address(coin), POSITION_MANAGER
+        );
+        assertEq(p2amount, 0);
+        assertEq(locker.tokenRewards(address(coin)).numPositions, 2);
+    }
+
     function test_lockerV2_place_maxPositions() public onlyFork {
         MockToken coin = _newCoin();
         (address[] memory r, uint16[] memory b) = _one(address(new PayableRecipient()));
@@ -742,4 +819,11 @@ contract LockerV2ForkTest is ForkBase {
 
 interface IERC721Like {
     function ownerOf(uint256 id) external view returns (address);
+}
+
+interface IAllowanceTransferLike {
+    function allowance(address user, address token, address spender)
+        external
+        view
+        returns (uint160 amount, uint48 expiration, uint48 nonce);
 }

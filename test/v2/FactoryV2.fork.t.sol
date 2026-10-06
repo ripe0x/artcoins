@@ -13,6 +13,7 @@ import {ArtCoinsPoolExtensionAllowlist} from "../../src/hooks/ArtCoinsPoolExtens
 import {ArtCoinsFactoryV2} from "../../src/v2/ArtCoinsFactoryV2.sol";
 import {ArtCoinsFeeEscrowV2} from "../../src/v2/ArtCoinsFeeEscrowV2.sol";
 import {ArtCoinsTokenV2} from "../../src/v2/ArtCoinsTokenV2.sol";
+import {ArtCoinsDeployerV2} from "../../src/v2/utils/ArtCoinsDeployerV2.sol";
 import {ArtCoinsHookV2} from "../../src/v2/hooks/ArtCoinsHookV2.sol";
 import {IArtCoinsFactoryV2} from "../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsHookV2} from "../../src/v2/interfaces/IArtCoinsHookV2.sol";
@@ -60,6 +61,7 @@ contract FactoryV2ForkTest is ForkBase {
     bytes32 internal immutable TOKEN_CREATED_SIG = IArtCoinsFactoryV2.TokenCreatedV2.selector;
 
     ArtCoinsFactoryV2 internal factory;
+    ArtCoinsDeployerV2 internal deployer;
     ArtCoinsFeeEscrowV2 internal escrow;
     ArtCoinsHookV2 internal hook;
     /// @dev the locker launches go through (stub by default, see setUp).
@@ -79,6 +81,9 @@ contract FactoryV2ForkTest is ForkBase {
     function setUp() public {
         forkMainnet();
         factory = new ArtCoinsFactoryV2(address(this), POOL_MANAGER, PROTOCOL_BPS, FEE);
+        // D38: deployer is its own contract, bound to the factory at construction
+        deployer = new ArtCoinsDeployerV2(address(factory));
+        factory.setTokenDeployer(address(deployer));
         // plain makeAddr labels can collide with live mainnet contracts
         // ("alice" has code at the pin): every actor here must be an eoa.
         require(
@@ -856,6 +861,52 @@ contract FactoryV2ForkTest is ForkBase {
         assertEq(realLocker.rewardRecipients(t)[1], protocolR);
         assertEq(IERC20(t).balanceOf(address(factory)), 0);
         assertEq(IERC20(t).balanceOf(address(realLocker)), 0);
+    }
+
+    /// D38: the deployer is an owner set pointer, bound to this factory.
+    function test_tokenDeployer_setAndRequired() public {
+        ArtCoinsFactoryV2 f = new ArtCoinsFactoryV2(address(this), POOL_MANAGER, 0, 0);
+        assertEq(f.tokenDeployer(), address(0));
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c;
+        c.token.tokenAdmin = admin;
+        vm.expectRevert(ArtCoinsFactoryV2.DeployerNotSet.selector);
+        f.deployToken(c); // owner bypasses the deprecated gate, then hits the deployer check
+        vm.expectRevert(ArtCoinsFactoryV2.DeployerNotSet.selector);
+        f.predictToken(alice, c);
+
+        // bound to another factory, no code, zero
+        vm.expectRevert(
+            abi.encodeWithSelector(ArtCoinsFactoryV2.InvalidDeployer.selector, address(deployer))
+        );
+        f.setTokenDeployer(address(deployer));
+        address noCode = makeAddr("fv2.noCodeDeployer");
+        vm.expectRevert(abi.encodeWithSelector(ArtCoinsFactoryV2.InvalidDeployer.selector, noCode));
+        f.setTokenDeployer(noCode);
+        vm.expectRevert(IArtCoinsFactoryV2.ZeroAddress.selector);
+        f.setTokenDeployer(address(0));
+
+        // owner only
+        ArtCoinsDeployerV2 d = new ArtCoinsDeployerV2(address(f));
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
+        f.setTokenDeployer(address(d));
+
+        vm.expectEmit(true, true, false, false, address(f));
+        emit ArtCoinsFactoryV2.TokenDeployerSet(address(0), address(d));
+        f.setTokenDeployer(address(d));
+        assertEq(f.tokenDeployer(), address(d));
+        assertEq(d.factory(), address(f));
+    }
+
+    /// D38: replacing the deployer moves every future address; prediction follows it.
+    function test_tokenDeployer_replaced_predictFollows() public onlyFork {
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
+        address before = factory.predictToken(alice, c);
+        ArtCoinsDeployerV2 d2 = new ArtCoinsDeployerV2(address(factory));
+        factory.setTokenDeployer(address(d2));
+        address afterSwap = factory.predictToken(alice, c);
+        assertTrue(afterSwap != before);
+        assertEq(_deploy(alice, c), afterSwap);
     }
 
     /// D30: string caps are checked before any deploy work, same error as the token.

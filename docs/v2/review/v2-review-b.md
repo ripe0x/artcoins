@@ -18,9 +18,9 @@ proof files:
 | V2B-02 | medium | swapper convert is sandwichable by its own caller on low fee v2 pools: limit and floor are relative to the manipulated spot | `FeeAutoSwapperV2.sol:189,200,208,251` | `test_V2B02_swapper_sandwich_profitable_lowFeePool` |
 | V2B-03 | low | burn router keeper reward and `Burned.ethIn` include skim that is refunded later (reward paid twice on the same eth) | `BurnRouterV2.sol:349` | logged in V2B-01 test (10 eth: ethIn 5.61, refund 0.28, reward at cap) |
 | V2B-04 | low | ui claim page cannot claim v2 airdrops (v1 abi, no `index`); unclaimed supply goes to the sweep recipient after the window | `ui/src/pages/ClaimPage.tsx:17,111,148,190` | trace |
-| V2B-05 | low | same tx sandwich of `processBurn` is the V2B-02 class, bounded by `maxImpactBps` (<= 3%); profitable only when lp fee plus baseline skim is under about half the impact | `BurnRouterV2.sol:299-325` | estimate, not proved |
+| V2B-05 | low | same tx sandwich of `processBurn` is the V2B-02 class, bounded by `maxImpactBps` (<= 3%); profitable only when lp fee plus baseline skim is under about half the impact | `BurnRouterV2.sol:301-327` | estimate, not proved |
 | V2B-06 | info | controller `processFees(token)` is permissionless for any erc20; a token whose `transfer` returns false makes the controller (a depositor) write junk `storeFees` credits under the treasury. D33's spam concern reopened for one key | `ProtocolFeeControllerV2.sol:93,118`, `FeeDelivery.sol:61-63` | trace |
-| V2B-07 | info | swapper and controller push fallback needs escrow depositor status (D33); nothing on chain checks it. a missed runbook step plus a rejecting `endRecipient` brings back LF-08 (flush and convert revert) | `FeeAutoSwapperV2.sol:371`, `FeeDelivery.sol:30` | trace |
+| V2B-07 | info | swapper and controller push fallback needs escrow depositor status (D33); nothing on chain checks it. a missed runbook step plus a rejecting `endRecipient` brings back LF-08 (flush and convert revert) | `FeeAutoSwapperV2.sol:388`, `FeeDelivery.sol:30` | trace |
 | V2B-08 | info | dev buy escrow credit is shared across launches: if `claimTo` fails but the direct refund succeeds (recipient accepts eth only from the dev buy contract), the stale credit is paid to the next partial fill launch's refund recipient | `ArtCoinsUniv4EthDevBuyV2.sol:105-110,157-166` | trace |
 | V2B-09 | info | owner levers without upper bound: router `minProcessThreshold` (up to uint96 max, disables burns), controller `rescue` of anything incl. eth in transit; router `initialize` does not check the key's hook. all owner trust, by DESIGN section 2 | `BurnRouterV2.sol:117-129,231-237`, `ProtocolFeeControllerV2.sol:147-156` | n/a |
 
@@ -59,12 +59,12 @@ proof files:
 | airdrop leaf equals openzeppelin StandardMerkleTree with the ui's tuple order `[address, uint256]`; js proofs verify; wrong amount fails | `test_holds_airdrop_jsTreeVector_andWindowEdges` |
 | airdrop windows exact: claim ok at `sweepTime - 1`, `ClaimWindowClosed` and sweep open at `sweepTime`; sweep pays the frozen recipient only the unclaimed rest | same test |
 | vault cliff: `AllocationNotUnlocked` before `lockupEnd`, 0 at `lockupEnd`, 1 wei one second later, exactly 100% at `vestingEnd` | `test_holds_vault_cliffEdges` |
-| swapper price limit `spot * sqrt(1 + bps)` rounded down; router limit `spot / sqrt(1 + bps)` rounded up; both keep the move <= bps. only one token ordering exists (router `initialize` and swapper `_key` force native currency0) | code `FeeAutoSwapperV2.sol:242-246`, `BurnRouterV2.sol:303-307`, p1 partial fill tests |
+| swapper price limit `spot * sqrt(1 + bps)` rounded down; router limit `spot / sqrt(1 + bps)` rounded up; both keep the move <= bps. only one token ordering exists (router `initialize` and swapper `_key` force native currency0) | code `FeeAutoSwapperV2.sol:242-247`, `BurnRouterV2.sol:305-309`, p1 partial fill tests |
 | floors round down (lenient by <= 1 wei); `floorFor` is the enforced function (LF-12) | code, p1 `floorView_matchesEnforcement` |
 | one burn per block across `processBurn` and `processBurnOpenTab` (shared `lastBurnBlock`); open tab gated to `openTabCaller`, default none (D31) | code `:152-162,269-271`, p1 tests |
 | router `initialize` once, owner only; setters bounded (impact [25,300], threshold >= 0.001 eth, floor [5000,9500]) | code, p1 tests |
 | swapper and router `unlockCallback` reachable only through their own `unlock` (PoolManager calls back the unlocker) | code |
-| swapper `rescue` cannot reach eth or the coin; the swapper never approves anyone, so a wrapper token's `transfer` cannot pull the coin | code `:337-343` |
+| swapper `rescue` cannot reach eth or the coin; the swapper never approves anyone, so a wrapper token's `transfer` cannot pull the coin | code `FeeAutoSwapperV2.sol:354-360` |
 | swapper flush/convert: reentrant `endRecipient` hits `nonReentrant`, its push fails and the amount is escrowed; keeper reward failure goes to the recipient | code, p1 tests |
 | swapper `selfClaimOnly` set in the constructor; hook skim refunds never land under the swapper (exact input sell: skim is on the unspecified quote side, no over charge) | code, hook `_afterSwap` |
 | keeper reward loop with dust: reward is 0.5% of the swapper's own output, paced per block, capped; a donor gets back less than donated | code |

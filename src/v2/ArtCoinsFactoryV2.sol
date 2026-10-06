@@ -33,7 +33,7 @@ interface IHookPoolManager {
 ///         (factory, sender, full config): salt = keccak256(abi.encode(sender, configHash(c))).
 ///
 ///         Launch flow (`deployToken`, `deployTokenAsOwner`):
-///         1. deprecated gate (owner bypasses).
+///         1. deprecated gate (owner bypasses); token deployer set (D38).
 ///         2. config validated against `Constants` and factory state.
 ///         3. `msg.value >= deployFee + sum(extension msgValue)`; the excess is
 ///            refunded to the sender at the end of the call.
@@ -67,6 +67,16 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     /// @notice Parallel arrays of different lengths (FT-10).
     error ArrayLengthMismatch();
+    /// @notice No token deployer set yet (D38).
+    error DeployerNotSet();
+    /// @notice The deployer has no code, is not bound to this factory, or was
+    ///         built against other Constants.
+    error InvalidDeployer(address deployer);
+
+    // ── additive events (not in the frozen interface) ────────────────────
+
+    /// @notice D38: the token deployer pointer changed.
+    event TokenDeployerSet(address indexed oldDeployer, address indexed newDeployer);
     /// @notice Position count is 0 or above `Constants.MAX_LP_POSITIONS`, or position bps do not sum to BPS.
     error InvalidPositions();
     /// @notice Reward slot count (project slots plus protocol slot) is 0 or above
@@ -96,8 +106,11 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     /// @notice The Uniswap v4 PoolManager every enabled hook must answer.
     address public immutable poolManager;
-    /// @notice CREATE2 token deployer, created in this constructor and bound to this factory.
-    ArtCoinsDeployerV2 public immutable tokenDeployer;
+    /// @notice CREATE2 token deployer (D38): its own contract, bound to this
+    ///         factory at its construction, wired with `setTokenDeployer`.
+    ///         Replacing it changes every future token address (the deployer is
+    ///         the CREATE2 origin), so `predictToken` answers for the current one.
+    address public tokenDeployer;
 
     // ── owner state ───────────────────────────────────────────────────────
 
@@ -137,7 +150,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     /// @param poolManager_   Uniswap v4 PoolManager.
     /// @param protocolBps_   Initial `defaultProtocolFeeBps` (<= MAX_PROTOCOL_FEE_BPS).
     /// @param deployFee_     Initial `deployFee` (<= MAX_DEPLOY_FEE).
-    /// @dev   Ships deprecated; the owner flips it after wiring.
+    /// @dev   Ships deprecated and without a token deployer. Deploy order (D38):
+    ///        factory, then `new ArtCoinsDeployerV2(factory)`, then
+    ///        `setTokenDeployer`, then the remaining wiring, then `setDeprecated(false)`.
     constructor(address owner_, address poolManager_, uint16 protocolBps_, uint256 deployFee_)
         Ownable(owner_)
     {
@@ -145,7 +160,6 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         if (protocolBps_ > Constants.MAX_PROTOCOL_FEE_BPS) revert ProtocolFeeBpsTooHigh();
         if (deployFee_ > Constants.MAX_DEPLOY_FEE) revert DeployFeeTooHigh();
         poolManager = poolManager_;
-        tokenDeployer = new ArtCoinsDeployerV2(address(this));
         defaultProtocolFeeBps = protocolBps_;
         deployFee = deployFee_;
         deprecated = true;
@@ -189,7 +203,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         view
         returns (address)
     {
-        return tokenDeployer.predict(
+        return _deployer().predict(
             c.token, _supply(c.token.totalSupply), c.tax, _canon(c), address(this), _salt(sender, c)
         );
     }
@@ -197,6 +211,11 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     /// @inheritdoc IArtCoinsFactoryV2
     function configHash(DeploymentConfigV2 calldata c) public pure returns (bytes32) {
         return keccak256(abi.encode(c));
+    }
+
+    function _deployer() internal view returns (ArtCoinsDeployerV2 d) {
+        d = ArtCoinsDeployerV2(tokenDeployer);
+        if (address(d) == address(0)) revert DeployerNotSet();
     }
 
     function _canon(DeploymentConfigV2 calldata c)
@@ -227,6 +246,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         returns (address token)
     {
         if (deprecated && msg.sender != owner()) revert Deprecated();
+        ArtCoinsDeployerV2 deployer = _deployer();
 
         uint256 supply = _supply(c.token.totalSupply);
         (uint256 extensionsSupply, uint256 extensionsValue) = _validate(c, supply, protocolBps);
@@ -236,7 +256,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         if (msg.value < required) revert MsgValueMismatch(required, msg.value);
 
         bytes32 h = configHash(c);
-        token = tokenDeployer.deploy(
+        token = deployer.deploy(
             c.token, supply, c.tax, _canon(c), address(this), keccak256(abi.encode(msg.sender, h))
         );
 
@@ -665,6 +685,22 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         if (enabled) _checkConstants(escrow);
         enabledEscrows[escrow] = enabled;
         emit EscrowSet(escrow, enabled);
+    }
+
+    /// @notice D38: points the factory at a token deployer bound to it.
+    /// @dev    The deployer must have code, answer `factory() == this` and a
+    ///         matching `constantsHash()`. Never 0: launches would revert anyway,
+    ///         use `setDeprecated` to stop public launches.
+    function setTokenDeployer(address deployer) external onlyOwner {
+        if (deployer == address(0)) revert ZeroAddress();
+        (bool ok, bytes memory ret) =
+            deployer.staticcall(abi.encodeCall(ArtCoinsDeployerV2.factory, ()));
+        if (!ok || ret.length != 32 || abi.decode(ret, (address)) != address(this)) {
+            revert InvalidDeployer(deployer);
+        }
+        _checkConstants(deployer);
+        emit TokenDeployerSet(tokenDeployer, deployer);
+        tokenDeployer = deployer;
     }
 
     /// @inheritdoc IArtCoinsFactoryV2

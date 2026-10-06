@@ -2,7 +2,7 @@
 
 files: `src/v2/hooks/ArtCoinsHookV2.sol`, `src/v2/hooks/libraries/HookCalldata.sol`, `test/v2/HookV2.fork.t.sol`, `test/v2/mocks/HookV2ForkBase.sol`, `test/v2/mocks/HookV2Mocks.sol`.
 
-size at the ci profile (runs 200): 16,230 bytes runtime, 8,346 bytes headroom. one contract, no cold module (D14). note: `src/hooks/legacy/ArtCoinsHookV2.sol` has the same contract name; scripts and `forge verify-contract` must use the path qualified name.
+size at the ci profile (runs 200): 16,241 bytes runtime, 8,335 bytes headroom. one contract, no cold module (D14). note: `src/hooks/legacy/ArtCoinsHookV2.sol` has the same contract name; scripts and `forge verify-contract` must use the path qualified name.
 
 ## review findings (contracts-hooks-mev.md)
 
