@@ -5,6 +5,7 @@ import {Test, console2} from "forge-std/Test.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {PoolModifyLiquidityTest} from "@uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol";
@@ -14,7 +15,6 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {IWETH9} from "@uniswap/v4-periphery/src/interfaces/external/IWETH9.sol";
-import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmounts.sol";
 
 /// @title  ForkBase
 /// @notice Shared mainnet fork base for every v2 test. Pins one block, carries
@@ -212,13 +212,15 @@ abstract contract ForkBase is Test {
         uint128 liquidity,
         bytes memory hookData
     ) internal returns (BalanceDelta delta) {
-        (uint160 sqrtP,,,) = readSlot0(key);
-        (uint256 a0,) = LiquidityAmounts.getAmountsForLiquidity(
-            sqrtP,
-            TickMath.getSqrtPriceAtTick(tickLower),
-            TickMath.getSqrtPriceAtTick(tickUpper),
-            liquidity
-        );
+        uint256 a0;
+        {
+            (uint160 sqrtP,,,) = readSlot0(key);
+            uint160 sqrtA = TickMath.getSqrtPriceAtTick(tickLower);
+            uint160 sqrtB = TickMath.getSqrtPriceAtTick(tickUpper);
+            if (sqrtP < sqrtB) {
+                a0 = SqrtPriceMath.getAmount0Delta(sqrtP > sqrtA ? sqrtP : sqrtA, sqrtB, liquidity, true);
+            }
+        }
         uint256 value;
         if (key.currency0.isAddressZero()) {
             value = a0 + 1;

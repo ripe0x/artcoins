@@ -11,6 +11,7 @@ import {ArtCoinsLpLocker} from "../../../src/lp-lockers/ArtCoinsLpLocker.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
+import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 
@@ -102,9 +103,8 @@ contract HarnessForkTest is ForkStack {
         assertEq(stack.owner.balance - teamBefore, LIVE_DEPLOY_FEE, "deploy fee to team");
         assertEq(l.numPositions, 12, "LAYER 12 position preset");
         assertEq(IERC20(l.token).balanceOf(address(stack.locker)), 0, "all supply in LP");
-        (uint160 sqrtP,,, uint24 lpFee0) = readSlot0(l.key);
+        (uint160 sqrtP,,,) = readSlot0(l.key);
         assertGt(sqrtP, 0, "pool initialized");
-        lpFee0;
 
         // buy at t0: total skim = mev starting bps (90%).
         uint256 ethIn = 1 ether;
@@ -163,6 +163,27 @@ contract HarnessForkTest is ForkStack {
             deadBefore,
             "canonical buy not taxed"
         );
+    }
+
+    function test_freshStack_addLiquidity_blockedInWindow_openAfter() public onlyFork {
+        deployFreshStack();
+        Launched memory l = launchToken(defaultLaunchParams());
+        (, int24 tick,,) = readSlot0(l.key);
+        // one-sided eth range strictly above the current tick.
+        int24 lower = (tick / 200 + 1) * 200;
+        int24 upper = lower + 2000;
+
+        vm.expectRevert();
+        this.externalAddLiquidity(l, lower, upper, 1e18);
+
+        skip(31 minutes);
+        BalanceDelta d = addLiquidity(l.key, lower, upper, 1e18, "");
+        assertLt(d.amount0(), 0, "paid eth");
+        assertEq(d.amount1(), 0, "no token needed above tick");
+    }
+
+    function externalAddLiquidity(Launched memory l, int24 lower, int24 upper, uint128 liq) external {
+        addLiquidity(l.key, lower, upper, liq, "");
     }
 
     // ─── live coin 111 ──────────────────────────────────────────────────

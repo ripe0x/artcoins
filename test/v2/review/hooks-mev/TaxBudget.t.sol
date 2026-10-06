@@ -13,6 +13,7 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 
 /// in one unlock: add then remove liquidity on the CANONICAL pool (net zero,
 /// flash accounted, attests the removed PCT as exemption budget), then buy on
@@ -100,7 +101,7 @@ contract TaxBudgetTest is HooksMevBase {
             address(0x10C),
             address(0)
         );
-        assertTrue(skimHook.poolTaxEnabled(_id(canon)), "canonical tax attest path on");
+        assertTrue(skimHook.poolTaxEnabled(PoolId.wrap(_id(canon))), "canonical tax attest path on");
         _addLiquidity(canon, -6000, 6000, 1000 ether);
 
         side = PoolKey({
