@@ -1,6 +1,6 @@
 # artcoins ops runbook
 
-> disclosure: part 1 describes LF-01 (critical, live, immutable lockers) and other findings on deployed contracts. keep this file off the public mirror until the owner has run actions 1, 2 and 5. nothing here needs a code change. every address was read on chain at block 26130514 (2026-10-06) and every selector was checked against the deployed bytecode or the v1 source.
+> disclosure: part 1 describes LF-01 (critical, live, immutable lockers) and other findings on deployed contracts. keep this file off the public mirror until the owner has run actions 1, 2 and 4 (collects and the open factory) and 5 (router floors). nothing here needs a code change. every address was read on chain at block 26130514 (2026-10-06) and every selector was checked against the deployed bytecode or the v1 source.
 
 ## setup, used by every command
 
@@ -15,19 +15,20 @@ export R_LAYER=0x2eDBdF011768d8cd4Ef537658b41440900C52000 R_OPEN=0xE60046ee745B2
 export WETH=0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 PM=0x000000000004444c5dc75cB358380D2e3dE08A90
 ```
 
-rules for every send: (1) simulate first by swapping `cast send` for `cast call --from $OWNER` with the same arguments; (2) one tx at a time, check the verify line; (3) the owner key is the only secret, nothing in this file needs any other; (4) all owner calls are plain eoa txs, none is time critical except action 1 and 2 hygiene.
+rules for every send: (1) simulate first by swapping `cast send` for `cast call --from $OWNER` with the same arguments; (2) one tx at a time, check the verify line; (3) the owner key stays in a keystore or the shell, never in a file or argument list, and the keeper uses its own separate hot key; (4) every owner call is a plain eoa tx, none needs a multisig or a delay.
 
 ## order of play
 
-| # | action | why now | cost |
+| action | what | why now | cost |
 |---|---|---|---|
 | 1 | collect 111 fees, then keep collecting | LF-01 critical | gas only |
-| 2 | deprecate open factory 0xf051 | public, zero fee, hijackable | one tx |
-| 3 | set LAYER burn router floors | LF-09 | two txs |
-| 4 | deploy and schedule the 111 collect and flush keeper | LF-01 and LF-02 mitigation | one deploy, cron |
-| 5 | collect LAYER once | LF-01 on the legacy locker | gas |
-| 6 | claim owner LAYER fee locker balance | 3.3M LAYER and 0.48 weth sit unclaimed | two txs |
-| 7 | decide the LAYER freezes (scripty, renderer, extension) | irreversible, owner choice | see 7 |
+| 4 | deprecate open factory 0xf051 | public, zero fee, hijackable | one tx |
+| 5 | set LAYER burn router floors | LF-09 | two txs |
+| 3 | deploy and schedule the 111 collect and flush keeper | LF-01 and LF-02 mitigation | one deploy, cron |
+| 2 | collect LAYER once | LF-01 on the legacy locker | gas |
+| 8 | claim owner LAYER fee locker balance | 3.3M LAYER and 0.48 weth sit unclaimed | two txs |
+| 6 | decide the LAYER freezes (scripty, renderer, extension) | irreversible, owner choice, do last | see 6 |
+| 7, 9, 10 | keep 0x4959 deprecated, stranding limits, leave alone list | context | none |
 
 ## part 1: today, without redeploying
 
@@ -43,7 +44,7 @@ rules for every send: (1) simulate first by swapping `cast send` for `cast call 
 | read now | pending is 13,404 coin and 0 eth (simulated, 658k gas). the swapper then holds the coin, the eth side would sit at the escrow under the swapper slot |
 | verify | `cast call $C111 "balanceOf(address)(uint256)" $SWAPPER --rpc-url $MAINNET_RPC_URL` rises by about the pending coin. `cast call $ESCROW "feesToClaim(address,address)(uint256)" $SWAPPER 0x0000000000000000000000000000000000000000 --rpc-url $MAINNET_RPC_URL` (eth credit, 0 expected now) |
 | risk | gas (~665k, about 0.003 eth at 5 gwei) exceeds the 0.0007 eth value pending today: this resets the exposure, it does not earn. if an eth credit appears at the escrow, flush in the same minute (`cast send $SWAPPER "flushPaired()" --gas-limit 200000 ...`, 72k gas) because anyone can `escrow.claim(swapper, 0)` and strand it (LF-02, nothing recovers it). coin side: leave it in the swapper until a keeper run converts it with a real minOut, `convert(0)` invites a sandwich bounded only by the swapper's 80% of spot floor |
-| keep collecting | action 4 keeper, hourly check, collect when `preview()` shows more than 0.02 eth or 10,000 coin uncollected, or weekly regardless. it shrinks exposure and cannot close the hole. v2 removes the function |
+| keep collecting | action 3 keeper, hourly check, collect when `preview()` shows more than 0.02 eth or 10,000 coin uncollected, or weekly regardless. it shrinks exposure and cannot close the hole. v2 removes the function |
 
 ### 2. collect LAYER on the legacy locker (LF-01, legacy)
 
@@ -79,7 +80,7 @@ rules for every send: (1) simulate first by swapping `cast send` for `cast call 
 |---|---|
 | finding | FT-02 launch hijack, FT-03 protocol bps zeroed by any caller, S-03 open by default. live: deprecated false, deployFee 0, version "3", owner 0xCB43, hook 0xAAd6 and locker 0xd914 enabled |
 | confirm first | `cast call $F_OPEN "deprecated()(bool)" --rpc-url $MAINNET_RPC_URL` returns false. zero coins: `cast logs --address $F_OPEN --from-block 25125700 --to-block latest "TokenCreated(address,address,address,string,string,string,string,string,int24,address,bytes32,address,address,address,uint256,address[])" --rpc-url $MAINNET_RPC_URL` returns nothing (positive control: the same query on $F_CUR from block 25260000 returns the 111 launch) |
-| contract and call | `$F_OPEN` `setDeprecated(bool)` selector 0x5763dbd0 is wrong, the selector is 0xd848dee7, arg `true`. onlyOwner |
+| contract and call | `$F_OPEN` `setDeprecated(bool)` selector 0xd848dee7, arg `true`. onlyOwner (also present on 0x4959 and 0xd159) |
 | send | `cast send $F_OPEN "setDeprecated(bool)" true --rpc-url $MAINNET_RPC_URL --private-key $OWNER_KEY` |
 | verify | `cast call $F_OPEN "deprecated()(bool)" --rpc-url $MAINNET_RPC_URL` returns true |
 | risk | none for coins (zero launched). reversible by `setDeprecated(false)`. the allowlist 0xd6D5fb5CfE386d0eB73a09cba5d190beb802e6E8 is shared with the live hook 0x636c, do not touch it. no other action on 0xf051 is needed once deprecated (owner can still launch there) |
@@ -107,9 +108,8 @@ what is mutable today, all owned by the owner eoa (token admin, renderer owner, 
 | scripty content, sketch js | `ll/sketch.b64.1778120217836`, 22,996 bytes, frozen false, owner 0xCB43 | `cast send $SCRIPTY "freezeContent(string)" "ll/sketch.b64.1778120217836" --rpc-url $MAINNET_RPC_URL --private-key $OWNER_KEY` (selector 0x7a2c5701, on `ScriptyStorageV2` 0xbD11994aABB55Da86DC246EBB17C1Be0af5b7699, third party contract, source not in repo) | the bytes under that name can never change again. one way. without it the owner can append chunks and rewrite the animation script |
 | scripty content, history | `ll/history.b64.1778120217836`, 3,632 bytes, frozen false | same call with that name | seeded trade history fixed |
 | scripty content, mona image | `ll/mona.1778120217836`, 78,065 bytes, frozen false | same call with that name | backdrop image fixed |
-| verify | `cast call $SCRIPTY "contents(string)(bool,address,uint256,bytes)" "<name>" --rpc-url $MAINNET_RPC_URL` first value true |  |  |
 
-freezing storage alone does not freeze the animation: the renderer still lets the owner point at other content names. all of these are one way, so do them last and only after the v2 plan is final:
+verify each freeze: `cast call $SCRIPTY "contents(string)(bool,address,uint256,bytes)" "<name>" --rpc-url $MAINNET_RPC_URL` first value true. freezing storage alone does not freeze the animation: the renderer still lets the owner point at other content names. all of these are one way, so do them last and only after the v2 plan is final:
 
 | lever | call | effect | recommendation |
 |---|---|---|---|
@@ -126,7 +126,7 @@ freezing storage alone does not freeze the animation: the renderer still lets th
 |---|---|
 | finding | superseded stack, only owner can launch (deprecated true, deployFee 0.069 eth, owner 0xCB43) |
 | now | nothing to send. confirm: `cast call $F_CUR "deprecated()(bool)" --rpc-url $MAINNET_RPC_URL` returns true. never call `setDeprecated(false)` on it |
-| later, when v2 is live and the credits coin launched | `cast send $F_CUR "setHook(address,bool)" 0x636c050296B5Cc528D8785169Bf8923716FCa9cc false --rpc-url $MAINNET_RPC_URL --private-key $OWNER_KEY` (selector 0x... via `cast sig "setHook(address,bool)"`, onlyOwnerOrAdmin) |
+| later, when v2 is live and the credits coin launched | `cast send $F_CUR "setHook(address,bool)" 0x636c050296B5Cc528D8785169Bf8923716FCa9cc false --rpc-url $MAINNET_RPC_URL --private-key $OWNER_KEY` (`setHook(address,bool)` selector 0x833e8db1, onlyOwnerOrAdmin, checked in the 0x4959 bytecode) |
 | verify | `cast call $F_CUR "enabledHooks(address)(bool)" 0x636c050296B5Cc528D8785169Bf8923716FCa9cc --rpc-url $MAINNET_RPC_URL` returns false |
 | risk | affects future launches on 0x4959 only. coin 111, its hook, locker and pool are untouched. reversible by `setHook(..., true)`. the hook has no owner and no off switch, `setHook` is the only lever |
 
@@ -175,12 +175,12 @@ source of truth for the stack is `script/v2/DeployV2Stack.s.sol` (being written)
 | 0 | fork rehearsal, no key | `forge script script/v2/DeployV2Stack.s.sol --rpc-url $MAINNET_RPC_URL` (no `--broadcast`), then `FOUNDRY_PROFILE=ci forge test --match-path "test/v2/DeployV2Stack.fork.t.sol" --fork-url $MAINNET_RPC_URL -vv` (`test_deployV2Stack_wiringComplete`, `test_deployV2Stack_runtimeMatchesBuild`). pin a block, record it |
 | 1 | `ArtCoinsFeeEscrowV2` | owner is the deployer, Ownable2Step. depositors are added in step 7 |
 | 2 | extension allowlist | new instance. do not reuse 0xd6D5…, it is bound to the live hook 0x636c |
-| 3 | hook, salt mined with `HookMiner` against the CREATE2 deployer 0x4e59b44847b379578588920cA78FbF26c0B4956C | low 14 bits 0x2DCC. ctor takes poolManager `$PM`, escrow, allowlist. check `address(hook) & 0x3FFF == 0x2DCC` and runtime size under 24,576 at the ci profile |
-| 4 | locker V2 | ctor takes escrow, position manager, permit2. keeper reward bps 0 |
+| 3 | hook, salt mined with `HookMiner` against the CREATE2 deployer 0x4e59b44847b379578588920cA78FbF26c0B4956C | low 14 bits 0x2DCC. constructor args per the script, pool manager is `$PM`. check `address(hook) & 0x3FFF == 0x2DCC` and runtime size under 24,576 at the ci profile |
+| 4 | locker V2 | constructor args per the script. keeper reward bps stays 0 |
 | 5 | `ArtCoinsMevLinearSkimV2` | one module |
 | 6 | `ArtCoinsFactoryV2` | ctor `(owner, poolManager, protocolBps, deployFee)`, starts `deprecated = true`. it creates its token deployer |
 | 7 | wire, all owner txs | escrow: `addDepositor(hook, true)`, `addDepositor(locker, true)`, controller as non core. hook: `setLauncher(factory, true)`, `setFeeEscrow`, `setExtensionAllowlist`. locker: `setLauncher(factory, true)`, `setFeeEscrow`. factory: `setHook`, `setLocker`, `setMevModule`, `setEscrow`, `setMinProtocolSkimShareBps`, `setProtocolRecipient`, `setReferralPayout`, `setTeamFeeRecipient`, `setDeployFee`. leave `deprecated` true |
-| 8 | `ProtocolFeeControllerV2` and `BurnRouterV2` | controller ctor `(owner, escrow, treasury, burnRouter, treasuryBps)`, treasury 0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4. the router can only `initialize(coin, key)` once the coin pool exists, so initialize it right after the first launch, then rehearse `processFees` on a fork |
+| 8 | `ProtocolFeeControllerV2` and `BurnRouterV2` | controller ctor `(owner, escrow, treasury, burnRouter, treasuryBps)`, treasury per the owner decision (permanent collection uses 0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4). the router can only `initialize(coin, key)` once the coin pool exists, so initialize it right after the first launch, then rehearse `processFees` on a fork |
 | 9 | keepers | `ArtCoinsKeeperV2(factory)`, stateless. `CollectFlushKeeperV1` stays for 111 |
 | 10 | verify on etherscan | `script/v2/verify-v2.sh` (`forge verify-contract`, profile `tune`) for every address, with the library links. then a fork check that on chain runtime equals the local build. etherscan has no key in ci, use blockscout as the fallback |
 | 11 | registry | add every address to `deployments/mainnet.json` with `stack`, `status: active`, mark the old stacks `superseded` or `deprecated`, deploy block and tx. `node script-js/verify-registry.mjs --fill --update-blocks` then `node script-js/verify-registry.mjs --require-artifacts` must exit 0. commit the broadcast record this time (H4) |
@@ -190,7 +190,7 @@ source of truth for the stack is `script/v2/DeployV2Stack.s.sol` (being written)
 | step | what | check |
 |---|---|---|
 | 1 | build the `DeploymentConfigV2` for the treasury recipient (credits engine): native eth pool, tax mode and sink per DESIGN section 6 and 7, extensions none or allowlisted, lp split | `factory.predictToken(owner, config)` equals the address in the config file, `factory.configHash(config)` recorded |
-| 2 | simulate on a fork, then send `deployTokenAsOwner(config, protocolBps)` with `--value` = extension msgValues (the owner path skips the deploy fee, check the factory source before sending) | `factory.isArtCoin(token)`, `hook.poolInfo(poolId).version == 2`, `token.launcherVersion() == 2`, the launch event echoes the config |
+| 2 | simulate on a fork, then send `deployTokenAsOwner(config, protocolBps)` (onlyOwner, the one path that sets the protocol slot bps) with `--value` at least `deployFee()` plus extension msgValues, excess is refunded | `factory.isArtCoin(token)`, `hook.poolInfo(poolId).version == 2`, `token.launcherVersion() == 2`, the launch event echoes the config |
 | 3 | `BurnRouterV2.initialize(token, key)` if the coin uses the burn leg | `router.coin() == token` |
 | 4 | trade a small buy and sell, collect, deliver to the treasury, run `ArtCoinsKeeperV2.collectAndForward(token, true, minOut)` | fees land at the treasury by push, escrow stays empty, treasury `receive` works under `pushGas` (50k default) |
 | 5 | add the coin to the keeper cron and the registry `coins` list | `verify-registry` passes |
@@ -210,6 +210,6 @@ before the call: the checklist below is all true, the first coin ran at least on
 | 5 | ui points at the v2 factory and gates on `deprecated` | ui reads `factory.deprecated()` and `deployFee()`, shows the fee, blocks on unknown chain, encodes the v2 config, simulates before send (UI-01 to UI-09) |
 | 6 | keeper cron running | `ArtCoinsKeeperV2` deployed, hourly job live, key under 0.05 eth, alert on `swapperEth`, `lastConvertBlock` age and escrow slots |
 | 7 | old factories deprecated | `deprecated()` true on `$F_OPEN`, `$F_CUR`, `$F_LEGACY`. `setHook(0x636c…, false)` on `$F_CUR` after the first v2 coin trades |
-| 8 | action 1 and 5 done, router floors fresh | collect timestamps, `minLayerOutPerWeth()` within 5% of 95% of spot |
+| 8 | actions 1, 2 and 5 done, router floors fresh | collect timestamps, `minLayerOutPerWeth()` within 5% of 95% of spot |
 | 9 | public repo hygiene | mirror tag filter fixed (H1), curated merge of docs/v2 and review tests (H2), origin confirmed (H3) |
 | 10 | owner key custody | hardware or keystore, ownership of v2 contracts is Ownable2Step so `acceptOwnership` is exercised on a fork once |

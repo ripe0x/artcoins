@@ -35,7 +35,7 @@ import {LaunchDefaults} from "./LaunchDefaults.sol";
 ///   STARTING_TICK            Aligned-to-200 starting tick.
 contract LaunchArtTest is Script {
     address constant SEPOLIA_WETH = 0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14;
-    address constant MAINNET_WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+    address constant MAINNET_WETH = Addresses.WETH;
 
     function _weth() internal view returns (address) {
         if (block.chainid == 11_155_111) return SEPOLIA_WETH;
@@ -43,8 +43,8 @@ contract LaunchArtTest is Script {
         revert("Unsupported chain");
     }
 
-    /// @dev This script drives the legacy factory ABI (LAYER launched on stack `legacy`, 2026-05-07).
-    ///      On mainnet it refuses to run unless ALLOW_SUPERSEDED=1.
+    /// @dev Drives the legacy factory ABI (stack `legacy`, LAYER). On mainnet it refuses
+    ///      to run unless ALLOW_SUPERSEDED=1.
     function _requireSupersededAllowed() internal view {
         if (block.chainid == Addresses.CHAIN_ID && vm.envOr("ALLOW_SUPERSEDED", uint256(0)) != 1) {
             revert("targets superseded stack legacy; set ALLOW_SUPERSEDED=1 to run on mainnet");

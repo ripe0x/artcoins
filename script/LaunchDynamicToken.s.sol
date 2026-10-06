@@ -11,7 +11,10 @@ import {DynamicBlockRenderer} from "../src/renderer/DynamicBlockRenderer.sol";
 import {LaunchDefaults} from "./LaunchDefaults.sol";
 
 /// @notice Deploy a new token with the DynamicBlockRenderer.
-/// @dev Uses the Sepolia addresses from config.ts.
+/// @dev Sepolia only. The addresses below are the 2026-04-15 sepolia rehearsal stack
+///      (same as ui/src/lib/config.ts SEPOLIA_ADDRESSES). They are NOT in
+///      deployments/mainnet.json and not verified by it; there is no mainnet
+///      deployment of this stack, so `run()` refuses any chain but Sepolia.
 ///
 /// Usage:
 ///   source .env && forge script script/LaunchDynamicToken.s.sol \
@@ -25,6 +28,7 @@ contract LaunchDynamicToken is Script {
     address constant WETH = 0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14;
 
     function run() public {
+        require(block.chainid == 11_155_111, "LaunchDynamicToken: sepolia only");
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(pk);
 

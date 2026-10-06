@@ -22,8 +22,8 @@ import {LaunchDefaults} from "./LaunchDefaults.sol";
 ///   FACTORY=0x... HOOK=0x... LOCKER=0x... MEV_LINEAR=0x... WETH=0x... DEPLOYER=0x... \
 ///   forge script script/LaunchTestToken.s.sol --rpc-url http://localhost:8545 --broadcast -vvv
 contract LaunchTestToken is Script {
-    /// @dev This script drives the legacy factory ABI (LAYER launched on stack `legacy`, 2026-05-07).
-    ///      On mainnet it refuses to run unless ALLOW_SUPERSEDED=1.
+    /// @dev Drives the legacy factory ABI (stack `legacy`, LAYER). On mainnet it refuses
+    ///      to run unless ALLOW_SUPERSEDED=1.
     function _requireSupersededAllowed() internal view {
         if (block.chainid == Addresses.CHAIN_ID && vm.envOr("ALLOW_SUPERSEDED", uint256(0)) != 1) {
             revert("targets superseded stack legacy; set ALLOW_SUPERSEDED=1 to run on mainnet");
