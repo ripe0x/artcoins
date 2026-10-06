@@ -61,6 +61,7 @@ contract FactoryTokenReviewTest is Test {
         vm.stopPrank();
         vm.deal(artist, 10 ether);
         vm.deal(attacker, 10 ether);
+        vm.deal(owner, 10 ether);
     }
 
     // ─── helpers ─────────────────────────────────────────────────────────

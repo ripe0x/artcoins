@@ -210,16 +210,7 @@ abstract contract ForkStack is ForkBase {
     function launchToken(LaunchParams memory p) internal returns (Launched memory l) {
         require(address(stack.factory) != address(0), "ForkStack: deployFreshStack first");
         IArtCoinsFactory.DeploymentConfig memory cfg = _buildConfig(p);
-        uint256 fee = stack.factory.deployFee();
-        vm.deal(p.launcher, p.launcher.balance + fee);
-        vm.prank(p.launcher);
-        if (p.taxBps == 0) {
-            l.token = stack.factory.deployTokenWithProtocolBps{value: fee}(cfg, p.protocolBps);
-        } else {
-            l.token = stack.factory.deployTokenWithProtocolBpsAndTax{value: fee}(
-                cfg, p.protocolBps, _taxConfig(p.taxBps)
-            );
-        }
+        l.token = _deploy(cfg, p);
         IArtCoinsLpLocker.TokenRewardInfo memory info = stack.locker.tokenRewards(l.token);
         l.key = info.poolKey;
         l.id = info.poolKey.toId();
@@ -231,62 +222,89 @@ abstract contract ForkStack is ForkBase {
         vm.label(l.token, p.symbol);
     }
 
+    function _deploy(IArtCoinsFactory.DeploymentConfig memory cfg, LaunchParams memory p)
+        internal
+        returns (address token)
+    {
+        uint256 fee = stack.factory.deployFee();
+        vm.deal(p.launcher, p.launcher.balance + fee);
+        vm.prank(p.launcher);
+        if (p.taxBps == 0) {
+            token = stack.factory.deployTokenWithProtocolBps{value: fee}(cfg, p.protocolBps);
+        } else {
+            token = stack.factory.deployTokenWithProtocolBpsAndTax{value: fee}(
+                cfg, p.protocolBps, _taxConfig(p.taxBps)
+            );
+        }
+    }
+
     function _buildConfig(LaunchParams memory p)
         internal
         view
         returns (IArtCoinsFactory.DeploymentConfig memory cfg)
     {
-        cfg.tokenConfig = IArtCoinsFactory.TokenConfig({
-            tokenAdmin: p.tokenAdmin,
-            name: p.name,
-            symbol: p.symbol,
-            salt: p.salt,
-            image: "",
-            metadata: "",
-            context: "v2 fork harness",
-            totalSupply: p.totalSupply,
-            renderer: address(0)
-        });
-        bytes memory feeData = abi.encode(
-            IArtCoinsHookSkimFee.SkimHookFeeData({
-                baselineSkimBps: p.baselineSkimBps,
-                bountyBps: p.bountyBps,
-                maxReferralBpsOfVolume: p.maxReferralBpsOfVolume,
-                lpFee: p.lpFee,
-                bountyRecipient: p.bountyRecipient,
-                protocolRecipient: p.protocolRecipient,
-                referralPayout: p.referralPayout,
-                quoteToken: address(0)
-            })
-        );
-        cfg.poolConfig = IArtCoinsFactory.PoolConfig({
-            hook: address(stack.hook),
-            pairedToken: address(0),
-            tickIfToken0IsArtCoins: p.tickIfToken0IsArtCoins,
-            tickSpacing: LaunchDefaults.TICK_SPACING,
-            poolData: abi.encode(
-                IArtCoinsHook.PoolInitializationData({
-                    extension: address(0), extensionData: "", feeData: feeData
-                })
-            )
-        });
-        (int24[] memory lo, int24[] memory hi, uint16[] memory pb) =
-            LaunchDefaults.buildLayerThinFloor12Positions(p.tickIfToken0IsArtCoins);
-        cfg.lockerConfig = IArtCoinsFactory.LockerConfig({
-            locker: address(stack.locker),
-            rewardAdmins: p.rewardAdmins,
-            rewardRecipients: p.rewardRecipients,
-            rewardBps: p.rewardBps,
-            tickLower: lo,
-            tickUpper: hi,
-            positionBps: pb,
-            lockerData: ""
-        });
+        cfg.tokenConfig = _tokenConfig(p);
+        cfg.poolConfig = _poolConfig(p);
+        cfg.lockerConfig = _lockerConfig(p);
         cfg.mevModuleConfig = IArtCoinsFactory.MevModuleConfig({
             mevModule: address(stack.mev), mevModuleData: p.mevModuleData
         });
-        cfg.sniperFeeConfig = IArtCoinsFactory.SniperFeeConfig({recipient: address(0), lockRecipient: false});
+        cfg.sniperFeeConfig =
+            IArtCoinsFactory.SniperFeeConfig({recipient: address(0), lockRecipient: false});
         cfg.extensionConfigs = new IArtCoinsFactory.ExtensionConfig[](0);
+    }
+
+    function _tokenConfig(LaunchParams memory p)
+        internal
+        pure
+        returns (IArtCoinsFactory.TokenConfig memory t)
+    {
+        t.tokenAdmin = p.tokenAdmin;
+        t.name = p.name;
+        t.symbol = p.symbol;
+        t.salt = p.salt;
+        t.context = "v2 fork harness";
+        t.totalSupply = p.totalSupply;
+    }
+
+    function _skimFeeData(LaunchParams memory p) internal pure returns (bytes memory) {
+        IArtCoinsHookSkimFee.SkimHookFeeData memory d;
+        d.baselineSkimBps = p.baselineSkimBps;
+        d.bountyBps = p.bountyBps;
+        d.maxReferralBpsOfVolume = p.maxReferralBpsOfVolume;
+        d.lpFee = p.lpFee;
+        d.bountyRecipient = p.bountyRecipient;
+        d.protocolRecipient = p.protocolRecipient;
+        d.referralPayout = p.referralPayout;
+        d.quoteToken = address(0);
+        return abi.encode(d);
+    }
+
+    function _poolConfig(LaunchParams memory p)
+        internal
+        view
+        returns (IArtCoinsFactory.PoolConfig memory pc)
+    {
+        IArtCoinsHook.PoolInitializationData memory init;
+        init.feeData = _skimFeeData(p);
+        pc.hook = address(stack.hook);
+        pc.pairedToken = address(0);
+        pc.tickIfToken0IsArtCoins = p.tickIfToken0IsArtCoins;
+        pc.tickSpacing = LaunchDefaults.TICK_SPACING;
+        pc.poolData = abi.encode(init);
+    }
+
+    function _lockerConfig(LaunchParams memory p)
+        internal
+        view
+        returns (IArtCoinsFactory.LockerConfig memory lc)
+    {
+        (lc.tickLower, lc.tickUpper, lc.positionBps) =
+            LaunchDefaults.buildLayerThinFloor12Positions(p.tickIfToken0IsArtCoins);
+        lc.locker = address(stack.locker);
+        lc.rewardAdmins = p.rewardAdmins;
+        lc.rewardRecipients = p.rewardRecipients;
+        lc.rewardBps = p.rewardBps;
     }
 
     /// @dev Mirrors the live 111 tax shape: max 2000, canonical pool = native

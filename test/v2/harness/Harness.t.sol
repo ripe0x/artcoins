@@ -190,39 +190,63 @@ contract HarnessForkTest is ForkStack {
 
     function test_live111_buySell_skimCreditedToLiveRecipients() public onlyFork {
         LiveStack memory s = liveStack();
-        (uint24 baseBps, uint16 bountyBps,,, address payable bountyR, address payable protoR,,) =
-            ISkimConfigView(s.hook).skimConfig(s.coin111Id);
-        assertGt(baseBps, 0, "111 baseline set");
-        uint24 cur = IMevSkimView(s.mev).currentSkimBps(s.coin111Id);
-        uint24 totalBps = cur > baseBps ? cur : baseBps;
+        LiveSkim memory c = _liveSkim(s);
+        assertGt(c.baseBps, 0, "111 baseline set");
 
         ArtCoinsFeeEscrow escrow = ArtCoinsFeeEscrow(s.escrow);
         uint256 ethIn = 0.1 ether;
-        uint256 bBefore = bountyR.balance;
-        uint256 eBefore = escrow.availableFees(protoR, address(0));
+        uint256 bBefore = c.bountyR.balance;
+        uint256 eBefore = escrow.availableFees(c.protoR, address(0));
 
         (, uint256 got) = swapExactIn(s.coin111Key, true, ethIn, address(this), "");
         assertGt(got, 0, "bought 111");
 
-        uint256 bounty = bountyR.balance - bBefore;
-        uint256 proto = escrow.availableFees(protoR, address(0)) - eBefore;
-        uint256 baseline = ethIn * baseBps / SKIM_DENOM;
-        uint256 total = ethIn * totalBps / SKIM_DENOM;
-        uint256 bountyShare = baseline * bountyBps / BPS;
+        uint256 bounty = c.bountyR.balance - bBefore;
+        uint256 proto = escrow.availableFees(c.protoR, address(0)) - eBefore;
         assertGt(bounty + proto, 0, "non zero skim on live 111 buy");
-        assertApproxEqAbs(bounty, bountyShare + (total - baseline), 2, "live bounty leg");
-        assertApproxEqAbs(proto, baseline - bountyShare, 2, "live protocol leg escrowed");
+        (uint256 expBounty, uint256 expProto) = _expectedLegs(ethIn, c);
+        assertApproxEqAbs(bounty, expBounty, 2, "live bounty leg");
+        assertApproxEqAbs(proto, expProto, 2, "live protocol leg escrowed");
 
         // sell it back: output side skim credited again.
-        bBefore = bountyR.balance;
-        eBefore = escrow.availableFees(protoR, address(0));
+        bBefore = c.bountyR.balance;
+        eBefore = escrow.availableFees(c.protoR, address(0));
         (, uint256 ethOut) = swapExactIn(s.coin111Key, false, got, address(this), "");
         assertGt(ethOut, 0, "sold 111");
-        assertGt(bountyR.balance - bBefore, 0, "live bounty on sell");
-        assertGt(escrow.availableFees(protoR, address(0)) - eBefore, 0, "live protocol on sell");
+        assertGt(c.bountyR.balance - bBefore, 0, "live bounty on sell");
+        assertGt(escrow.availableFees(c.protoR, address(0)) - eBefore, 0, "live protocol on sell");
     }
 
     // ─── helpers ────────────────────────────────────────────────────────
+
+    struct LiveSkim {
+        uint24 baseBps;
+        uint16 bountyBps;
+        uint24 totalBps;
+        address payable bountyR;
+        address payable protoR;
+    }
+
+    function _liveSkim(LiveStack memory s) internal view returns (LiveSkim memory c) {
+        (c.baseBps, c.bountyBps,,, c.bountyR, c.protoR,,) =
+            ISkimConfigView(s.hook).skimConfig(s.coin111Id);
+        uint24 cur = IMevSkimView(s.mev).currentSkimBps(s.coin111Id);
+        c.totalBps = cur > c.baseBps ? cur : c.baseBps;
+    }
+
+    /// @dev Exact-input buy legs: bounty = baseline * bountyBps + anti-sniper
+    ///      extra; protocol = baseline remainder (no referrer in hookData).
+    function _expectedLegs(uint256 ethIn, LiveSkim memory c)
+        internal
+        pure
+        returns (uint256 bounty, uint256 proto)
+    {
+        uint256 baseline = ethIn * c.baseBps / SKIM_DENOM;
+        uint256 total = ethIn * c.totalBps / SKIM_DENOM;
+        uint256 bountyShare = baseline * c.bountyBps / BPS;
+        bounty = bountyShare + (total - baseline);
+        proto = baseline - bountyShare;
+    }
 
     function _legDeltasBuy(Launched memory l, LaunchParams memory p, uint256 ethIn)
         internal

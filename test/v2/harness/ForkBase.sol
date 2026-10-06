@@ -167,34 +167,47 @@ abstract contract ForkBase is Test {
         address recipient,
         bytes memory hookData
     ) internal returns (BalanceDelta delta, uint256 amountOut) {
-        Currency inC = zeroForOne ? key.currency0 : key.currency1;
         Currency outC = zeroForOne ? key.currency1 : key.currency0;
-        uint256 value;
+        uint256 value = _fundInput(zeroForOne ? key.currency0 : key.currency1, amountIn);
+        uint256 outBefore = _bal(outC, address(this));
+        delta = _routerSwap(key, zeroForOne, amountIn, value, hookData);
+        amountOut = _bal(outC, address(this)) - outBefore;
+        _forwardOutput(outC, recipient, amountOut);
+    }
+
+    function _fundInput(Currency inC, uint256 amountIn) private returns (uint256 value) {
         if (inC.isAddressZero()) {
             if (address(this).balance < amountIn) vm.deal(address(this), amountIn);
-            value = amountIn;
-        } else {
-            IERC20(Currency.unwrap(inC)).approve(address(swapRouter), amountIn);
+            return amountIn;
         }
-        uint256 outBefore = _bal(outC, address(this));
-        delta = swapRouter.swap{value: value}(
-            key,
-            IPoolManager.SwapParams({
-                zeroForOne: zeroForOne,
-                amountSpecified: -int256(amountIn),
-                sqrtPriceLimitX96: zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
-            }),
-            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
-            hookData
-        );
-        amountOut = _bal(outC, address(this)) - outBefore;
-        if (recipient != address(this) && amountOut != 0) {
-            if (outC.isAddressZero()) {
-                (bool ok,) = recipient.call{value: amountOut}("");
-                require(ok, "ForkBase: eth forward failed");
-            } else {
-                IERC20(Currency.unwrap(outC)).transfer(recipient, amountOut);
-            }
+        IERC20(Currency.unwrap(inC)).approve(address(swapRouter), amountIn);
+        return 0;
+    }
+
+    function _routerSwap(
+        PoolKey memory key,
+        bool zeroForOne,
+        uint256 amountIn,
+        uint256 value,
+        bytes memory hookData
+    ) private returns (BalanceDelta) {
+        IPoolManager.SwapParams memory sp = IPoolManager.SwapParams({
+            zeroForOne: zeroForOne,
+            amountSpecified: -int256(amountIn),
+            sqrtPriceLimitX96: zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
+        });
+        PoolSwapTest.TestSettings memory ts =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+        return swapRouter.swap{value: value}(key, sp, ts, hookData);
+    }
+
+    function _forwardOutput(Currency outC, address recipient, uint256 amount) private {
+        if (recipient == address(this) || amount == 0) return;
+        if (outC.isAddressZero()) {
+            (bool ok,) = recipient.call{value: amount}("");
+            require(ok, "ForkBase: eth forward failed");
+        } else {
+            IERC20(Currency.unwrap(outC)).transfer(recipient, amount);
         }
     }
 
@@ -212,34 +225,33 @@ abstract contract ForkBase is Test {
         uint128 liquidity,
         bytes memory hookData
     ) internal returns (BalanceDelta delta) {
-        uint256 a0;
-        {
-            (uint160 sqrtP,,,) = readSlot0(key);
-            uint160 sqrtA = TickMath.getSqrtPriceAtTick(tickLower);
-            uint160 sqrtB = TickMath.getSqrtPriceAtTick(tickUpper);
-            if (sqrtP < sqrtB) {
-                a0 = SqrtPriceMath.getAmount0Delta(sqrtP > sqrtA ? sqrtP : sqrtA, sqrtB, liquidity, true);
-            }
-        }
-        uint256 value;
-        if (key.currency0.isAddressZero()) {
-            value = a0 + 1;
-            if (address(this).balance < value) vm.deal(address(this), value);
-        } else {
-            IERC20(Currency.unwrap(key.currency0)).approve(address(liqRouter), type(uint256).max);
-        }
+        uint256 value = _fundLiquidity(key, tickLower, tickUpper, liquidity);
+        IPoolManager.ModifyLiquidityParams memory mp = IPoolManager.ModifyLiquidityParams({
+            tickLower: tickLower,
+            tickUpper: tickUpper,
+            liquidityDelta: int256(uint256(liquidity)),
+            salt: bytes32(0)
+        });
+        delta = liqRouter.modifyLiquidity{value: value}(key, mp, hookData);
+    }
+
+    function _fundLiquidity(PoolKey memory key, int24 tickLower, int24 tickUpper, uint128 liquidity)
+        private
+        returns (uint256 value)
+    {
         // currency1 is never native; the router pulls it via transferFrom.
         IERC20(Currency.unwrap(key.currency1)).approve(address(liqRouter), type(uint256).max);
-        delta = liqRouter.modifyLiquidity{value: value}(
-            key,
-            IPoolManager.ModifyLiquidityParams({
-                tickLower: tickLower,
-                tickUpper: tickUpper,
-                liquidityDelta: int256(uint256(liquidity)),
-                salt: bytes32(0)
-            }),
-            hookData
-        );
+        if (!key.currency0.isAddressZero()) {
+            IERC20(Currency.unwrap(key.currency0)).approve(address(liqRouter), type(uint256).max);
+            return 0;
+        }
+        (uint160 sqrtP,,,) = readSlot0(key);
+        uint160 sqrtA = TickMath.getSqrtPriceAtTick(tickLower);
+        uint160 sqrtB = TickMath.getSqrtPriceAtTick(tickUpper);
+        if (sqrtP < sqrtB) {
+            value = SqrtPriceMath.getAmount0Delta(sqrtP > sqrtA ? sqrtP : sqrtA, sqrtB, liquidity, true) + 1;
+        }
+        if (address(this).balance < value) vm.deal(address(this), value);
     }
 
     // ─── reads ───────────────────────────────────────────────────────────
