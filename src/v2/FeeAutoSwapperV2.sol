@@ -11,6 +11,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
@@ -62,6 +63,9 @@ contract FeeAutoSwapperV2 is
     uint256 public constant KEEPER_GAS = 50_000;
     /// @notice Max per call input (v4 swap amounts are int128 sized).
     uint256 public constant MAX_STEP_IN_CEILING = uint256(uint128(type(int128).max));
+
+    /// @notice `unlockCallback` caller is not the PoolManager.
+    error NotPoolManager();
 
     /// @notice Constructor parameter bundle.
     /// @dev `artCoin` may be zero; the deployer then binds it via `setup`.
@@ -215,12 +219,18 @@ contract FeeAutoSwapperV2 is
     /// @dev    The coin is transferred to the PoolManager AFTER the swap, so a
     ///         HARD tax mode coin sees the hook's flow grant first.
     function unlockCallback(bytes calldata data) external returns (bytes memory) {
-        if (msg.sender != address(poolManager)) revert NotDeployer();
+        if (msg.sender != address(poolManager)) revert NotPoolManager();
         (uint256 amountIn, uint160 spot) = abi.decode(data, (uint256, uint160));
         address coin = artCoin;
 
-        // coin is currency1 (native eth sorts first), selling it raises the price.
-        uint256 c = (uint256(spot) * (20_000 + maxSlippageBps)) / 20_000;
+        // coin is currency1 (native eth sorts first), selling it raises the
+        // price. limit = spot * sqrt(1 + bps / BPS), rounded down, so the
+        // realized price move never exceeds `maxSlippageBps` (the v1 linear
+        // approximation overshot by bps^2 / 4).
+        uint256 factor = FixedPointMathLib.sqrt(
+            (Constants.BPS + maxSlippageBps) * 1e36 / Constants.BPS
+        );
+        uint256 c = FullMath.mulDiv(uint256(spot), factor, 1e18);
         uint160 limit =
             c >= uint256(TickMath.MAX_SQRT_PRICE) ? TickMath.MAX_SQRT_PRICE - 1 : uint160(c);
 

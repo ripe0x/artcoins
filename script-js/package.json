@@ -2,6 +2,10 @@
   "name": "new-material-coin-launcher-scripts",
   "private": true,
   "type": "module",
+  "scripts": {
+    "gen:addresses": "node gen-addresses.mjs",
+    "check:addresses": "node gen-addresses.mjs --check"
+  },
   "dependencies": {
     "puppeteer": "^23.0.0",
     "sharp": "^0.33.0",

@@ -9,6 +9,7 @@ import {IArtCoinsLpLockerV2} from "./interfaces/IArtCoinsLpLockerV2.sol";
 import {IArtCoinsMevSkimV2} from "./interfaces/IArtCoinsMevSkimV2.sol";
 import {IArtCoinsTokenV2} from "./interfaces/IArtCoinsTokenV2.sol";
 import {IConstantsBound} from "./interfaces/IConstantsBound.sol";
+import {ArtCoinsTokenV2} from "./ArtCoinsTokenV2.sol";
 import {ArtCoinsDeployerV2} from "./utils/ArtCoinsDeployerV2.sol";
 
 import {Ownable, Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
@@ -38,9 +39,9 @@ interface IHookPoolManager {
 ///            refunded to the sender at the end of the call.
 ///         4. token deployed by CREATE2 with the sender bound salt.
 ///         5. `hook.initializePool` with the skim config; protocolRecipient and
-///            referralPayout are injected from factory storage. When tax is on
-///            the token's canonical hook, pool id and PoolManager are checked
-///            against the pool just created.
+///            referralPayout are injected from factory storage. The token's
+///            canonical hook, pool id, PoolManager, tax mode and sink are
+///            checked against the pool just created (FT-06).
 ///         6. launch record (`isArtCoin`, `deploymentInfo`) written.
 ///         7. pool supply approved to the locker, `placeLiquidity` with the
 ///            protocol slot appended; the locker must pull exactly the pool supply.
@@ -86,6 +87,8 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     /// @notice The Uniswap v4 PoolManager every enabled hook must answer.
     address public immutable poolManager;
+    /// @notice CREATE2 token deployer, created in this constructor and bound to this factory.
+    ArtCoinsDeployerV2 public immutable tokenDeployer;
 
     // ── owner state ───────────────────────────────────────────────────────
 
@@ -133,6 +136,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         if (protocolBps_ > Constants.MAX_PROTOCOL_FEE_BPS) revert ProtocolFeeBpsTooHigh();
         if (deployFee_ > Constants.MAX_DEPLOY_FEE) revert DeployFeeTooHigh();
         poolManager = poolManager_;
+        tokenDeployer = new ArtCoinsDeployerV2(address(this));
         defaultProtocolFeeBps = protocolBps_;
         deployFee = deployFee_;
         deprecated = true;
@@ -176,21 +180,27 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         view
         returns (address)
     {
-        return ArtCoinsDeployerV2.predict(
-            address(this),
-            c.token,
-            _supply(c.token.totalSupply),
-            c.tax,
-            c.pool.hook,
-            c.pool.tickSpacing,
-            poolManager,
-            _salt(sender, c)
+        return tokenDeployer.predict(
+            c.token, _supply(c.token.totalSupply), c.tax, _canon(c), address(this), _salt(sender, c)
         );
     }
 
     /// @inheritdoc IArtCoinsFactoryV2
     function configHash(DeploymentConfigV2 calldata c) public pure returns (bytes32) {
         return keccak256(abi.encode(c));
+    }
+
+    function _canon(DeploymentConfigV2 calldata c)
+        internal
+        view
+        returns (ArtCoinsTokenV2.CanonicalPool memory)
+    {
+        return ArtCoinsTokenV2.CanonicalPool({
+            hook: c.pool.hook,
+            poolManager: poolManager,
+            tickSpacing: c.pool.tickSpacing,
+            bountyRecipient: c.fee.bountyRecipient
+        });
     }
 
     function _salt(address sender, DeploymentConfigV2 calldata c) internal pure returns (bytes32) {
@@ -217,19 +227,13 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         if (msg.value < required) revert MsgValueMismatch(required, msg.value);
 
         bytes32 h = configHash(c);
-        token = ArtCoinsDeployerV2.deploy(
-            c.token,
-            supply,
-            c.tax,
-            c.pool.hook,
-            c.pool.tickSpacing,
-            poolManager,
-            keccak256(abi.encode(msg.sender, h))
+        token = tokenDeployer.deploy(
+            c.token, supply, c.tax, _canon(c), address(this), keccak256(abi.encode(msg.sender, h))
         );
 
         PoolKey memory poolKey = _initializePool(c, token);
         PoolId poolId = poolKey.toId();
-        if (c.tax.mode != Constants.TAX_MODE_NONE) _checkCanonical(c, token, poolId);
+        _checkCanonical(c, token, poolId);
 
         _record(c, token, poolId);
 
@@ -330,23 +334,43 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         ) revert InvalidMevConfig();
     }
 
-    /// @dev d4 / D10: sink is DEAD or the bounty recipient. Mode NONE must carry no tax data,
-    ///      so the launch event never shows a tax that does not exist.
+    /// @dev d4 / D10: a sink is DEAD or the bounty recipient. Mirrors the token's
+    ///      constructor rules so a bad config fails here with a factory error:
+    ///      NONE carries no tax data (the launch event never shows a tax that does
+    ///      not exist); VENUE needs 0 < taxBpsMax <= TAX_BPS_ABSOLUTE_MAX and
+    ///      taxBps <= taxBpsMax; HARD has no rate and no exempt set, its sink is
+    ///      display only and may be 0.
     function _validateTax(TaxConfigV2 calldata t, address bountyRecipient) internal pure {
-        if (t.mode == Constants.TAX_MODE_NONE) {
+        uint8 mode = t.mode;
+        if (mode == Constants.TAX_MODE_NONE) {
             if (
                 t.taxBps != 0 || t.taxBpsMax != 0 || t.taxSink != address(0)
                     || t.venueAdmin != address(0) || t.exempt.length != 0 || t.venues.length != 0
             ) revert InvalidTaxConfig();
             return;
         }
-        if (
-            t.mode > Constants.TAX_MODE_HARD || t.taxBpsMax > Constants.TAX_BPS_ABSOLUTE_MAX
-                || t.taxBps > t.taxBpsMax || t.exempt.length > Constants.MAX_TAX_EXEMPT
-                || t.venues.length > Constants.MAX_TAX_VENUES
-        ) revert InvalidTaxConfig();
-        if (t.taxSink != Constants.DEAD && t.taxSink != bountyRecipient) {
-            revert TaxSinkNotAllowed(t.taxSink);
+        if (mode == Constants.TAX_MODE_VENUE) {
+            if (
+                t.taxBpsMax == 0 || t.taxBpsMax > Constants.TAX_BPS_ABSOLUTE_MAX
+                    || t.taxBps > t.taxBpsMax
+            ) revert InvalidTaxConfig();
+            if (t.taxSink != Constants.DEAD && t.taxSink != bountyRecipient) {
+                revert TaxSinkNotAllowed(t.taxSink);
+            }
+        } else if (mode == Constants.TAX_MODE_HARD) {
+            if (t.taxBps != 0 || t.taxBpsMax != 0 || t.exempt.length != 0) {
+                revert InvalidTaxConfig();
+            }
+            if (
+                t.taxSink != address(0) && t.taxSink != Constants.DEAD
+                    && t.taxSink != bountyRecipient
+            ) revert TaxSinkNotAllowed(t.taxSink);
+        } else {
+            revert InvalidTaxConfig();
+        }
+        if (t.exempt.length > Constants.MAX_TAX_EXEMPT || t.venues.length > Constants.MAX_TAX_VENUES)
+        {
+            revert InvalidTaxConfig();
         }
         for (uint256 i; i < t.exempt.length; ++i) {
             if (t.exempt[i] == address(0)) revert InvalidTaxConfig();
@@ -397,7 +421,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         return IArtCoinsHookV2(c.pool.hook).initializePool(p);
     }
 
-    /// @dev FT-06: the token's tax must point at the pool this factory just created.
+    /// @dev FT-06: the token's canonical pool must be the pool this factory just created.
+    ///      The token derives it from the same hook, tickSpacing and PoolManager, so
+    ///      this is a cross check that also catches a hook that keys pools differently.
     function _checkCanonical(DeploymentConfigV2 calldata c, address token, PoolId poolId)
         internal
         view

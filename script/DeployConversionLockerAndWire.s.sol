@@ -7,6 +7,7 @@ import {ArtCoinsFactory} from "../src/ArtCoinsFactory.sol";
 import {ArtCoinsFeeEscrow} from "../src/ArtCoinsFeeEscrow.sol";
 import {ArtCoinsPoolExtensionAllowlist} from "../src/hooks/ArtCoinsPoolExtensionAllowlist.sol";
 import {ArtCoinsLpLocker} from "../src/lp-lockers/ArtCoinsLpLocker.sol";
+import {Addresses} from "./Addresses.sol";
 
 /// @dev Minimal view into the live hook — avoids importing the heavy
 ///      ArtCoinsHook (Uniswap hook base + HookMiner deps) just to read one
@@ -17,9 +18,12 @@ interface IHookAllowlistView {
 
 /// @title  DeployConversionLockerAndWire
 /// @notice Mainnet artcoins-owner ops for the PERMANENT COLLECTION ($111)
-///         path-B launch. ("Conversion" in the name is legacy — this now
-///         deploys the lean `ArtCoinsLpLocker`; fee conversion moved downstream
-///         to FeeAutoSwapper.) Run by the artcoins owner (the account that owns
+///         path-B launch. Targets the CURRENT stack (factory 0x4959…), taken from
+///         deployments/mainnet.json through Addresses.sol. NOTE: that factory is
+///         `deprecated`, so the Phase 1 preflight (`!deprecated`) fails closed; the
+///         current stack already has locker 0x866e…, so a second locker is not needed.
+///         ("Conversion" in the name is legacy — this now deploys the lean
+///         `ArtCoinsLpLocker`; fee conversion moved downstream to FeeAutoSwapper.) Run by the artcoins owner (the account that owns
 ///         the live V3 factory, fee escrow, AND the hook's pool-extension
 ///         allowlist — currently `0xCB43…17F9`). Two phases, two broadcasts:
 ///
@@ -54,18 +58,22 @@ interface IHookAllowlistView {
 ///     --sig "allowlistExtension()" \
 ///     --rpc-url <MAINNET> --broadcast --ledger --sender 0xCB43... -vvv
 contract DeployConversionLockerAndWire is Script {
-    // ── live V3 stack PC launches against (verified on-chain) ──
-    address constant FACTORY = 0xF051cd4C4F3F36F9f24d8a19d60Ee8F84FC6793e;
-    address constant HOOK = 0xAAd673ea3945dF5F7Ef328974d2c07c8BdcAA8Cc;
-    address constant ESCROW = 0xDD1b8C9C99Be3C717B9A5eb3C84297C5bfca1C06;
-    address constant MEV_LINEAR_FEES = 0xAe19E402420359062eE422a03589e04a52cD8C6F;
+    // ── current stack PC launches against (deployments/mainnet.json, via Addresses.sol) ──
+    // Was hardcoded to the superseded open stack (factory 0xF051, hook 0xAAd6, escrow 0xDD1b)
+    // and the legacy mev module 0xAe19. `MEV_LINEAR_FEES` keeps its name (the fork test
+    // reads it) but is the current linear skim module.
+    address constant FACTORY = Addresses.CURRENT_FACTORY;
+    address constant HOOK = Addresses.CURRENT_HOOK;
+    address constant ESCROW = Addresses.CURRENT_ESCROW;
+    address constant MEV_LINEAR_FEES = Addresses.CURRENT_MEV_LINEAR_SKIM;
     // ── canonical infra (constructor deps for the locker) ──
-    address constant POSITION_MANAGER = 0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e;
-    address constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
+    address constant POSITION_MANAGER = Addresses.POSITION_MANAGER;
+    address constant PERMIT2 = Addresses.PERMIT2;
 
     // ─────────────────────────── Phase 1 ───────────────────────────
 
     function run() public returns (address conversionLocker) {
+        require(block.chainid == Addresses.CHAIN_ID, "mainnet only");
         address owner = vm.envAddress("ARTCOINS_OWNER");
         _preflightPhase1(owner);
 
@@ -132,6 +140,7 @@ contract DeployConversionLockerAndWire is Script {
     // ─────────────────────────── Phase 3 ───────────────────────────
 
     function allowlistExtension() public {
+        require(block.chainid == Addresses.CHAIN_ID, "mainnet only");
         address owner = vm.envAddress("ARTCOINS_OWNER");
         address ext = vm.envAddress("EXTENSION");
         ArtCoinsPoolExtensionAllowlist allowlist = _allowlist();
