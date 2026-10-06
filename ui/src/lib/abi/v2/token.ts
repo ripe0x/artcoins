@@ -446,6 +446,19 @@ export const tokenV2Abi = [
   },
   {
     "type": "function",
+    "name": "transferVenueAdmin",
+    "inputs": [
+      {
+        "name": "newAdmin",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "updateAdmin",
     "inputs": [
       {
@@ -700,6 +713,25 @@ export const tokenV2Abi = [
   },
   {
     "type": "event",
+    "name": "VenueAdminTransferred",
+    "inputs": [
+      {
+        "name": "previousAdmin",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newAdmin",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Verified",
     "inputs": [
       {
@@ -778,6 +810,22 @@ export const tokenV2Abi = [
     "type": "error",
     "name": "NotVenueAdmin",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "StringTooLong",
+    "inputs": [
+      {
+        "name": "field",
+        "type": "uint8",
+        "internalType": "uint8"
+      },
+      {
+        "name": "len",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",

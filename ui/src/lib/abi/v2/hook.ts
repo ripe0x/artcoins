@@ -189,6 +189,11 @@ export const hookV2Abi = [
                 "internalType": "address"
               }
             ]
+          },
+          {
+            "name": "minProtocolShareBps",
+            "type": "uint16",
+            "internalType": "uint16"
           }
         ]
       }
