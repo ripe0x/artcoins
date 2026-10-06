@@ -4,6 +4,7 @@
   "type": "module",
   "dependencies": {
     "puppeteer": "^23.0.0",
-    "sharp": "^0.33.0"
+    "sharp": "^0.33.0",
+    "viem": "^2.57.3"
   }
 }
