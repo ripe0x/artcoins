@@ -34,9 +34,9 @@ const coin = (symbol) => reg.coins.find((c) => c.symbol === symbol) ?? die('regi
 // Stack ids are stable and name the constants (CURRENT_*, OPEN_*, LEGACY_*, V2_*); status is a field.
 // A planned stack (null factory) is skipped: no constants until it is deployed.
 const deployed = (id) => reg.stacks[id] && reg.stacks[id].status !== 'planned' && reg.stacks[id].factory !== null;
-const CURRENT_ID = (() => {
+(() => { // exactly one stack carries status current
   const ids = Object.entries(reg.stacks).filter(([, s]) => s.status === 'current').map(([id]) => id);
-  return ids.length === 1 ? ids[0] : die(`expected exactly one stack with status current, got ${ids}`);
+  if (ids.length !== 1) die(`expected exactly one stack with status current, got ${ids}`);
 })();
 const factoryOf = (id) => reg.contracts.find((c) => c.stack === id && c.role === 'factory' && c.address?.toLowerCase() === reg.stacks[id].factory.toLowerCase()) ?? die('registry has no factory entry in stack ' + id);
 
@@ -125,20 +125,6 @@ for (const id of Object.keys(reg.stacks)) {
   if (!deployed(id)) console.log(`skip  stack ${id} (${reg.stacks[id].status}, no deployed factory): no constants generated`);
   else if (!STACK_CONSTS.some(([n]) => n.toLowerCase() === id)) die(`stack ${id} is deployed but has no constant table in STACK_CONSTS`);
 }
-if (!['current', 'v2'].includes(CURRENT_ID)) die('the stack with status current must have id current or v2, got ' + CURRENT_ID);
-// roles the stacks share: [ACTIVE_ role, constant name in stack current, constant name in stack v2]
-const ACTIVE_ROLES = [
-  ['FACTORY', 'FACTORY', 'FACTORY'],
-  ['HOOK', 'HOOK', 'HOOK'],
-  ['LOCKER', 'LOCKER', 'LOCKER'],
-  ['ESCROW', 'ESCROW', 'ESCROW'],
-  ['ALLOWLIST', 'POOL_EXTENSION_ALLOWLIST', 'ALLOWLIST'],
-  ['MEV_MODULE', 'MEV_LINEAR_SKIM', 'MEV_MODULE'],
-  ['DEPLOYER', 'DEPLOYER_LIB', 'DEPLOYER'],
-  ['BURN_ROUTER', 'BURN_ROUTER', 'BURN_ROUTER'],
-  ['PROTOCOL_FEE_CONTROLLER', 'PROTOCOL_FEE_CONTROLLER', 'PROTOCOL_FEE_CONTROLLER'],
-];
-const activeCol = CURRENT_ID === 'v2' ? 2 : 1;
 
 const COIN_CONSTS = reg.coins.map((k) => ['COIN_' + k.symbol.toUpperCase().replace(/[^A-Z0-9]/g, '_'), cs(k.address), k]);
 
@@ -158,19 +144,14 @@ function solidity() {
   L.push('');
   L.push('/// @title Addresses');
   L.push('/// @notice Ethereum mainnet addresses of the artcoins stacks, copied from the registry.');
-  L.push('///         Constants are prefixed with the stack id (CURRENT_*, OPEN_*, LEGACY_*, V2_*). CURRENT_* is the');
-  L.push('///         stack with id current (the 0x4959 factory and its v1 abi). ACTIVE_* is the stack whose registry');
-  L.push('///         status is current, for every role the stacks share. Scripts that target a superseded stack must say');
+  L.push('///         Constants are prefixed with the stack id. CURRENT_* is the 0x4959 stack (v1 abi), V2_* is the v2');
+  L.push('///         stack, OPEN_* and LEGACY_* are older stacks. Scripts that target a superseded stack must say');
   L.push('///         so and be gated behind ALLOW_SUPERSEDED=1.');
   L.push('library Addresses {');
   L.push(`    uint256 internal constant CHAIN_ID = ${reg.chainId};`);
   L.push('');
   L.push('    /// @dev owner of nearly every contract below (single eoa).');
   L.push(`    address internal constant OWNER = ${cs(reg.owner)};`);
-  L.push('');
-  L.push(`    string internal constant CURRENT_STACK_ID = "${CURRENT_ID}";`);
-  for (const r of ACTIVE_ROLES) L.push(`    address internal constant ACTIVE_${r[0]} = ${CURRENT_ID.toUpperCase()}_${r[activeCol]};`);
-  L.push(`    uint256 internal constant ACTIVE_FACTORY_DEPLOY_BLOCK = ${CURRENT_ID.toUpperCase()}_FACTORY_DEPLOY_BLOCK;`);
   L.push('');
   for (const [id, entries] of STACK_CONSTS) {
     const sid = id.toLowerCase();
@@ -205,7 +186,6 @@ function typescript() {
   L.push('');
   const ids = Object.keys(reg.stacks).filter(deployed);
   L.push("export type StackId = " + ids.map(q).join(' | ') + ';');
-  L.push(`export const CURRENT_STACK_ID: StackId = ${q(CURRENT_ID)};`);
   L.push('');
   L.push('export interface RegistryStack {');
   L.push('  label: string;');
@@ -241,14 +221,6 @@ function typescript() {
   stackObj('CURRENT', 'current', STACK_CONSTS.find(([n]) => n === 'CURRENT')[1], 'addresses of the stack with id current', false);
   const v2 = STACK_CONSTS.find(([n]) => n === 'V2');
   if (v2) stackObj('V2', 'v2', v2[1], 'addresses of the stack with id v2', true);
-  L.push('/** addresses by stack id, for the stacks with a table here */');
-  L.push(`export const STACK_ADDRESSES = { current: CURRENT${v2 ? ', v2: V2' : ''} } as const;`);
-  L.push('');
-  L.push('/** addresses of the stack whose registry status is current, for the roles every stack has */');
-  L.push('export const ACTIVE = {');
-  for (const r of ACTIVE_ROLES) L.push(`  ${camel(r[0])}: STACK_ADDRESSES.${CURRENT_ID}.${camel(r[activeCol])},`);
-  L.push(`  deployBlock: STACKS.${CURRENT_ID}.deployBlock,`);
-  L.push('} as const;');
   L.push('');
   L.push('/** external infra (not in the registry) */');
   L.push('export const INFRA = {');

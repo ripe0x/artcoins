@@ -6,27 +6,14 @@ pragma solidity ^0.8.26;
 
 /// @title Addresses
 /// @notice Ethereum mainnet addresses of the artcoins stacks, copied from the registry.
-///         Constants are prefixed with the stack id (CURRENT_*, OPEN_*, LEGACY_*, V2_*). CURRENT_* is the
-///         stack with id current (the 0x4959 factory and its v1 abi). ACTIVE_* is the stack whose registry
-///         status is current, for every role the stacks share. Scripts that target a superseded stack must say
+///         Constants are prefixed with the stack id. CURRENT_* is the 0x4959 stack (v1 abi), V2_* is the v2
+///         stack, OPEN_* and LEGACY_* are older stacks. Scripts that target a superseded stack must say
 ///         so and be gated behind ALLOW_SUPERSEDED=1.
 library Addresses {
     uint256 internal constant CHAIN_ID = 1;
 
     /// @dev owner of nearly every contract below (single eoa).
     address internal constant OWNER = 0xCB43078C32423F5348Cab5885911C3B5faE217F9;
-
-    string internal constant CURRENT_STACK_ID = "current";
-    address internal constant ACTIVE_FACTORY = CURRENT_FACTORY;
-    address internal constant ACTIVE_HOOK = CURRENT_HOOK;
-    address internal constant ACTIVE_LOCKER = CURRENT_LOCKER;
-    address internal constant ACTIVE_ESCROW = CURRENT_ESCROW;
-    address internal constant ACTIVE_ALLOWLIST = CURRENT_POOL_EXTENSION_ALLOWLIST;
-    address internal constant ACTIVE_MEV_MODULE = CURRENT_MEV_LINEAR_SKIM;
-    address internal constant ACTIVE_DEPLOYER = CURRENT_DEPLOYER_LIB;
-    address internal constant ACTIVE_BURN_ROUTER = CURRENT_BURN_ROUTER;
-    address internal constant ACTIVE_PROTOCOL_FEE_CONTROLLER = CURRENT_PROTOCOL_FEE_CONTROLLER;
-    uint256 internal constant ACTIVE_FACTORY_DEPLOY_BLOCK = CURRENT_FACTORY_DEPLOY_BLOCK;
 
     // CURRENT stack (current): current stack (skim fee), factory deployed 2026-06-06
     address internal constant CURRENT_FACTORY = 0x49596c375c139E79bb937bcf826068a8F78D4e0e;

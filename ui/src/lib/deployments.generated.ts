@@ -6,7 +6,6 @@ export const REGISTRY_CHAIN_ID = 1;
 export const REGISTRY_OWNER: Address = '0xCB43078C32423F5348Cab5885911C3B5faE217F9';
 
 export type StackId = 'legacy' | 'open' | 'current';
-export const CURRENT_STACK_ID: StackId = 'current';
 
 export interface RegistryStack {
   label: string;
@@ -60,22 +59,6 @@ export const CURRENT = {
   poolExtensionAllowlist: '0xd6D5fb5CfE386d0eB73a09cba5d190beb802e6E8',
 } as const satisfies Record<string, Address>;
 
-/** addresses by stack id, for the stacks with a table here */
-export const STACK_ADDRESSES = { current: CURRENT } as const;
-
-/** addresses of the stack whose registry status is current, for the roles every stack has */
-export const ACTIVE = {
-  factory: STACK_ADDRESSES.current.factory,
-  hook: STACK_ADDRESSES.current.hook,
-  locker: STACK_ADDRESSES.current.locker,
-  escrow: STACK_ADDRESSES.current.escrow,
-  allowlist: STACK_ADDRESSES.current.poolExtensionAllowlist,
-  mevModule: STACK_ADDRESSES.current.mevLinearSkim,
-  deployer: STACK_ADDRESSES.current.deployerLib,
-  burnRouter: STACK_ADDRESSES.current.burnRouter,
-  protocolFeeController: STACK_ADDRESSES.current.protocolFeeController,
-  deployBlock: STACKS.current.deployBlock,
-} as const;
 
 /** external infra (not in the registry) */
 export const INFRA = {
