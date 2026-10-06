@@ -1,7 +1,19 @@
 #!/usr/bin/env node
 // Verifies deployments/mainnet.json against the chain and the local foundry artifacts.
-//   node script-js/verify-registry.mjs [--shape] [--fill] [--update-blocks] [--require-artifacts]
-//        [--file deployments/mainnet.json] [--artifacts foundry-out,out/ci]
+//   node script-js/verify-registry.mjs [--shape] [--fill | --fill-source] [--update-blocks] [--require-artifacts]
+//        [--build | --no-build] [--discover] [--file deployments/mainnet.json]
+// Bytecode compare is profile aware. Every contract records source.profile (default | ci) and source.metadata
+// (none | ipfs), the build settings it was deployed with, and is compared only against the artifacts of that
+// variant. Variants live in separate out dirs (never mix them: a foundry-out built at the wrong profile is what
+// made the legacy stack look mismatched):
+//   default/none -> foundry-out-default       (foundry.toml [profile.default], runs 20000, no metadata)
+//   ci/none      -> foundry-out-ci            (FOUNDRY_PROFILE=ci, runs 200, no metadata)
+//   ci/ipfs      -> foundry-out-ci-ipfs       (ci + FOUNDRY_BYTECODE_HASH=ipfs FOUNDRY_CBOR_METADATA=true)
+//   default/ipfs -> foundry-out-default-ipfs  (default + the same two overrides)
+// --build: run the builds (forge build --skip "test/**" --skip script -o <dir>, FOUNDRY_PROFILE=<p>; FORGE env
+// overrides the forge binary). --no-build (default): use the dirs as they are. --discover: ignore the recorded
+// profile and try every variant (what --fill-source uses to record the profile that matches; none matching
+// records mismatch with a null profile). --fill-source writes only source.{commit,bytecodeMatch,profile,metadata}.
 // --shape: schema check only, no rpc. A stack with status "planned" (not deployed yet, e.g. the v2 skeleton
 // in deployments/v2.template.json) may hold null addresses and dates; it passes the schema and is skipped by
 // every chain and bytecode check. --fill: write discovered values back (owner, state, bytecodeMatch,
@@ -10,7 +22,7 @@
 // --require-artifacts they fail. Env: MAINNET_RPC_URL (default: tenderly public gateway).
 import fs from 'node:fs';
 import path from 'node:path';
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 import { createPublicClient, http, getAddress, isAddress, parseAbi, parseAbiItem } from 'viem';
 import { mainnet } from 'viem/chains';
 
@@ -18,7 +30,12 @@ const argv = process.argv.slice(2);
 const flag = (n) => argv.includes(n);
 const opt = (n, d) => (argv.includes(n) ? argv[argv.indexOf(n) + 1] : d);
 const FILE = opt('--file', 'deployments/mainnet.json');
-const DIRS = opt('--artifacts', 'foundry-out,out/ci').split(',').filter(Boolean);
+const FORGE = process.env.FORGE || 'forge';
+const DISCOVER = flag('--discover') || flag('--fill-source');
+const FILL = flag('--fill') || flag('--fill-source');
+const mkv = (profile, metadata) => { const tag = profile + (metadata === 'ipfs' ? '-ipfs' : ''); return { profile, metadata, tag, id: `${profile}/${metadata}`, dir: `foundry-out-${tag}`, runs: profile === 'ci' ? 200 : 20000 }; };
+const VARIANTS = [mkv('default', 'none'), mkv('ci', 'none'), mkv('ci', 'ipfs'), mkv('default', 'ipfs')];
+const variantOf = (s) => (s?.profile ? VARIANTS.find((v) => v.profile === s.profile && v.metadata === s.metadata) : null);
 const URL = process.env.MAINNET_RPC_URL || 'https://mainnet.gateway.tenderly.co';
 const ZERO = '0x0000000000000000000000000000000000000000';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -48,7 +65,7 @@ function shape(r) {
   for (const c of r.contracts || []) {
     const w = `contract ${c.name}@${String(c.address).slice(0, 8)}`;
     keys(c, ['name', 'address', 'stack', 'role', 'deployBlock', 'deployTxHash', 'deployedAt', 'deployer', 'source', 'etherscanVerified', 'owner', 'state', 'status', 'provenance', 'chainVerified', 'notes'], w);
-    keys(c.source, ['repoPath', 'commit', 'bytecodeMatch'], w + ' source');
+    keys(c.source, ['repoPath', 'commit', 'bytecodeMatch', 'profile', 'metadata'].filter((k) => !(planned(c.stack) && ['profile', 'metadata'].includes(k) && !(k in (c.source || {})))), w + ' source');
     const pl = planned(c.stack); need(pl ? c.status === 'planned' : c.status !== 'planned', w + ' planned only in a planned stack');
     need(addr(c.address, pl) && (c.address === null || !seen.has(String(c.address).toLowerCase())), w + ' address unique'); if (c.address !== null) seen.add(String(c.address).toLowerCase());
     need(r.stacks?.[c.stack] && ROLES.includes(c.role), w + ' stack/role');
@@ -56,6 +73,9 @@ function shape(r) {
     need(['yes', 'no', 'unknown'].includes(c.etherscanVerified) && ['enabled', 'deprecated', 'unknown'].includes(c.state), w + ' enums');
     need(['current', 'superseded', 'legacy', 'planned'].includes(c.status) && ['chain', 'broadcast', 'brief', 'planned'].includes(c.provenance) && typeof c.chainVerified === 'boolean', w + ' enums2');
     need(['verified', 'unverified', 'mismatch'].includes(c.source?.bytecodeMatch) && (c.source?.repoPath === null || /^src\//.test(c.source.repoPath)), w + ' source');
+    const sp = c.source?.profile ?? null; const sm = c.source?.metadata ?? null;
+    need((sp === null || ['default', 'ci'].includes(sp)) && (sm === null || ['none', 'ipfs'].includes(sm)) && (sp === null) === (sm === null), w + ' source.profile/metadata: default|ci with none|ipfs, both or neither');
+    need(pl || c.source?.bytecodeMatch !== 'verified' || sp !== null, w + ' verified needs source.profile and source.metadata');
   }
   for (const [id, s] of Object.entries(r.stacks || {})) need(planned(id) || (r.contracts || []).some((c) => c.role === 'factory' && c.stack === id && eq(c.address, s.factory)), `stack ${id} factory is a contract entry`);
   const seenCoin = new Set();
@@ -74,17 +94,44 @@ if (flag('--shape')) { console.log(`schema ok: ${reg.contracts.length} contracts
 
 // ---------- bytecode ----------
 function* walk(d) { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) yield* walk(p); else if (e.name.endsWith('.json') && !e.name.endsWith('.dbg.json')) yield p; } }
-const index = {}; const missingDirs = [];
-for (const d of DIRS) {
-  if (!fs.existsSync(d)) { missingDirs.push(d); continue; }
-  for (const p of walk(d)) {
+const sanity = { none: (m) => m?.bytecodeHash === 'none', ipfs: (m) => m?.bytecodeHash === 'ipfs' };
+const indexes = new Map(); const missingDirs = []; const badDirs = [];
+function load(v) { // lazy per variant: artifacts of one out dir, indexed by source path. A dir built with other settings than its name says is rejected.
+  if (indexes.has(v.id)) return indexes.get(v.id);
+  const index = {}; indexes.set(v.id, index);
+  if (!fs.existsSync(v.dir)) { missingDirs.push(v.dir); return index; }
+  for (const p of walk(v.dir)) {
     let j; try { j = JSON.parse(fs.readFileSync(p, 'utf8')); } catch { continue; }
     const ct = j.metadata?.settings?.compilationTarget; const o = j.deployedBytecode?.object;
     if (!ct || !o || o === '0x') continue;
+    const st = j.metadata.settings; const runs = st.optimizer?.runs;
+    if (runs !== v.runs || !sanity[v.metadata](st.metadata)) {
+      badDirs.push(`${v.dir}: built at runs=${runs} bytecodeHash=${st.metadata?.bytecodeHash}, expected runs=${v.runs} ${v.metadata} (variant ${v.id}); rebuild with --build`);
+      for (const k of Object.keys(index)) delete index[k]; missingDirs.push(v.dir); return index;
+    }
     const [src, name] = Object.entries(ct)[0];
-    (index[src] ||= []).push({ name, d, runs: j.metadata.settings.optimizer?.runs, hex: o.slice(2).replace(/__\$[0-9a-f]{34}\$__/g, '0'.repeat(40)),
+    (index[src] ||= []).push({ name, d: v.dir, runs, hex: o.slice(2).replace(/__\$[0-9a-f]{34}\$__/g, '0'.repeat(40)),
       masks: [...Object.values(j.deployedBytecode.immutableReferences || {}).flat(), ...Object.values(j.deployedBytecode.linkReferences || {}).flatMap((f) => Object.values(f).flat())] });
   }
+  return index;
+}
+function build(vs) {
+  for (const v of vs) {
+    const env = { ...process.env, FOUNDRY_PROFILE: v.profile }; delete env.FOUNDRY_BYTECODE_HASH; delete env.FOUNDRY_CBOR_METADATA;
+    if (v.metadata === 'ipfs') { env.FOUNDRY_BYTECODE_HASH = 'ipfs'; env.FOUNDRY_CBOR_METADATA = 'true'; }
+    const args = ['build', '--skip', 'test/**', '--skip', 'script', '-o', v.dir, '--cache-path', `cache/${v.tag}`];
+    console.error(`build ${v.id}: ${FORGE} ${args.join(' ')}`);
+    const r = spawnSync(FORGE, args, { env, stdio: ['ignore', 'inherit', 'inherit'] });
+    if (r.status !== 0) { console.error(`build ${v.id} failed (exit ${r.status})`); process.exit(2); }
+  }
+}
+// variants the registry needs: the declared one of every checked contract; with a null profile on a source (a
+// mismatch, or discovery) every variant, because any of them could match.
+if (flag('--build') && flag('--no-build')) { console.error('--build and --no-build are exclusive'); process.exit(1); }
+{
+  const src = reg.contracts.filter((c) => c.status !== 'planned' && c.source.repoPath);
+  const need = DISCOVER || src.some((c) => !variantOf(c.source)) ? VARIANTS : VARIANTS.filter((v) => src.some((c) => variantOf(c.source) === v));
+  if (flag('--build')) build(need);
 }
 function stripCbor(b) { // trailing solidity metadata: cbor map + 2 byte length
   if (b.length < 3) return b; const n = (b[b.length - 2] << 8) | b[b.length - 1]; const st = b.length - 2 - n;
@@ -104,14 +151,29 @@ function compare(chainHex, a) {
   for (let i = 0; i < n; i++) if (!mask[i] && c[i] !== b[i]) return { ok: false, at: i, lc: c.length, lb: b.length };
   return c.length === b.length ? { ok: true } : { ok: false, at: n, lc: c.length, lb: b.length };
 }
+// one variant: exact compare against the artifacts of rp. null when the variant has no artifact for it.
+function tryVariant(v, rp, code) {
+  let cands = load(v)[rp] || []; const base = path.basename(rp, '.sol');
+  cands = cands.filter((x) => x.name === base).length ? cands.filter((x) => x.name === base) : cands.length === 1 ? cands : [];
+  if (!cands.length) return null;
+  let best = null;
+  for (const a of cands) { const r = compare(code, a); if (r.ok) return { ok: true, v, a }; if (!best || r.at > best.r.at) best = { r, a }; }
+  return { ok: false, v, ...best };
+}
+// with a recorded profile only that variant counts (the others are tried for the diagnostic only); with none (or
+// --discover) every variant counts and the first match, in VARIANTS order, is the answer.
 function bytecode(c, code) {
   const rp = c.source.repoPath; if (!rp) return { m: 'unverified', d: 'no repoPath' };
-  let cands = index[rp] || []; const base = path.basename(rp, '.sol');
-  cands = cands.filter((x) => x.name === base).length ? cands.filter((x) => x.name === base) : cands.length === 1 ? cands : [];
-  if (!cands.length) return { m: 'unchecked', d: 'artifact missing' };
-  let best = null;
-  for (const a of cands) { const r = compare(code, a); if (r.ok) return { m: 'verified', d: `${a.d} runs=${a.runs}` }; if (!best || r.at > best.r.at) best = { r, a }; }
-  return { m: 'mismatch', d: `first diff @${best.r.at} (chain ${best.r.lc} vs artifact ${best.r.lb}, ${best.a.d} runs=${best.a.runs})` };
+  const decl = variantOf(c.source); const strict = decl && !DISCOVER;
+  const out = VARIANTS.map((v) => tryVariant(v, rp, code)).filter(Boolean);
+  const hit = (strict ? out.filter((x) => x.v === decl) : out).find((x) => x.ok);
+  if (hit) { const alt = strict ? out.filter((x) => x.ok && x.v !== decl).map((x) => x.v.id) : []; return { m: 'verified', v: hit.v, d: `${hit.v.id} runs=${hit.a.runs}${alt.length ? ` (also matches ${alt.join(',')})` : ''}` }; }
+  const pool = strict ? out.filter((x) => x.v === decl) : out;
+  if (!pool.length) return { m: 'unchecked', d: strict ? `artifact missing in ${decl.dir}` : 'artifact missing', v: decl };
+  const best = pool.reduce((p, x) => (x.r.at > p.r.at ? x : p));
+  const other = strict ? out.find((x) => x.ok) : null;
+  const tried = pool.map((x) => x.v.id).join(',');
+  return { m: 'mismatch', v: strict ? decl : null, d: `first diff @${best.r.at} (chain ${best.r.lc} vs artifact ${best.r.lb}, best ${best.v.id} runs=${best.a.runs}; tried ${tried})${other ? `; matches ${other.v.id} instead of the recorded ${decl.id}` : ''}${!strict && missingDirs.length ? `; not tried (no artifacts): ${[...new Set(missingDirs)].join(',')}` : ''}` };
 }
 
 // ---------- chain reads ----------
@@ -167,11 +229,12 @@ for (let i = 0; i < C.length; i++) {
   rows.push(row);
   if (!code || code === '0x') { row.code = 'NONE'; fail(who, 'code exists', 'yes', 'no code'); continue; }
   const bc = bytecode(c, code); row.bc = bc.m; row.bcDetail = bc.d;
-  const reg_ = c.source.bytecodeMatch; let now = bc.m;
-  if (now === 'unchecked') { warn.push(`${who}: UNCHECKED, ${bc.d} (registry says ${reg_})`); if (flag('--require-artifacts') && reg_ !== 'unverified') fail(who, 'artifact present', 'yes', 'missing'); now = reg_; }
-  else if (now === 'mismatch' && reg_ === 'verified' && missingDirs.length) { warn.push(`${who}: UNCHECKED, artifact dir(s) missing: ${missingDirs.join(',')}`); now = reg_; }
+  const reg_ = c.source.bytecodeMatch; let now = bc.m; let vnow = bc.v || null;
+  if (now === 'unchecked') { vnow = variantOf(c.source); warn.push(`${who}: UNCHECKED, ${bc.d} (registry says ${reg_})`); if (flag('--require-artifacts') && reg_ !== 'unverified') fail(who, 'artifact present', 'yes', 'missing'); now = reg_; }
+  else if (now === 'mismatch' && reg_ === 'verified' && missingDirs.length) { warn.push(`${who}: UNCHECKED, artifact dir(s) missing: ${[...new Set(missingDirs)].join(',')}`); now = reg_; vnow = variantOf(c.source); }
   if (now !== reg_) fail(who, 'bytecodeMatch', reg_, `${now} (${bc.d})`);
-  drift.match.set(c, { m: now, d: bc.d });
+  row.prof = now === 'verified' ? vnow?.id ?? '?' : now === 'unverified' ? '-' : 'none';
+  drift.match.set(c, { m: now, d: bc.d, v: now === 'verified' ? vnow : null });
   for (const p of plan.filter((x) => x.c === c)) {
     const label = p.kind;
     if (p.kind === 'state') {
@@ -238,10 +301,15 @@ if (flag('--update-blocks')) {
 }
 
 // ---------- fill ----------
-if (flag('--fill')) {
+for (const b of badDirs) warn.push('bad artifact dir ' + b);
+const setSource = (c, m) => { c.source.bytecodeMatch = m.m; c.source.commit = m.m === 'unverified' ? null : git('rev-parse HEAD'); c.source.profile = m.v?.profile ?? null; c.source.metadata = m.v?.metadata ?? null; };
+if (flag('--fill-source')) { // source fields only, nothing else in the registry moves
+  for (const [c, m] of drift.match) setSource(c, m);
+  fs.writeFileSync(FILE, JSON.stringify(reg, null, 2) + '\n'); console.log(`filled source fields of ${FILE}`);
+} else if (flag('--fill')) {
   for (const [c, v] of drift.owner) c.owner = v ? getAddress(v) : null;
   for (const [c, s] of drift.state) c.state = s;
-  for (const [c, m] of drift.match) { c.source.bytecodeMatch = m.m; c.source.commit = m.m === 'unverified' ? null : git('rev-parse HEAD'); if (m.m !== 'unverified') c.notes = (c.notes || '').replace(/\s*\|\s*bytecode: .*$/, '') + ` | bytecode: ${m.d}`; }
+  for (const [c, m] of drift.match) { setSource(c, m); if (m.m !== 'unverified') c.notes = (c.notes || '').replace(/\s*\|\s*bytecode: .*$/, '') + ` | bytecode: ${m.d}`; }
   for (const { e, found } of blockFixes) { e.c[e.f] = found; if (e.t) e.c[e.t] = await blockTs(found); }
   for (const r of coinRows) { if (r.pool) Object.assign(r.k.pool, r.pool); r.k.chainVerified = r.ok === 'ok'; }
   for (const r of rows) r.c.chainVerified = r.code === 'ok' && r.wiring === 'ok';
@@ -251,14 +319,19 @@ if (flag('--fill')) {
 
 // ---------- report ----------
 const pad = (s, n) => String(s).padEnd(n).slice(0, n);
-console.log(`registry ${FILE} @ ${reg.repoCommit.slice(0, 8)}  rpc ${URL.replace(/\/\/.*@/, '//')}  head ${head}  artifacts ${DIRS.join(',')}${missingDirs.length ? ' (missing: ' + missingDirs.join(',') + ')' : ''}`);
-console.log([pad('contract', 34), pad('address', 11), pad('stack', 8), pad('role', 10), pad('code', 5), pad('owner', 7), pad('state', 11), pad('bytecode', 11), pad('wiring', 6)].join(' '));
-for (const r of rows) console.log([pad(r.c.name, 34), pad(r.c.address.slice(0, 10), 11), pad(r.c.stack, 8), pad(r.c.role, 10), pad(r.code, 5), pad(r.owner, 7), pad(r.state, 11), pad(r.bc, 11), pad(r.wiring, 6)].join(' '));
+console.log(`registry ${FILE} @ ${reg.repoCommit.slice(0, 8)}  rpc ${URL.replace(/\/\/.*@/, '//')}  head ${head}  artifacts ${[...indexes.keys()].join(',') || 'none loaded'}${missingDirs.length ? ' (missing: ' + [...new Set(missingDirs)].join(',') + ')' : ''}${DISCOVER ? ' [discover]' : ''}`);
+console.log([pad('contract', 34), pad('address', 11), pad('stack', 8), pad('role', 10), pad('code', 5), pad('owner', 7), pad('state', 11), pad('bytecode', 11), pad('profile', 13), pad('wiring', 6)].join(' '));
+for (const r of rows) console.log([pad(r.c.name, 34), pad(r.c.address.slice(0, 10), 11), pad(r.c.stack, 8), pad(r.c.role, 10), pad(r.code, 5), pad(r.owner, 7), pad(r.state, 11), pad(r.bc, 11), pad(r.prof ?? '-', 13), pad(r.wiring, 6)].join(' '));
 console.log('\n' + [pad('coin', 8), pad('address', 11), pad('stack', 8), pad('name/symbol/pool', 17), 'launched on chain by stack factory'].join(' '));
 for (const r of coinRows) console.log([pad(r.k.symbol, 8), pad(r.k.address.slice(0, 10), 11), pad(r.k.stack, 8), pad(r.ok, 17), `${rows.stackCoins[r.k.stack]} coin(s) in ${r.k.stack} factory logs`].join(' '));
 console.log('stack coin counts: ' + Object.entries(rows.stackCoins).map(([s, n]) => `${s}=${n}`).join(' '));
+{ // bytecode summary: which variant matched, and the mismatches with their first differing offset
+  const n = {}; for (const r of rows) if (r.c.source.repoPath) { const k = r.bc === 'verified' ? r.prof : r.bc; n[k] = (n[k] || 0) + 1; }
+  console.log('bytecode by profile: ' + (Object.entries(n).map(([k, x]) => `${k}=${x}`).join(' ') || 'none'));
+  for (const r of rows) if (r.bc === 'mismatch') console.log(`MISMATCH ${r.c.name} ${r.c.address.slice(0, 10)} ${r.c.stack}: ${r.bcDetail}`);
+}
 for (const w of warn) console.log('WARN ' + w);
-const hard = flag('--fill') ? fails.filter((f) => !['bytecodeMatch', 'state', 'owner()', 'deployBlock', 'launchBlock', 'launch tx/block'].includes(f.what)) : fails;
+const hard = FILL ? fails.filter((f) => !['bytecodeMatch', 'state', 'owner()', 'deployBlock', 'launchBlock', 'launch tx/block'].includes(f.what)) : fails;
 if (hard.length) {
   console.log('\nDRIFT');
   console.log([pad('who', 36), pad('check', 28), pad('registry', 44), 'chain'].join(' '));
