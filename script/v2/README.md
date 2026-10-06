@@ -42,7 +42,7 @@ script/v2/deploy.sh <local|mainnet>
 
 | step | what |
 |---|---|
-| values | every required value of `env/<env>.env` is set. `env/mainnet.env` ships with `OWNER`, `TREASURY`, `TREASURY_BPS`, `DEPLOY_FEE` and `PROTOCOL_BPS` empty and the wrapper refuses until they are set. `DEPLOY_FEE` is in wei. `REFERRAL_PAYOUT` may stay empty (the v2 escrow) |
+| values | every required value of `env/<env>.env` is set. `env/mainnet.env` ships with `TREASURY`, `TREASURY_BPS`, `DEPLOY_FEE` and `PROTOCOL_BPS` empty and the wrapper refuses until they are set. `DEPLOY_FEE` is in wei. `REFERRAL_PAYOUT` may stay empty (the v2 escrow) |
 | guards | the rpc chain id equals `CHAIN_ID`. `WALLET_MODE=unlocked` needs a loopback rpc and an owner without code (on an anvil fork `cast rpc anvil_setCode <owner> 0x`). `REQUIRE_CLEAN_GIT=true` needs branch `v2` equal to the fetched `origin/v2`, or a tag, and a clean tree |
 | build and dry run | `forge build` at profile ci, then `DeployV2Stack.s.sol` with `--sender $OWNER` and no wallet. the dry run must reach `post deploy asserts: ok` |
 | broadcast | `--slow` plus `--account <KEYSTORE>` (mainnet) or `--unlocked` (local). the broadcast files go to `BROADCAST_DIR` |
@@ -99,7 +99,7 @@ node script-js/verify-registry.mjs --fill --update-blocks
 cd script-js && npm run gen:addresses
 ```
 
-the merge replaces the `v2` stack and its contracts in `deployments/mainnet.json` with the record, sets the status `superseded` (the `current` stack keeps its status), validates the schema and runs `verify-registry.mjs`. `--build` builds every artifact variant first. `--cutover` sets `v2` to `current` and the previous current stack and its contracts to `superseded`. `--file` merges into another registry file.
+the merge replaces the `v2` stack and its contracts in `deployments/mainnet.json` with the record, sets the status `deployed` (deployed, not yet the live stack; the `current` stack keeps its status), validates the schema and runs `verify-registry.mjs`. `--build` builds every artifact variant first. `--cutover` sets `v2` to `current` and the previous current stack and its contracts to `superseded`. `--file` merges into another registry file.
 
 the generator writes constants per stack id: `CURRENT_*`, `OPEN_*`, `LEGACY_*` and `V2_*` in `script/Addresses.sol`, the objects `CURRENT` and `V2` plus `STACK_ADDRESSES` in `ui/src/lib/deployments.generated.ts`. `ACTIVE_FACTORY`, `ACTIVE_HOOK`, `ACTIVE_LOCKER`, `ACTIVE_ESCROW`, `CURRENT_STACK_ID` and the ts `ACTIVE` follow the stack whose status is `current`.
 

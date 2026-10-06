@@ -10,7 +10,7 @@ export const CURRENT_STACK_ID: StackId = 'current';
 
 export interface RegistryStack {
   label: string;
-  status: 'current' | 'superseded' | 'legacy';
+  status: 'current' | 'deployed' | 'superseded' | 'legacy';
   factory: Address;
   deployedAt: string;
   /** block of the factory deployment, the fromBlock for TokenCreated scans */

@@ -59,7 +59,7 @@ function shape(r) {
   const planned = (id) => r.stacks?.[id]?.status === 'planned';
   for (const [id, s] of Object.entries(r.stacks || {})) {
     keys(s, ['label', 'status', 'factory', 'deployedAt', 'notes'], `stack ${id}`);
-    need(['current', 'superseded', 'legacy', 'planned'].includes(s.status) && addr(s.factory, planned(id)) && date(s.deployedAt), `stack ${id} values`);
+    need(['current', 'deployed', 'superseded', 'legacy', 'planned'].includes(s.status) && addr(s.factory, planned(id)) && date(s.deployedAt), `stack ${id} values`);
   }
   const seen = new Set();
   for (const c of r.contracts || []) {
@@ -71,7 +71,7 @@ function shape(r) {
     need(r.stacks?.[c.stack] && ROLES.includes(c.role), w + ' stack/role');
     need(int(c.deployBlock) && hash(c.deployTxHash) && date(c.deployedAt) && addr(c.deployer, true) && addr(c.owner, true), w + ' deploy fields');
     need(['yes', 'no', 'unknown'].includes(c.etherscanVerified) && ['enabled', 'deprecated', 'unknown'].includes(c.state), w + ' enums');
-    need(['current', 'superseded', 'legacy', 'planned'].includes(c.status) && ['chain', 'broadcast', 'brief', 'planned'].includes(c.provenance) && typeof c.chainVerified === 'boolean', w + ' enums2');
+    need(['current', 'deployed', 'superseded', 'legacy', 'planned'].includes(c.status) && ['chain', 'broadcast', 'brief', 'planned'].includes(c.provenance) && typeof c.chainVerified === 'boolean', w + ' enums2');
     need(['verified', 'unverified', 'mismatch'].includes(c.source?.bytecodeMatch) && (c.source?.repoPath === null || /^src\//.test(c.source.repoPath)), w + ' source');
     const sp = c.source?.profile ?? null; const sm = c.source?.metadata ?? null;
     need((sp === null || ['default', 'ci'].includes(sp)) && (sm === null || ['none', 'ipfs'].includes(sm)) && (sp === null) === (sm === null), w + ' source.profile/metadata: default|ci with none|ipfs, both or neither');

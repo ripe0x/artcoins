@@ -195,7 +195,7 @@ function typescript() {
   L.push('');
   L.push('export interface RegistryStack {');
   L.push('  label: string;');
-  L.push("  status: 'current' | 'superseded' | 'legacy';");
+  L.push("  status: 'current' | 'deployed' | 'superseded' | 'legacy';");
   L.push('  factory: Address;');
   L.push('  deployedAt: string;');
   L.push('  /** block of the factory deployment, the fromBlock for TokenCreated scans */');
