@@ -109,6 +109,33 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
         assertLt(address(r).balance, 50 ether - 8 ether);
     }
 
+    /// @notice Partial fill on the skim pool (cap raised so the impact limit
+    ///         binds): the hook refunds the over charged skim (D42: settled
+    ///         into this router's PoolManager delta; pre D42: escrow credit).
+    ///         The router settles only what it owes (no `CurrencyNotSettled`),
+    ///         and `ethIn` and the reward exclude the refund.
+    function test_burnV2_skimPool_partialFill_netOfRefund() public onlyFork {
+        (PoolKey memory key, ArtCoinsTokenV2 token) =
+            _launchWith(Constants.TAX_MODE_NONE, BASELINE);
+        BurnRouterV2 r = _router(key, address(token));
+        r.setMaxBurnPerCall(50 ether);
+        _fund(address(r), 50 ether);
+        uint256 budget = r.swapBudget();
+
+        vm.prank(keeper);
+        (uint256 ethIn, uint256 burned) = r.processBurn(0);
+        uint256 reward = keeper.balance;
+        uint256 refund = escrow.balances(address(r), address(0));
+        uint256 paid = 50 ether - address(r).balance - reward;
+        emit log_named_uint("budget offered", budget);
+        emit log_named_uint("eth paid", paid);
+        emit log_named_uint("escrow refund", refund);
+        assertGt(burned, 0);
+        assertLt(paid, budget / 2, "partial fill, refund not paid");
+        assertEq(ethIn + refund, paid, "ethIn net of any refund");
+        assertEq(reward, r.rewardFor(ethIn), "reward on consumed only");
+    }
+
     /// @notice The reviewer's 300 eth case (owner limits) and the default
     ///         settings both burn now.
     function test_burnV2_skimPool_300eth_burns() public onlyFork {

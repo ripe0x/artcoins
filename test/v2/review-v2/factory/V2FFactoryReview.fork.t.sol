@@ -221,6 +221,7 @@ contract V2FFactoryReviewTest is ForkBase {
         c.fee.baselineSkimBps = 1000; // 1% of volume
         c.fee.bountyBps = 8000; // max accepted: BPS - minProtocolSkimShareBps
         c.fee.maxReferralBpsOfVolume = Constants.MAX_REFERRAL_CAP_OF_VOLUME; // 1%
+        c.fee.lpFee = 0; // no floor: the locker protocol slot (FT-03 fix) is worth nothing
         vm.prank(alice);
         address token = factory.deployToken{value: FEE}(c);
         PoolKey memory key = _key(token);
@@ -242,6 +243,13 @@ contract V2FFactoryReviewTest is ForkBase {
         assertGt(bounty.balance - b0, 0, "bounty unaffected");
         console2.log("protocol leg, with referrer (wei)", protocolR.balance - p0);
         console2.log("referral leg (wei)", referrerEoa.balance - r0);
+
+        // the 20% locker protocol slot is appended but there is no lp fee to share
+        assertEq(locker.rewardRecipients(token)[1], protocolR);
+        p0 = protocolR.balance;
+        locker.collectRewards(token);
+        assertEq(protocolR.balance - p0, 0, "protocol lp slot earns nothing");
+        assertEq(IERC20(token).balanceOf(protocolR), 0);
 
         // and the launch was accepted with the floor in force
         assertEq(factory.minProtocolSkimShareBps(), 2000);
