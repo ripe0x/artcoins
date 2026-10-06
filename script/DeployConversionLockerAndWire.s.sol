@@ -19,9 +19,17 @@ interface IHookAllowlistView {
 /// @title  DeployConversionLockerAndWire
 /// @notice Mainnet artcoins-owner ops for the PERMANENT COLLECTION ($111)
 ///         path-B launch. Targets the CURRENT stack (factory 0x4959…), taken from
-///         deployments/mainnet.json through Addresses.sol. NOTE: that factory is
-///         `deprecated`, so the Phase 1 preflight (`!deprecated`) fails closed; the
-///         current stack already has locker 0x866e…, so a second locker is not needed.
+///         deployments/mainnet.json through Addresses.sol. The preflight refuses any
+///         factory, hook, escrow or mev module that is not the registry's `current`
+///         stack unless ALLOW_SUPERSEDED=1 (S-01). The current factory is `deprecated`
+///         (owner only launches), which does not block this wiring: every step below is
+///         owner gated, so there is no `!deprecated` precondition. The current stack
+///         already has locker 0x866e…, so a second locker is only needed for a fresh PC
+///         launch.
+///
+///         IRREVERSIBLE STEP IS OPT IN: the locker `renounceOwnership()` at the end of
+///         Phase 1 runs only with CONFIRM_RENOUNCE=1 (S-01). Without it the new locker
+///         stays owned by ARTCOINS_OWNER.
 ///         ("Conversion" in the name is legacy — this now deploys the lean
 ///         `ArtCoinsLpLocker`; fee conversion moved downstream to FeeAutoSwapper.) Run by the artcoins owner (the account that owns
 ///         the live V3 factory, fee escrow, AND the hook's pool-extension
@@ -77,9 +85,19 @@ contract DeployConversionLockerAndWire is Script {
         address owner = vm.envAddress("ARTCOINS_OWNER");
         _preflightPhase1(owner);
 
+        bool renounce = vm.envOr("CONFIRM_RENOUNCE", uint256(0)) == 1;
+
         vm.startBroadcast(owner);
         conversionLocker = deployAndWire(owner);
-        // Match PC's no-admin-withdrawal posture. The locker's owner-gated
+        // !!! IRREVERSIBLE, OPT IN ONLY (CONFIRM_RENOUNCE=1) !!!
+        // renounceOwnership() on the new locker can never be undone: it permanently
+        // removes withdrawETH / withdrawERC20 (loose balance rescue) and every
+        // keeper-reward setter, with no recovery path if the locker is later found to
+        // hold stuck funds or needs a setting changed. A default run must never do
+        // this, so it is skipped unless the operator sets CONFIRM_RENOUNCE=1 after
+        // checking the deployed locker.
+        //
+        // Why an operator may want it: match PC's no-admin-withdrawal posture. The locker's owner-gated
         // surface is withdrawETH/withdrawERC20 (loose-balance rescue) plus the
         // keeper-reward setters — PC needs none of them at runtime (the keeper
         // skim is already zeroed in `deployAndWire`, and collection forwards
@@ -89,7 +107,9 @@ contract DeployConversionLockerAndWire is Script {
         // 0). Safe to renounce here: position-minting and reward-slot config
         // flow through the factory / per-slot-admin paths, NOT Ownable owner, so
         // no later launch step (PC's Deploy.s.sol, Phase 3) needs it.
-        ArtCoinsLpLocker(payable(conversionLocker)).renounceOwnership();
+        if (renounce) {
+            ArtCoinsLpLocker(payable(conversionLocker)).renounceOwnership();
+        }
         vm.stopBroadcast();
 
         console2.log("");
@@ -98,7 +118,11 @@ contract DeployConversionLockerAndWire is Script {
         console2.log("  setLocker(locker, hook, true)     done");
         console2.log("  escrow.addDepositor(locker)       done");
         console2.log("  escrow.addDepositor(hook)         done");
-        console2.log("  locker.renounceOwnership()        done (rescue surface off)");
+        if (renounce) {
+            console2.log("  locker.renounceOwnership()        done (rescue surface off)");
+        } else {
+            console2.log("  locker.renounceOwnership()        SKIPPED (set CONFIRM_RENOUNCE=1 to run it)");
+        }
         console2.log("  setMevModule(linearFees, true)    done/already-set");
         console2.log("");
         console2.log("NEXT: export CONVERSION_LOCKER and broadcast PC's Deploy.s.sol,");
@@ -129,18 +153,36 @@ contract DeployConversionLockerAndWire is Script {
     }
 
     function _preflightPhase1(address owner) internal view {
+        _requireCurrentStack();
         require(owner != address(0), "set ARTCOINS_OWNER");
         require(
             owner == ArtCoinsFactory(payable(FACTORY)).owner(), "ARTCOINS_OWNER != factory.owner()"
         );
         require(owner == ArtCoinsFeeEscrow(ESCROW).owner(), "ARTCOINS_OWNER != escrow.owner()");
-        require(!ArtCoinsFactory(payable(FACTORY)).deprecated(), "factory is deprecated");
+        // No `!deprecated` precondition (S-01): the registry's current factory is deprecated
+        // (owner only) by design, and setLocker / addDepositor / setMevModule are owner gated.
+        // The old check only passed on the superseded open factory 0xF051.
+    }
+
+    /// @dev Refuse any target that is not the registry's `current` stack (deployments/mainnet.json
+    ///      through Addresses.sol), unless ALLOW_SUPERSEDED=1. Checks all four stack addresses so a
+    ///      hand edited constant cannot mix stacks. Also used by `allowlistExtension`.
+    function _requireCurrentStack() internal view {
+        bool isCurrent = FACTORY == Addresses.CURRENT_FACTORY && HOOK == Addresses.CURRENT_HOOK
+            && ESCROW == Addresses.CURRENT_ESCROW
+            && MEV_LINEAR_FEES == Addresses.CURRENT_MEV_LINEAR_SKIM;
+        if (isCurrent) return;
+        require(
+            vm.envOr("ALLOW_SUPERSEDED", uint256(0)) == 1,
+            "targets a stack that is not the registry current stack; set ALLOW_SUPERSEDED=1 to run"
+        );
     }
 
     // ─────────────────────────── Phase 3 ───────────────────────────
 
     function allowlistExtension() public {
         require(block.chainid == Addresses.CHAIN_ID, "mainnet only");
+        _requireCurrentStack();
         address owner = vm.envAddress("ARTCOINS_OWNER");
         address ext = vm.envAddress("EXTENSION");
         ArtCoinsPoolExtensionAllowlist allowlist = _allowlist();

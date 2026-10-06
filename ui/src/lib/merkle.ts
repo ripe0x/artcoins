@@ -15,6 +15,11 @@ export interface AllowlistEntryWithProof extends AllowlistEntry {
 export interface AllowlistFile {
   token: Address;
   root: `0x${string}`;
+  /**
+   * v2 only: the airdrop extension index (position in the launch's extensions array) this tree
+   * belongs to. Optional, the claim page falls back to the tranche whose on-chain root matches.
+   */
+  index?: number;
   entries: AllowlistEntryWithProof[];
 }
 

@@ -246,24 +246,43 @@ contract DeployV2StackForkTest is ForkStack {
     // runbook 2b step 4: collect and forward through the keeper
     // ══════════════════════════════════════════════════════════════════════
 
+    /// @dev The one place that touches `FeeAutoSwapperV2.Config`. Fields are assigned by name onto a
+    ///      zeroed memory struct, so a field added to the struct later does not stop this file from
+    ///      compiling (a removed or renamed one still does, on purpose). Everything the keeper test
+    ///      relies on is then read back through the swapper's getters, so a layout change that moved
+    ///      a value fails here with a clear message instead of deep inside the keeper flow.
+    function _deployTreasurySwapper() internal returns (FeeAutoSwapperV2 swapper) {
+        FeeAutoSwapperV2.Config memory c;
+        c.owner = LIVE_OWNER;
+        c.poolManager = POOL_MANAGER;
+        c.feeEscrow = address(s.escrow);
+        c.hook = address(s.hook);
+        c.poolFee = LPFeeLibrary.DYNAMIC_FEE_FLAG;
+        c.tickSpacing = 200;
+        c.endRecipient = address(treasury);
+        c.artCoin = address(0);
+        c.maxSlippageBps = 500;
+        c.minBlocksBetweenConverts = 1;
+        c.maxStepIn = 1000 ether;
+        swapper = new FeeAutoSwapperV2(c);
+
+        assertEq(swapper.owner(), LIVE_OWNER, "swapper owner");
+        assertEq(address(swapper.poolManager()), POOL_MANAGER, "swapper poolManager");
+        assertEq(swapper.feeEscrow(), address(s.escrow), "swapper feeEscrow");
+        assertEq(swapper.hook(), address(s.hook), "swapper hook");
+        assertEq(swapper.poolFee(), LPFeeLibrary.DYNAMIC_FEE_FLAG, "swapper poolFee");
+        assertEq(swapper.tickSpacing(), int24(200), "swapper tickSpacing");
+        assertEq(swapper.endRecipient(), address(treasury), "swapper endRecipient");
+        assertEq(swapper.artCoin(), address(0), "swapper artCoin unbound until setup");
+        assertEq(swapper.maxSlippageBps(), 500, "swapper maxSlippageBps");
+        assertEq(swapper.minBlocksBetweenConverts(), 1, "swapper minBlocksBetweenConverts");
+        assertEq(swapper.maxStepIn(), 1000 ether, "swapper maxStepIn");
+    }
+
     function test_deployV2Stack_keeperCollectsAndForwards() public onlyFork {
         acceptV2Ownership(s, p);
         // the treasury takes its lp share through a fee swapper (eth only, DESIGN section 7)
-        FeeAutoSwapperV2 swapper = new FeeAutoSwapperV2(
-            FeeAutoSwapperV2.Config({
-                owner: LIVE_OWNER,
-                poolManager: POOL_MANAGER,
-                feeEscrow: address(s.escrow),
-                hook: address(s.hook),
-                poolFee: LPFeeLibrary.DYNAMIC_FEE_FLAG,
-                tickSpacing: 200,
-                endRecipient: address(treasury),
-                artCoin: address(0),
-                maxSlippageBps: 500,
-                minBlocksBetweenConverts: 1,
-                maxStepIn: 1000 ether
-            })
-        );
+        FeeAutoSwapperV2 swapper = _deployTreasurySwapper();
         vm.prank(LIVE_OWNER);
         s.escrow.addDepositor(address(swapper), false); // D33
 

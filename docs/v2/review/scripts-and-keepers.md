@@ -238,3 +238,13 @@ interface ICollectAndFlushKeeper {
 | gas price and reward economics over time | single sample at 1.13 gwei and spot 4.9e-8 eth per coin |
 | github secrets, branch protection, who can push tags | not visible from the repo |
 | the legacy LAYER stack end to end | only balances and slots read; no simulation of processBurnWeth |
+
+## follow up: S-01 and the keeper test dependency
+
+| item | change |
+|---|---|
+| S-01 renounce | `script/DeployConversionLockerAndWire.s.sol`: the locker `renounceOwnership()` at the end of Phase 1 is opt in. it runs only with `CONFIRM_RENOUNCE=1`, the comment above it says it is irreversible (drops `withdrawETH`, `withdrawERC20` and the keeper reward setters for good), and the run log prints `SKIPPED` when off. a default run leaves the locker owned by `ARTCOINS_OWNER` |
+| S-01 preflight | the addresses are now registry constants (`Addresses.CURRENT_*`) so the script already pointed at the current stack. added `_requireCurrentStack()`: factory, hook, escrow and mev module must all equal the registry `current` stack, otherwise it reverts unless `ALLOW_SUPERSEDED=1`. called from Phase 1 and from `allowlistExtension()`. there was no superseded guard in this script before, only the constants |
+| S-01 deprecated check | the `!deprecated` precondition is removed. the current factory is deprecated by design (owner only) and every wiring step is owner gated, so the old check made the script unusable on the current stack (it only passed on the superseded open factory). owner checks on factory and escrow stay |
+| verified | `forge build --skip "test/**"` compiles the script (two unrelated in progress files, `src/v2/keepers/CollectFlushKeeperLayer.sol` and `script/v2/RunKeeperLayer.s.sol`, were skipped: the first has a natspec `@return` error that stops the whole build). the existing fork test `test/DeployConversionLockerAndWireForkTest.t.sol` uses unchanged function names. not run, no broadcast. status S-01 fixed |
+| keeper test | `test/v2/DeployV2Stack.fork.t.sol`: the only constructor argument of `FeeAutoSwapperV2` is the `Config` struct, so it cannot be avoided. it is now built in one helper, `_deployTreasurySwapper`, field by field on a zeroed memory struct (a field added to `Config` no longer breaks this file, a removed or renamed one does), and the helper asserts owner, poolManager, feeEscrow, hook, poolFee, tickSpacing, endRecipient, artCoin, maxSlippageBps, minBlocksBetweenConverts and maxStepIn through the swapper's getters. 6 of 6 tests pass on a fork (`--match-path test/v2/DeployV2Stack.fork.t.sol`) |

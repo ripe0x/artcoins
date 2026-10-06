@@ -137,3 +137,18 @@ scope: `ui/**` and this file. `deployments.generated.ts` untouched. no dependenc
 | no wallet | with no connected wallet there is no refund address, the quote is read without one, the send path needs a wallet anyway |
 | tests | `test/hookData.test.ts`: the encoded hookData decodes to the user through a port of `HookCalldata.refundTo` (same offsets and checks), `mevModuleSwapData` is exactly 32 bytes, attribution unchanged with a referrer, zero or invalid refund address never encoded, plain `0x` with neither. `npm test` 51 pass, build and lint pass |
 | not verified | against deployed bytecode or the live universal router: needs the v2 deploy. the i1 fork tests already cover the hook side (`test_i1_partialFill_universalRouter_withRefundAddress_nothingStranded`) |
+
+### follow up: v2 airdrop claim path (V2B-04)
+
+| item | detail |
+|---|---|
+| change | `pages/ClaimPage.tsx` now routes by token. when a v2 stack is configured (`getV2Stack`) the page reads `factory.isArtCoin(token)` and `deploymentInfo(token).extensions` on the v2 factory. a v2 coin goes to the new v2 claim, anything else (and every chain with no v2 stack) keeps the v1 claim unchanged. an rpc failure on the factory read shows an error, it never silently falls to v1 |
+| index and address | the extension index is the position in `deploymentInfo.extensions` (the factory pushes them in config order, the airdrop keys the tranche by the same position). candidates are the entries equal to the configured v2 airdrop address, or every entry when none is configured, probed with `tranche(token, index)` (a non airdrop extension has no such function, the read fails, the candidate is dropped). zero supply tranches never match |
+| which tranche | `pickTranche`: the allowlist file's optional `index`, else the tranche whose on-chain root equals the file root, else the first. a root mismatch is shown, not claimed against |
+| proof | same `StandardMerkleTree` over `["address","uint256"]` as `lib/merkle.ts`, verified locally before the claim button enables. `claim(token, index, wallet, amount, proof)` through the generated `airdropV2Abi`. views: `amountAvailableToClaim(token, index, ...)`, `leafClaimed` |
+| windows | `lib/airdropV2.ts` `trancheState` mirrors the contract: locked before `lockupEnd`, vesting, vested, closed at `sweepTime` (claim reverts), swept. the page shows lockup end, vesting end, claim window close (`sweepTime = vestingEnd + 14 days`), sweep due or done, sweep recipient. no sweep button, it is permissionless and pays only the fixed recipient |
+| errors | decodes `ClaimWindowClosed`, `AlreadySwept`, `ZeroClaim` besides the v1 names |
+| tests | `test/airdropV2.test.ts` (new): a port of `ArtCoinsAirdropV2._leaf` and of OpenZeppelin `MerkleProof` pair hashing. two leaf tree built by `lib/merkle.ts` has the same leaf hashes and the same root as the solidity recomputation, checked against fixed vectors computed with `cast keccak` and `cast abi-encode`. ui proofs verify through the solidity walk, a wrong amount does not. window boundaries, candidate indexes, tranche pick. `npm test` 57 pass, `npm run build` and `npm run lint` pass |
+| allowlist file | gains an optional `index` field (additive, `AllowlistFile`). `script-js/build-allowlist.ts` is outside this change and does not write it, the root match covers that |
+| not verified | against a deployed v2 airdrop: none exists yet. not run in a browser (another agent owns the smoke). `VITE_V2_AIRDROP` (or the registry `V2.airdrop`) should be set when a v2 airdrop is deployed, otherwise the page probes every extension |
+| status | V2B-04 fixed |
