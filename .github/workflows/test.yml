@@ -158,6 +158,27 @@ jobs:
           echo "FORK_BLOCK=$block" >> "$GITHUB_ENV"
           echo "fork block $block"
 
+      # Compile in batches before the fork run (same reason as the check job:
+      # one cold solc input of the fork tree, 301 files, is killed on a 7 GB
+      # runner with exit 143). Each step compiles only what the cache lacks.
+      - name: Run Forge build (src only)
+        run: forge build --skip "test/**" --skip script
+
+      - name: Run Forge build (scripts)
+        run: forge build --skip "test/**"
+
+      - name: Run Forge build (v1 tests, batch 1 of 2)
+        run: forge build --skip "test/v2/**" --skip "test/[L-Zl-z]*" --skip "test/legacy/**"
+
+      - name: Run Forge build (v1 tests, batch 2 of 2)
+        run: forge build --skip "test/v2/**"
+
+      - name: Run Forge build (v2 package suites)
+        run: forge build --skip "test/v2/review/**" --skip "test/v2/review-v2/**" --skip "test/v2/integration/**" --skip "test/[A-Za-z]*.t.sol" --skip "test/legacy/**" --skip "test/mocks/**"
+
+      - name: Run Forge build (v2 integration and review suites)
+        run: forge build
+
       - name: Run fork tests
         # Only suites that need a fork (a global `--fork-url` pollutes plain
         # unit suites: the test contract address and balances come from
