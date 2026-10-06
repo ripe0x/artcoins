@@ -53,6 +53,9 @@ interface IArtCoinsTokenV2 {
     error CanonicalFlowRequired(address from, address to, uint256 amount);
     /// @notice HARD mode: transfer touching a listed venue.
     error VenueTransferBlocked(address venue);
+    /// @notice D30: a string field exceeds its byte cap. `field`: 0 name, 1 symbol,
+    ///         2 image, 3 metadata, 4 context. Caps 64, 16, 2048, 4096, 4096 bytes.
+    error StringTooLong(uint8 field, uint256 len);
 
     // ── tax reads ─────────────────────────────────────────────────────────
 

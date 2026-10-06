@@ -69,6 +69,21 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
     /// @dev Gas for the token0/token1 probe in `addTaxVenue`.
     uint256 private constant _PROBE_GAS = 30_000;
 
+    /// @notice D30 string caps in bytes, enforced at construction and in every
+    ///         setter, so a renderer's gas budget is provable. The factory checks
+    ///         the same caps before deploying.
+    uint256 public constant MAX_NAME_BYTES = 64;
+    uint256 public constant MAX_SYMBOL_BYTES = 16;
+    uint256 public constant MAX_IMAGE_BYTES = 2048;
+    uint256 public constant MAX_METADATA_BYTES = 4096;
+    uint256 public constant MAX_CONTEXT_BYTES = 4096;
+    /// @notice `StringTooLong.field` codes.
+    uint8 public constant FIELD_NAME = 0;
+    uint8 public constant FIELD_SYMBOL = 1;
+    uint8 public constant FIELD_IMAGE = 2;
+    uint8 public constant FIELD_METADATA = 3;
+    uint8 public constant FIELD_CONTEXT = 4;
+
     // ── immutables ────────────────────────────────────────────────────────
 
     /// @inheritdoc IArtCoinsTokenV2
@@ -129,6 +144,12 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
         if (canon.hook == address(0) || canon.poolManager == address(0) || canon.tickSpacing <= 0) {
             revert TaxConfigInvalid();
         }
+
+        _cap(t.name, MAX_NAME_BYTES, FIELD_NAME);
+        _cap(t.symbol, MAX_SYMBOL_BYTES, FIELD_SYMBOL);
+        _cap(t.image, MAX_IMAGE_BYTES, FIELD_IMAGE);
+        _cap(t.metadata, MAX_METADATA_BYTES, FIELD_METADATA);
+        _cap(t.context, MAX_CONTEXT_BYTES, FIELD_CONTEXT);
 
         _name = t.name;
         _symbol = t.symbol;
@@ -206,6 +227,11 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
     ///      locker, a position manager), never this token, and at most
     ///      MAX_TAX_EXEMPT. An externally owned account cannot be exempted, so
     ///      a deployer cannot list its own wallet and buy untaxed (FT-07).
+    function _cap(string memory v, uint256 max, uint8 field) private pure {
+        uint256 len = bytes(v).length;
+        if (len > max) revert StringTooLong(field, len);
+    }
+
     function _initExempt(address[] memory exempt) private {
         uint256 n = exempt.length;
         if (n > Constants.MAX_TAX_EXEMPT) revert TaxConfigInvalid();
@@ -509,6 +535,7 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
     /// @inheritdoc IArtCoinsTokenV2
     function updateImage(string calldata image_) external {
         if (msg.sender != _admin) revert NotAdmin();
+        _cap(image_, MAX_IMAGE_BYTES, FIELD_IMAGE);
         _image = image_;
         emit UpdateImage(image_);
         emit ContractURIUpdated();
@@ -517,6 +544,7 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
     /// @inheritdoc IArtCoinsTokenV2
     function updateMetadata(string calldata metadata_) external {
         if (msg.sender != _admin) revert NotAdmin();
+        _cap(metadata_, MAX_METADATA_BYTES, FIELD_METADATA);
         _metadata = metadata_;
         emit UpdateMetadata(metadata_);
         emit ContractURIUpdated();
