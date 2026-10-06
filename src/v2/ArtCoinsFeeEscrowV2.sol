@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import {Constants} from "../Constants.sol";
 import {IArtCoinsFeeEscrowV2} from "./interfaces/IArtCoinsFeeEscrowV2.sol";
+import {IConstantsBound} from "./interfaces/IConstantsBound.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
@@ -37,7 +38,7 @@ contract ArtCoinsFeeEscrowV2 is IArtCoinsFeeEscrowV2, Ownable2Step, ReentrancyGu
         _;
     }
 
-    /// @inheritdoc IArtCoinsFeeEscrowV2
+    /// @inheritdoc IConstantsBound
     function constantsHash() external pure returns (bytes32) {
         return Constants.hash();
     }

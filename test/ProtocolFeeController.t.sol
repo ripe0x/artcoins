@@ -28,8 +28,7 @@ contract MockBurnRouter {
 
 contract MockNonPayableRecipient {
     // No receive(), no payable fallback. Rejects ETH.
-
-    }
+}
 
 /// @notice Unit tests for the fixed two-sink `ProtocolFeeController` — the
 ///         immutable split set at construction, the ERC20 and native-ETH

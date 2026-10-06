@@ -26,9 +26,9 @@ library Constants {
     /// @notice Baseline skim ceiling, 10% of volume.
     uint24 internal constant MAX_BASELINE_SKIM_BPS = 10_000;
     /// @notice Referral cap ceiling, 1% of volume.
-    uint24 internal constant MAX_REFERRAL_CAP_OF_VOLUME = 1_000;
+    uint24 internal constant MAX_REFERRAL_CAP_OF_VOLUME = 1000;
     /// @notice Max bounty share of the skim, in BPS.
-    uint16 internal constant MAX_BOUNTY_BPS = 9_999;
+    uint16 internal constant MAX_BOUNTY_BPS = 9999;
 
     // ── hook delivery (owner tunable within bounds) ───────────────────────
     /// @notice Gas forwarded on a fee push; failure falls back to the escrow.
@@ -68,9 +68,9 @@ library Constants {
     uint256 internal constant MIN_TOKEN_SUPPLY = 1e18;
     /// @notice Launch extension limits.
     uint256 internal constant MAX_EXTENSIONS = 10;
-    uint16 internal constant MAX_EXTENSION_BPS = 9_000;
+    uint16 internal constant MAX_EXTENSION_BPS = 9000;
     /// @notice Max protocol slot in the locker split, in BPS.
-    uint16 internal constant MAX_PROTOCOL_FEE_BPS = 3_000;
+    uint16 internal constant MAX_PROTOCOL_FEE_BPS = 3000;
     /// @notice Max flat deploy fee.
     uint256 internal constant MAX_DEPLOY_FEE = 1 ether;
 
@@ -80,7 +80,7 @@ library Constants {
     uint8 internal constant TAX_MODE_VENUE = 1;
     uint8 internal constant TAX_MODE_HARD = 2;
     /// @notice Hard ceiling for any token's `taxBpsMax`.
-    uint16 internal constant TAX_BPS_ABSOLUTE_MAX = 2_000;
+    uint16 internal constant TAX_BPS_ABSOLUTE_MAX = 2000;
     uint256 internal constant MAX_TAX_VENUES = 32;
     uint256 internal constant MAX_TAX_EXEMPT = 16;
     /// @notice Burn sink. A tax sink must be DEAD or the pool's bounty recipient.
@@ -91,10 +91,10 @@ library Constants {
     uint256 internal constant KEEPER_REWARD_BPS = 50;
     uint256 internal constant KEEPER_REWARD_CAP = 0.01 ether;
     /// @notice Post swap output floor against spot, in BPS.
-    uint256 internal constant SPOT_FLOOR_BPS = 8_000;
+    uint256 internal constant SPOT_FLOOR_BPS = 8000;
     /// @notice Fee swapper owner bounds.
     uint256 internal constant SWAPPER_SLIPPAGE_MIN = 50;
-    uint256 internal constant SWAPPER_SLIPPAGE_MAX = 1_000;
+    uint256 internal constant SWAPPER_SLIPPAGE_MAX = 1000;
     uint256 internal constant SWAPPER_MIN_BLOCKS_MIN = 1;
     uint256 internal constant SWAPPER_MIN_BLOCKS_MAX = 50_400;
     /// @notice Burn router owner bounds (price impact per block, in BPS).
@@ -105,8 +105,8 @@ library Constants {
 
     // ── protocol fee controller ───────────────────────────────────────────
     /// @notice Minimum shares of the protocol revenue split, in BPS.
-    uint16 internal constant PFC_MIN_TREASURY_BPS = 4_000;
-    uint16 internal constant PFC_MIN_BURN_BPS = 1_000;
+    uint16 internal constant PFC_MIN_TREASURY_BPS = 4000;
+    uint16 internal constant PFC_MIN_BURN_BPS = 1000;
 
     // ── renderers ─────────────────────────────────────────────────────────
     uint256 internal constant MAX_GLYPHS = 256;
@@ -114,7 +114,7 @@ library Constants {
 
     // ── informational (not hashed) ────────────────────────────────────────
     /// @notice CI gate: minimum hook runtime headroom under EIP-170 at the ci profile.
-    uint256 internal constant HOOK_SIZE_HEADROOM_MIN = 1_024;
+    uint256 internal constant HOOK_SIZE_HEADROOM_MIN = 1024;
     /// @notice `leg` codes in the hook `FeeDelivered` event.
     uint8 internal constant LEG_BOUNTY = 0;
     uint8 internal constant LEG_PROTOCOL = 1;
