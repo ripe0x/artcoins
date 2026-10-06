@@ -219,7 +219,7 @@ wiring, in the order `_wire` sends it (D36: the escrow knows the hook and locker
 
 | step | what | detail |
 |---|---|---|
-| 11 | not wired at deploy | per coin tax exempt entries, a coin's fee swapper as depositor, the burn router `initialize`. all are per coin owner calls in 2b (D33, D47) |
+| 11 | wiring | the table above, 20 calls after step 10. not wired at deploy: per coin tax exempt entries, a coin's fee swapper as depositor, the burn router `initialize`. those are per coin owner calls in 2b (D33, D47) |
 | 12 | ownership, Ownable2Step (D20) | broadcaster == OWNER: nothing to do. otherwise escrow, hook, locker and factory end with `pendingOwner() == OWNER` (0xe30c3978) and the broadcaster still owns them. the allowlist, router and controller are constructed with OWNER, nothing to accept |
 | 13 | post deploy asserts, in the script | `constantsHash()` of escrow, hook, locker, mev, factory, deployer, router, controller. hook low bits 0x2DCC, permissions equal the address flags, hook PoolManager, globals escrow and allowlist, factory is a launcher. escrow depositors and core flags. locker escrow, launcher, reward bps 0. every factory getter above, deployer binding, `deprecated`, `STACK_VERSION`. mev hook, keeper factory, controller and router links, router `coin() == 0`. owners or pending owners. runtime size of all 10 under 24,576. prints `post deploy asserts: ok`, the registry json, writes `tmp/v2-deploy-1.json` |
 
@@ -260,7 +260,7 @@ keeper for a v2 coin: `ArtCoinsKeeperV2.collectAndForward(address token, bool do
 
 | item | value |
 |---|---|
-| dry run | `cast call --from $KEEPER_KEY_ADDR $KEEPER_V2 "collectAndForward(address,bool,uint256)" $TOKEN true 0 --gas-limit 2000000 --rpc-url $MAINNET_RPC_URL` |
+| dry run | `cast call --from $KEEPER_ADDR $KEEPER_V2 "collectAndForward(address,bool,uint256)" $TOKEN true 0 --gas-limit 2000000 --rpc-url $MAINNET_RPC_URL` |
 | send | `cast send $KEEPER_V2 "collectAndForward(address,bool,uint256)" $TOKEN true $MINOUT --gas-limit 2000000 --rpc-url $MAINNET_RPC_URL --account <keystore>`. `$MINOUT` is the simulated convert output at `minOut` 0 minus 100 bps, never spot. `0` only for the first dry run |
 | gas floors (D49) | collect 900k, flush 150k, convert 400k, erc165 probe 30k, each plus 50k margin and the 1/63 reserve. floors, not caps. below them the call reverts `InsufficientGas(step)` (0x969aeb08, 1 collect, 2 flush, 3 convert, 4 probe). set the limit by hand, 2,000,000 is safe. the figures are v1 measurements with room, re measure on the live v2 coin and tighten |
 | failed step | collect bubbles its revert. flush and convert reverts are logged (`FlushSkipped`, `ConvertSkipped`) and the run completes. a reward recipient that is not a swapper (a plain treasury) is skipped, the locker pushes its share itself |
