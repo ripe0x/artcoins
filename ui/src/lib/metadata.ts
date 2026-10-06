@@ -1,3 +1,5 @@
+import { safeImageUrl } from './security';
+
 export interface MetadataAttribute {
   trait_type?: string;
   value: string | number;
@@ -43,12 +45,11 @@ export function parseContractURI(uri: string | undefined | null): ParsedContract
 }
 
 /**
- * Pick the best available image for a token.
- * Tries: contractURI.image → imageUrl → null
+ * Pick the best available image for a token: contractURI.image, then imageUrl, then null.
+ * Only `https:`, `ipfs:`, `ar:` and `data:image/` urls survive (see lib/security.ts), a refused
+ * candidate falls through to the next one. Never returns a raw string from a stranger.
  */
 export function resolveImage(contractURI: string | undefined, imageUrl: string | undefined): string | null {
   const parsed = parseContractURI(contractURI);
-  if (parsed?.image) return parsed.image;
-  if (imageUrl && imageUrl.length > 0) return imageUrl;
-  return null;
+  return safeImageUrl(typeof parsed?.image === 'string' ? parsed.image : null) ?? safeImageUrl(imageUrl);
 }

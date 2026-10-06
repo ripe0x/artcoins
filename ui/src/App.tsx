@@ -5,7 +5,6 @@ import TokensListPage from './pages/TokensListPage';
 import TokenDetailPage from './pages/TokenDetailPage';
 import ClaimPage from './pages/ClaimPage';
 import ReferralsPage from './pages/ReferralsPage';
-import FeeFlowPage from './pages/FeeFlowPage';
 
 export default function App() {
   return (
@@ -16,7 +15,6 @@ export default function App() {
         <Route path="tokens/:address" element={<TokenDetailPage />} />
         <Route path="tokens/:address/claim" element={<ClaimPage />} />
         <Route path="tokens/:address/referrals" element={<ReferralsPage />} />
-        <Route path="fee-flow" element={<FeeFlowPage />} />
         <Route
           path="*"
           element={

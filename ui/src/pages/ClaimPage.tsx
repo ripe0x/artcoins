@@ -2,7 +2,6 @@ import { useEffect, useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   useAccount,
-  useChainId,
   useReadContracts,
   useWaitForTransactionReceipt,
   useWriteContract,
@@ -10,13 +9,15 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import type { Address } from 'viem';
-import { BaseError, ContractFunctionRevertedError } from 'viem';
+import { BaseError, ContractFunctionRevertedError, isAddress } from 'viem';
 
 import InfoCard from '../components/InfoCard';
 import InfoRow from '../components/InfoRow';
 import CopyableAddress from '../components/CopyableAddress';
-import { getAddresses } from '../lib/config';
-import { airdropAbi, tokenAbi } from '../lib/abi';
+import { airdropAbi } from '../lib/abi';
+import { tokenV1Abi as tokenAbi } from '../lib/abi/v1/token';
+import { useAddressesOrNull } from '../lib/useChain';
+import type { ContractAddresses } from '../lib/config';
 import { formatSupply, formatTimestamp } from '../lib/format';
 import { findEntry, verifyProof, type AllowlistFile } from '../lib/merkle';
 
@@ -59,12 +60,21 @@ function decodeClaimError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** Route wrapper: a malformed address or an unsupported chain never reaches a fetch path or a chain read. */
 export default function ClaimPage() {
-  const { address: tokenAddressParam } = useParams<{ address: string }>();
-  const tokenAddress = (tokenAddressParam ?? '').toLowerCase() as Address;
-  const chainId = useChainId();
+  const { address: param } = useParams<{ address: string }>();
+  const { chainId, addresses } = useAddressesOrNull();
+  if (!param || !isAddress(param, { strict: false })) {
+    return <div className="mx-auto max-w-3xl px-4 py-16 text-center text-zinc-500">Not a token address.</div>;
+  }
+  if (!addresses) {
+    return <div className="mx-auto max-w-3xl px-4 py-16 text-center text-zinc-500">Switch to Ethereum mainnet.</div>;
+  }
+  return <ClaimPageInner tokenAddress={param.toLowerCase() as Address} chainId={chainId} addresses={addresses} />;
+}
+
+function ClaimPageInner({ tokenAddress, chainId, addresses }: { tokenAddress: Address; chainId: number; addresses: ContractAddresses }) {
   const { address: wallet, isConnected } = useAccount();
-  const addresses = getAddresses(chainId);
 
   // Load allowlist JSON for this token from /allowlists/<token>.json
   const {

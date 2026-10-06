@@ -13,9 +13,9 @@ export default function Header() {
         <div className="flex items-center gap-8">
           <NavLink to="/" className="flex items-center gap-3" end>
             <div className="w-8 h-8 rounded-lg bg-violet-600 flex items-center justify-center font-bold text-sm">
-              NM
+              AC
             </div>
-            <span className="text-lg font-semibold tracking-tight">NewMaterial</span>
+            <span className="text-lg font-semibold tracking-tight">artcoins</span>
           </NavLink>
           <nav className="flex items-center gap-5">
             <NavLink to="/" end className={navLinkClass}>
@@ -23,9 +23,6 @@ export default function Header() {
             </NavLink>
             <NavLink to="/tokens" className={navLinkClass}>
               Tokens
-            </NavLink>
-            <NavLink to="/fee-flow" className={navLinkClass}>
-              Fee flow
             </NavLink>
           </nav>
         </div>

@@ -1,113 +1,93 @@
 import type { PoolFormState } from '../lib/types';
-
-const inputClass =
-  'w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white placeholder-zinc-500 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500';
-const labelClass = 'block text-sm font-medium text-zinc-300 mb-1.5';
-const selectClass =
-  'w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-white focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500';
+import type { Issue } from '../lib/encodeV2';
+import { Field, Issues } from './formUi';
+import { hintClass, inputClass, selectClass } from './formStyles';
+import { impliedFdvEth, startPriceEthPerCoin } from '../lib/curve';
+import { formatPrice } from '../lib/format';
+import { maxBountyBps } from '../lib/encodeV2';
+import { MAX_BASELINE_SKIM_BPS, MAX_LP_FEE, MAX_REFERRAL_CAP_OF_VOLUME } from '../lib/constants';
 
 interface Props {
   value: PoolFormState;
   onChange: (v: PoolFormState) => void;
+  issues: Issue[];
+  supplyWhole: number;
+  minProtocolSkimShareBps: number;
+  connectedAddress: string | undefined;
 }
 
-export default function PoolConfigForm({ value, onChange }: Props) {
-  const set = <K extends keyof PoolFormState>(field: K, val: PoolFormState[K]) =>
-    onChange({ ...value, [field]: val });
+function Slider({
+  label,
+  value,
+  min,
+  max,
+  step,
+  unit,
+  onChange,
+  hint,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  unit: string;
+  onChange: (v: number) => void;
+  hint?: string;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-zinc-300 mb-1.5">
+        {label}: <span className="text-violet-400 font-semibold">{value}{unit}</span>
+      </label>
+      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} className="w-full accent-violet-500" />
+      <div className="flex justify-between text-xs text-zinc-600">
+        <span>{min}{unit}</span>
+        <span>{max}{unit}</span>
+      </div>
+      {hint && <p className={hintClass}>{hint}</p>}
+    </div>
+  );
+}
+
+export default function PoolConfigForm({ value, onChange, issues, supplyWhole, minProtocolSkimShareBps, connectedAddress }: Props) {
+  const set = <K extends keyof PoolFormState>(field: K, val: PoolFormState[K]) => onChange({ ...value, [field]: val });
+  const price = startPriceEthPerCoin(value.startingTick);
+  const fdv = impliedFdvEth(value.startingTick, supplyWhole);
+  const maxBounty = maxBountyBps(minProtocolSkimShareBps) / 100;
 
   return (
-    <div className="space-y-4">
-      <div>
-        <label className={labelClass}>Paired Token</label>
-        <select
-          className={selectClass}
-          value={value.pairedToken}
-          onChange={e => set('pairedToken', e.target.value)}
-        >
-          <option value="weth">WETH (Wrapped Ether)</option>
-          <option value="custom">Custom Address</option>
-        </select>
+    <div className="space-y-5">
+      <div className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-3 text-sm text-zinc-300">
+        Every v2 pool pairs the coin with native ETH. There is no paired token to choose.
       </div>
-
-      {value.pairedToken === 'custom' && (
-        <div>
-          <label className={labelClass}>Custom Token Address</label>
-          <input
-            type="text"
-            className={inputClass}
-            placeholder="0x..."
-            value={value.customPairedToken}
-            onChange={e => set('customPairedToken', e.target.value)}
-          />
-        </div>
-      )}
 
       <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className={labelClass}>Tick Spacing</label>
-          <select
-            className={selectClass}
-            value={value.tickSpacing}
-            onChange={e => set('tickSpacing', Number(e.target.value))}
-          >
-            <option value={1}>1 (Highest precision)</option>
+        <Field label="Tick spacing" hint="Positions and the starting tick must be multiples of it. The presets assume 200.">
+          <select className={selectClass} value={value.tickSpacing} onChange={(e) => set('tickSpacing', Number(e.target.value))}>
+            <option value={200}>200 (default)</option>
+            <option value={60}>60</option>
             <option value={10}>10</option>
-            <option value={60}>60 (Recommended)</option>
-            <option value={200}>200 (Lowest precision)</option>
           </select>
-        </div>
-
-        <div>
-          <label className={labelClass}>Starting Tick</label>
-          <input
-            type="number"
-            className={inputClass}
-            value={value.startingTick}
-            onChange={e => set('startingTick', Number(e.target.value))}
-          />
-          <p className="text-xs text-zinc-500 mt-1">
-            Determines the initial price. Negative = new token is cheaper than paired token.
-          </p>
-        </div>
+        </Field>
+        <Field label="Starting tick" hint="As if the coin were currency0. Price in ETH per coin is 1.0001^tick.">
+          <input type="number" className={inputClass} value={value.startingTick} onChange={(e) => set('startingTick', Number(e.target.value))} />
+        </Field>
+      </div>
+      <div className="rounded-lg bg-zinc-800/40 px-3 py-2 text-xs text-zinc-400 flex justify-between">
+        <span>Launch price {formatPrice(price)} ETH per coin</span>
+        <span>Launch fdv {Number.isFinite(fdv) ? fdv.toLocaleString(undefined, { maximumFractionDigits: 3 }) : '-'} ETH at {supplyWhole.toLocaleString()} coins</span>
       </div>
 
-      <div>
-        <label className={labelClass}>
-          Buy Fee: <span className="text-violet-400 font-semibold">{value.buyFeePercent}%</span>
-        </label>
-        <input
-          type="range"
-          min={0}
-          max={10}
-          step={0.1}
-          value={value.buyFeePercent}
-          onChange={e => set('buyFeePercent', Number(e.target.value))}
-          className="w-full accent-violet-500"
-        />
-        <div className="flex justify-between text-xs text-zinc-600">
-          <span>0%</span>
-          <span>10%</span>
-        </div>
-      </div>
+      <Slider label="LP fee" value={value.lpFeePercent} min={0} max={MAX_LP_FEE / 10_000} step={0.05} unit="%" onChange={(v) => set('lpFeePercent', v)} hint="Charged on every swap, paid to the LP reward recipients." />
+      <Slider label="Baseline skim" value={value.baselineSkimPercent} min={0} max={MAX_BASELINE_SKIM_BPS / 1_000} step={0.1} unit="%" onChange={(v) => set('baselineSkimPercent', v)} hint="Taken from the ETH side of every swap, split between the bounty recipient and the protocol." />
+      <Slider label="Bounty share of the skim" value={value.bountyPercent} min={0} max={maxBounty} step={0.01} unit="%" onChange={(v) => set('bountyPercent', v)} hint={`The protocol keeps at least ${minProtocolSkimShareBps / 100}% of the skim (read from the factory), so the bounty share is capped at ${maxBounty}%.`} />
+      <Slider label="Referral cap" value={value.referralCapPercent} min={0} max={MAX_REFERRAL_CAP_OF_VOLUME / 1_000} step={0.05} unit="%" onChange={(v) => set('referralCapPercent', v)} hint="Most of the volume a swap referrer can earn. It is paid out of the protocol's share, not by the trader." />
 
-      <div>
-        <label className={labelClass}>
-          Sell Fee: <span className="text-violet-400 font-semibold">{value.sellFeePercent}%</span>
-        </label>
-        <input
-          type="range"
-          min={0}
-          max={10}
-          step={0.1}
-          value={value.sellFeePercent}
-          onChange={e => set('sellFeePercent', Number(e.target.value))}
-          className="w-full accent-violet-500"
-        />
-        <div className="flex justify-between text-xs text-zinc-600">
-          <span>0%</span>
-          <span>10%</span>
-        </div>
-      </div>
+      <Field label="Bounty recipient" hint="Receives the bounty share of the skim. Defaults to your wallet.">
+        <input type="text" className={inputClass} placeholder={connectedAddress ?? '0x...'} value={value.bountyRecipient} onChange={(e) => set('bountyRecipient', e.target.value)} />
+      </Field>
+      <Issues issues={issues} prefix="pool" />
     </div>
   );
 }

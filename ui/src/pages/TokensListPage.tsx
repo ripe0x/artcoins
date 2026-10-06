@@ -1,8 +1,5 @@
-import { useChainId, usePublicClient } from 'wagmi';
-import { useQuery } from '@tanstack/react-query';
 import TokenCard from '../components/TokenCard';
-import { fetchAllTokenCreatedEvents } from '../lib/events';
-import { getAddresses, getFactoryDeploymentBlock } from '../lib/config';
+import { useTokens } from '../lib/useTokens';
 
 function LoadingSkeleton() {
   return (
@@ -21,26 +18,7 @@ function LoadingSkeleton() {
 }
 
 export default function TokensListPage() {
-  const chainId = useChainId();
-  const client = usePublicClient();
-  const addresses = getAddresses(chainId);
-
-  const factoryDeployed = addresses.factory !== '0x0000000000000000000000000000000000000000';
-
-  const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ['tokens', chainId],
-    queryFn: async () => {
-      if (!client) throw new Error('No public client');
-      return fetchAllTokenCreatedEvents(
-        client,
-        addresses.factory,
-        getFactoryDeploymentBlock(chainId)
-      );
-    },
-    enabled: !!client && factoryDeployed,
-    staleTime: 60_000,
-    gcTime: 5 * 60_000,
-  });
+  const { data, isLoading, error, refetch, isFetching, supported } = useTokens();
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
@@ -48,62 +26,50 @@ export default function TokensListPage() {
         <div>
           <h1 className="text-2xl font-bold">All Tokens</h1>
           <p className="text-zinc-500 mt-1">
-            Every token ever deployed through the factory, most recent first.
+            Tokens launched through the artcoins factories listed in the deployment registry, most recent first.
+            Names, symbols and images are chosen by each token's creator. Check the contract address before you trade.
           </p>
         </div>
         <button
           type="button"
           onClick={() => refetch()}
-          disabled={isFetching}
+          disabled={isFetching || !supported}
           className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-300 hover:text-white hover:border-zinc-600 disabled:opacity-50"
         >
           {isFetching ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
 
-      {!factoryDeployed && (
+      {!supported && (
         <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-10 text-center">
-          <p className="text-zinc-400">
-            The factory isn't deployed on this chain yet.
-          </p>
-          <p className="text-sm text-zinc-600 mt-2">
-            Switch to Sepolia to see deployed tokens.
-          </p>
+          <p className="text-zinc-400">No artcoins deployment is configured for this network.</p>
+          <p className="text-sm text-zinc-600 mt-2">Switch to Ethereum mainnet.</p>
         </div>
       )}
 
-      {factoryDeployed && isLoading && <LoadingSkeleton />}
+      {supported && isLoading && <LoadingSkeleton />}
 
-      {factoryDeployed && error && (
+      {supported && error && (
         <div className="rounded-xl border border-red-900 bg-red-950/30 p-6">
           <p className="text-red-400 font-medium">Failed to load tokens</p>
-          <p className="text-sm text-red-300/70 mt-1">
-            {(error as Error).message}
-          </p>
-          <button
-            type="button"
-            onClick={() => refetch()}
-            className="mt-3 text-sm text-red-300 hover:text-red-200 underline"
-          >
+          <p className="text-sm text-red-300/70 mt-1">{(error as Error).message.split('\n')[0]}</p>
+          <button type="button" onClick={() => refetch()} className="mt-3 text-sm text-red-300 hover:text-red-200 underline">
             Retry
           </button>
         </div>
       )}
 
-      {factoryDeployed && data && data.length === 0 && (
+      {supported && data && data.length === 0 && (
         <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-10 text-center">
-          <p className="text-zinc-400">No tokens deployed yet.</p>
-          <p className="text-sm text-zinc-600 mt-2">
-            Be the first — head to the Deploy page to launch one.
-          </p>
+          <p className="text-zinc-400">No tokens launched yet.</p>
         </div>
       )}
 
-      {factoryDeployed && data && data.length > 0 && (
+      {supported && data && data.length > 0 && (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {data.map(ev => (
-              <TokenCard key={ev.tokenAddress} event={ev} />
+            {data.map((ev) => (
+              <TokenCard key={ev.token} event={ev} />
             ))}
           </div>
           <p className="mt-6 text-xs text-zinc-600 text-center">

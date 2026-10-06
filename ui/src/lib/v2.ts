@@ -28,7 +28,7 @@ export interface V2Stack {
   source: 'registry' | 'env';
 }
 
-const env = import.meta.env as Record<string, string | undefined>;
+const env = (import.meta.env ?? {}) as Record<string, string | undefined>;
 
 function addr(raw: unknown): Address | null {
   if (typeof raw !== 'string') return null;
@@ -39,7 +39,8 @@ function addr(raw: unknown): Address | null {
 }
 
 function fromRegistry(): V2Stack | null {
-  const g = (generated as Record<string, unknown>).V2 as Partial<Record<keyof V2Stack, unknown>> | undefined;
+  // looked up dynamically: the registry generator has no V2 export until the v2 deploy lands
+  const g = Reflect.get(generated, 'V2') as Partial<Record<keyof V2Stack, unknown>> | undefined;
   if (!g) return null;
   const factory = addr(g.factory);
   const hook = addr(g.hook);

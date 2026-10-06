@@ -4,7 +4,7 @@ import { http } from 'wagmi';
 import { WagmiProvider } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RainbowKitProvider, getDefaultConfig, darkTheme } from '@rainbow-me/rainbowkit';
-import { mainnet, sepolia } from 'wagmi/chains';
+import { mainnet } from 'wagmi/chains';
 import { BrowserRouter } from 'react-router-dom';
 import '@rainbow-me/rainbowkit/styles.css';
 import './index.css';
@@ -17,24 +17,30 @@ if (!projectId) {
   );
 }
 
+// RPC for reads. Nothing secret goes into the bundle (UI-19): everything prefixed VITE_ is public.
+//   VITE_MAINNET_RPC_URL           a public or proxied endpoint without a key in the url (preferred)
+//   VITE_ALCHEMY_API_KEY           used ONLY when VITE_ALCHEMY_KEY_RESTRICTED=1, which asserts that the key is
+//                                  restricted to this site's domains in the Alchemy dashboard. An unrestricted
+//                                  key in a public bundle can be copied and spent by anyone, so it is ignored.
+//   neither                        the tenderly public gateway the rest of the repo defaults to (rate limited)
 const alchemyKey = import.meta.env.VITE_ALCHEMY_API_KEY;
+const alchemyRestricted = import.meta.env.VITE_ALCHEMY_KEY_RESTRICTED === '1';
+if (alchemyKey && !alchemyRestricted) {
+  console.warn(
+    'VITE_ALCHEMY_API_KEY is set but VITE_ALCHEMY_KEY_RESTRICTED is not 1: the key is ignored. Restrict it to your domains in the Alchemy dashboard, then set VITE_ALCHEMY_KEY_RESTRICTED=1.'
+  );
+}
+const mainnetRpc =
+  import.meta.env.VITE_MAINNET_RPC_URL ||
+  (alchemyKey && alchemyRestricted ? `https://eth-mainnet.g.alchemy.com/v2/${alchemyKey}` : 'https://mainnet.gateway.tenderly.co');
 
-// Pass explicit transports so that ALL RPC calls (including RainbowKit's
-// internal balance fetch for the ConnectButton) go through Alchemy.
-// Overriding chain.rpcUrls alone is not enough — getDefaultConfig builds its
-// own transports and may fall back to unreliable public RPCs, producing NaN.
+// Mainnet only: the registry, the v2 stack and every contract abi in this ui are mainnet. Explicit
+// transports so that all reads (including RainbowKit's balance fetch) use the same endpoint.
 const config = getDefaultConfig({
-  appName: 'NewMaterial Token Launcher',
+  appName: 'artcoins token launcher',
   projectId,
-  chains: [mainnet, sepolia],
-  ...(alchemyKey
-    ? {
-        transports: {
-          [mainnet.id]: http(`https://eth-mainnet.g.alchemy.com/v2/${alchemyKey}`),
-          [sepolia.id]: http(`https://eth-sepolia.g.alchemy.com/v2/${alchemyKey}`),
-        },
-      }
-    : {}),
+  chains: [mainnet],
+  transports: { [mainnet.id]: http(mainnetRpc) },
 });
 
 const queryClient = new QueryClient();

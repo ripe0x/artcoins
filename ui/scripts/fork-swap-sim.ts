@@ -7,7 +7,7 @@
 // Buys coin 111 with eth, then sells it back, both through the Universal Router with the commands
 // lib/swap.ts builds, using a fresh quoter quote for the floor. Exits 1 on any failure.
 import { createPublicClient, createWalletClient, http, formatEther, parseEther, type Address } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
+import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { mainnet } from 'viem/chains';
 import { buildBuyCalldata, buildSellCalldata, applySlippage, priceImpactPercent } from '../src/lib/swap';
 import { encodeAttributionHookData } from '../src/lib/attribution';
@@ -18,8 +18,9 @@ import { priceFromSqrtX96 } from '../src/lib/pool';
 
 const RPC = process.env.FORK_RPC ?? 'http://127.0.0.1:8599';
 const QUOTER: Address = '0x52F0E24D1c21C8A0cB1e5a5dD6198556BD9E1203';
-// anvil default account 0
-const account = privateKeyToAccount('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80');
+// A fresh key, funded with anvil_setBalance. Do NOT use anvil's default account 0: on mainnet it carries a
+// sweeper delegation (eip-7702) that forwards any eth it receives, which looks like a sell paying nothing.
+const account = privateKeyToAccount(generatePrivateKey());
 const pub = createPublicClient({ chain: mainnet, transport: http(RPC) });
 const wallet = createWalletClient({ account, chain: mainnet, transport: http(RPC) });
 
@@ -27,6 +28,7 @@ const coin = COINS.find((c) => c.symbol === '111')!.address;
 const log = (...a: unknown[]) => console.log(...a);
 
 async function main() {
+  await pub.request({ method: 'anvil_setBalance' as never, params: [account.address, '0x56bc75e2d63100000'] as never });
   const rewards = await pub.readContract({ address: CURRENT.locker, abi: lockerV1Abi, functionName: 'tokenRewards', args: [coin] });
   const poolKey = rewards.poolKey;
   log('pool key', poolKey);

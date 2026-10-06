@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ParsedContractURI } from '../lib/metadata';
+import { cleanText, safeLinkUrl, MAX_NAME, MAX_SYMBOL, MAX_DESCRIPTION } from '../lib/security';
 
 interface Props {
   open: boolean;
@@ -50,7 +51,8 @@ export default function TokenMetadataModal({
   if (!open) return null;
 
   const attributes = parsedMeta?.attributes ?? [];
-  const externalUrl = parsedMeta?.external_url;
+  // external_url comes from the renderer json, only https links are rendered
+  const externalUrl = safeLinkUrl(typeof parsedMeta?.external_url === 'string' ? parsedMeta.external_url : undefined);
 
   const handleCopy = async () => {
     if (!contractURI) return;
@@ -93,6 +95,9 @@ export default function TokenMetadataModal({
                 <img
                   src={image}
                   alt={symbol}
+                  referrerPolicy="no-referrer"
+                  loading="lazy"
+                  decoding="async"
                   className="max-w-full max-h-[480px] rounded-xl shadow-xl object-contain"
                   onError={e => {
                     (e.currentTarget as HTMLImageElement).style.display = 'none';
@@ -111,10 +116,10 @@ export default function TokenMetadataModal({
             <div className="p-6 space-y-5">
               <div>
                 <h2 className="text-2xl font-bold text-white">
-                  {name} <span className="text-zinc-500 font-normal">({symbol})</span>
+                  {cleanText(name, MAX_NAME)} <span className="text-zinc-500 font-normal">({cleanText(symbol, MAX_SYMBOL)})</span>
                 </h2>
                 {description && (
-                  <p className="text-sm text-zinc-400 mt-2 whitespace-pre-wrap">{description}</p>
+                  <p className="text-sm text-zinc-400 mt-2 whitespace-pre-wrap">{cleanText(description, MAX_DESCRIPTION)}</p>
                 )}
                 {externalUrl && (
                   <a
@@ -163,10 +168,10 @@ export default function TokenMetadataModal({
                         className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3"
                       >
                         <div className="text-[10px] uppercase tracking-wider text-violet-400 font-semibold">
-                          {attr.trait_type ?? 'Trait'}
+                          {cleanText(attr.trait_type ?? 'Trait', 64)}
                         </div>
                         <div className="text-sm text-white mt-0.5 break-all font-mono">
-                          {String(attr.value)}
+                          {cleanText(String(attr.value), 200)}
                         </div>
                       </div>
                     ))}

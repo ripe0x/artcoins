@@ -46,3 +46,22 @@ test('a buy larger than the pool exhausts it and never returns more than the see
   assert.equal(r.exhausted, true);
   assert.ok(r.coinOut <= coin);
 });
+
+import { estimateDevBuy } from '../src/lib/devBuy';
+import { defaultLaunchForm } from '../src/lib/launchForm';
+
+test('dev buy estimate on the default launch is close to eth / launch price minus fees, never zero', () => {
+  const f = defaultLaunchForm(2000);
+  f.extensions.devBuy = { enabled: true, ethAmount: '0.1', recipient: '', refundRecipient: '', minTokenOut: '', toleranceBps: 500 };
+  const est = estimateDevBuy(f)!;
+  assert.ok(est);
+  assert.ok(est.minOut > 0n && est.minOut < est.coinOut);
+  assert.equal(est.exhausted, false);
+  // The curve is steep: position 1 holds 25% of the 1B pool supply (2.5e8 coins) between the
+  // launch price ~1e-10 and 5.15x that, which costs about 0.057 eth,
+  // and the ~0.037 eth left buys about 5e7 more at the next position. Hand computed total: about 3.0e8.
+  const coins = Number(est.coinOut) / 1e18;
+  assert.ok(coins > 2.9e8 && coins < 3.3e8, String(coins));
+  // far below the naive eth / launch price (about 9.3e8), which is why minTokenOut must come from the curve
+  assert.ok(coins < 9.3e8 / 2);
+});
