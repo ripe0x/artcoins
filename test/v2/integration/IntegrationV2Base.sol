@@ -231,8 +231,8 @@ abstract contract IntegrationV2Base is ForkStack {
     }
 
     function _pastWindow() internal {
-        vm.warp(block.timestamp + Constants.MAX_MEV_WINDOW + 1);
-        vm.roll(block.number + 1);
+        vm.warp(vm.getBlockTimestamp() + Constants.MAX_MEV_WINDOW + 1);
+        vm.roll(vm.getBlockNumber() + 1);
     }
 
     // ── swaps ─────────────────────────────────────────────────────────────

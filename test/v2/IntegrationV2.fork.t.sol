@@ -136,7 +136,7 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         assertEq(info.locker, address(v2.locker));
         assertEq(info.mevModule, address(v2.mev));
         assertEq(info.taxMode, Constants.TAX_MODE_VENUE);
-        assertEq(info.createdAt, uint40(block.timestamp));
+        assertEq(info.createdAt, uint40(vm.getBlockTimestamp()));
         assertTrue(v2.hook.isOfficialPool(pid), "official pool");
         assertTrue(v2.factory.isArtCoin(coin), "factory.isArtCoin");
         assertFalse(v2.factory.isArtCoin(address(treasury)));
@@ -150,7 +150,7 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         assertEq(di.mevModule, address(v2.mev));
         assertEq(PoolId.unwrap(di.poolId), PoolId.unwrap(pid));
         assertEq(di.version, 2);
-        assertEq(di.launchedAt, uint40(block.timestamp));
+        assertEq(di.launchedAt, uint40(vm.getBlockTimestamp()));
         assertEq(di.extensions.length, 0);
         assertEq(_token(coin).canonicalPoolId(), PoolId.unwrap(pid), "token names the pool");
         vm.expectRevert(IArtCoinsFactoryV2.NotFound.selector);
@@ -374,8 +374,9 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
 
         // locker: the lp position nfts are not rescuable, it holds no fees
         uint256 positionId = v2.locker.tokenRewards(coin).positionId;
+        address posm = address(v2.locker.positionManager()); // read before expectRevert
         vm.expectRevert(ArtCoinsLpLockerV2.RescueForbidden.selector);
-        v2.locker.rescue(address(v2.locker.positionManager()), LIVE_OWNER, positionId);
+        v2.locker.rescue(posm, LIVE_OWNER, positionId);
         assertEq(address(v2.locker).balance, 0);
         assertEq(IERC20(coin).balanceOf(address(v2.locker)), 0);
 
@@ -444,7 +445,7 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         v2.burnRouter.initialize(coin, key);
         _pastWindow();
         _buyAndSell(key, 1 ether); // seed both fee sides and the coin balance
-        vm.roll(block.number + 1);
+        vm.roll(vm.getBlockNumber() + 1);
 
         vm.deal(address(this), address(this).balance + 1 ether);
         _coolAll(coin, address(sw));
@@ -463,7 +464,7 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         v2.locker.collectRewards(coin);
         uint256 gCollect = g - gasleft();
 
-        vm.roll(block.number + 1);
+        vm.roll(vm.getBlockNumber() + 1);
         _coolAll(coin, address(sw));
         g = gasleft();
         sw.convert(0);
@@ -471,7 +472,7 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
 
         (bool ok,) = address(v2.burnRouter).call{value: 0.5 ether}("");
         assertTrue(ok);
-        vm.roll(block.number + 1);
+        vm.roll(vm.getBlockNumber() + 1);
         _coolAll(coin, address(sw));
         g = gasleft();
         v2.burnRouter.processBurn(0);

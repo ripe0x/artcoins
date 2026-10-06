@@ -218,7 +218,7 @@ contract TaxModesV2ForkTest is TaxModesV2Helpers {
         assertGt(IERC20(coin).balanceOf(address(v2.controller)), 0, "protocol slot got the coin side");
 
         // fee swapper convert passes (sell grant covers the settle)
-        vm.roll(block.number + 1);
+        vm.roll(vm.getBlockNumber() + 1);
         uint256 t0 = address(treasury).balance;
         uint256 received = sw.convert(0);
         assertGt(received, 0, "converted");
@@ -227,7 +227,7 @@ contract TaxModesV2ForkTest is TaxModesV2Helpers {
         // burn router burn passes (buy grant covers the take)
         (bool ok,) = address(v2.burnRouter).call{value: 1 ether}("");
         assertTrue(ok);
-        vm.roll(block.number + 1);
+        vm.roll(vm.getBlockNumber() + 1);
         uint256 supply0 = IERC20(coin).totalSupply();
         vm.prank(keeperCaller);
         (uint256 ethIn, uint256 burned) = v2.burnRouter.processBurn(0);
@@ -237,7 +237,7 @@ contract TaxModesV2ForkTest is TaxModesV2Helpers {
 
         // and the keeper path end to end
         _buyAndSell(key, 1 ether);
-        vm.roll(block.number + 1);
+        vm.roll(vm.getBlockNumber() + 1);
         vm.prank(keeperCaller);
         v2.keeper.collectAndForward(coin, true, 0);
         assertEq(IERC20(coin).balanceOf(address(v2.keeper)), 0, "keeper holds no coin");
