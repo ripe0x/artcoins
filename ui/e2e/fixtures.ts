@@ -11,6 +11,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export interface ConsoleEntry {
   type: string;
   text: string;
+  /** url of the resource behind a "Failed to load resource" console error */
+  url?: string;
 }
 
 export const ARTIFACTS = path.join(__dirname, 'artifacts');
@@ -24,8 +26,22 @@ const NOISE = [
   /Error checking Cross-Origin-Opener-Policy: Failed to fetch/i, // reown's remote header probe, blocked by the sandbox proxy
 ];
 
+/** third party hosts whose load failures come from the test environment: reown config 403 and telemetry 400 (no walletconnect project id), ipfs.io 429 rate limit (chrome blocks the text body as an image, ERR_BLOCKED_BY_RESPONSE.NotSameOrigin) */
+const NOISE_HOSTS = new Set(['api.web3modal.org', 'pulse.walletconnect.org', 'ipfs.io']);
+
+function isNoiseUrl(url?: string): boolean {
+  try {
+    return NOISE_HOSTS.has(new URL(url ?? '').hostname);
+  } catch {
+    return false;
+  }
+}
+
 export function isNoise(e: ConsoleEntry): boolean {
   if (e.type === 'requestfailed') return true; // listed in the console artifact, judged by the scenario
+  if (e.type === 'http') return isNoiseUrl(e.url); // 4xx/5xx response: only allowlisted third party hosts are noise
+  // "Failed to load resource" carries no url in its text; the url of the failed resource is in e.url
+  if (/^Failed to load resource/.test(e.text) && isNoiseUrl(e.url)) return true;
   return NOISE.some((r) => r.test(e.text));
 }
 
@@ -45,10 +61,13 @@ export const test = base.extend<Fixtures>({
   consoleLog: async ({ page }, provide, testInfo) => {
     const entries: ConsoleEntry[] = [];
     page.on('console', (m) => {
-      if (m.type() === 'error' || m.type() === 'warning') entries.push({ type: m.type(), text: m.text().slice(0, 600) });
+      if (m.type() === 'error' || m.type() === 'warning') entries.push({ type: m.type(), text: m.text().slice(0, 600), url: m.location().url });
     });
     page.on('pageerror', (e) => entries.push({ type: 'pageerror', text: `${e.name}: ${e.message}`.slice(0, 600) }));
     page.on('requestfailed', (r) => entries.push({ type: 'requestfailed', text: `${r.failure()?.errorText ?? ''} ${r.url().slice(0, 200)}` }));
+    page.on('response', (r) => {
+      if (r.status() >= 400) entries.push({ type: 'http', text: `${r.status()} ${r.url().slice(0, 200)}`, url: r.url() });
+    });
     await provide(entries);
     record(testInfo, 'console', { status: testInfo.status, entries });
   },
