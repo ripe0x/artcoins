@@ -85,7 +85,7 @@ The fee-decay approach is inspired by PunkStrategy's launch mechanics.
 
 ## v2 (branch `v2`, not deployed)
 
-The `v2` branch carries the next stack: immutable coins, an owner changeable factory side, no recipient code during swaps, two fee dodge modes (venue tax or hard transfer restriction), locker only liquidity on taxed pools, a version tag per pool, and a verified deployment registry. Nothing from v2 is deployed yet.
+The `v2` branch carries the next stack: immutable coins, an owner changeable factory side, fee recipients get only the 2,300 gas stipend during swaps (escrow fallback), two fee dodge modes (venue tax or hard transfer restriction), locker only liquidity on taxed pools, a version tag per pool, and a verified deployment registry. Nothing from v2 is deployed yet.
 
 | read | what |
 |---|---|

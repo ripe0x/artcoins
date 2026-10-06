@@ -8,7 +8,7 @@ size at the ci profile (runs 200): 16,716 bytes runtime, 7,860 bytes headroom (g
 
 | rule | decision | where |
 |---|---|---|
-| no recipient code with useful gas during a swap: legs pushed with gas 0, the callee runs on the evm's 2,300 stipend only; escrow on failure. `call{gas: 2300, value}` would give 4,600 | D41 | `_PUSH_GAS`, `_leg` |
+| fee legs are pushed with a zero gas call, so the recipient runs only on the evm's 2,300 gas stipend; it can read state and call `PoolManager.sync`, nothing else; the hook resets sync after the pushes; revert, gas burn and returndata are contained by the escrow fallback; an erc20 prepay style router that syncs before the swap must be tested before being declared supported. `call{gas: 2300, value}` would give 4,600 | D41, D60 | `_PUSH_GAS`, `_leg` |
 | no `streamForward` probe. `setDeliveryParams` kept (bounded, stored, evented) but inert | D41 | |
 | referral pushed straight to the referrer like other legs; `referralPayout` stays in the frozen config, not called during swaps | D41, D16 | `_split` |
 | a recipient that `sync`s a currency from its stipend is undone (hook resets to native if it was native before the pushes) | V2H-01 hardening | `_afterSwap` |
@@ -48,7 +48,7 @@ size at the ci profile (runs 200): 16,716 bytes runtime, 7,860 bytes headroom (g
 
 | residual | note |
 |---|---|
-| a 2,300 gas recipient can still call cheap PoolManager functions (`sync`, `clear` of its own delta) | `sync` is reset when the caller had nothing synced; a caller that synced an erc20 before the swap (prepay style) can be disturbed. HARD forbids prepay; v4 routers sync right before settle |
+| a 2,300 gas recipient can read state and call `PoolManager.sync`, nothing else | the hook resets sync after the pushes; an erc20 prepay style router that syncs before the swap must be tested before being declared supported. HARD forbids prepay; v4 routers sync right before settle |
 | unarmed taxed pool | if a launcher never calls `initializeMevModule`, adds stay possible in the creation block only. the factory always arms in the launch tx |
 | owner enabled extensions run between placement and arming | allowlisted code; no third party code runs in that window |
 

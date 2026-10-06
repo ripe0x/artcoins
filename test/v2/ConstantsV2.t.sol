@@ -146,6 +146,9 @@ contract ConstantsV2Test is Test {
         assertEq(Constants.BURN_IMPACT_DEFAULT, 100);
         assertEq(Constants.BURN_IMPACT_MAX, 300);
         assertEq(Constants.BURN_THRESHOLD_FLOOR, 0.001 ether);
+        assertEq(Constants.BURN_MAX_PER_CALL_MIN, 0.1 ether);
+        assertEq(Constants.BURN_MAX_PER_CALL_MAX, 100 ether);
+        assertEq(Constants.BURN_MAX_PER_CALL_DEFAULT, 5 ether);
         assertEq(Constants.PFC_MIN_TREASURY_BPS, 4000);
         assertEq(Constants.PFC_MIN_BURN_BPS, 1000);
         assertEq(Constants.MAX_GLYPHS, 256);
@@ -167,6 +170,8 @@ contract ConstantsV2Test is Test {
         assertLt(Constants.DEFAULT_MEV_WINDOW, Constants.MAX_MEV_WINDOW);
         assertLt(Constants.BURN_IMPACT_MIN, Constants.BURN_IMPACT_DEFAULT);
         assertLt(Constants.BURN_IMPACT_DEFAULT, Constants.BURN_IMPACT_MAX);
+        assertLt(Constants.BURN_MAX_PER_CALL_MIN, Constants.BURN_MAX_PER_CALL_DEFAULT);
+        assertLt(Constants.BURN_MAX_PER_CALL_DEFAULT, Constants.BURN_MAX_PER_CALL_MAX);
         assertLt(Constants.LOCKER_KEEPER_CAP_MIN, Constants.LOCKER_KEEPER_CAP_MAX);
         assertLt(Constants.SWAPPER_SLIPPAGE_MIN, Constants.SWAPPER_SLIPPAGE_MAX);
         assertLt(Constants.SWAPPER_MIN_BLOCKS_MIN, Constants.SWAPPER_MIN_BLOCKS_MAX);

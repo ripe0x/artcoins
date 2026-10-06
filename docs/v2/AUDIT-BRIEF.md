@@ -30,18 +30,28 @@ a token launcher: the factory deploys an erc20 (solady) via a CREATE2 deployer, 
 
 | # | claim |
 |---|---|
-| i1 | no recipient code runs during a swap: fee legs are pushed with the 2,300 gas stipend and fall back to the escrow; no recipient behavior (no code, revert, gas burn, return bomb, `take`/`sync`/`mint` on the PoolManager inside receive) can revert or reorder a swap or spend another user's exemption |
+| i1 | fee legs are pushed with a zero gas call, so the recipient runs only on the evm's 2,300 gas stipend; it can read state and call `PoolManager.sync`, nothing else; the hook resets sync after the pushes; revert, gas burn and returndata are contained by the escrow fallback; an erc20 prepay style router that syncs before the swap must be tested before being declared supported. no recipient behavior can revert or reorder a swap or spend another user's exemption (amended by D60) |
 | i2 | the hook holds no eth and no erc6909 claims after every swap; the skim on price limited partial fills is charged on the realized amount, the over charge is credited in the escrow to the refund address in hookData (else the PoolManager caller); returned BalanceDelta equals the transient delta for every router |
 | i3 | the referral leg never takes the protocol leg below `minProtocolShareBps` of the baseline skim; every wei of a skim is accounted to exactly one of bounty, protocol, referral, refund |
 | i4 | on a taxed pool (VENUE or HARD), liquidity can only be added in the launch tx before arming; after arming nobody can add through the PositionManager or a direct `modifyLiquidity`; therefore removal grants and attestations for any sender are safe (this invariant is load bearing: break it and the tax bypass class returns) |
 | i5 | HARD mode: coin cannot leave the PoolManager as erc20 except by a canonical swap or a locker collect in the same tx; inflows net against unused outflow grants (D34); known residual: erc6909 claims minted inside the PoolManager on a side pool |
-| i6 | VENUE mode: exemption budget is minted only by coin leaving the PoolManager through a canonical swap, consumed only when `from == poolManager`, never by venue outflows |
+| i6 | VENUE mode: exemption budget is minted by coin leaving the PoolManager through a canonical swap OR a canonical liquidity removal on a taxed pool (only the launch's positions exist there, so this is the locker's collect and trusted extensions); consumed only when `from == poolManager`; never by venue outflows |
 | i7 | the locker's `collectRewards` cannot be executed inside a foreign unlock, measures fees from its own balance deltas, and recipients and bps are frozen per coin |
 | i8 | the escrow never pays out more than `totalOwed`, the owner's rescue cannot reach owed balances, core depositors cannot be removed, `selfClaimOnly` is honoured |
 | i9 | the token address binds `(factory, sender, full config hash)`; a front runner cannot block or capture a launch; the factory refunds exactly the excess and holds no coin after a launch |
 | i10 | the burn router burns at most once per block within `maxImpactBps` and `maxBurnPerCall`; the swapper's convert is bounded the same way; neither can be bricked by a donation or by a floor that can never be met (fee aware floor) |
-| i11 | every owner setter is bounded by `Constants`; every per coin field has no setter; `constantsHash()` agrees across the stack |
+| i11 | exact split of immutable and mutable state, see the table below this one. after D61 every bounded setter in `src/v2` reads its bounds from `Constants` (one technical exception, see the table); `constantsHash()` agrees across the stack (`Constants.hash()` covers the cross contract values only, the burn router per call bounds are not hashed) |
 | i12 | no contract exceeds 24,576 bytes at the ci profile (the hook is 16,716 with 7,860 headroom) |
+
+### i11 detail: immutable vs mutable
+
+| class | what | who can change it |
+|---|---|---|
+| immutable per coin | name, symbol, supply, `taxMode`, `taxBpsMax`, `taxSink`, canonical pool binding, exempt set, pool skim config and recipients, locker slots and bps, mev schedule | nobody, written once in the launch tx, no setter |
+| mutable within bounds, token admin | `taxBps` (<= `taxBpsMax`), metadata, image, renderer, admin | the coin's token admin |
+| mutable, venue admin | append venues, transfer admin, renounce | the venue admin |
+| mutable, owner on periphery | every setter on the factory, hook, locker, escrow, swapper, burn router and fee controller | the owner, every setter bounded by `Constants` (D61: the burn router per call cap bounds moved there). one exception: `FeeAutoSwapperV2.setMaxStepIn` is bounded by the contract local `MAX_STEP_IN_CEILING` (`type(int128).max`, the v4 amount type limit) |
+
 
 ## known residuals (do not spend time re finding; do tell us if they are worse than we think)
 
@@ -51,7 +61,7 @@ a token launcher: the factory deploys an erc20 (solady) via a CREATE2 deployer, 
 | V2H-06 | an exact out seller's eth delta can be negative until the escrow refund is claimed (positive net of it) |
 | V2H-03 | universal router swaps that omit a refund address in hookData leave the partial fill refund credited to the router in the escrow (the ui sets it) |
 | V2H-07 | the hook constructor cannot verify it is a core escrow depositor; the deploy script asserts it |
-| h1-notes | a stipend recipient can call `sync` on the PoolManager; the hook resets sync after the pushes; a router that synced an erc20 before the swap (prepay style) could still be disturbed |
+| h1-notes | a stipend recipient can read state and call `PoolManager.sync`, nothing else; the hook resets sync after the pushes; an erc20 prepay style router that syncs before the swap must be tested before being declared supported |
 | h1-notes | owner enabled extensions run between liquidity placement and arming and could add liquidity in that window (trusted) |
 | V2A-03 | listing a v2 pair as a venue in HARD mode also traps its LPs' weth |
 | V2A-09 | transient grants are per tx, so an erc4337 bundle shares them across user ops |

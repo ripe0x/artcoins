@@ -104,6 +104,10 @@ library Constants {
     uint16 internal constant BURN_IMPACT_DEFAULT = 100;
     uint16 internal constant BURN_IMPACT_MAX = 300;
     uint256 internal constant BURN_THRESHOLD_FLOOR = 0.001 ether;
+    /// @notice Burn router per call eth cap bounds and default (not hashed).
+    uint256 internal constant BURN_MAX_PER_CALL_MIN = 0.1 ether;
+    uint256 internal constant BURN_MAX_PER_CALL_MAX = 100 ether;
+    uint256 internal constant BURN_MAX_PER_CALL_DEFAULT = 5 ether;
 
     // ── protocol fee controller ───────────────────────────────────────────
     /// @notice Minimum shares of the protocol revenue split, in BPS.

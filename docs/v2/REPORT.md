@@ -71,7 +71,7 @@ commands: docs/v2/STATUS.md "how to run tests" and docs/v2/review/test-run.md.
 | D22, D27 | lp fee mev modules and LAYER specific extensions not ported |
 | D30 | token strings bounded (name 64, symbol 16, url 2,048, text 4,096 bytes) |
 | D38 | deployer is a separate, replaceable contract |
-| D41 | no recipient code runs during a swap: 2,300 gas stipend pushes, escrow fallback, stream probe removed |
+| D41, D60 | fee legs are pushed with a zero gas call (recipient runs on the 2,300 gas stipend only, can read state and call sync, nothing else), escrow fallback, stream probe removed |
 | D46 | taxed pools: liquidity closes after arming (locker only); removals never grant exemptions |
 | D52, D53 | referrals cannot take the protocol below its floor; min lp fee 0.3% |
 | D58 | skim refunds via the escrow to a caller named refund address (in swap refund impossible in v4) |
@@ -111,6 +111,15 @@ docs/v2/CREDITS-ENGINE-INTERFACE.md. in short: `streamForward` is never called; 
 | ui | first real browser run on an anvil fork (playwright, `cd ui && npm run test:e2e`, 19/19): 111 buy and sell, LAYER weth buy and sell, v2 launch after `setDeprecated(false)`, referral attribution and claim, v2 airdrop claims. six bugs it found are fixed (LAYER not tradeable, sell above balance, browser clock deadlines, stale referral copy, v2 notice wording, 111 contractURI gas) |
 | scripts | S-01 wiring script: renounce is opt in behind `CONFIRM_RENOUNCE=1`, refuses non current stacks |
 | still yours | runbook actions 1 to 5 today (now with action 2b for the LAYER keeper), decisions D7 / D41 / D46 / D58, the credits engine bundle check, external review of the hook and HARD token, secrets for ci (`MAINNET_RPC_URL`, `ETHERSCAN_API_KEY`), then the deploy steps 5 to 8 |
+
+## external review 1 (docs/v2/review/external-review-1.md)
+
+| item | result |
+|---|---|
+| target | `9fed001`, tag `v2-audit-1` (local tag; push it from your machine, the session's git proxy refuses tag pushes) |
+| verdict | no new medium, high or critical validated; no source patch warranted; 354 fork + 235 unit tests pass for the reviewer; sizes under the limit |
+| corrections | three invariant statements overclaimed (i1 stipend, i6 budget also from canonical removals, i11 mutable within bounds): reworded in AUDIT-BRIEF, DECISIONS D60/D61, SYSTEM-REVIEW, CREDITS-ENGINE-INTERFACE; burn router per call bounds moved into `Constants` |
+| v2-audit-2 | the commit after these corrections (changed files: `src/Constants.sol`, `src/v2/protocol-fee/BurnRouterV2.sol`, one hook comment); ask for a recheck of those only |
 
 ## next steps between this branch and a mainnet deploy
 

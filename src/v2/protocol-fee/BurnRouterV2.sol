@@ -77,10 +77,10 @@ contract BurnRouterV2 is
     /// @notice D40: owner moved the per burn eth cap.
     event MaxBurnPerCallSet(uint256 oldMax, uint256 newMax);
 
-    /// @notice D40: per burn eth cap bounds and default.
-    uint256 public constant MAX_BURN_PER_CALL_MIN = 0.1 ether;
-    uint256 public constant MAX_BURN_PER_CALL_MAX = 100 ether;
-    uint256 public constant DEFAULT_MAX_BURN_PER_CALL = 5 ether;
+    /// @notice D40, D61: per burn eth cap bounds and default, read from `Constants`.
+    uint256 public constant MAX_BURN_PER_CALL_MIN = Constants.BURN_MAX_PER_CALL_MIN;
+    uint256 public constant MAX_BURN_PER_CALL_MAX = Constants.BURN_MAX_PER_CALL_MAX;
+    uint256 public constant DEFAULT_MAX_BURN_PER_CALL = Constants.BURN_MAX_PER_CALL_DEFAULT;
 
     /// @notice Gas forwarded on the keeper reward push (no returndata copied).
     uint256 public constant KEEPER_GAS = 50_000;
@@ -268,10 +268,12 @@ contract BurnRouterV2 is
     }
 
     /// @notice D40: sets the per burn eth cap within
-    ///         [MAX_BURN_PER_CALL_MIN, MAX_BURN_PER_CALL_MAX].
+    ///         [Constants.BURN_MAX_PER_CALL_MIN, Constants.BURN_MAX_PER_CALL_MAX].
     function setMaxBurnPerCall(uint256 maxEth) external onlyOwner {
-        if (maxEth < MAX_BURN_PER_CALL_MIN || maxEth > MAX_BURN_PER_CALL_MAX) {
-            revert OutOfBounds(maxEth, MAX_BURN_PER_CALL_MIN, MAX_BURN_PER_CALL_MAX);
+        if (maxEth < Constants.BURN_MAX_PER_CALL_MIN || maxEth > Constants.BURN_MAX_PER_CALL_MAX) {
+            revert OutOfBounds(
+                maxEth, Constants.BURN_MAX_PER_CALL_MIN, Constants.BURN_MAX_PER_CALL_MAX
+            );
         }
         emit MaxBurnPerCallSet(maxBurnPerCall, maxEth);
         maxBurnPerCall = maxEth;
