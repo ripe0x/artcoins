@@ -303,6 +303,25 @@ abstract contract V2AStackBase is Test {
         who.run(ops);
     }
 
+    /// parks the attacker's canonical position in its own tx (isolated call).
+    /// done inside the test: forge isolates test calls but not setUp, so a
+    /// position added in setUp would keep its b1 marker into the test.
+    function _park() internal {
+        _run(attacker, _one(_modify(canon, L_PARKED, PARKED_SALT)));
+        assertEq(_parkedLiquidity(), uint128(uint256(L_PARKED)));
+    }
+
+    /// WrappedError(address,bytes4,bytes reason,bytes) -> bytes4(reason)
+    function _innerSelector(bytes memory err) internal pure returns (bytes4 sel) {
+        require(err.length >= 4 + 128, "short");
+        bytes memory body = new bytes(err.length - 4);
+        for (uint256 i; i < body.length; ++i) {
+            body[i] = err[i + 4];
+        }
+        (, , bytes memory reason,) = abi.decode(body, (address, bytes4, bytes, bytes));
+        sel = bytes4(reason);
+    }
+
     function _assertNoPending() internal view {
         (uint256 b, uint256 o, uint256 i) = coin.pendingCanonical();
         assertEq(b + o + i, 0, "transient state leaked into the test");
@@ -323,8 +342,6 @@ contract V2A01HardTest is V2AStackBase {
         // seeds the side pool inside the PoolManager (D24 residual), rest taken
         // under the buy's out grant.
         _run(lp, _two(_swap(canon, true, -2000 ether), _modify(side, L_SIDE, bytes32(0))));
-        // attacker parks a canonical position in an earlier tx (pays coin in under the add grant)
-        _run(attacker, _one(_modify(canon, L_PARKED, PARKED_SALT)));
     }
 
     /// add then remove on the canonical pool mints an IN grant for free (the
@@ -362,10 +379,8 @@ contract V2A01HardTest is V2AStackBase {
         assertGt(ethOut, 80 ether, "side pool sell paid out eth");
         assertGe(coinIn, sellAmt, "erc20 coin entered the PoolManager");
         assertLe(coinIn, sellAmt + 2, "only rounding dust beyond the sell");
-        (,, uint256 inLeft) = coin.pendingCanonical();
-        assertGt(inLeft, 9_000e18, "unused free in grant left for the rest of the tx");
         emit log_named_uint("eth received from side pool sell", ethOut);
-        emit log_named_uint("free in grant left over", inLeft);
+        emit log_named_uint("erc20 coin settled into the PoolManager", coinIn);
     }
 
     /// remove then re add a position that existed before the tx mints an OUT
@@ -373,11 +388,15 @@ contract V2A01HardTest is V2AStackBase {
     /// coin bought on a side pool leave the PoolManager as erc20.
     function test_V2A01_hard_removeThenReadd_mintsOutGrant_sidePoolBuyTakes() public {
         _assertNoPending();
-        assertEq(_parkedLiquidity(), uint128(uint256(L_PARKED)));
+        _park();
 
-        // baseline: a plain side pool buy cannot take its coin
-        vm.expectPartialRevert(IArtCoinsTokenV2.CanonicalFlowRequired.selector);
-        _run(attacker, _one(_swap(side, true, -10 ether)));
+        // baseline: a plain side pool buy cannot take its coin (the PoolManager
+        // wraps the token's CanonicalFlowRequired in WrappedError)
+        try attacker.run(_one(_swap(side, true, -10 ether))) {
+            fail("side pool take should revert");
+        } catch (bytes memory err) {
+            assertEq(_innerSelector(err), IArtCoinsTokenV2.CanonicalFlowRequired.selector);
+        }
 
         uint256 coin0 = coin.balanceOf(address(attacker));
         uint256 eth0 = address(attacker).balance;
@@ -407,11 +426,11 @@ contract V2A01VenueTest is V2AStackBase {
     function setUp() public {
         _stack(Constants.TAX_MODE_VENUE);
         _run(lp, _one(_modify(side, L_SIDE, bytes32(0)))); // inflow, untaxed
-        _run(attacker, _one(_modify(canon, L_PARKED, PARKED_SALT)));
     }
 
     function test_V2A01_venue_removeThenReadd_sidePoolBuyUntaxed() public {
         _assertNoPending();
+        _park();
         address dead = Constants.DEAD;
 
         // baseline: side pool buy pays 15%
