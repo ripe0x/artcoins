@@ -429,7 +429,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
             TaxVenue calldata v = t.venues[i];
             if ((v.kind != 1 && v.kind != 2) || v.factory == address(0)) revert InvalidTaxConfig();
             bytes32 k = keccak256(
-                abi.encode(v.kind, v.factory, v.initCodeHash, v.counterToken, v.kind == 2 ? v.v3Fee : 0)
+                abi.encode(
+                    v.kind, v.factory, v.initCodeHash, v.counterToken, v.kind == 2 ? v.v3Fee : 0
+                )
             );
             for (uint256 j; j < i; ++j) {
                 if (keys[j] == k) revert InvalidTaxConfig();

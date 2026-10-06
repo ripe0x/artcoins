@@ -17,7 +17,7 @@ running log for the unattended v2 session. a restarted session should read this 
 | # | job | state | notes |
 |---|---|---|---|
 | 1 | deployment registry | done. registry verified on chain; readme, AGENTS.md, ui config, 32 scripts and script-js read from the registry via generated Addresses.sol / deployments.generated.ts; 27 wrong or stale sites fixed (docs/v2/review/address-wiring.md). |
-| 2 | full system review | in progress | |
+| 2 | full system review | area reviews done; ci hygiene fixes applied (no fork suite: 565 pass, 143 skipped; fork run: 691 pass, 13 fail of which 4 are v1 state mismatches at the pinned block and 9 are unit suites polluted by a global fork url, ci fork job being scoped); SYSTEM-REVIEW.md draft written, status column to be updated after v2 reviews | |
 | 3 | v2 contracts + fixes | not started | |
 | 4 | ops runbook | docs/v2/RUNBOOK.md written: 10 owner actions simulated with cast call --from (all succeed today), v2 rollout order and public gate list. needs a final pass once DeployV2Stack exists (constructor args). | |
 | 5 | pull request + report | draft pr open: https://github.com/ripe0x/artcoins/pull/34 (body replaced at the end) | |

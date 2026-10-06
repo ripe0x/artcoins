@@ -99,8 +99,10 @@ contract TV2StubHook {
         if (mode == Constants.TAX_MODE_HARD) {
             if (a > 0) t.grantCanonicalFlow(pid, uint128(a), 0);
             else if (a < 0) t.grantCanonicalFlow(pid, 0, uint128(-a));
-        } else if (mode == Constants.TAX_MODE_VENUE && a > 0) {
-            t.attestCanonicalBudget(pid, uint128(a));
+        } else if (mode == Constants.TAX_MODE_VENUE) {
+            // D34: the hook also reports canonical inflows in VENUE so the token can net them.
+            if (a > 0) t.attestCanonicalBudget(pid, uint128(a));
+            else if (a < 0) t.grantCanonicalFlow(pid, 0, uint128(-a));
         }
     }
 }
@@ -132,6 +134,9 @@ contract TV2Actor is IUnlockCallback {
     uint8 internal constant OP_CANON_BUY_TO_CLAIMS = 1;
     uint8 internal constant OP_ADD_WITH_CLAIMS = 2;
     uint8 internal constant OP_BUY_AND_TAKE = 3;
+    uint8 internal constant OP_ROUND_TRIP = 4;
+    uint8 internal constant OP_REMOVE_READD = 5;
+    uint8 internal constant OP_ADD = 6;
 
     constructor(IPoolManager pm_) {
         pm = pm_;
@@ -161,14 +166,39 @@ contract TV2Actor is IUnlockCallback {
             uint256 out = uint128(d.amount1());
             if (op == OP_CANON_BUY_TO_CLAIMS) pm.mint(address(this), coin.toId(), out);
             else pm.take(coin, address(this), out);
+        } else if (op == OP_ROUND_TRIP) {
+            // buy then sell the same coin back in one unlock, settle only the net
+            BalanceDelta b = pm.swap(
+                key,
+                IPoolManager.SwapParams({
+                    zeroForOne: true,
+                    amountSpecified: -amount,
+                    sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+                }),
+                ""
+            );
+            BalanceDelta s = pm.swap(
+                key,
+                IPoolManager.SwapParams({
+                    zeroForOne: false,
+                    amountSpecified: -int256(b.amount1()),
+                    sqrtPriceLimitX96: TickMath.MAX_SQRT_PRICE - 1
+                }),
+                ""
+            );
+            _close(key.currency0, int256(b.amount0()) + s.amount0());
+            _close(coin, int256(b.amount1()) + s.amount1());
+        } else if (op == OP_REMOVE_READD || op == OP_ADD) {
+            BalanceDelta d;
+            if (op == OP_REMOVE_READD) (d,) = pm.modifyLiquidity(key, _lp(-amount), "");
+            (BalanceDelta d2,) = pm.modifyLiquidity(key, _lp(amount), "");
+            _close(key.currency0, int256(d.amount0()) + d2.amount0());
+            _close(coin, int256(d.amount1()) + d2.amount1());
         } else if (op == OP_ADD_WITH_CLAIMS) {
             (BalanceDelta d,) = pm.modifyLiquidity(
                 key,
                 IPoolManager.ModifyLiquidityParams({
-                    tickLower: -887_220,
-                    tickUpper: 887_220,
-                    liquidityDelta: amount,
-                    salt: 0
+                    tickLower: -887_220, tickUpper: 887_220, liquidityDelta: amount, salt: 0
                 }),
                 ""
             );
@@ -176,6 +206,28 @@ contract TV2Actor is IUnlockCallback {
             pm.burn(address(this), coin.toId(), uint128(-d.amount1()));
         }
         return "";
+    }
+
+    function _lp(int256 liq) internal pure returns (IPoolManager.ModifyLiquidityParams memory) {
+        return IPoolManager.ModifyLiquidityParams({
+            tickLower: -887_220, tickUpper: 887_220, liquidityDelta: liq, salt: 0
+        });
+    }
+
+    /// @dev Settle a negative delta, take a positive one.
+    function _close(Currency c, int256 d) internal {
+        if (d < 0) {
+            uint256 owed = uint256(-d);
+            if (c.isAddressZero()) {
+                pm.settle{value: owed}();
+            } else {
+                pm.sync(c);
+                ArtCoinsTokenV2(Currency.unwrap(c)).transfer(address(pm), owed);
+                pm.settle();
+            }
+        } else if (d > 0) {
+            pm.take(c, address(this), uint256(d));
+        }
     }
 }
 
@@ -218,7 +270,7 @@ abstract contract TokenV2Base is Test {
         pm = _poolManager();
         swapRouter = new PoolSwapTest(pm);
         liqRouter = new PoolModifyLiquidityTest(pm);
-        address at = address(uint160(0x4444_0000_0000_0000_0000_0000_0000_0000_0000_0000) | STUB_FLAGS);
+        address at = address(uint160(0x4444000000000000000000000000000000000000) | STUB_FLAGS);
         vm.etch(at, address(new TV2StubHook()).code);
         hook = TV2StubHook(at);
         hook.setGranting(true);
@@ -228,7 +280,11 @@ abstract contract TokenV2Base is Test {
 
     // ── config helpers ────────────────────────────────────────────────────
 
-    function _tokenCfg(string memory name_) internal view returns (IArtCoinsFactoryV2.TokenConfigV2 memory t) {
+    function _tokenCfg(string memory name_)
+        internal
+        view
+        returns (IArtCoinsFactoryV2.TokenConfigV2 memory t)
+    {
         t.tokenAdmin = admin;
         t.name = name_;
         t.symbol = "ART";
@@ -254,12 +310,14 @@ abstract contract TokenV2Base is Test {
         });
     }
 
-    function _deploy(IArtCoinsFactoryV2.TokenConfigV2 memory t, IArtCoinsFactoryV2.TaxConfigV2 memory x)
-        internal
-        returns (ArtCoinsTokenV2 tk)
-    {
+    function _deploy(
+        IArtCoinsFactoryV2.TokenConfigV2 memory t,
+        IArtCoinsFactoryV2.TaxConfigV2 memory x
+    ) internal returns (ArtCoinsTokenV2 tk) {
         tk = ArtCoinsTokenV2(
-            deployer.deploy(t, Constants.DEFAULT_TOKEN_SUPPLY, x, _canon(), address(this), bytes32(++saltNonce))
+            deployer.deploy(
+                t, Constants.DEFAULT_TOKEN_SUPPLY, x, _canon(), address(this), bytes32(++saltNonce)
+            )
         );
     }
 
@@ -423,9 +481,12 @@ contract TokenV2Test is TokenV2Base {
             for (uint256 i; i < inner.length; ++i) {
                 inner[i] = err[i + 4];
             }
-            (address target,, bytes memory reason,) = abi.decode(inner, (address, bytes4, bytes, bytes));
+            (address target,, bytes memory reason,) =
+                abi.decode(inner, (address, bytes4, bytes, bytes));
             assertEq(target, address(token));
-            assertEq(bytes4(reason), IArtCoinsTokenV2.CanonicalFlowRequired.selector, "token reason");
+            assertEq(
+                bytes4(reason), IArtCoinsTokenV2.CanonicalFlowRequired.selector, "token reason"
+            );
             (address from, address to,) = abi.decode(_tail(reason), (address, address, uint256));
             assertEq(from, address(pm));
             assertEq(to, address(actor));
@@ -468,7 +529,9 @@ contract TokenV2Test is TokenV2Base {
         token.grantCanonicalFlow(pid, 50, 0);
         vm.prank(address(pm));
         vm.expectRevert(
-            abi.encodeWithSelector(IArtCoinsTokenV2.CanonicalFlowRequired.selector, address(pm), alice, 51)
+            abi.encodeWithSelector(
+                IArtCoinsTokenV2.CanonicalFlowRequired.selector, address(pm), alice, 51
+            )
         );
         token.transfer(alice, 51);
         vm.prank(address(pm));
@@ -504,9 +567,13 @@ contract TokenV2Test is TokenV2Base {
         token.addTaxVenue(address(pool));
         assertTrue(token.isTaxVenue(address(pool)));
 
-        vm.expectRevert(abi.encodeWithSelector(IArtCoinsTokenV2.VenueTransferBlocked.selector, address(pool)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsTokenV2.VenueTransferBlocked.selector, address(pool))
+        );
         token.transfer(address(pool), 1);
-        vm.expectRevert(abi.encodeWithSelector(IArtCoinsTokenV2.VenueTransferBlocked.selector, address(pool)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsTokenV2.VenueTransferBlocked.selector, address(pool))
+        );
         pool.pay(address(token), alice, 1);
     }
 
@@ -522,7 +589,9 @@ contract TokenV2Test is TokenV2Base {
         vm.prank(admin);
         address pool = token.addDerivedTaxVenue(v);
         assertEq(pool, TaxVenues.derive(v, address(token)));
-        vm.expectRevert(abi.encodeWithSelector(IArtCoinsTokenV2.VenueTransferBlocked.selector, pool));
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsTokenV2.VenueTransferBlocked.selector, pool)
+        );
         token.transfer(pool, 1);
     }
 
@@ -625,9 +694,111 @@ contract TokenV2Test is TokenV2Base {
         vm.startPrank(address(hook));
         token.attestCanonicalBudget(bytes32(uint256(1)), 100);
         token.attestCanonicalBudget(_pid(), 0);
-        token.grantCanonicalFlow(token.canonicalPoolId(), 100, 100); // wrong mode
+        token.grantCanonicalFlow(token.canonicalPoolId(), 100, 0); // out is attest's job in VENUE
         vm.stopPrank();
         _assertNoPending();
+    }
+
+    // ── D34 netting ───────────────────────────────────────────────────────
+
+    function test_d34_hard_grantsNetEachOther() public {
+        _deployMode(Constants.TAX_MODE_HARD);
+        bytes32 pid = _pid();
+        vm.startPrank(address(hook));
+        token.grantCanonicalFlow(pid, 100, 0);
+        token.grantCanonicalFlow(pid, 0, 60);
+        vm.stopPrank();
+        (, uint256 o, uint256 i) = _pending();
+        assertEq(o, 40);
+        assertEq(i, 0);
+        vm.prank(address(hook));
+        token.grantCanonicalFlow(pid, 0, 50);
+        (, o, i) = _pending();
+        assertEq(o, 0);
+        assertEq(i, 10);
+        vm.prank(address(hook));
+        token.grantCanonicalFlow(pid, 10, 0);
+        _assertNoPending();
+    }
+
+    function test_d34_venue_inflowCancelsBudget() public {
+        _deployMode(Constants.TAX_MODE_VENUE);
+        bytes32 pid = _pid();
+        vm.startPrank(address(hook));
+        token.attestCanonicalBudget(pid, 100);
+        token.grantCanonicalFlow(pid, 0, 30);
+        vm.stopPrank();
+        (uint256 b,,) = _pending();
+        assertEq(b, 70);
+        vm.prank(address(hook));
+        token.grantCanonicalFlow(pid, 0, 1000);
+        _assertNoPending();
+    }
+
+    /// @dev Side pool funded with coin claims (granting off models an earlier tx).
+    function _sidePoolWithClaims(TV2Actor actor) internal returns (PoolKey memory side) {
+        hook.setGranting(false);
+        actor.run(1, _canonKey(), 20 ether);
+        hook.setGranting(true);
+        side = _sideKey();
+        pm.initialize(side, SQRT_1_1);
+        actor.run(2, side, 5e18);
+    }
+
+    function test_d34_hard_roundTripOneUnlock_noGrantLeft_sideTakeReverts() public {
+        _deployMode(Constants.TAX_MODE_HARD);
+        _initCanonWithLiquidity(1000e18);
+        TV2Actor actor = new TV2Actor(pm);
+        vm.deal(address(actor), 100 ether);
+        PoolKey memory side = _sidePoolWithClaims(actor);
+        _assertNoPending();
+
+        actor.run(4, _canonKey(), 5 ether); // buy then sell back, nets to zero coin
+        _assertNoPending();
+
+        try actor.run(3, side, 0.1 ether) {
+            fail("side take passed after round trip");
+        } catch (bytes memory err) {
+            assertEq(bytes4(err), CustomRevert.WrappedError.selector, "wrapped");
+        }
+    }
+
+    function test_d34_venue_buyThenSellBack_noBudgetForSideBuy() public {
+        _deployMode(Constants.TAX_MODE_VENUE);
+        _initCanonWithLiquidity(1000e18);
+        PoolKey memory side = _sideKey();
+        pm.initialize(side, SQRT_1_1);
+        liqRouter.modifyLiquidity{value: 101 ether}(side, _liq(100e18), "");
+        TV2Actor actor = new TV2Actor(pm);
+        vm.deal(address(actor), 100 ether);
+
+        actor.run(4, _canonKey(), 5 ether);
+        _assertNoPending();
+
+        uint256 before = token.balanceOf(address(this));
+        BalanceDelta d = _buy(side, 1 ether);
+        uint256 gross = uint128(d.amount1());
+        assertEq(token.balanceOf(address(this)) - before, gross - gross * BPS / 10_000, "side taxed");
+    }
+
+    function _lpRemoveReadd(uint8 mode) internal {
+        _deployMode(mode);
+        _initCanonWithLiquidity(1000e18);
+        TV2Actor actor = new TV2Actor(pm);
+        vm.deal(address(actor), 100 ether);
+        token.transfer(address(actor), 100e18);
+        actor.run(6, _canonKey(), 10e18); // actor's own position, granted inflow consumed
+        _assertNoPending();
+        actor.run(5, _canonKey(), 10e18); // remove then re add in one unlock
+        _assertNoPending();
+    }
+
+    function test_d34_hard_lpRemoveThenReadd_noNetGrant() public {
+        _lpRemoveReadd(Constants.TAX_MODE_HARD);
+    }
+
+    function test_d34_venue_lpRemoveThenReadd_noNetBudget() public {
+        _lpRemoveReadd(Constants.TAX_MODE_VENUE);
     }
 
     function test_canonicalCalls_onlyHook() public {
@@ -653,13 +824,17 @@ contract TokenV2Test is TokenV2Base {
         TV2MockPool pool = new TV2MockPool(address(token), makeAddr("weth"));
         vm.startPrank(admin);
         token.addTaxVenue(address(pool));
-        vm.expectRevert(abi.encodeWithSelector(IArtCoinsTokenV2.InvalidTaxVenue.selector, address(pool)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsTokenV2.InvalidTaxVenue.selector, address(pool))
+        );
         token.addTaxVenue(address(pool));
         vm.stopPrank();
         assertEq(token.taxVenues().length, 1);
-        (bool ok,) = address(token).call(abi.encodeWithSignature("removeTaxVenue(address)", address(pool)));
+        (bool ok,) =
+            address(token).call(abi.encodeWithSignature("removeTaxVenue(address)", address(pool)));
         assertFalse(ok, "remove path exists");
-        (ok,) = address(token).call(abi.encodeWithSignature("setTaxVenue(address,bool)", address(pool), false));
+        (ok,) = address(token)
+            .call(abi.encodeWithSignature("setTaxVenue(address,bool)", address(pool), false));
         assertFalse(ok, "setter exists");
     }
 
@@ -714,9 +889,13 @@ contract TokenV2Test is TokenV2Base {
         vm.expectRevert(abi.encodeWithSelector(IArtCoinsTokenV2.InvalidTaxVenue.selector, alice));
         token.addTaxVenue(alice); // a wallet cannot be listed
         TV2MockPool other = new TV2MockPool(makeAddr("x"), makeAddr("y"));
-        vm.expectRevert(abi.encodeWithSelector(IArtCoinsTokenV2.InvalidTaxVenue.selector, address(other)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsTokenV2.InvalidTaxVenue.selector, address(other))
+        );
         token.addTaxVenue(address(other));
-        vm.expectRevert(abi.encodeWithSelector(IArtCoinsTokenV2.InvalidTaxVenue.selector, address(pm)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsTokenV2.InvalidTaxVenue.selector, address(pm))
+        );
         token.addTaxVenue(address(pm));
         vm.stopPrank();
     }
@@ -724,7 +903,11 @@ contract TokenV2Test is TokenV2Base {
     function test_venue_capEnforced() public {
         _deployMode(Constants.TAX_MODE_VENUE);
         IArtCoinsFactoryV2.TaxVenue memory v = IArtCoinsFactoryV2.TaxVenue({
-            kind: 1, factory: makeAddr("v2factory"), initCodeHash: keccak256("i"), counterToken: address(0), v3Fee: 0
+            kind: 1,
+            factory: makeAddr("v2factory"),
+            initCodeHash: keccak256("i"),
+            counterToken: address(0),
+            v3Fee: 0
         });
         vm.startPrank(admin);
         for (uint256 i = 1; i <= Constants.MAX_TAX_VENUES; ++i) {
@@ -983,7 +1166,9 @@ contract TokenV2Test is TokenV2Base {
 
     function test_permit2InfiniteAndNoVotes() public {
         _deployMode(Constants.TAX_MODE_NONE);
-        assertEq(token.allowance(alice, 0x000000000022D473030F116dDEE9F6B43aC78BA3), type(uint256).max);
+        assertEq(
+            token.allowance(alice, 0x000000000022D473030F116dDEE9F6B43aC78BA3), type(uint256).max
+        );
         (bool ok,) = address(token).call(abi.encodeWithSignature("getVotes(address)", alice));
         assertFalse(ok, "no votes extension");
         (ok,) = address(token).call(abi.encodeWithSignature("delegate(address)", alice));
@@ -1015,8 +1200,13 @@ contract TokenV2Test is TokenV2Base {
         vm.expectRevert(abi.encodeWithSelector(IArtCoinsTokenV2.StringTooLong.selector, field, len));
     }
 
-    function _newToken(IArtCoinsFactoryV2.TokenConfigV2 memory t) internal returns (ArtCoinsTokenV2) {
-        return new ArtCoinsTokenV2(t, 1e18, _taxCfg(Constants.TAX_MODE_NONE), _canon(), address(this));
+    function _newToken(IArtCoinsFactoryV2.TokenConfigV2 memory t)
+        internal
+        returns (ArtCoinsTokenV2)
+    {
+        return new ArtCoinsTokenV2(
+            t, 1e18, _taxCfg(Constants.TAX_MODE_NONE), _canon(), address(this)
+        );
     }
 
     function test_strings_atCapPass() public {
@@ -1094,7 +1284,8 @@ contract TokenV2Test is TokenV2Base {
         bytes32 salt = _salt(alice, keccak256(abi.encode(t, x)));
         address predicted =
             deployer.predict(t, Constants.DEFAULT_TOKEN_SUPPLY, x, _canon(), address(this), salt);
-        address got = deployer.deploy(t, Constants.DEFAULT_TOKEN_SUPPLY, x, _canon(), address(this), salt);
+        address got =
+            deployer.deploy(t, Constants.DEFAULT_TOKEN_SUPPLY, x, _canon(), address(this), salt);
         assertEq(got, predicted);
         assertGt(got.code.length, 0);
     }
@@ -1120,8 +1311,9 @@ contract TokenV2Test is TokenV2Base {
         // same sender, any changed field: different address
         x.taxSink = bounty;
         assertTrue(
-            deployer.predict(t, s, x, _canon(), address(this), _salt(victim, keccak256(abi.encode(t, x))))
-                != victimAddr
+            deployer.predict(
+                t, s, x, _canon(), address(this), _salt(victim, keccak256(abi.encode(t, x)))
+            ) != victimAddr
         );
     }
 

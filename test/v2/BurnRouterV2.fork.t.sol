@@ -8,9 +8,9 @@ import {IBurnRouterV2} from "../../src/v2/interfaces/IBurnRouterV2.sol";
 import {BurnRouterV2} from "../../src/v2/protocol-fee/BurnRouterV2.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
+import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
@@ -156,7 +156,9 @@ contract BurnRouterV2ForkTest is P1Base {
 
         // owner only, and zero disables again
         vm.prank(attacker);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
+        );
         router.setOpenTabCaller(attacker);
         router.setOpenTabCaller(address(0));
         vm.expectRevert(BurnRouterV2.NotOpenTabCaller.selector);
@@ -187,7 +189,9 @@ contract BurnRouterV2ForkTest is P1Base {
         assertEq(router.spotFloorBps(), hi);
 
         vm.prank(attacker);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
+        );
         router.setSpotFloorBps(9000);
     }
 

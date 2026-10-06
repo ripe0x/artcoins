@@ -40,7 +40,7 @@ library SvgText {
     uint256 internal constant DESC_MAX = 4096;
     /// @dev image, external and animation urls. Longer values are dropped, not
     ///      truncated: a cut url points at the wrong thing.
-    uint256 internal constant URL_MAX = 2_048;
+    uint256 internal constant URL_MAX = 2048;
 
     /// @notice Text node content: `clean` then escape `& < > " '`.
     function text(string memory s, uint256 maxBytes) internal pure returns (string memory) {

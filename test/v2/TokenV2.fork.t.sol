@@ -174,7 +174,9 @@ contract TokenV2ForkTest is TokenV2Base {
         TV2V3Actor actor = new TV2V3Actor();
         token.transfer(address(actor), 1000e18);
         deal(WETH, address(actor), 200 ether);
-        vm.expectRevert(abi.encodeWithSelector(IArtCoinsTokenV2.VenueTransferBlocked.selector, pool));
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsTokenV2.VenueTransferBlocked.selector, pool)
+        );
         actor.mint(pool, 100e18);
     }
 
@@ -186,7 +188,9 @@ contract TokenV2ForkTest is TokenV2Base {
         vm.prank(admin);
         address pair = token.addDerivedTaxVenue(v);
         assertEq(ITV2V2Factory(V2_FACTORY).createPair(address(token), WETH), pair, "derived v2");
-        vm.expectRevert(abi.encodeWithSelector(IArtCoinsTokenV2.VenueTransferBlocked.selector, pair));
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsTokenV2.VenueTransferBlocked.selector, pair)
+        );
         token.transfer(pair, 1e18);
     }
 

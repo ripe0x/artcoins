@@ -35,10 +35,9 @@ import {
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {ReentrancyGuardTransient} from
-    "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
-import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
@@ -69,17 +68,23 @@ contract FactoryV2ForkTest is ForkBase {
     ArtCoinsMevLinearSkimV2 internal mev;
     FV2Payout internal payout;
 
-    address payable internal protocolR = payable(makeAddr("protocolRecipient"));
-    address internal team = makeAddr("team");
-    address internal alice = makeAddr("alice");
-    address internal mallory = makeAddr("mallory");
-    address internal admin = makeAddr("tokenAdmin");
-    address internal project = makeAddr("project");
-    address payable internal bounty = payable(makeAddr("bounty"));
+    address payable internal protocolR = payable(makeAddr("fv2.protocolRecipient"));
+    address internal team = makeAddr("fv2.team");
+    address internal alice = makeAddr("fv2.alice");
+    address internal mallory = makeAddr("fv2.mallory");
+    address internal admin = makeAddr("fv2.tokenAdmin");
+    address internal project = makeAddr("fv2.project");
+    address payable internal bounty = payable(makeAddr("fv2.bounty"));
 
     function setUp() public {
         forkMainnet();
         factory = new ArtCoinsFactoryV2(address(this), POOL_MANAGER, PROTOCOL_BPS, FEE);
+        // plain makeAddr labels can collide with live mainnet contracts
+        // ("alice" has code at the pin): every actor here must be an eoa.
+        require(
+            alice.code.length == 0 && mallory.code.length == 0 && team.code.length == 0,
+            "actor has code"
+        );
         vm.deal(alice, 100 ether);
         vm.deal(mallory, 100 ether);
         if (!onFork) return;
@@ -183,10 +188,9 @@ contract FactoryV2ForkTest is ForkBase {
         return factory.deployToken{value: FEE}(c);
     }
 
-    function _expectRevertDeploy(
-        IArtCoinsFactoryV2.DeploymentConfigV2 memory c,
-        bytes memory err
-    ) internal {
+    function _expectRevertDeploy(IArtCoinsFactoryV2.DeploymentConfigV2 memory c, bytes memory err)
+        internal
+    {
         vm.prank(alice);
         vm.expectRevert(err);
         factory.deployToken{value: FEE}(c);
@@ -286,7 +290,7 @@ contract FactoryV2ForkTest is ForkBase {
     // ══════════════════════════════════════════════════════════════════════
 
     function test_factoryV2_taxSinkOutsideAllowedSet_reverts() public onlyFork {
-        address outsider = makeAddr("outsider");
+        address outsider = makeAddr("fv2.outsider");
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
         c.tax.mode = Constants.TAX_MODE_VENUE;
         c.tax.taxBps = 1000;
@@ -325,7 +329,7 @@ contract FactoryV2ForkTest is ForkBase {
         _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidTaxConfig.selector));
         // FT-07: an eoa cannot be exempted
         c.tax.exempt = new address[](1);
-        c.tax.exempt[0] = alice;
+        c.tax.exempt[0] = makeAddr("fv2.exemptEoa");
         _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidTaxConfig.selector));
         c.tax.exempt = new address[](0);
         c.tax.venues = new IArtCoinsFactoryV2.TaxVenue[](Constants.MAX_TAX_VENUES + 1);
@@ -344,9 +348,7 @@ contract FactoryV2ForkTest is ForkBase {
             ArtCoinsTokenV2(t2).canonicalPoolId(), PoolId.unwrap(factory.deploymentInfo(t2).poolId)
         );
         assertEq(ArtCoinsTokenV2(t2).canonicalHook(), address(hook));
-        assertEq(
-            hook.poolInfo(factory.deploymentInfo(t2).poolId).taxMode, Constants.TAX_MODE_VENUE
-        );
+        assertEq(hook.poolInfo(factory.deploymentInfo(t2).poolId).taxMode, Constants.TAX_MODE_VENUE);
 
         hd.tax.taxSink = address(0);
         address t3 = _deploy(alice, hd);
@@ -384,7 +386,7 @@ contract FactoryV2ForkTest is ForkBase {
         factory.setEscrow(address(badHash), true);
 
         // no code at all is a mismatch, not a raw revert
-        address eoa = makeAddr("eoa");
+        address eoa = makeAddr("fv2.eoa");
         vm.expectRevert(abi.encodeWithSelector(IConstantsBound.ConstantsMismatch.selector, eoa));
         factory.setLocker(eoa, true);
 
@@ -483,7 +485,9 @@ contract FactoryV2ForkTest is ForkBase {
         factory.setTeamFeeRecipient(address(new FV2RevertingReceiver()));
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
         c.token.salt = bytes32(uint256(9));
-        _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.EthTransferFailed.selector));
+        _expectRevertDeploy(
+            c, abi.encodeWithSelector(IArtCoinsFactoryV2.EthTransferFailed.selector)
+        );
     }
 
     function test_deprecated_gate_ownerBypasses() public onlyFork {
@@ -666,11 +670,15 @@ contract FactoryV2ForkTest is ForkBase {
         c.locker.rewardRecipients = new address[](2);
         c.locker.rewardRecipients[0] = project;
         c.locker.rewardRecipients[1] = mallory;
-        _expectRevertDeploy(c, abi.encodeWithSelector(ArtCoinsFactoryV2.ArrayLengthMismatch.selector));
+        _expectRevertDeploy(
+            c, abi.encodeWithSelector(ArtCoinsFactoryV2.ArrayLengthMismatch.selector)
+        );
         c = _cfg();
         c.locker.tickUpper = new int24[](1);
         c.locker.tickUpper[0] = -120_000;
-        _expectRevertDeploy(c, abi.encodeWithSelector(ArtCoinsFactoryV2.ArrayLengthMismatch.selector));
+        _expectRevertDeploy(
+            c, abi.encodeWithSelector(ArtCoinsFactoryV2.ArrayLengthMismatch.selector)
+        );
 
         // a zero bps project slot
         c = _cfg();
@@ -679,7 +687,9 @@ contract FactoryV2ForkTest is ForkBase {
         c.locker.rewardRecipients[1] = mallory;
         c.locker.rewardBps = new uint16[](2);
         c.locker.rewardBps[0] = 10_000 - PROTOCOL_BPS;
-        _expectRevertDeploy(c, abi.encodeWithSelector(ArtCoinsFactoryV2.InvalidRewardSlots.selector));
+        _expectRevertDeploy(
+            c, abi.encodeWithSelector(ArtCoinsFactoryV2.InvalidRewardSlots.selector)
+        );
 
         // too many slots once the protocol slot is appended
         c = _cfg();
@@ -693,7 +703,9 @@ contract FactoryV2ForkTest is ForkBase {
             c.locker.rewardBps[i] = bb;
             left -= bb;
         }
-        _expectRevertDeploy(c, abi.encodeWithSelector(ArtCoinsFactoryV2.InvalidRewardSlots.selector));
+        _expectRevertDeploy(
+            c, abi.encodeWithSelector(ArtCoinsFactoryV2.InvalidRewardSlots.selector)
+        );
 
         // positions must sum to BPS
         c = _cfg();
@@ -705,7 +717,9 @@ contract FactoryV2ForkTest is ForkBase {
         c = _cfg();
         _expectRevertDeploy(
             c,
-            abi.encodeWithSelector(IArtCoinsFactoryV2.BountyBpsTooHigh.selector, uint16(8333), uint16(8000))
+            abi.encodeWithSelector(
+                IArtCoinsFactoryV2.BountyBpsTooHigh.selector, uint16(8333), uint16(8000)
+            )
         );
         c.fee.bountyBps = 8000;
         address t = _deploy(alice, c);
@@ -714,18 +728,26 @@ contract FactoryV2ForkTest is ForkBase {
         // fee caps
         c = _cfg();
         c.fee.lpFee = Constants.MAX_LP_FEE + 1;
-        _expectRevertDeploy(c, abi.encodeWithSelector(ArtCoinsFactoryV2.FeeConfigOutOfBounds.selector));
+        _expectRevertDeploy(
+            c, abi.encodeWithSelector(ArtCoinsFactoryV2.FeeConfigOutOfBounds.selector)
+        );
         c = _cfg();
         c.fee.baselineSkimBps = Constants.MAX_BASELINE_SKIM_BPS + 1;
-        _expectRevertDeploy(c, abi.encodeWithSelector(ArtCoinsFactoryV2.FeeConfigOutOfBounds.selector));
+        _expectRevertDeploy(
+            c, abi.encodeWithSelector(ArtCoinsFactoryV2.FeeConfigOutOfBounds.selector)
+        );
         c = _cfg();
         c.fee.maxReferralBpsOfVolume = Constants.MAX_REFERRAL_CAP_OF_VOLUME + 1;
-        _expectRevertDeploy(c, abi.encodeWithSelector(ArtCoinsFactoryV2.FeeConfigOutOfBounds.selector));
+        _expectRevertDeploy(
+            c, abi.encodeWithSelector(ArtCoinsFactoryV2.FeeConfigOutOfBounds.selector)
+        );
 
         // supply floor
         c = _cfg();
         c.token.totalSupply = Constants.MIN_TOKEN_SUPPLY - 1;
-        _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.TotalSupplyTooLow.selector));
+        _expectRevertDeploy(
+            c, abi.encodeWithSelector(IArtCoinsFactoryV2.TotalSupplyTooLow.selector)
+        );
     }
 
     function test_mevConfigBounds() public onlyFork {
@@ -770,7 +792,7 @@ contract FactoryV2ForkTest is ForkBase {
     function test_tokenCtorRules_mirroredUpFront() public onlyFork {
         // renderer without code
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        c.token.renderer = makeAddr("noCode");
+        c.token.renderer = makeAddr("fv2.noCode");
         _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsTokenV2.InvalidRenderer.selector));
 
         c = _cfg();
@@ -788,7 +810,11 @@ contract FactoryV2ForkTest is ForkBase {
         // venue: unknown kind, zero factory, duplicate derivation
         c.tax.venues = new IArtCoinsFactoryV2.TaxVenue[](1);
         c.tax.venues[0] = IArtCoinsFactoryV2.TaxVenue({
-            kind: 3, factory: address(0x5C69), initCodeHash: bytes32(uint256(1)), counterToken: WETH, v3Fee: 0
+            kind: 3,
+            factory: address(0x5C69),
+            initCodeHash: bytes32(uint256(1)),
+            counterToken: WETH,
+            v3Fee: 0
         });
         _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidTaxConfig.selector));
         c.tax.venues[0].kind = 1;
@@ -796,11 +822,19 @@ contract FactoryV2ForkTest is ForkBase {
         _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidTaxConfig.selector));
         c.tax.venues = new IArtCoinsFactoryV2.TaxVenue[](2);
         c.tax.venues[0] = IArtCoinsFactoryV2.TaxVenue({
-            kind: 1, factory: address(0x5C69), initCodeHash: bytes32(uint256(1)), counterToken: WETH, v3Fee: 0
+            kind: 1,
+            factory: address(0x5C69),
+            initCodeHash: bytes32(uint256(1)),
+            counterToken: WETH,
+            v3Fee: 0
         });
         // v3Fee is ignored by a v2 style derivation: same pool
         c.tax.venues[1] = IArtCoinsFactoryV2.TaxVenue({
-            kind: 1, factory: address(0x5C69), initCodeHash: bytes32(uint256(1)), counterToken: WETH, v3Fee: 3000
+            kind: 1,
+            factory: address(0x5C69),
+            initCodeHash: bytes32(uint256(1)),
+            counterToken: WETH,
+            v3Fee: 3000
         });
         _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidTaxConfig.selector));
 
@@ -845,10 +879,7 @@ contract FactoryV2ForkTest is ForkBase {
             c.token.salt = bytes32(uint256(100 + f));
             _setString(c, f, string(new bytes(caps[f] + 1)));
             _expectRevertDeploy(
-                c,
-                abi.encodeWithSelector(
-                    IArtCoinsTokenV2.StringTooLong.selector, f, caps[f] + 1
-                )
+                c, abi.encodeWithSelector(IArtCoinsTokenV2.StringTooLong.selector, f, caps[f] + 1)
             );
         }
         // every field at its cap at once
@@ -972,7 +1003,9 @@ contract FactoryV2ForkTest is ForkBase {
         assertEq(IERC20(t).totalSupply(), supply);
         assertEq(IERC20(t).balanceOf(address(factory)), 0, "factory holds no dust");
         assertEq(IERC20(t).balanceOf(team), 0, "team gets no coin");
-        assertEq(FV2LockerStub(locker).pulled(t), poolSupply, "locker pulled exactly the pool supply");
+        assertEq(
+            FV2LockerStub(locker).pulled(t), poolSupply, "locker pulled exactly the pool supply"
+        );
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -1019,15 +1052,20 @@ contract FactoryV2ForkTest is ForkBase {
         );
         factory.setMevModule(address(mev), true);
         factory.setLocker(locker, false);
-        _expectRevertDeploy(_cfg(), abi.encodeWithSelector(IArtCoinsFactoryV2.LockerNotEnabled.selector));
+        _expectRevertDeploy(
+            _cfg(), abi.encodeWithSelector(IArtCoinsFactoryV2.LockerNotEnabled.selector)
+        );
         factory.setLocker(locker, true);
         factory.setHook(address(hook), false);
-        _expectRevertDeploy(_cfg(), abi.encodeWithSelector(IArtCoinsFactoryV2.HookNotEnabled.selector));
+        _expectRevertDeploy(
+            _cfg(), abi.encodeWithSelector(IArtCoinsFactoryV2.HookNotEnabled.selector)
+        );
     }
 
     function test_owner_setterBounds() public {
         assertTrue(
-            new ArtCoinsFactoryV2(address(this), POOL_MANAGER, 0, 0).deprecated(), "ships deprecated"
+            new ArtCoinsFactoryV2(address(this), POOL_MANAGER, 0, 0).deprecated(),
+            "ships deprecated"
         );
         assertEq(factory.owner(), address(this));
 
@@ -1063,7 +1101,8 @@ contract FactoryV2ForkTest is ForkBase {
 
         // every owner entry is gated
         vm.startPrank(alice);
-        bytes memory err = abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice);
+        bytes memory err =
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice);
         vm.expectRevert(err);
         factory.setDeployFee(0);
         vm.expectRevert(err);
@@ -1161,7 +1200,8 @@ contract FactoryV2ForkTest is ForkBase {
                     IArtCoinsFactoryV2.DeploymentConfigV2
                 )
             );
-            return (sender, token, poolId, version, protocolBps, poolSupply, extensionsSupply, config);
+            return
+                (sender, token, poolId, version, protocolBps, poolSupply, extensionsSupply, config);
         }
         revert("TokenCreatedV2 not found");
     }

@@ -66,7 +66,11 @@ contract HookV2ForkTest is HookV2ForkBase {
     // ─── helpers ─────────────────────────────────────────────────────────
 
     /// expected (bounty, protocol) for a skim at `bps` with no referral.
-    function _legs(uint256 skim, uint256 bps) internal pure returns (uint256 bounty, uint256 protocol) {
+    function _legs(uint256 skim, uint256 bps)
+        internal
+        pure
+        returns (uint256 bounty, uint256 protocol)
+    {
         uint256 base = (skim * BASELINE) / bps;
         uint256 bs = (base * BOUNTY_BPS) / Constants.BPS;
         protocol = base - bs;
@@ -170,7 +174,9 @@ contract HookV2ForkTest is HookV2ForkBase {
         uint256 skim = (1 ether * uint256(BASELINE)) / D;
         (uint256 bounty,) = _legs(skim, BASELINE);
         vm.expectEmit(true, true, true, true, address(hook));
-        emit IArtCoinsHookV2.FeeDelivered(key.toId(), Constants.LEG_BOUNTY, address(r), bounty, true);
+        emit IArtCoinsHookV2.FeeDelivered(
+            key.toId(), Constants.LEG_BOUNTY, address(r), bounty, true
+        );
         _swap(key, true, -1 ether, 0, "");
         assertEq(_escrowed(address(r)), bounty);
         assertEq(address(r).balance, 1 ether);
@@ -291,7 +297,9 @@ contract HookV2ForkTest is HookV2ForkBase {
         (, bool active) = IArtCoinsMevSkimV2(address(m)).currentSkimBps(key.toId());
         assertTrue(active);
         _modify(key, -2000, 2000, 1e18, bytes32(uint256(5)));
-        assertEq(_skimOfBuy1Eth(key, bountyEoa), (1 ether * uint256(BASELINE)) / D, "baseline after cap");
+        assertEq(
+            _skimOfBuy1Eth(key, bountyEoa), (1 ether * uint256(BASELINE)) / D, "baseline after cap"
+        );
     }
 
     function test_hookV2_realModule_decaysAndUnlocks() public onlyFork {
@@ -327,7 +335,9 @@ contract HookV2ForkTest is HookV2ForkBase {
                 Constants.MAX_MEV_WINDOW
             )
         );
-        hook.initializeMevModule(key, abi.encode(uint24(68_690), uint32(Constants.MAX_MEV_WINDOW + 1)));
+        hook.initializeMevModule(
+            key, abi.encode(uint24(68_690), uint32(Constants.MAX_MEV_WINDOW + 1))
+        );
     }
 
     function test_hookV2_revertingModule_failsOpenToBaseline() public onlyFork {
@@ -352,16 +362,17 @@ contract HookV2ForkTest is HookV2ForkBase {
 
     function test_hookV2_noOpenInit() public {
         // v1 open entry point is gone; no fallback answers it
-        (bool ok,) = address(hook).call(
-            abi.encodeWithSignature(
-                "initializePoolOpen(address,address,int24,int24,bytes)",
-                address(1),
-                address(0),
-                int24(0),
-                TS,
-                ""
-            )
-        );
+        (bool ok,) = address(hook)
+            .call(
+                abi.encodeWithSignature(
+                    "initializePoolOpen(address,address,int24,int24,bytes)",
+                    address(1),
+                    address(0),
+                    int24(0),
+                    TS,
+                    ""
+                )
+            );
         assertFalse(ok, "no open init selector");
         // initializePool is launcher only
         IArtCoinsHookV2.PoolInitParams memory p = _params(_defaults(bountyEoa), address(1));
@@ -471,12 +482,16 @@ contract HookV2ForkTest is HookV2ForkBase {
         Launch memory l = _defaults(bountyEoa);
         l.module = address(bad);
         IArtCoinsHookV2.PoolInitParams memory p = _params(l, address(1));
-        vm.expectRevert(abi.encodeWithSelector(IConstantsBound.ConstantsMismatch.selector, address(bad)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IConstantsBound.ConstantsMismatch.selector, address(bad))
+        );
         hook.initializePool(p);
 
         p = _params(_defaults(bountyEoa), address(1));
         p.locker = address(bad);
-        vm.expectRevert(abi.encodeWithSelector(IConstantsBound.ConstantsMismatch.selector, address(bad)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IConstantsBound.ConstantsMismatch.selector, address(bad))
+        );
         hook.initializePool(p);
 
         // a codeless "module" is refused as well
@@ -559,13 +574,17 @@ contract HookV2ForkTest is HookV2ForkBase {
         (PoolKey memory key,) = _launch(l);
         address ref = makeAddr("ref");
         _swap(key, true, -1 ether, 0, _attribution(ref, 250));
-        assertEq(_escrowed(ref), (1 ether * uint256(MAX_REF)) / D, "referrer credited, not protocol");
+        assertEq(
+            _escrowed(ref), (1 ether * uint256(MAX_REF)) / D, "referrer credited, not protocol"
+        );
     }
 
     function test_hookData_malformed_neverReverts() public onlyFork {
         PoolKey memory key = _launchSimple(bountyEoa);
         _swap(key, true, -0.1 ether, 0, hex"deadbeef");
-        _swap(key, true, -0.1 ether, 0, abi.encode(uint256(type(uint256).max), uint256(7), uint256(9)));
+        _swap(
+            key, true, -0.1 ether, 0, abi.encode(uint256(type(uint256).max), uint256(7), uint256(9))
+        );
         bytes memory junk = new bytes(300);
         for (uint256 i; i < 300; ++i) {
             junk[i] = bytes1(uint8(i * 7));
@@ -676,7 +695,9 @@ contract HookV2ForkTest is HookV2ForkBase {
         swapRouter.swap{value: 1 ether}(
             key,
             IPoolManager.SwapParams({
-                zeroForOne: true, amountSpecified: -1 ether, sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+                zeroForOne: true,
+                amountSpecified: -1 ether,
+                sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
             }),
             PoolSwapTest.TestSettings({takeClaims: true, settleUsingBurn: false}),
             ""
@@ -727,7 +748,9 @@ contract HookV2ForkTest is HookV2ForkBase {
         hook.setDeliveryParams(Constants.PUSH_GAS_DEFAULT, Constants.STREAM_GAS_MAX + 1, 0);
         vm.expectRevert();
         hook.setDeliveryParams(
-            Constants.PUSH_GAS_DEFAULT, Constants.STREAM_GAS_DEFAULT, Constants.STREAM_MIN_BALANCE_MAX + 1
+            Constants.PUSH_GAS_DEFAULT,
+            Constants.STREAM_GAS_DEFAULT,
+            Constants.STREAM_MIN_BALANCE_MAX + 1
         );
 
         vm.expectEmit(address(hook));
@@ -760,7 +783,9 @@ contract HookV2ForkTest is HookV2ForkBase {
 
     function test_owner_setFeeEscrow_checksConstantsAndDepositor() public {
         HV2ConstantsStub bad = new HV2ConstantsStub(keccak256("other"));
-        vm.expectRevert(abi.encodeWithSelector(IConstantsBound.ConstantsMismatch.selector, address(bad)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IConstantsBound.ConstantsMismatch.selector, address(bad))
+        );
         hook.setFeeEscrow(address(bad));
         // a matching escrow that does not list the hook as core depositor would
         // turn every failed push into a swap revert
@@ -819,7 +844,8 @@ contract HookV2ForkTest is HookV2ForkBase {
         assertEq(att.sourceId, bytes32("src"));
         assertEq(att.campaignId, bytes16("cmp"));
         assertEq(
-            keccak256(ext), keccak256(abi.decode(hd, (IArtCoinsHook.PoolSwapData)).poolExtensionSwapData)
+            keccak256(ext),
+            keccak256(abi.decode(hd, (IArtCoinsHook.PoolSwapData)).poolExtensionSwapData)
         );
         (ext, att) = h.decode("");
         assertEq(ext.length, 0);

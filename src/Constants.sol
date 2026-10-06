@@ -92,8 +92,8 @@ library Constants {
     uint256 internal constant KEEPER_REWARD_CAP = 0.01 ether;
     /// @notice Post swap output floor against spot, in BPS.
     uint256 internal constant SPOT_FLOOR_BPS = 8000;
-    uint256 internal constant SPOT_FLOOR_MIN_BPS = 5_000;
-    uint256 internal constant SPOT_FLOOR_MAX_BPS = 9_500;
+    uint256 internal constant SPOT_FLOOR_MIN_BPS = 5000;
+    uint256 internal constant SPOT_FLOOR_MAX_BPS = 9500;
     /// @notice Fee swapper owner bounds.
     uint256 internal constant SWAPPER_SLIPPAGE_MIN = 50;
     uint256 internal constant SWAPPER_SLIPPAGE_MAX = 1000;

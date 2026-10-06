@@ -623,7 +623,8 @@ contract RendererV2Test is Test {
     function test_renderV2_spriteGlyphsMatchReference() public {
         tok.set("n", "s", "d", "");
         counter.set(300, 4);
-        string memory want = '<g fill="#22c55e" font-family="monospace" font-size="40" font-weight="700" text-anchor="middle">';
+        string memory want =
+            '<g fill="#22c55e" font-family="monospace" font-size="40" font-weight="700" text-anchor="middle">';
         for (uint256 i = 0; i < Constants.MAX_GLYPHS; i++) {
             bytes32 h = keccak256(abi.encode(address(tok), uint256(0), i));
             want = string.concat(
@@ -635,7 +636,10 @@ contract RendererV2Test is Test {
                 '">+</text>'
             );
         }
-        want = string.concat(want, '</g><g fill="#ef4444" font-family="monospace" font-size="40" font-weight="700" text-anchor="middle">');
+        want = string.concat(
+            want,
+            '</g><g fill="#ef4444" font-family="monospace" font-size="40" font-weight="700" text-anchor="middle">'
+        );
         for (uint256 i = 0; i < 4; i++) {
             bytes32 h = keccak256(abi.encode(address(tok), uint256(1), i));
             want = string.concat(

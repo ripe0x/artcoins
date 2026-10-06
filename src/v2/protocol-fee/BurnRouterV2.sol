@@ -154,7 +154,9 @@ contract BurnRouterV2 is
         nonReentrant
         returns (uint256 ethIn, uint256 burned)
     {
-        if (msg.sender != openTabCaller || msg.sender == address(0)) revert NotOpenTabCaller();
+        if (msg.sender != openTabCaller || msg.sender == address(0)) {
+            revert NotOpenTabCaller();
+        }
         (uint256 budget, uint160 spot, uint256 coinBefore) = _preflight();
         uint256 coinOut;
         (ethIn, coinOut) = _swapAndSettle(budget, spot);

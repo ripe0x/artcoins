@@ -10,8 +10,8 @@ import {IConstantsBound} from "../../src/v2/interfaces/IConstantsBound.sol";
 import {IFeeAutoSwapperV2} from "../../src/v2/interfaces/IFeeAutoSwapperV2.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 
 /// @title  FeeAutoSwapperV2ForkTest
 /// @notice DESIGN b5 swapper half, review LF-02, LF-07, LF-08.
@@ -338,9 +338,13 @@ contract FeeAutoSwapperV2ForkTest is P1Base {
         assertEq(swapper.spotFloorBps(), Constants.SPOT_FLOOR_BPS, "default 80%");
         uint256 lo = Constants.SPOT_FLOOR_MIN_BPS;
         uint256 hi = Constants.SPOT_FLOOR_MAX_BPS;
-        vm.expectRevert(abi.encodeWithSelector(IFeeAutoSwapperV2.OutOfBounds.selector, lo - 1, lo, hi));
+        vm.expectRevert(
+            abi.encodeWithSelector(IFeeAutoSwapperV2.OutOfBounds.selector, lo - 1, lo, hi)
+        );
         swapper.setSpotFloorBps(lo - 1);
-        vm.expectRevert(abi.encodeWithSelector(IFeeAutoSwapperV2.OutOfBounds.selector, hi + 1, lo, hi));
+        vm.expectRevert(
+            abi.encodeWithSelector(IFeeAutoSwapperV2.OutOfBounds.selector, hi + 1, lo, hi)
+        );
         swapper.setSpotFloorBps(hi + 1);
         vm.expectEmit(false, false, false, true, address(swapper));
         emit FeeAutoSwapperV2.SpotFloorBpsSet(Constants.SPOT_FLOOR_BPS, lo);
@@ -350,7 +354,9 @@ contract FeeAutoSwapperV2ForkTest is P1Base {
         assertEq(swapper.spotFloorBps(), hi);
 
         vm.prank(attacker);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
+        );
         swapper.setSpotFloorBps(9000);
     }
 

@@ -390,7 +390,9 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         {
             uint8 mode = _info[pid].taxMode;
             int256 a = delta.amount1();
-            if (a > 0 ? mode != Constants.TAX_MODE_NONE : (a < 0 && mode == Constants.TAX_MODE_HARD)) {
+            if (a > 0
+                    ? mode != Constants.TAX_MODE_NONE
+                    : (a < 0 && mode == Constants.TAX_MODE_HARD)) {
                 _tokenFlow(key, pid, mode, a);
             }
         }

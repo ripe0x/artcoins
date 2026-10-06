@@ -31,8 +31,8 @@ import {IConstantsBound} from "./interfaces/IConstantsBound.sol";
 ///         | mode  | rule |
 ///         |---|---|
 ///         | NONE  | plain erc20 |
-///         | VENUE | coin leaving a venue (the PoolManager or a listed v2/v3 pool) to a non exempt recipient pays `taxBps` to `taxSink`. PoolManager outflows are exempt up to the canonical budget the canonical hook attested this tx. listed venue outflows never draw budget |
-///         | HARD  | any transfer from or to the PoolManager reverts unless covered by a same tx, per direction allowance granted by the canonical hook. any transfer touching a listed venue reverts |
+///         | VENUE | coin leaving a venue (the PoolManager or a listed v2/v3 pool) to a non exempt recipient pays `taxBps` to `taxSink`. PoolManager outflows are exempt up to the canonical budget the canonical hook attested this tx. listed venue outflows never draw budget. coin the hook reports entering the canonical pool cancels unused budget (D34) |
+///         | HARD  | any transfer from or to the PoolManager reverts unless covered by a same tx, per direction allowance granted by the canonical hook. grants net against each other (D34). any transfer touching a listed venue reverts |
 ///
 ///         Frozen at construction: name, symbol, supply, launcher, mode,
 ///         taxBpsMax, taxSink, canonical hook, pool id, PoolManager, exempt set.
@@ -374,12 +374,44 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
     }
 
     /// @inheritdoc IArtCoinsTokenV2
-    /// @dev Cumulative per direction within the tx. No op outside HARD or for another pool.
+    /// @dev D34 netting. A canonical flow first cancels the outstanding
+    ///      allowance of the opposite direction; only the remainder is
+    ///      granted. HARD: out cancels unused in, in cancels unused out, so at
+    ///      most one direction is ever outstanding and a round trip, a remove
+    ///      then re add, or an add then remove inside one unlock leaves nothing
+    ///      for a side pool take or settle. VENUE: `inAmount` (coin entering
+    ///      the canonical pool: a sell or an lp add) cancels unused budget;
+    ///      `outAmount` is ignored (budget is added by `attestCanonicalBudget`).
+    ///      No op for another pool or in NONE.
     function grantCanonicalFlow(bytes32 poolId, uint256 outAmount, uint256 inAmount) external {
         if (msg.sender != canonicalHook) revert NotCanonicalHook();
-        if (taxMode != Constants.TAX_MODE_HARD || poolId != canonicalPoolId) return;
-        if (outAmount != 0) _tstore(_FLOW_OUT_SLOT, _tload(_FLOW_OUT_SLOT) + outAmount);
-        if (inAmount != 0) _tstore(_FLOW_IN_SLOT, _tload(_FLOW_IN_SLOT) + inAmount);
+        if (poolId != canonicalPoolId) return;
+        uint8 mode = taxMode;
+        if (mode == Constants.TAX_MODE_HARD) {
+            if (outAmount != 0) _netGrant(_FLOW_IN_SLOT, _FLOW_OUT_SLOT, outAmount);
+            if (inAmount != 0) _netGrant(_FLOW_OUT_SLOT, _FLOW_IN_SLOT, inAmount);
+        } else if (mode == Constants.TAX_MODE_VENUE && inAmount != 0) {
+            uint256 b = _tload(_BUDGET_SLOT);
+            unchecked {
+                _tstore(_BUDGET_SLOT, b > inAmount ? b - inAmount : 0);
+            }
+        }
+    }
+
+    /// @dev Cancels up to `amount` of `cancelSlot`, adds the rest to `addSlot`.
+    function _netGrant(bytes32 cancelSlot, bytes32 addSlot, uint256 amount) private {
+        uint256 c = _tload(cancelSlot);
+        if (c >= amount) {
+            unchecked {
+                _tstore(cancelSlot, c - amount);
+            }
+            return;
+        }
+        if (c != 0) _tstore(cancelSlot, 0);
+        unchecked {
+            amount -= c;
+        }
+        _tstore(addSlot, _tload(addSlot) + amount);
     }
 
     /// @notice Remaining same tx allowances. VENUE: (budget, 0, 0). HARD: (0, out, in).
