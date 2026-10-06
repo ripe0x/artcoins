@@ -123,8 +123,9 @@ contract KeeperV1_111_ForkTest is Test {
         _setLockerReward50();
         vm.roll(block.number + 60); // clears minBlocksBetweenConverts (also true at the pin)
 
-        (uint256 hint, uint256 escrowedBefore, uint256 stranded) = keeper.preview();
+        (uint256 hint, uint256 hintCoin, uint256 escrowedBefore, uint256 stranded,) = keeper.preview();
         assertGt(hint, 0, "preview sees uncollected eth fees");
+        assertGt(hintCoin, 0, "preview sees uncollected coin fees");
         assertEq(stranded, 0);
         uint256 rewardsBefore = ISwapperV1(SWAPPER).totalKeeperRewards();
         address end = ISwapperV1(SWAPPER).endRecipient();
@@ -138,6 +139,8 @@ contract KeeperV1_111_ForkTest is Test {
         (uint256 collected, uint256 flushed, uint256 converted) = keeper.run(true, 0);
         console2.log("run(true,0) gas", g - gasleft());
         console2.log("hint", hint);
+        console2.log("callerDelta", CALLER.balance - callerBefore);
+        console2.log("swapperRewards", ISwapperV1(SWAPPER).totalKeeperRewards() - rewardsBefore);
         console2.log("collected", collected);
         console2.log("flushed", flushed);
         console2.log("converted", converted);
@@ -159,7 +162,7 @@ contract KeeperV1_111_ForkTest is Test {
         // end recipient got flush net plus convert net
         assertGt(end.balance - endBefore, 0);
         // preview after the run: nothing escrowed, nothing stranded
-        (, uint256 e2, uint256 s2) = keeper.preview();
+        (, , uint256 e2, uint256 s2,) = keeper.preview();
         assertEq(e2, 0);
         assertEq(s2, 0);
     }
@@ -179,6 +182,35 @@ contract KeeperV1_111_ForkTest is Test {
         assertEq(c2, 0, "convert skipped inside min blocks, run did not revert");
         assertEq(address(SWAPPER).balance, 0);
         assertEq(address(keeper).balance, 0);
+    }
+
+    /// @dev reviewer finding: a gas limit picked by estimateGas must never land on a path that skips convert.
+    ///      Sweeps limits across the whole range: every run either reverts or converts, never succeeds with
+    ///      converted == 0 while coin fees wait.
+    function test_keeperV1_lowGas_neverSilentlySkips() public onlyFork {
+        _makeFees();
+        vm.roll(block.number + 60);
+        uint256 snap = vm.snapshotState();
+        uint256 reverted;
+        uint256 succeeded;
+        for (uint256 limit = 1_300_000; limit >= 300_000; limit -= 25_000) {
+            (bool ok, bytes memory ret) =
+                address(keeper).call{gas: limit}(abi.encodeCall(CollectFlushKeeperV1.run, (true, 0)));
+            if (ok) {
+                (, , uint256 converted) = abi.decode(ret, (uint256, uint256, uint256));
+                assertGt(converted, 0, "succeeded without converting");
+                assertEq(address(SWAPPER).balance, 0);
+                ++succeeded;
+            } else {
+                ++reverted;
+            }
+            vm.revertToState(snap);
+            snap = vm.snapshotState();
+        }
+        console2.log("sweep succeeded", succeeded);
+        console2.log("sweep reverted", reverted);
+        assertGt(succeeded, 0);
+        assertGt(reverted, 0);
     }
 
     function test_keeperV1_nothingToFlush_noRevert() public onlyFork {
@@ -221,7 +253,7 @@ contract KeeperV1_111_ForkTest is Test {
         assertEq(address(SWAPPER).balance, escrowed, "stranded eth untouched by flush and convert");
         assertEq(address(keeper).balance, 0);
 
-        (, , uint256 swapperPaired) = keeper.preview();
+        (, , , uint256 swapperPaired,) = keeper.preview();
         assertEq(swapperPaired, escrowed, "preview exposes the stranded amount");
     }
 }

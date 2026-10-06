@@ -32,7 +32,7 @@ running log for the unattended v2 session. a restarted session should read this 
 | scripts and keepers review | docs/v2/review/scripts-and-keepers.md | done. 21 script findings (no script targets the current stack; DeployConversionLockerAndWire hardcodes the open 0xf051 factory and renounces ownership; verify-stack.sh exits 0 on failure); no keeper code exists; 111 swapper eth stranding proved on fork; live 111 has 13,404 coin uncollected. |
 | mainnet fork harness (replaced the local v4 plan once the rpc opened) | test/v2/harness/ForkBase.sol, ForkStack.sol, docs/v2/review/harness.md | running |
 | contracts: factory/token/escrow | docs/v2/review/contracts-factory-token.md, test/v2/review/factory-token/ | running |
-| contracts: hooks/mev | docs/v2/review/contracts-hooks-mev.md, test/v2/review/hooks-mev/ | running |
+| contracts: hooks/mev | docs/v2/review/contracts-hooks-mev.md, test/v2/review/hooks-mev/ (22 proof tests, 5 on fork vs live hook) | done. 14 findings, 2 high: tax bypass on live 111 via add then remove liquidity in one unlock (capital free, proved on fork); streamForward probe bricks swaps for eoa/empty fallback recipients. 6 medium: skim on unfilled price limited swaps, open pools on the live shared hook, self referral, eth refusing recipient bricks pool, referral payout without code bricks referred swaps, setPoolExtension on never created pools. |
 | contracts: locker/swapper/burn/protocol fee | docs/v2/review/contracts-locker-fees.md, test/v2/review/locker-fees/ | running |
 | contracts: extensions/renderers | docs/v2/review/contracts-extensions-renderers.md, test/v2/review/extensions-renderers/ | running |
 | v2 architect | docs/v2/DESIGN.md | done. decisions D6 to D25 logged. |

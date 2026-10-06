@@ -112,9 +112,13 @@ contract LiveForkReviewTest is Test {
         LockerFeeThief thief = new LockerFeeThief(
             IPoolManager(PM), PositionManager(payable(address(l.positionManager()))), l
         );
+        uint256 eth0 = address(thief).balance; // the fresh address may hold mainnet dust
+        uint256 coin0 = IERC20(COIN_111).balanceOf(address(thief));
         thief.attack(l.tokenRewards(COIN_111).poolKey, COIN_111, f0, f1);
-        assertEq(address(thief).balance, f0, "thief has the eth fees");
-        assertGe(IERC20(COIN_111).balanceOf(address(thief)), f1 * 99 / 100, "thief has the coin fees");
+        assertEq(address(thief).balance - eth0, f0, "thief has the eth fees");
+        assertGe(
+            IERC20(COIN_111).balanceOf(address(thief)) - coin0, f1 * 99 / 100, "thief has the coin fees"
+        );
         assertEq(e.feesToClaim(SWAPPER_111, address(0)), c0, "swapper credited nothing");
         assertEq(e.feesToClaim(SWAPPER_111, COIN_111), c1, "swapper credited nothing");
         (uint256 r0, uint256 r1) = _pending111();
@@ -202,14 +206,25 @@ contract LiveForkReviewTest is Test {
         console2.log("floor as bps of spot", floor * 10_000 / spotLayerPerWeth);
 
         deal(WETH, LIVE_BURN_ROUTER, 0.5 ether);
-        uint256 minOut = br.requiredMinLayerOutForCurrentWethBalance();
-        try br.processBurnWeth(minOut) returns (uint256 wethIn, uint256 burned) {
-            console2.log("wethIn", wethIn);
-            console2.log("layer burned", burned);
-            assertGe(wethIn, 0.49 ether, "whole balance in one call, no clamp");
+        // the router's own view under-reports what processBurnWeth then requires
+        uint256 viewMin = br.requiredMinLayerOutForCurrentWethBalance();
+        uint256 required;
+        try br.processBurnWeth(viewMin) {
+            revert("expected the view value to be rejected");
         } catch (bytes memory err) {
-            console2.log("processBurnWeth reverted at the owner floor");
-            console2.logBytes(err);
+            assertEq(bytes4(err), bytes4(keccak256("MinLayerOutBelowFloor(uint256,uint256)")));
+            bytes memory args = new bytes(err.length - 4);
+            for (uint256 i; i < args.length; i++) {
+                args[i] = err[i + 4];
+            }
+            (, required) = abi.decode(args, (uint256, uint256));
         }
+        console2.log("view minLayerOut", viewMin);
+        console2.log("enforced minLayerOut", required);
+        (uint256 wethIn, uint256 burned) = br.processBurnWeth(required);
+        console2.log("wethIn", wethIn);
+        console2.log("layer burned", burned);
+        console2.log("realized LAYER per WETH (1e18)", burned * 1e18 / wethIn);
+        assertGe(wethIn, 0.49 ether, "whole balance in one call, no clamp");
     }
 }

