@@ -7,7 +7,7 @@ pragma solidity ^0.8.26;
 // exercised. skips cleanly when the rpc is unreachable.
 
 import {DeployV2Lib} from "../../script/v2/DeployV2Lib.sol";
-import {LaunchV2Lib} from "../../script/v2/LaunchV2Coin.s.sol";
+import {LaunchV2Coin, LaunchV2Lib} from "../../script/v2/LaunchV2Coin.s.sol";
 import {Constants} from "../../src/Constants.sol";
 import {ArtCoinsFeeEscrowV2} from "../../src/v2/ArtCoinsFeeEscrowV2.sol";
 import {FeeAutoSwapperV2} from "../../src/v2/FeeAutoSwapperV2.sol";
@@ -298,8 +298,27 @@ contract DeployV2StackForkTest is ForkStack {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // launch config
+    // launch config and script
     // ══════════════════════════════════════════════════════════════════════
+
+    /// @dev The script end to end with a signer that is not the owner: env
+    ///      target, parse, preflight, snapshot dry run, then it stops before
+    ///      the broadcast leg. Nothing is launched.
+    function test_launchV2Coin_script_dryRunOnly() public onlyFork {
+        acceptV2Ownership(s, p);
+        vm.setEnv("FACTORY_V2", vm.toString(address(s.factory)));
+        vm.setEnv("HOOK_V2", vm.toString(address(s.hook)));
+        vm.setEnv("LOCKER_V2", vm.toString(address(s.locker)));
+        vm.setEnv("MEV_V2", vm.toString(address(s.mev)));
+        LaunchV2Coin script = new LaunchV2Coin();
+        LaunchV2Lib.Target memory t = script.target();
+        assertEq(t.factory, address(s.factory), "env target");
+        string memory json = _exampleJson();
+        address predicted = s.factory.predictToken(LIVE_OWNER, LaunchV2Lib.parse(json, t).cfg);
+        script.run(json);
+        assertEq(predicted.code.length, 0, "dry run only");
+        assertFalse(s.factory.isArtCoin(predicted), "no record");
+    }
 
     function test_launchConfig_embeddedCopyMatchesFile() public {
         try vm.readFile(LaunchV2Lib.EXAMPLE_PATH) returns (string memory j) {

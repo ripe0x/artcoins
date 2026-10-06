@@ -18,7 +18,7 @@
 #     --skip-chain    only the explorer verification
 #     --dry-run       print the verify commands, send nothing
 # Env: ETHERSCAN_API_KEY (optional, read by forge from foundry.toml, never on argv),
-#      MAINNET_RPC_URL (default: tenderly public gateway).
+#      MAINNET_RPC_URL (default: tenderly public gateway), FORGE (default: forge).
 # Exit: 0 all good, 1 a verification or a chain check failed.
 # Run it after OWNER accepted ownership: owners are compared with OWNER, a pending hand over
 # shows as owner() drift.
@@ -42,6 +42,7 @@ done
 
 export MAINNET_RPC_URL="${MAINNET_RPC_URL:-https://mainnet.gateway.tenderly.co}"
 export FOUNDRY_PROFILE=ci
+FORGE="${FORGE:-forge}"
 OUT=out/v2-ci
 
 [ -f "$JSON" ] || { echo "no deploy json at $JSON (run script/v2/DeployV2Stack.s.sol first)" >&2; exit 2; }
@@ -49,7 +50,7 @@ command -v jq >/dev/null || { echo "jq is required" >&2; exit 2; }
 [ "$(jq -r .chainId "$JSON")" = "1" ] || { echo "$JSON is not a mainnet deploy" >&2; exit 2; }
 
 echo "== build (profile ci) =="
-forge build --skip 'test/**' --skip 'script/**' --out "$OUT" --cache-path cache/v2-ci
+$FORGE build --skip 'test/**' --skip 'script/**' --out "$OUT" --cache-path cache/v2-ci
 
 fail=0
 
@@ -67,7 +68,7 @@ if [ "$SOURCE" = 1 ]; then
     addr=$(jq -r ".verify[$i].address" "$JSON")
     target=$(jq -r ".verify[$i].contract" "$JSON")
     args=$(jq -r ".verify[$i].args" "$JSON")
-    cmd=(forge verify-contract "$addr" "$target" --chain mainnet --watch
+    cmd=($FORGE verify-contract "$addr" "$target" --chain mainnet --watch
       --constructor-args "$args" "${VERIFIER[@]}")
     if [ "$DRY" = 1 ]; then
       printf 'FOUNDRY_PROFILE=ci'; printf ' %q' "${cmd[@]}"; echo

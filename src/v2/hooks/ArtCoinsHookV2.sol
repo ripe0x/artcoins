@@ -45,7 +45,8 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 ///           baselineSkim = totalSkim x baselineSkimBps / currentSkimBps
 ///           bounty       = baselineSkim x bountyBps / 10_000 + (totalSkim - baselineSkim)
 ///           protocol     = baselineSkim - baselineSkim x bountyBps / 10_000 - referral
-///           referral     = min(volume x min(att.referralBps, maxReferral) / 100_000, protocol share)
+///           referral     = min(volume x min(att.referralBps, maxReferral) / 100_000,
+///                              protocol share - baselineSkim x minProtocolShareBps / 10_000)  (D52, floored at 0)
 ///
 ///         No recipient code runs with useful gas while the PoolManager is
 ///         unlocked (D41): every leg (bounty, protocol, referral to the
@@ -123,10 +124,15 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     /// @dev Additive (D46): liquidity add on a taxed pool after arming.
     error TaxedPoolLiquidityClosed();
 
+    /// @dev Additive (D52): the pool's frozen protocol leg floor.
+    event ProtocolFloorInitialized(PoolId indexed poolId, uint16 minProtocolShareBps);
+
     // ── storage ───────────────────────────────────────────────────────────
 
     mapping(PoolId => PoolInfo) internal _info;
     mapping(PoolId => SkimConfig) internal _skim;
+    /// @dev D52: per pool protocol leg floor, BPS of the baseline skim.
+    mapping(PoolId => uint16) internal _minProtocolShareBps;
     /// @dev Set once by `initializeMevModule`: the window started and the
     ///      extension finished its post locker setup.
     mapping(PoolId => bool) internal _started;
@@ -174,6 +180,8 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         _checkConstants(p.locker);
         if (p.mevModule != address(0)) _checkConstants(p.mevModule);
         _validateSkim(p.skim);
+        // D52: bounty plus the protocol floor fit inside the baseline skim.
+        if (uint256(p.skim.bountyBps) + p.minProtocolShareBps > Constants.BPS) revert BadLegBps();
 
         key = PoolKey({
             currency0: Currency.wrap(address(0)),
@@ -212,8 +220,10 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
             extension: ext
         });
         _skim[pid] = p.skim;
+        _minProtocolShareBps[pid] = p.minProtocolShareBps;
         emit PoolInitializedV2(pid, token, msg.sender, Constants.STACK_VERSION, mode);
         emit SkimConfigInitialized(pid, p.skim);
+        emit ProtocolFloorInitialized(pid, p.minProtocolShareBps);
 
         // art coin is always currency1, so the starting tick is negated.
         poolManager.initialize(key, TickMath.getSqrtPriceAtTick(-p.tickIfToken0IsArtCoin));
@@ -476,12 +486,16 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         address referrer = att.referrer;
         // H13: the PoolManager caller cannot name itself. D44: a router user
         // naming its own wallet is accepted, bounded by the frozen per pool
-        // cap (<= 1% of volume, <= the protocol share).
+        // cap (<= 1% of volume, <= the protocol share above its floor).
         if (referrer != address(0) && referrer != sender) {
             uint256 cap = cfg.maxReferralBpsOfVolume;
             if (att.referralBps < cap) cap = att.referralBps;
             referral = (volume * cap) / Constants.SKIM_DENOMINATOR;
-            if (referral > protocol) referral = protocol;
+            // D52: never below the pool's protocol floor (BPS of the baseline
+            // skim, the factory's unit for `minProtocolSkimShareBps`).
+            uint256 floor = (base * _minProtocolShareBps[pid]) / Constants.BPS;
+            uint256 room = protocol > floor ? protocol - floor : 0;
+            if (referral > room) referral = room;
             protocol -= referral;
         }
 
@@ -703,6 +717,11 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     /// @inheritdoc IArtCoinsHookV2
     function poolInfo(PoolId poolId) external view returns (PoolInfo memory) {
         return _info[poolId];
+    }
+
+    /// @notice D52 protocol leg floor of a pool (BPS of the baseline skim).
+    function minProtocolShareBps(PoolId poolId) external view returns (uint16) {
+        return _minProtocolShareBps[poolId];
     }
 
     /// @inheritdoc IArtCoinsHookV2

@@ -166,24 +166,32 @@ verify each freeze: `cast call $SCRIPTY "contents(string)(bool,address,uint256,b
 
 ## part 2: v2 rollout order
 
-source of truth for the stack is `script/v2/DeployV2Stack.s.sol` (being written) and DESIGN d7. this is the order the script must follow and the owner must check, not a replacement for it.
+source of truth for the stack is `script/v2/DeployV2Lib.sol` (run by `script/v2/DeployV2Stack.s.sol`) and DESIGN d7. this is the order the script follows and the owner checks, not a replacement for it.
 
 ### 2a. deploy, one broadcast, owner key as deployer and owner
 
-| step | what | wiring and checks |
+source of truth: `script/v2/DeployV2Lib.sol` (the routine), run by `script/v2/DeployV2Stack.s.sol` and by the fork harness (`ForkStack.deployV2Stack`), so the tests exercise the exact broadcast. operator commands: `script/v2/README.md`. always `FOUNDRY_PROFILE=ci`: at the default profile `ArtCoinsDeployerV2` is 24,806 bytes, over EIP-170; the script's post asserts refuse it.
+
+| step | what | constructor args (as deployed) and wiring |
 |---|---|---|
-| 0 | fork rehearsal, no key | `forge script script/v2/DeployV2Stack.s.sol --rpc-url $MAINNET_RPC_URL` (no `--broadcast`), then `FOUNDRY_PROFILE=ci forge test --match-path "test/v2/DeployV2Stack.fork.t.sol" --fork-url $MAINNET_RPC_URL -vv` (`test_deployV2Stack_wiringComplete`, `test_deployV2Stack_runtimeMatchesBuild`). pin a block, record it |
-| 1 | `ArtCoinsFeeEscrowV2` | owner is the deployer, Ownable2Step. depositors are added in step 7 |
-| 2 | extension allowlist | new instance. do not reuse 0xd6D5…, it is bound to the live hook 0x636c |
-| 3 | hook, salt mined with `HookMiner` against the CREATE2 deployer 0x4e59b44847b379578588920cA78FbF26c0B4956C | low 14 bits 0x2DCC. constructor args per the script, pool manager is `$PM`. check `address(hook) & 0x3FFF == 0x2DCC` and runtime size under 24,576 at the ci profile |
-| 4 | locker V2 | constructor args per the script. keeper reward bps stays 0 |
-| 5 | `ArtCoinsMevLinearSkimV2` | one module |
-| 6 | `ArtCoinsFactoryV2` | ctor `(owner, poolManager, protocolBps, deployFee)`, starts `deprecated = true`. it creates its token deployer |
-| 7 | wire, all owner txs | escrow: `addDepositor(hook, true)`, `addDepositor(locker, true)`, controller as non core. hook: `setLauncher(factory, true)`, `setFeeEscrow`, `setExtensionAllowlist`. locker: `setLauncher(factory, true)`, `setFeeEscrow`. factory: `setHook`, `setLocker`, `setMevModule`, `setEscrow`, `setMinProtocolSkimShareBps`, `setProtocolRecipient`, `setReferralPayout`, `setTeamFeeRecipient`, `setDeployFee`. leave `deprecated` true |
-| 8 | `ProtocolFeeControllerV2` and `BurnRouterV2` | controller ctor `(owner, escrow, treasury, burnRouter, treasuryBps)`, treasury per the owner decision (permanent collection uses 0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4). the router can only `initialize(coin, key)` once the coin pool exists, so initialize it right after the first launch, then rehearse `processFees` on a fork |
-| 9 | keepers | `ArtCoinsKeeperV2(factory)`, stateless. `CollectFlushKeeperV1` stays for 111 |
-| 10 | verify on etherscan | `script/v2/verify-v2.sh` (`forge verify-contract`, profile `tune`) for every address, with the library links. then a fork check that on chain runtime equals the local build. etherscan has no key in ci, use blockscout as the fallback |
-| 11 | registry | add every address to `deployments/mainnet.json` with `stack`, `status: active`, mark the old stacks `superseded` or `deprecated`, deploy block and tx. `node script-js/verify-registry.mjs --fill --update-blocks` then `node script-js/verify-registry.mjs --require-artifacts` must exit 0. commit the broadcast record this time (H4) |
+| 0 | fork rehearsal, no key | `FOUNDRY_PROFILE=ci forge script script/v2/DeployV2Stack.s.sol --rpc-url $MAINNET_RPC_URL --sender $OWNER` (no `--broadcast`), then `FOUNDRY_PROFILE=ci forge test --match-path "test/v2/DeployV2Stack.fork.t.sol" --fork-url $MAINNET_RPC_URL -vv`. record the block |
+| 1 | `ArtCoinsFeeEscrowV2` | `(broadcaster)` |
+| 2 | `ArtCoinsPoolExtensionAllowlist` (v1 source, new instance) | `(OWNER)`. do not reuse 0xd6D5, it serves the v1 hook |
+| 3 | `ArtCoinsHookV2`, CREATE2 through 0x4e59b44847b379578588920cA78FbF26c0B4956C | `(PoolManager $PM, broadcaster, escrow, allowlist)`. salt mined in the script for low 14 bits 0x2DCC (salt depends on the broadcaster, it is in the output json). asserted: flags, `getHookPermissions`, size |
+| 4 | `ArtCoinsLpLockerV2` | `(broadcaster, PositionManager 0xbD21…ee9e, Permit2 0x0000…8BA3, escrow)` |
+| 5 | `ArtCoinsMevLinearSkimV2` | `(hook)`, ownerless |
+| 6 | `ArtCoinsFactoryV2` | `(broadcaster, $PM, protocolBps 2000, deployFee 0.069 eth)`, ships `deprecated = true` |
+| 7 | `ArtCoinsDeployerV2` (D38) | `(factory)`, then `factory.setTokenDeployer(deployer)` |
+| 8 | `BurnRouterV2` | `(OWNER, $PM, escrow)`. `initialize(coin, key)` after the first launch |
+| 9 | `ProtocolFeeControllerV2` | `(OWNER, escrow, treasury = OWNER, burnRouter, treasuryBps 9000)`. deployed after the router: its constructor needs it. env TREASURY, TREASURY_BPS |
+| 10 | `ArtCoinsKeeperV2` | `(factory)`, stateless |
+| 11 | wire (D36 order) | escrow: `addDepositor(hook, true)`, `addDepositor(locker, true)`, `addDepositor(controller, false)`. hook: `setFeeEscrow`, `setExtensionAllowlist`, `setLauncher(factory, true)`. locker: `setFeeEscrow`, `setLauncher(factory, true)`, `setKeeperRewardBps(0)` (D28). factory: `setHook`, `setLocker`, `setMevModule`, `setEscrow`, `setProtocolRecipient(controller)`, `setReferralPayout(escrow)`, `setTeamFeeRecipient(OWNER)`, `setDeployFee(0.069 eth)`, `setDefaultProtocolFeeBps(2000)`, `setMinProtocolSkimShareBps(0)`. `deprecated` stays true |
+| 12 | ownership | broadcaster == OWNER: nothing. otherwise escrow, hook, locker, factory end with `pendingOwner == OWNER`; OWNER sends `acceptOwnership()` to each (allowlist, router, controller are constructed with OWNER) |
+| 13 | post deploy asserts (in the script) | every `constantsHash()`, hook flags and permissions, depositors, launchers, factory getters, owners, EIP-170. the script prints the registry json and writes `tmp/v2-deploy-1.json` |
+| 14 | verify | `script/v2/verify-v2.sh` (profile ci): `forge verify-contract` per contract with the json's constructor args (etherscan, blockscout without a key), then the chain check: runtime vs the local ci build with immutables masked, owners, wiring, through `script-js/verify-registry.mjs` |
+| 15 | registry | fill `deployments/v2.template.json` style entries from the json into `deployments/mainnet.json` (stack `v2`), mark old stacks per DESIGN d7, `node script-js/verify-registry.mjs --fill --update-blocks`, then `--require-artifacts` exit 0. `gen-addresses.mjs` needs v2 constants first (it expects exactly one `current` stack named `current`). commit the broadcast record (H4) |
+
+referral payout: the hook needs a payout with code. the live 0xB03C… answers `Unauthorized()` to every caller except the v1 hook (checked with eth_call), and the owner eoa has no code, so the script points `referralPayout` at the escrow: every referral leg is credited to the referrer in the escrow (D16), claimable with `escrow.claim(referrer, 0x0)`. set REFERRAL_PAYOUT to a v2 aware payout contract when one exists.
 
 ### 2b. launch the first coin (credits engine coin) while the factory is owner only
 

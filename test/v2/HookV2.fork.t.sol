@@ -704,6 +704,38 @@ contract HookV2ForkTest is HookV2ForkBase {
         assertApproxEqAbs(ref.balance - r0, (r * uint256(MAX_REF)) / D, 1);
     }
 
+    /// D52 / V2F-01: referral cap at the 1% maximum and a referrer named:
+    /// the protocol leg never drops below `minProtocolShareBps` of the
+    /// baseline skim; the referral only takes what is above it.
+    function test_referral_neverBelowProtocolFloor() public onlyFork {
+        ArtCoinsTokenV2 t = _newToken(0, bountyEoa, address(hook));
+        Launch memory l = _defaults(bountyEoa);
+        l.baseline = 1000; // 1% of volume
+        l.bountyBps = 7000;
+        l.maxRef = Constants.MAX_REFERRAL_CAP_OF_VOLUME; // 1% of volume
+        IArtCoinsHookV2.PoolInitParams memory p = _params(l, address(t));
+        p.minProtocolShareBps = 2000;
+        PoolKey memory k = hook.initializePool(p);
+        _modify(k, FULL_LO, FULL_HI, int256(LIQ), 0);
+        hook.initializeMevModule(k, "");
+        assertEq(hook.minProtocolShareBps(k.toId()), 2000);
+
+        address ref = makeAddr("floorRef");
+        uint256 p0 = protocolR.balance;
+        _swap(k, true, -1 ether, 0, _attribution(ref, 1000));
+        uint256 skim = (1 ether * 1000) / D; // 0.01 eth, all baseline
+        uint256 floor = (skim * 2000) / Constants.BPS; // 0.002 eth
+        uint256 protocolLeg = skim - (skim * 7000) / Constants.BPS; // 0.003 eth
+        assertEq(protocolR.balance - p0, floor, "protocol keeps exactly its floor");
+        assertEq(ref.balance, protocolLeg - floor, "referral only above the floor");
+
+        // bounty plus floor above the baseline is refused at init
+        p = _params(l, address(_newToken(0, bountyEoa, address(hook))));
+        p.minProtocolShareBps = 3001;
+        vm.expectRevert(IArtCoinsHookV2.BadLegBps.selector);
+        hook.initializePool(p);
+    }
+
     function test_referral_selfReferralByCaller_refused() public onlyFork {
         PoolKey memory key = _launchSimple(bountyEoa);
         uint256 p0 = protocolR.balance;
