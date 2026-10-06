@@ -71,6 +71,13 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     ///         not implicitly allowed (this launch's locker or hook, an enabled
     ///         escrow, an enabled extension).
     error ExemptNotAllowed(address account);
+    /// @notice D52 / V2F-01: `maxReferralBpsOfVolume` could take the protocol
+    ///         leg below `minProtocolSkimShareBps` of the baseline skim.
+    error ReferralCapAboveProtocolFloor();
+    /// @notice D53 / V2F-02: `lpFee` below the owner set `minLpFee`.
+    error LpFeeBelowMinimum();
+    /// @notice `setMinLpFee` above `Constants.MAX_LP_FEE`.
+    error MinLpFeeTooHigh();
     /// @notice No token deployer set yet (D38).
     error DeployerNotSet();
     /// @notice The deployer has no code, is not bound to this factory, or was
@@ -81,6 +88,8 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     /// @notice D47: an address was added to or removed from the exempt allowlist.
     event ExemptAllowedSet(address indexed account, bool allowed);
+    /// @notice D53: the launch lp fee floor changed.
+    event MinLpFeeSet(uint24 oldFee, uint24 newFee);
     /// @notice D38: the token deployer pointer changed.
     event TokenDeployerSet(address indexed oldDeployer, address indexed newDeployer);
     /// @notice Position count is 0 or above `Constants.MAX_LP_POSITIONS`, or position bps do not sum to BPS.
@@ -110,6 +119,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     uint256 private constant _MAX_METADATA = 4096;
     uint256 private constant _MAX_CONTEXT = 4096;
 
+    /// @notice D53 default `minLpFee`: 3,000 pips (0.3%).
+    uint24 public constant DEFAULT_MIN_LP_FEE = 3000;
+
     /// @notice The Uniswap v4 PoolManager every enabled hook must answer.
     address public immutable poolManager;
     /// @notice CREATE2 token deployer (D38): its own contract, bound to this
@@ -126,6 +138,8 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     uint16 public defaultProtocolFeeBps;
     /// @inheritdoc IArtCoinsFactoryV2
     uint16 public minProtocolSkimShareBps;
+    /// @notice D53: launch lp fee floor in 1e6 units, owner set within [0, MAX_LP_FEE].
+    uint24 public minLpFee;
     /// @inheritdoc IArtCoinsFactoryV2
     uint256 public deployFee;
     /// @inheritdoc IArtCoinsFactoryV2
@@ -178,6 +192,8 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         emit DeprecatedSet(true);
         emit DefaultProtocolFeeBpsSet(0, protocolBps_);
         emit DeployFeeSet(0, deployFee_);
+        minLpFee = DEFAULT_MIN_LP_FEE;
+        emit MinLpFeeSet(0, DEFAULT_MIN_LP_FEE);
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -361,6 +377,27 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         // casting to uint16 is safe: maxBounty <= MAX_BOUNTY_BPS (9999)
         // forge-lint: disable-next-line(unsafe-typecast)
         if (f.bountyBps > maxBounty) revert BountyBpsTooHigh(f.bountyBps, uint16(maxBounty));
+        // D53 / V2F-02: the protocol's locker slot is a share of the lp fee.
+        if (f.lpFee < minLpFee) revert LpFeeBelowMinimum();
+        // D52 / V2F-01: the referral cap must fit above the protocol floor.
+        // hook `_split` per swap, volume V (eth), all skim rates in
+        // SKIM_DENOMINATOR (D) units, shares in BPS:
+        //   base     = V * baselineSkimBps / D            (the baseline skim)
+        //   protocol = base * (BPS - bountyBps) / BPS
+        //   floor    = base * minProtocolSkimShareBps / BPS
+        //   referral <= V * maxReferralBpsOfVolume / D
+        // referral <= protocol - floor for every V iff
+        //   maxReferralBpsOfVolume * BPS
+        //     <= baselineSkimBps * (BPS - bountyBps - minProtocolSkimShareBps).
+        // maxReferral and baseline share the D unit, so no D/BPS factor
+        // appears. the right side is >= 0 (bountyBps check above). per swap
+        // floor rounding can still differ by a few wei; the hook's own clamp
+        // (D52) is exact.
+        if (
+            uint256(f.maxReferralBpsOfVolume) * Constants.BPS
+                > uint256(f.baselineSkimBps)
+                    * (Constants.BPS - f.bountyBps - minProtocolSkimShareBps)
+        ) revert ReferralCapAboveProtocolFloor();
     }
 
     function _validateLocker(LockerConfigV2 calldata l, uint16 protocolBps) internal view {
@@ -756,6 +793,14 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     /// @inheritdoc IArtCoinsFactoryV2
     /// @dev <= BPS. Launch bountyBps is capped at min(MAX_BOUNTY_BPS, BPS - this).
+    /// @notice D53: launch lp fee floor. Affects new launches only.
+    function setMinLpFee(uint24 fee) external onlyOwner {
+        if (fee > Constants.MAX_LP_FEE) revert MinLpFeeTooHigh();
+        emit MinLpFeeSet(minLpFee, fee);
+        minLpFee = fee;
+    }
+
+    /// @inheritdoc IArtCoinsFactoryV2
     function setMinProtocolSkimShareBps(uint16 bps) external onlyOwner {
         if (bps > Constants.BPS) revert MinProtocolSkimShareTooHigh();
         emit MinProtocolSkimShareBpsSet(minProtocolSkimShareBps, bps);
