@@ -361,8 +361,8 @@ contract RendererV2Test is Test {
         assertFalse(_contains(svg, "<script"), "script injected");
         assertFalse(_contains(svg, '<image href="x"/>'), "attribute broken out");
         assertTrue(_contains(svg, 'href="x&quot;/&gt;&lt;script&gt;'), "not escaped");
-        // exactly one image element and one root svg.
-        assertEq(_count(svg, "<") - _count(svg, "/"), _count(svg, "<") - _count(svg, "/"));
+        // same tag count as a benign token: nothing from the url became markup.
+        assertEq(_count(svg, "<"), _count(_svg(sprite, address(benign)), "<"), "foreign markup");
         assertTrue(_entitiesOk(bytes(svg)));
     }
 

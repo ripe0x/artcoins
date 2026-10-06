@@ -5,6 +5,7 @@ import {IArtCoinsFactoryV2} from "../interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsKeeperV2} from "../interfaces/IArtCoinsKeeperV2.sol";
 import {IArtCoinsLpLockerV2} from "../interfaces/IArtCoinsLpLockerV2.sol";
 import {IFeeAutoSwapperV2} from "../interfaces/IFeeAutoSwapperV2.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 
 /// @title  ArtCoinsKeeperV2
@@ -166,7 +167,7 @@ contract ArtCoinsKeeperV2 is IArtCoinsKeeperV2, ReentrancyGuardTransient {
     function _isSwapper(address r) internal view returns (bool yes) {
         _gas(STEP_PROBE, PROBE_GAS);
         bytes4 id = type(IFeeAutoSwapperV2).interfaceId;
-        bytes memory data = abi.encodeCall(IFeeAutoSwapperV2.supportsInterface, (id));
+        bytes memory data = abi.encodeCall(IERC165.supportsInterface, (id));
         assembly ("memory-safe") {
             let ptr := mload(0x40)
             let ok := staticcall(PROBE_GAS, r, add(data, 0x20), mload(data), ptr, 0x20)
