@@ -153,14 +153,14 @@ contract FactoryTokenForkTest is Test {
         a.key = side;
         a.lo = sTop - 6000;
         a.hi = sTop;
-        a.liq = 1e24;
+        a.liq = 1e21; // ~1.1M PCT single sided
         router.run(a);
 
         // baseline: side pool buy pays the 15% tax
         address alice = makeAddr("alice");
         a.mode = 1;
         a.liq = 0;
-        a.ethIn = 0.05 ether;
+        a.ethIn = 0.01 ether;
         a.to = alice;
         uint256 takenA = router.run(a);
         assertGt(takenA, 0);
@@ -174,7 +174,7 @@ contract FactoryTokenForkTest is Test {
         a.canon = canon;
         a.canonLo = cTop - 4000;
         a.canonHi = cTop;
-        a.liq = 1e25;
+        a.liq = 1e22; // ~8M PCT of budget, never paid
         a.to = bob;
         uint256 routerPctBefore = coin.balanceOf(address(router));
         uint256 takenB = router.run(a);

@@ -31,6 +31,8 @@ contract HMBudgetRouter is IUnlockCallback {
         PoolKey canon;
         PoolKey side;
         uint256 liq;
+        int24 lower;
+        int24 upper;
         uint256 ethIn;
         address to;
         bool doBudget;
@@ -44,7 +46,7 @@ contract HMBudgetRouter is IUnlockCallback {
         Args memory a = abi.decode(raw, (Args));
         if (a.doBudget) {
             IPoolManager.ModifyLiquidityParams memory p = IPoolManager.ModifyLiquidityParams({
-                tickLower: -1200, tickUpper: -600, liquidityDelta: int256(a.liq), salt: 0
+                tickLower: a.lower, tickUpper: a.upper, liquidityDelta: int256(a.liq), salt: 0
             });
             pm.modifyLiquidity(a.canon, p, "");
             p.liquidityDelta = -int256(a.liq);
@@ -126,7 +128,12 @@ contract TaxBudgetTest is HooksMevBase {
         uint256 b0 = tok.balanceOf(buyer);
         router.run{value: 1 ether}(
             HMBudgetRouter.Args({
-                canon: canon, side: side, liq: 100 ether, ethIn: 1 ether, to: buyer, doBudget: doBudget
+                canon: canon,
+                side: side,
+                liq: 100 ether,
+                lower: -1200,
+                upper: -600,
+                ethIn: 1 ether, to: buyer, doBudget: doBudget
             })
         );
         received = tok.balanceOf(buyer) - b0;

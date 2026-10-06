@@ -28,6 +28,9 @@ contract FeeAutoSwapperReviewTest is Test {
         weth = new ReviewWETH();
     }
 
+    // flushPaired pays the keeper reward to msg.sender and reverts if that send fails
+    receive() external payable {}
+
     function _swapper(address paired) internal returns (FeeAutoSwapper s) {
         s = new FeeAutoSwapper(
             FeeAutoSwapper.Config({

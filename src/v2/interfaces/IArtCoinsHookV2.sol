@@ -1,0 +1,154 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.26;
+
+import {IConstantsBound} from "./IConstantsBound.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+
+/// @title  IArtCoinsHookV2
+/// @notice Skim fee hook for v2 art coin pools (native eth paired). Pools are
+///         created only by allowlisted launchers; every per pool value is
+///         written once at init and has no writer afterwards. Fees are pushed
+///         to recipients with a gas cap and fall back to the fee escrow.
+interface IArtCoinsHookV2 is IConstantsBound {
+    // ── types ─────────────────────────────────────────────────────────────
+
+    /// @notice Frozen per pool record. `launcher != 0` marks an official pool.
+    struct PoolInfo {
+        uint16 version;
+        uint8 taxMode;
+        uint40 createdAt;
+        address launcher;
+        address token;
+        address locker;
+        address mevModule;
+        address extension;
+    }
+
+    /// @notice Frozen per pool fee config. Field order matches v1 `skimConfig`.
+    struct SkimConfig {
+        uint24 baselineSkimBps; // SKIM_DENOMINATOR units
+        uint16 bountyBps; // bounty share of the skim, BPS
+        uint24 maxReferralBpsOfVolume; // SKIM_DENOMINATOR units
+        uint24 lpFee; // 1e6 units
+        address payable bountyRecipient;
+        address payable protocolRecipient;
+        address payable referralPayout;
+        address quoteToken; // always address(0), native eth
+    }
+
+    /// @notice Owner set globals. Gas and balance values are bounded by Constants.
+    struct HookGlobals {
+        uint32 pushGas;
+        uint32 preSwapStreamGas;
+        uint96 preSwapStreamMin;
+        address feeEscrow;
+        address extensionAllowlist;
+    }
+
+    /// @notice Launcher input to `initializePool`.
+    struct PoolInitParams {
+        address token;
+        int24 tickIfToken0IsArtCoin;
+        int24 tickSpacing;
+        address locker;
+        address mevModule; // 0 for none
+        address extension; // 0 for none, must be on the extension allowlist
+        bytes extensionData;
+        SkimConfig skim;
+    }
+
+    // ── events ────────────────────────────────────────────────────────────
+
+    event PoolInitializedV2(
+        PoolId indexed poolId,
+        address indexed token,
+        address indexed launcher,
+        uint16 version,
+        uint8 taxMode
+    );
+    event SkimConfigInitialized(PoolId indexed poolId, SkimConfig config);
+    event MevModuleInitialized(PoolId indexed poolId, address indexed module);
+    /// @notice One fee leg (Constants.LEG_*) delivered; `escrowed` when the push failed.
+    event FeeDelivered(
+        PoolId indexed poolId, uint8 indexed leg, address indexed to, uint256 amount, bool escrowed
+    );
+    /// @notice Skim charged on the unfilled part of a price limited swap, refunded via the escrow.
+    event SkimRefunded(PoolId indexed poolId, address indexed to, uint256 amount);
+    event SkimSplit(
+        PoolId indexed poolId,
+        uint256 quoteVolume,
+        uint256 bountyAmount,
+        uint256 protocolNet,
+        uint256 referralPaid
+    );
+    event SwapAttribution(
+        PoolId indexed poolId,
+        address indexed swapper,
+        address indexed referrer,
+        bytes32 sourceId,
+        bytes16 campaignId,
+        uint256 quoteVolume,
+        uint256 referralPaid
+    );
+
+    event LauncherSet(address indexed launcher, bool enabled);
+    event FeeEscrowSet(address indexed oldEscrow, address indexed newEscrow);
+    event ExtensionAllowlistSet(address indexed oldAllowlist, address indexed newAllowlist);
+    event DeliveryParamsSet(uint32 pushGas, uint32 streamGas, uint96 streamMin);
+    event Rescued(address indexed token, address indexed to, uint256 amount);
+    event ClaimsRescued(Currency indexed currency, address indexed to, uint256 amount);
+
+    // ── errors ────────────────────────────────────────────────────────────
+
+    error NotLauncher();
+    error ForeignInitialize();
+    error ZeroAddress();
+    error CanonicalHookMismatch();
+    error ExtensionNotAllowed(address extension);
+    error MevModuleAlreadyInitialized();
+    error MevWindowActive();
+    error LpFeeTooHigh();
+    error BaselineSkimBpsTooHigh();
+    error BadLegBps();
+    error MaxReferralTooHigh();
+    error BountyRecipientZero();
+    error ProtocolRecipientZero();
+    error ReferralPayoutZero();
+    error QuoteTokenMustBeNative();
+    error ParamOutOfBounds(uint256 value, uint256 min, uint256 max);
+    error EthTransferFailed();
+
+    // ── launcher ──────────────────────────────────────────────────────────
+
+    /// @notice Creates and registers the pool. Allowlisted launchers only.
+    ///         Checks `constantsHash()` of the locker and the mev module.
+    function initializePool(PoolInitParams calldata p) external returns (PoolKey memory poolKey);
+
+    /// @notice Starts the pool's anti sniper window after liquidity is placed.
+    ///         Launcher of that pool only, once.
+    function initializeMevModule(PoolKey calldata poolKey, bytes calldata mevConfig) external;
+
+    // ── reads ─────────────────────────────────────────────────────────────
+
+    function poolInfo(PoolId poolId) external view returns (PoolInfo memory);
+    function isOfficialPool(PoolId poolId) external view returns (bool);
+    function skimConfig(PoolId poolId) external view returns (SkimConfig memory);
+    function globals() external view returns (HookGlobals memory);
+    function isLauncher(address launcher) external view returns (bool);
+
+    // ── owner ─────────────────────────────────────────────────────────────
+
+    function setLauncher(address launcher, bool enabled) external;
+    /// @dev Affects where failed pushes land from now on.
+    function setFeeEscrow(address escrow) external;
+    /// @dev Affects new pools only.
+    function setExtensionAllowlist(address allowlist) external;
+    /// @dev Each value within its Constants bounds.
+    function setDeliveryParams(uint32 pushGas, uint32 streamGas, uint96 streamMin) external;
+    /// @notice Sends stray eth (`token == address(0)`) or erc20. The hook holds nothing between swaps.
+    function rescue(address token, address to, uint256 amount) external;
+    /// @notice Sends stray PoolManager erc6909 claims held by the hook.
+    function rescueClaims(Currency currency, address to, uint256 amount) external;
+}
