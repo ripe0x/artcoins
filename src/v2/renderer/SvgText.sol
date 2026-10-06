@@ -29,15 +29,18 @@ import {LibString} from "solady/utils/LibString.sol";
 ///         `href` values are their own responsibility (an svg rendered through
 ///         `<img>` does not execute scripts or load external resources).
 library SvgText {
+    /// @dev Caps follow decision D30 (token name 64, symbol 16, image url 2048,
+    ///      metadata 4096). The token bounds its own strings; these caps are the
+    ///      defensive second line so render gas stays provable.
     /// @dev json `name` field.
-    uint256 internal constant NAME_MAX = 256;
+    uint256 internal constant NAME_MAX = 64;
     /// @dev json `symbol` field.
-    uint256 internal constant SYMBOL_MAX = 64;
+    uint256 internal constant SYMBOL_MAX = 16;
     /// @dev json description / metadata field.
     uint256 internal constant DESC_MAX = 4096;
     /// @dev image, external and animation urls. Longer values are dropped, not
     ///      truncated: a cut url points at the wrong thing.
-    uint256 internal constant URL_MAX = 16_384;
+    uint256 internal constant URL_MAX = 2_048;
 
     /// @notice Text node content: `clean` then escape `& < > " '`.
     function text(string memory s, uint256 maxBytes) internal pure returns (string memory) {
