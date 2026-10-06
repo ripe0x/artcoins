@@ -18,7 +18,8 @@ ui/.env.*
 !ui/.env.example
 
 # Docs
-docs/
+docs/*
+!docs/v2/
 
 # OS
 .DS_Store
