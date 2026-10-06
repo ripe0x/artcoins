@@ -45,6 +45,18 @@ wave 2 running (from 03:40 utc): a0 constants+interfaces done; k1 keeper for 111
 
 wave 2 plan was: v2 implementation packages from DESIGN.md, registry wiring into readme/ui/scripts, runbook, keeper helper. wave 3: independent reviews of v2 with proof tests, regression tests, SYSTEM-REVIEW.md, pr.
 
+## wave 3 (independent reviews of v2 and fixes)
+
+| review | output | state |
+|---|---|---|
+| review a: token, locker, escrow, mev, keepers | docs/v2/review/v2-review-a.md, test/v2/review-v2/a/ | done: 1 high (liquidity round trips manufacture grants; fixed by D46), 1 medium (arbitrary exempt contracts; fixed by D47), 3 low |
+| review b: periphery, extensions, renderers | docs/v2/review/v2-review-b.md, test/v2/review-v2/b/ | done: 2 medium (burn router floor counts refunds; swapper sandwich; fixed by D39, D40) |
+| review hook | docs/v2/review/v2-review-hook.md, test/v2/review-v2/hook/ | done: 1 high (recipient code runs during the swap; fixed by D41, pushes with 2,300 gas and no probe), 1 medium (HARD add then remove; fixed by D43/D46), 4 low |
+| review factory | docs/v2/review/v2-review-factory.md | running |
+| fixes in progress | h1 (D41..D46), p1 (D39, D40), t1 (D47, D48), f1 (D47), k1 (D49) | running |
+| s1 deploy script | script/v2/DeployV2Stack.s.sol, test/v2/DeployV2Stack.fork.t.sol | running |
+| i1 integration | test/v2/IntegrationV2.fork.t.sol | after s1 and the fixes |
+
 ## how to run tests
 
 see bottom of this file once the test layout is settled.

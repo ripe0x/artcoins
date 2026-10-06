@@ -17,6 +17,7 @@ import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockC
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
@@ -54,6 +55,7 @@ contract BurnRouterV2 is
     ReentrancyGuardTransient
 {
     using StateLibrary for IPoolManager;
+    using TransientStateLibrary for IPoolManager;
     using PoolIdLibrary for PoolKey;
 
     /// @notice `unlockCallback` caller is not the PoolManager.
@@ -328,18 +330,25 @@ contract BurnRouterV2 is
     ///      spot / sqrt(1 + bps / BPS), rounded up: pre / post <= 1 + bps / BPS,
     ///      which also bounds post / pre >= 1 - bps / BPS. The v1 linear
     ///      `spot * (1 - x / 2)` let pre / post reach 1 + x + x^2 (LF-03, LF-09).
-    ///      Must run inside an unlock. Settles the eth the swap delta asks
-    ///      for and returns as `ethIn` the eth actually consumed: that delta
-    ///      minus any skim the hook refunded to this router in the escrow
-    ///      during the swap (V2B-01, V2B-03). A hook that refunds through the
-    ///      swap delta instead (D42) shows up as a smaller delta and no new
-    ///      escrow credit; both shapes give the same `ethIn`.
+    ///      Must run inside an unlock. Settles and takes exactly this
+    ///      router's net PoolManager deltas (read before and after the swap),
+    ///      not the swap's returned delta: a hook that refunds over charged
+    ///      skim with `settleFor(router)` inside the swap (D42) lowers what is
+    ///      owed without changing the returned delta. `ethIn` is the eth
+    ///      actually consumed: what is owed minus any skim the hook refunded
+    ///      to this router in the escrow instead (the pre D42 shape and D42's
+    ///      fallback). Both shapes give the same `ethIn` (V2B-01, V2B-03).
     function _swapAndSettle(uint256 budget, uint160 spot)
         internal
         returns (uint256 ethIn, uint256 coinOut)
     {
+        Currency eth = Currency.wrap(address(0));
+        Currency c1 = Currency.wrap(coin);
         IArtCoinsFeeEscrowV2 escrow = IArtCoinsFeeEscrowV2(feeEscrow);
         uint256 credit0 = escrow.balances(address(this), address(0));
+        int256 e0 = poolManager.currencyDelta(address(this), eth);
+        int256 k0 = poolManager.currencyDelta(address(this), c1);
+
         uint256 factor =
             FixedPointMathLib.sqrt((Constants.BPS + maxImpactBps) * 1e36 / Constants.BPS);
         uint256 c = FullMath.mulDivRoundingUp(uint256(spot), 1e18, factor);
@@ -353,15 +362,17 @@ contract BurnRouterV2 is
             }),
             ""
         );
-        int128 d0 = delta.amount0();
-        int128 d1 = delta.amount1();
-        if (d0 > 0 || d1 < 0) revert BadDelta();
-        uint256 paid = uint256(uint128(-d0));
-        coinOut = uint256(uint128(d1));
+        if (delta.amount0() > 0 || delta.amount1() < 0) revert BadDelta();
+
+        int256 owed = poolManager.currencyDelta(address(this), eth) - e0;
+        int256 got = poolManager.currencyDelta(address(this), c1) - k0;
+        if (owed > 0 || got < 0) revert BadDelta();
+        uint256 paid = uint256(-owed);
+        coinOut = uint256(got);
         if (paid > budget) revert BadDelta();
 
         if (paid > 0) poolManager.settle{value: paid}();
-        if (coinOut > 0) poolManager.take(Currency.wrap(coin), address(this), coinOut);
+        if (coinOut > 0) poolManager.take(c1, address(this), coinOut);
 
         uint256 credit1 = escrow.balances(address(this), address(0));
         uint256 refunded = credit1 > credit0 ? credit1 - credit0 : 0;

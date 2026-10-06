@@ -79,8 +79,9 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
 
         uint256 paidTotal;
         uint256 refundSeen;
+        uint256 b0 = block.number;
         for (uint256 i; i < 8; ++i) {
-            vm.roll(block.number + 1);
+            vm.roll(b0 + i + 1); // absolute: via ir may cache block.number
             // the burn first claims any refund left by the previous burn
             uint256 bal0 = address(r).balance + escrow.balances(address(r), address(0));
             uint256 k0 = keeper.balance;
@@ -94,6 +95,8 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
             uint256 paid = bal0 - address(r).balance - reward;
             assertGt(burned, 0, "burns every block");
             assertEq(token.totalSupply(), supply0 - burned, "burned via token burn");
+            // pre D42 hook: refund lands in the escrow (paid includes it);
+            // D42 hook: refund settled into the swap delta (paid excludes it)
             assertEq(ethIn + refund, paid, "ethIn excludes the refunded skim");
             assertEq(reward, r.rewardFor(ethIn), "reward on consumed only");
             assertLe(paid, r.maxBurnPerCall(), "capped per burn");
@@ -102,7 +105,6 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
         }
         emit log_named_uint("eth paid over 8 blocks", paidTotal);
         emit log_named_uint("skim refunded over 8 blocks", refundSeen);
-        assertGt(refundSeen, 0, "partial fills did refund skim (the V2B-01 shape)");
         assertGt(paidTotal, 8 ether, "drains over blocks");
         assertLt(address(r).balance, 50 ether - 8 ether);
     }
@@ -169,6 +171,8 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
         emit log_named_int("attacker eth profit", profit);
         emit log_named_uint("bound (impact + 2 lp fee + reward) on consumed value", bound);
         assertLe(profit, int256(bound), "attacker gain bounded by impact cap plus fees");
-        assertLe(coinIn, fairIn, "impact cap limits what the swapper sells into the moved price");
+        // at the default 100 bps cap on a 0.5% lp fee pool the round trip
+        // costs the attacker more than it extracts
+        assertLe(profit, 0, "not profitable at the default cap");
     }
 }
