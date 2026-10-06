@@ -54,7 +54,8 @@ contract V2AActor is IUnlockCallback {
 
     uint8 internal constant SWAP = 1;
     uint8 internal constant MODIFY = 2;
-    uint8 internal constant TAKE_COIN = 3; // take the current positive coin delta now
+    uint8 internal constant TAKE_COIN = 3; // take the last swap's coin output now
+    uint8 internal constant SETTLE_COIN = 4; // pay `amount` coin now (sync, erc20 transfer, settle)
 
     struct Op {
         uint8 kind;
@@ -83,10 +84,11 @@ contract V2AActor is IUnlockCallback {
     function unlockCallback(bytes calldata data) external returns (bytes memory) {
         require(msg.sender == address(pm), "pm");
         Op[] memory ops = abi.decode(data, (Op[]));
+        int256 lastSwapCoin; // coin delta of the last swap
         for (uint256 i; i < ops.length; ++i) {
             Op memory o = ops[i];
             if (o.kind == SWAP) {
-                pm.swap(
+                lastSwapCoin = pm.swap(
                     o.key,
                     IPoolManager.SwapParams({
                         zeroForOne: o.zeroForOne,
@@ -96,10 +98,13 @@ contract V2AActor is IUnlockCallback {
                             : TickMath.MAX_SQRT_PRICE - 1
                     }),
                     ""
-                );
+                ).amount1();
+            } else if (o.kind == SETTLE_COIN) {
+                pm.sync(Currency.wrap(coin));
+                IV2AErc20(coin).transfer(address(pm), uint256(o.amount));
+                pm.settle();
             } else if (o.kind == TAKE_COIN) {
-                int256 d = pm.currencyDelta(address(this), Currency.wrap(coin));
-                if (d > 0) pm.take(Currency.wrap(coin), address(this), uint256(d));
+                if (lastSwapCoin > 0) pm.take(Currency.wrap(coin), address(this), uint256(lastSwapCoin));
             } else {
                 pm.modifyLiquidity(
                     o.key,
@@ -256,6 +261,11 @@ abstract contract V2AStackBase is Test {
         o.salt = salt;
     }
 
+    function _settleCoin(uint256 amount) internal pure returns (V2AActor.Op memory o) {
+        o.kind = 4;
+        o.amount = int256(amount);
+    }
+
     function _takeCoin() internal pure returns (V2AActor.Op memory o) {
         o.kind = 3;
     }
@@ -344,9 +354,10 @@ contract V2A01HardTest is V2AStackBase {
         _run(lp, _two(_swap(canon, true, -2000 ether), _modify(side, L_SIDE, bytes32(0))));
     }
 
-    /// add then remove on the canonical pool mints an IN grant for free (the
-    /// b1 marker only suppresses the remove side). the grant lets erc20 coin
-    /// enter the PoolManager for a side pool sell, which HARD must block.
+    /// add then remove on the canonical pool mints an IN grant for free while
+    /// it is outstanding; D34 netting cancels only what is still unused when
+    /// the remove reports. erc20 coin enters the PoolManager for a side pool
+    /// sell, which HARD must block.
     function test_V2A01_hard_addThenRemove_mintsFreeInGrant_sidePoolSellSettles() public {
         _assertNoPending();
         uint256 sellAmt = 100e18;
@@ -362,15 +373,18 @@ contract V2A01HardTest is V2AStackBase {
         );
         _run(attacker, _one(_swap(side, false, -int256(sellAmt))));
 
-        // exploit: same sell, prefixed by a zero capital add+remove of 1e22 on the canonical pool
+        // exploit: same sell inside a zero capital add ... remove of 1e22 on the
+        // canonical pool. the sell's coin is settled while the add's in grant is
+        // outstanding, before the remove's out report can net it (D34, D43).
         uint256 eth0 = address(attacker).balance;
         uint256 coin0 = coin.balanceOf(address(attacker));
         _run(
             attacker,
-            _three(
+            _four(
                 _modify(canon, 1e22, bytes32(uint256(99))),
-                _modify(canon, -1e22, bytes32(uint256(99))),
-                _swap(side, false, -int256(sellAmt))
+                _swap(side, false, -int256(sellAmt)),
+                _settleCoin(sellAmt + 2), // 2 wei covers the add/remove rounding
+                _modify(canon, -1e22, bytes32(uint256(99)))
             )
         );
         uint256 ethOut = address(attacker).balance - eth0;

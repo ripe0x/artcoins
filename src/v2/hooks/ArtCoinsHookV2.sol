@@ -6,13 +6,11 @@ import {IArtCoinsPoolExtension} from "../../hooks/interfaces/IArtCoinsPoolExtens
 import {
     IArtCoinsPoolExtensionAllowlist
 } from "../../hooks/interfaces/IArtCoinsPoolExtensionAllowlist.sol";
-import {IPreSwapStream} from "../../interfaces/IPreSwapStream.sol";
 import {IArtCoinsFeeEscrowV2} from "../interfaces/IArtCoinsFeeEscrowV2.sol";
 import {IArtCoinsHookV2} from "../interfaces/IArtCoinsHookV2.sol";
 import {IArtCoinsMevSkimV2} from "../interfaces/IArtCoinsMevSkimV2.sol";
 import {IArtCoinsTokenV2} from "../interfaces/IArtCoinsTokenV2.sol";
 import {IConstantsBound} from "../interfaces/IConstantsBound.sol";
-import {IReferralPayoutForHook} from "../interfaces/IReferralPayoutForHook.sol";
 import {FeeDelivery} from "../libraries/FeeDelivery.sol";
 import {HookCalldata} from "./libraries/HookCalldata.sol";
 
@@ -23,6 +21,7 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
 import {BalanceDelta, toBalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {
     BeforeSwapDelta,
@@ -40,21 +39,38 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 ///         (currency0) against the art coin (currency1), created only by an
 ///         allowlisted launcher, with a fee config frozen at init.
 ///
-///         Per swap, on the quote (eth) side:
-///           totalSkim    = volume x currentSkimBps / 100_000
+///         Per swap, on the quote (eth) side, with `volume` the realized
+///         pool side quote amount `r` for all four swap shapes (V2H-05):
+///           totalSkim    = skim on the trader side (see the four shapes below)
 ///           baselineSkim = totalSkim x baselineSkimBps / currentSkimBps
 ///           bounty       = baselineSkim x bountyBps / 10_000 + (totalSkim - baselineSkim)
 ///           protocol     = baselineSkim - baselineSkim x bountyBps / 10_000 - referral
 ///           referral     = min(volume x min(att.referralBps, maxReferral) / 100_000, protocol share)
-///         Legs are pushed with a gas cap; a failed push credits the
-///         recipient in the fee escrow (the only external dependency allowed
-///         to revert a swap). The hook holds no erc6909 claims and no eth
-///         between swaps.
+///
+///         No recipient code runs with useful gas while the PoolManager is
+///         unlocked (D41): every leg (bounty, protocol, referral to the
+///         referrer) is a plain eth push carrying only the EVM's 2,300 gas
+///         stipend; a failed push credits the recipient in the fee escrow.
+///         There is no `streamForward` probe. Contracts that need to react to
+///         fees pull from the escrow or are poked by a keeper after the swap.
+///         The hook holds no erc6909 claims and no eth between swaps.
 ///
 ///         Quote specified swaps (exact in buy, exact out sell) are charged in
 ///         `beforeSwap` on the requested amount, then trued up in `afterSwap`
-///         on the realized fill: the unfilled share is refunded to the
-///         PoolManager caller through the escrow (D11).
+///         on the realized fill. The unfilled share is refunded inside the
+///         swap (D42) with `settleFor(sender)`, which credits the swapper's
+///         eth delta. The afterSwap return delta cannot carry it: for these two
+///         shapes the unspecified currency is the art coin. Escrow fallback
+///         only when the caller has an erc20 synced at that moment (a native
+///         settle would revert). Routers must settle from
+///         `currencyDelta` (V4Router and the universal router do): on a
+///         partial fill the swap's returned BalanceDelta still shows the
+///         gross charge; the refund is the extra credit.
+///
+///         Self referral through a router (referrer = the user's own wallet)
+///         is accepted and bounded by the frozen per pool cap (<= 1% of
+///         volume, <= the protocol share) (D44). The PoolManager caller itself
+///         cannot be the referrer (H13).
 ///
 /// @dev    Size: one contract, no delegate module (D14). Calldata parsing
 ///         lives in `HookCalldata` (internal, inlined).
@@ -73,6 +89,11 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     ///      far above the module's need, so a caller cannot starve the read
     ///      and still complete the swap (63/64 rule).
     uint256 private constant _MODULE_GAS = 100_000;
+    /// @dev Gas forwarded on a fee push: 0, so the recipient runs on the EVM's
+    ///      2,300 stipend only (D41). Passing 2,300 here would give it 4,600.
+    ///      Under 2,300 a recipient cannot send value or write storage, so it
+    ///      cannot `take`, `mint`, `burn` or `settle` on the PoolManager.
+    uint256 private constant _PUSH_GAS = 0;
     /// @dev Gas for the pool extension's `afterSwap`. Below ~3m, so a caller
     ///      that starves the extension leaves too little gas to finish.
     uint256 private constant _EXTENSION_GAS = 2_000_000;
@@ -92,6 +113,9 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     /// @dev Additive, not in the frozen interface: `setFeeEscrow` target does
     ///      not list this hook as a core depositor.
     error EscrowNotCoreDepositor(address escrow);
+    /// @dev Additive: a fee recipient that can never receive eth (this hook,
+    ///      the PoolManager) would strand every leg in the escrow (V2H-08).
+    error RecipientCannotReceive(address recipient);
 
     // ── storage ───────────────────────────────────────────────────────────
 
@@ -251,7 +275,9 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
                 revert MevWindowActive();
             }
         }
-        if (info.taxMode != Constants.TAX_MODE_NONE) {
+        // D43: the same tx marker only gates VENUE attestation. HARD reports
+        // every removal and the token nets it against the add (D34).
+        if (info.taxMode == Constants.TAX_MODE_VENUE) {
             bytes32 slot = _positionSlot(pid, sender, p);
             assembly ("memory-safe") {
                 tstore(slot, 1)
@@ -282,9 +308,10 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         return (BaseHook.afterAddLiquidity.selector, BalanceDelta.wrap(0));
     }
 
-    /// @dev Exemption (VENUE) or outflow allowance (HARD) for the art coin a
-    ///      removal or fee collect releases, only for positions that existed
-    ///      before this tx (b1).
+    /// @dev Art coin a removal or fee collect releases. VENUE: attested only
+    ///      for positions that existed before this tx (b1). HARD: always
+    ///      reported as outflow (D43); the token nets it against the add's
+    ///      inflow, so add then remove leaves no grant either way.
     function _afterRemoveLiquidity(
         address sender,
         PoolKey calldata key,
@@ -296,13 +323,17 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         PoolId pid = key.toId();
         uint8 mode = _info[pid].taxMode;
         int256 a = delta.amount1();
-        if (mode != Constants.TAX_MODE_NONE && a > 0) {
-            bytes32 slot = _positionSlot(pid, sender, p);
-            uint256 added;
-            assembly ("memory-safe") {
-                added := tload(slot)
+        if (a > 0) {
+            if (mode == Constants.TAX_MODE_HARD) {
+                _tokenFlow(key, pid, mode, a);
+            } else if (mode == Constants.TAX_MODE_VENUE) {
+                bytes32 slot = _positionSlot(pid, sender, p);
+                uint256 added;
+                assembly ("memory-safe") {
+                    added := tload(slot)
+                }
+                if (added == 0) _tokenFlow(key, pid, mode, a);
             }
-            if (added == 0) _tokenFlow(key, pid, mode, a);
         }
         return (BaseHook.afterRemoveLiquidity.selector, BalanceDelta.wrap(0));
     }
@@ -315,7 +346,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     ) internal override returns (bytes4, BeforeSwapDelta, uint24) {
         PoolId pid = key.toId();
         SkimConfig storage cfg = _skim[pid];
-        _probeStream(cfg.bountyRecipient);
 
         bool exactIn = params.amountSpecified < 0;
         // quote (currency0) is specified iff zeroForOne == exactIn.
@@ -354,7 +384,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         uint256 charged; // eth the hook holds for this swap
         uint256 skim; // fair skim (charged minus refund)
         uint256 bps;
-        uint256 volume;
         if (params.zeroForOne == exactIn) {
             // quote specified: true up the skim charged in beforeSwap (b3).
             uint256 packed;
@@ -368,8 +397,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
                 uint256 requested = packed >> 32;
                 bps = packed & 0xffffffff;
                 skim = r >= requested ? charged : (charged * r) / requested;
-                // exact in buy: trader input; exact out sell: trader output.
-                volume = exactIn ? r + skim : r - skim;
             }
         } else {
             // quote unspecified: skim the realized quote side, returned as the
@@ -380,7 +407,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
                 ? (r * bps) / Constants.SKIM_DENOMINATOR
                 : (r * bps) / (Constants.SKIM_DENOMINATOR - bps);
             charged = skim;
-            volume = r;
             ret = _i128(skim);
         }
 
@@ -398,11 +424,25 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         (bytes calldata ext, HookCalldata.Attribution memory att) = HookCalldata.decode(hookData);
         if (charged != 0) {
             address escrow = _globals.feeEscrow;
-            if (skim != 0) _split(pid, sender, escrow, skim, bps, volume, att);
+            address synced = Currency.unwrap(TransientStateLibrary.getSyncedCurrency(poolManager));
             uint256 over = charged - skim;
             if (over != 0) {
-                IArtCoinsFeeEscrowV2(escrow).storeFeesNative{value: over}(sender);
+                // D42: credit the swapper's eth delta inside the swap. A
+                // native settle reverts while an erc20 is synced; only then
+                // fall back to the escrow.
+                if (synced == address(0)) poolManager.settleFor{value: over}(sender);
+                else IArtCoinsFeeEscrowV2(escrow).storeFeesNative{value: over}(sender);
                 emit SkimRefunded(pid, sender, over);
+            }
+            if (skim != 0) {
+                _split(pid, sender, escrow, skim, bps, r, att);
+                // a 2,300 gas recipient can still reach `sync`; undo it so a
+                // router that settles native without syncing is not broken.
+                if (
+                    synced == address(0)
+                        && Currency.unwrap(TransientStateLibrary.getSyncedCurrency(poolManager))
+                            != address(0)
+                ) poolManager.sync(Currency.wrap(address(0)));
             }
         }
 
@@ -433,9 +473,9 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
 
         uint256 referral;
         address referrer = att.referrer;
-        // H13: a contract that swaps directly cannot name itself. A self
-        // referral through a second address remains possible; the per pool
-        // cap (<= 1% of volume, <= the protocol share) bounds it.
+        // H13: the PoolManager caller cannot name itself. D44: a router user
+        // naming its own wallet is accepted, bounded by the frozen per pool
+        // cap (<= 1% of volume, <= the protocol share).
         if (referrer != address(0) && referrer != sender) {
             uint256 cap = cfg.maxReferralBpsOfVolume;
             if (att.referralBps < cap) cap = att.referralBps;
@@ -451,51 +491,19 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
             );
         }
 
-        uint256 gasCap = _globals.pushGas;
-        _leg(pid, Constants.LEG_BOUNTY, escrow, cfg.bountyRecipient, bounty, gasCap);
-        _leg(pid, Constants.LEG_PROTOCOL, escrow, cfg.protocolRecipient, protocol, gasCap);
-        if (referral != 0) {
-            bool pushed = _notify(cfg.referralPayout, referrer, referral, gasCap);
-            // D16: a failed notify credits the referrer, not the protocol.
-            if (!pushed) IArtCoinsFeeEscrowV2(escrow).storeFeesNative{value: referral}(referrer);
-            emit FeeDelivered(pid, Constants.LEG_REFERRAL, referrer, referral, !pushed);
-        }
+        _leg(pid, Constants.LEG_BOUNTY, escrow, cfg.bountyRecipient, bounty);
+        _leg(pid, Constants.LEG_PROTOCOL, escrow, cfg.protocolRecipient, protocol);
+        // D41: the referral goes straight to the referrer like the other legs
+        // (stipend push, escrow on failure, D16). `referralPayout` is kept in
+        // the frozen config but is not called during a swap: under a 2,300
+        // gas stipend it could do no accounting.
+        _leg(pid, Constants.LEG_REFERRAL, escrow, referrer, referral);
     }
 
-    function _leg(PoolId pid, uint8 leg, address escrow, address to, uint256 amount, uint256 gasCap)
-        private
-    {
+    function _leg(PoolId pid, uint8 leg, address escrow, address to, uint256 amount) private {
         if (amount == 0) return;
-        bool pushed = FeeDelivery.sendNative(escrow, to, amount, gasCap);
+        bool pushed = FeeDelivery.sendNative(escrow, to, amount, _PUSH_GAS);
         emit FeeDelivered(pid, leg, to, amount, !pushed);
-    }
-
-    /// @dev `referralPayout.notify{value, gas: gasCap}(referrer)`, returndata
-    ///      never copied. The payout has code (checked at init).
-    function _notify(address payout, address referrer, uint256 amount, uint256 gasCap)
-        private
-        returns (bool ok)
-    {
-        bytes4 sel = IReferralPayoutForHook.notify.selector;
-        assembly ("memory-safe") {
-            let m := mload(0x40)
-            mstore(m, sel)
-            mstore(add(m, 0x04), and(referrer, 0xffffffffffffffffffffffffffffffffffffffff))
-            ok := call(gasCap, payout, amount, m, 0x24, codesize(), 0x00)
-        }
-    }
-
-    /// @dev b2: optional `streamForward` on the bounty recipient. Low level,
-    ///      gas capped, success and returndata ignored (no decode, no copy).
-    function _probeStream(address r) private {
-        HookGlobals storage g = _globals;
-        if (r.balance < g.preSwapStreamMin || r.code.length == 0) return;
-        uint256 gasCap = g.preSwapStreamGas;
-        bytes4 sel = IPreSwapStream.streamForward.selector;
-        assembly ("memory-safe") {
-            mstore(0x00, sel)
-            pop(call(gasCap, r, 0, 0x00, 0x04, codesize(), 0x00))
-        }
     }
 
     /// @dev Current skim in SKIM_DENOMINATOR units: the module's value while
@@ -602,9 +610,16 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         }
         if (s.bountyRecipient == address(0)) revert BountyRecipientZero();
         if (s.protocolRecipient == address(0)) revert ProtocolRecipientZero();
-        // H3: the payout is called with a value; it must have code.
+        _checkReceiver(s.bountyRecipient);
+        _checkReceiver(s.protocolRecipient);
+        // H3: kept from the init contract (the payout is factory injected and
+        // must be a contract), although the swap path no longer calls it (D41).
         if (s.referralPayout.code.length == 0) revert ReferralPayoutZero();
         if (s.quoteToken != address(0)) revert QuoteTokenMustBeNative();
+    }
+
+    function _checkReceiver(address r) private view {
+        if (r == address(this) || r == address(poolManager)) revert RecipientCannotReceive(r);
     }
 
     /// @dev d5: `target.constantsHash()` must equal this build's hash.
@@ -647,6 +662,10 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     }
 
     /// @inheritdoc IArtCoinsHookV2
+    /// @dev Inert since D41: pushes carry only the 2,300 gas stipend and the
+    ///      stream probe is gone, so the swap path reads none of these. Kept
+    ///      (bounded, stored, evented, reported by `globals()`) so the frozen
+    ///      abi does not change.
     function setDeliveryParams(uint32 pushGas, uint32 streamGas, uint96 streamMin)
         external
         onlyOwner

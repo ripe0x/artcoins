@@ -69,6 +69,13 @@ contract BurnRouterV2 is
     event OpenTabCallerSet(address indexed oldCaller, address indexed newCaller);
     /// @notice D32: owner moved the output floor (bps of the spot implied output).
     event SpotFloorBpsSet(uint256 oldBps, uint256 newBps);
+    /// @notice D40: owner moved the per burn eth cap.
+    event MaxBurnPerCallSet(uint256 oldMax, uint256 newMax);
+
+    /// @notice D40: per burn eth cap bounds and default.
+    uint256 public constant MAX_BURN_PER_CALL_MIN = 0.1 ether;
+    uint256 public constant MAX_BURN_PER_CALL_MAX = 100 ether;
+    uint256 public constant DEFAULT_MAX_BURN_PER_CALL = 5 ether;
 
     /// @notice Gas forwarded on the keeper reward push (no returndata copied).
     uint256 public constant KEEPER_GAS = 50_000;
@@ -93,6 +100,9 @@ contract BurnRouterV2 is
     uint16 internal _spotFloorBps;
     /// @notice D31: the only caller of `processBurnOpenTab`; zero disables it.
     address public openTabCaller;
+    /// @notice D40: most eth offered to the pool per burn, so a large balance
+    ///         drains over blocks instead of failing its floor.
+    uint256 public maxBurnPerCall;
 
     constructor(address owner_, address poolManager_, address feeEscrow_) Ownable(owner_) {
         if (poolManager_ == address(0) || feeEscrow_ == address(0)) revert ZeroAddress();
@@ -101,9 +111,11 @@ contract BurnRouterV2 is
         maxImpactBps = Constants.BURN_IMPACT_DEFAULT;
         minProcessThreshold = DEFAULT_MIN_PROCESS_THRESHOLD;
         _spotFloorBps = uint16(Constants.SPOT_FLOOR_BPS);
+        maxBurnPerCall = DEFAULT_MAX_BURN_PER_CALL;
         emit MaxImpactBpsSet(0, Constants.BURN_IMPACT_DEFAULT);
         emit MinProcessThresholdSet(0, DEFAULT_MIN_PROCESS_THRESHOLD);
         emit SpotFloorBpsSet(0, Constants.SPOT_FLOOR_BPS);
+        emit MaxBurnPerCallSet(0, DEFAULT_MAX_BURN_PER_CALL);
     }
 
     /// @notice Burn budget arrives as plain eth (fee controller, escrow refunds,
@@ -205,12 +217,12 @@ contract BurnRouterV2 is
 
     /// @notice What the next burn would offer the pool: balance plus pending
     ///         escrow refunds (claimed first by every burn) minus the reward
-    ///         reserve. Zero when below `minProcessThreshold`.
+    ///         reserve, capped at `maxBurnPerCall`. Zero below `minProcessThreshold`.
     function swapBudget() external view returns (uint256) {
         uint256 bal = address(this).balance
             + IArtCoinsFeeEscrowV2(feeEscrow).balances(address(this), address(0));
         if (bal < minProcessThreshold) return 0;
-        return bal - rewardFor(bal);
+        return _budget(bal);
     }
 
     /// @inheritdoc IConstantsBound
@@ -236,6 +248,16 @@ contract BurnRouterV2 is
         }
         emit MinProcessThresholdSet(minProcessThreshold, threshold);
         minProcessThreshold = threshold;
+    }
+
+    /// @notice D40: sets the per burn eth cap within
+    ///         [MAX_BURN_PER_CALL_MIN, MAX_BURN_PER_CALL_MAX].
+    function setMaxBurnPerCall(uint256 maxEth) external onlyOwner {
+        if (maxEth < MAX_BURN_PER_CALL_MIN || maxEth > MAX_BURN_PER_CALL_MAX) {
+            revert OutOfBounds(maxEth, MAX_BURN_PER_CALL_MIN, MAX_BURN_PER_CALL_MAX);
+        }
+        emit MaxBurnPerCallSet(maxBurnPerCall, maxEth);
+        maxBurnPerCall = maxEth;
     }
 
     /// @notice D31: sets the only `processBurnOpenTab` caller; zero disables it.
@@ -275,10 +297,19 @@ contract BurnRouterV2 is
         uint256 bal = address(this).balance;
         uint96 threshold = minProcessThreshold;
         if (bal < threshold) revert BelowMinThreshold(bal, threshold);
-        budget = bal - rewardFor(bal);
+        budget = _budget(bal);
 
         (spot,,,) = poolManager.getSlot0(_poolKey.toId());
         coinBefore = SafeTransferLib.balanceOf(coin, address(this));
+    }
+
+    /// @dev Balance minus the reward reserve, capped at `maxBurnPerCall`. The
+    ///      reserve `rewardFor(bal) >= rewardFor(consumed)` keeps the reward
+    ///      payable after any fill.
+    function _budget(uint256 bal) internal view returns (uint256 b) {
+        b = bal - rewardFor(bal);
+        uint256 cap = maxBurnPerCall;
+        if (b > cap) b = cap;
     }
 
     /// @dev Pulls this router's escrow credit (b3 skim refunds). Never reverts.
@@ -297,11 +328,18 @@ contract BurnRouterV2 is
     ///      spot / sqrt(1 + bps / BPS), rounded up: pre / post <= 1 + bps / BPS,
     ///      which also bounds post / pre >= 1 - bps / BPS. The v1 linear
     ///      `spot * (1 - x / 2)` let pre / post reach 1 + x + x^2 (LF-03, LF-09).
-    ///      Must run inside an unlock. Settles exactly the eth consumed.
+    ///      Must run inside an unlock. Settles the eth the swap delta asks
+    ///      for and returns as `ethIn` the eth actually consumed: that delta
+    ///      minus any skim the hook refunded to this router in the escrow
+    ///      during the swap (V2B-01, V2B-03). A hook that refunds through the
+    ///      swap delta instead (D42) shows up as a smaller delta and no new
+    ///      escrow credit; both shapes give the same `ethIn`.
     function _swapAndSettle(uint256 budget, uint160 spot)
         internal
         returns (uint256 ethIn, uint256 coinOut)
     {
+        IArtCoinsFeeEscrowV2 escrow = IArtCoinsFeeEscrowV2(feeEscrow);
+        uint256 credit0 = escrow.balances(address(this), address(0));
         uint256 factor =
             FixedPointMathLib.sqrt((Constants.BPS + maxImpactBps) * 1e36 / Constants.BPS);
         uint256 c = FullMath.mulDivRoundingUp(uint256(spot), 1e18, factor);
@@ -318,17 +356,21 @@ contract BurnRouterV2 is
         int128 d0 = delta.amount0();
         int128 d1 = delta.amount1();
         if (d0 > 0 || d1 < 0) revert BadDelta();
-        ethIn = uint256(uint128(-d0));
+        uint256 paid = uint256(uint128(-d0));
         coinOut = uint256(uint128(d1));
-        if (ethIn > budget) revert BadDelta();
+        if (paid > budget) revert BadDelta();
 
-        if (ethIn > 0) poolManager.settle{value: ethIn}();
+        if (paid > 0) poolManager.settle{value: paid}();
         if (coinOut > 0) poolManager.take(Currency.wrap(coin), address(this), coinOut);
+
+        uint256 credit1 = escrow.balances(address(this), address(0));
+        uint256 refunded = credit1 > credit0 ? credit1 - credit0 : 0;
+        ethIn = paid > refunded ? paid - refunded : 0;
     }
 
     /// @dev Checks output against `minOut` and the spot floor using the coin
     ///      actually received (balance delta), burns every coin held, pays the
-    ///      reward on consumed eth.
+    ///      reward on consumed eth (net of any skim refund, V2B-03).
     function _finish(
         uint256 ethIn,
         uint256 coinOut,

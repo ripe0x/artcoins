@@ -397,6 +397,35 @@ contract BurnRouterV2ForkTest is P1Base {
         assertEq(ethIn, budget, "view matches the burn");
     }
 
+    // ── D40 per burn cap ─────────────────────────────────────────────────
+
+    function test_burnV2_maxBurnPerCall_capsBudget_andBounds() public {
+        assertEq(router.maxBurnPerCall(), 5 ether, "default");
+        uint256 lo = router.MAX_BURN_PER_CALL_MIN();
+        uint256 hi = router.MAX_BURN_PER_CALL_MAX();
+        assertEq(lo, 0.1 ether);
+        assertEq(hi, 100 ether);
+        vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, lo - 1, lo, hi));
+        router.setMaxBurnPerCall(lo - 1);
+        vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, hi + 1, lo, hi));
+        router.setMaxBurnPerCall(hi + 1);
+        vm.expectEmit(false, false, false, true, address(router));
+        emit BurnRouterV2.MaxBurnPerCallSet(5 ether, lo);
+        router.setMaxBurnPerCall(lo);
+
+        _fund(1 ether);
+        assertEq(router.swapBudget(), lo, "view capped");
+        (uint256 ethIn,) = router.processBurn(0);
+        assertEq(ethIn, lo, "burn capped, fills fully");
+        assertEq(address(router).balance, 1 ether - lo - router.rewardFor(lo));
+
+        router.setMaxBurnPerCall(hi);
+        assertEq(router.maxBurnPerCall(), hi);
+        vm.prank(attacker);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
+        router.setMaxBurnPerCall(1 ether);
+    }
+
     function test_burnV2_unlockCallback_onlyPoolManager() public {
         vm.expectRevert(BurnRouterV2.NotPoolManager.selector);
         router.unlockCallback(abi.encode(uint256(1), uint160(1)));

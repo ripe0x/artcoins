@@ -21,7 +21,7 @@ import {ArtCoinsHookV2} from "../../../src/v2/hooks/ArtCoinsHookV2.sol";
 import {IArtCoinsFactoryV2} from "../../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsHookV2} from "../../../src/v2/interfaces/IArtCoinsHookV2.sol";
 import {ArtCoinsMevLinearSkimV2} from "../../../src/v2/mev-modules/ArtCoinsMevLinearSkimV2.sol";
-import {HV2ConstantsStub, HV2ReferralPayout} from "./HookV2Mocks.sol";
+import {HV2ConstantsStub, HV2ReferralPayout, HV2SwapSeqRouter, IHV2Erc20} from "./HookV2Mocks.sol";
 
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
@@ -30,6 +30,7 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {PoolModifyLiquidityTest} from "@uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
@@ -62,6 +63,10 @@ abstract contract HookV2ForkBase is Test {
     IPoolManager internal pm = IPoolManager(POOL_MANAGER);
     PoolSwapTest internal swapRouter;
     PoolModifyLiquidityTest internal liqRouter;
+    /// settles from currencyDelta like V4Router; PoolSwapTest cannot be used
+    /// for partial quote specified fills (its returned delta equality check
+    /// does not hold once the refund is credited inside the swap, D42).
+    HV2SwapSeqRouter internal seq;
     ArtCoinsFeeEscrowV2 internal escrow;
     ArtCoinsPoolExtensionAllowlist internal allowlist;
     ArtCoinsHookV2 internal hook;
@@ -114,6 +119,8 @@ abstract contract HookV2ForkBase is Test {
         if (onFork) {
             swapRouter = new PoolSwapTest(pm);
             liqRouter = new PoolModifyLiquidityTest(pm);
+            seq = new HV2SwapSeqRouter(pm);
+            vm.deal(address(seq), 10_000 ether);
         }
         vm.deal(address(this), 1_000_000 ether);
     }
@@ -230,6 +237,21 @@ abstract contract HookV2ForkBase is Test {
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
             hd
         );
+        _assertHookHoldsNothing(key);
+    }
+
+    /// one swap through `seq`; returns the router's net deltas (negative =
+    /// paid) as V4Router would settle them.
+    function _swapNet(PoolKey memory key, bool zeroForOne, int256 amount, uint160 limit, bytes memory hd)
+        internal
+        returns (int256 net0, int256 net1)
+    {
+        if (!zeroForOne) IHV2Erc20(Currency.unwrap(key.currency1)).transfer(address(seq), 1_000e18);
+        HV2SwapSeqRouter.Step[] memory st = new HV2SwapSeqRouter.Step[](1);
+        st[0] = HV2SwapSeqRouter.Step(key, zeroForOne, amount, limit, hd);
+        seq.run(st);
+        net0 = seq.lastNet0();
+        net1 = seq.lastNet1();
         _assertHookHoldsNothing(key);
     }
 

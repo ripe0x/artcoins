@@ -67,8 +67,16 @@ contract FeeAutoSwapperV2 is
     /// @notice `unlockCallback` caller is not the PoolManager.
     error NotPoolManager();
 
+    /// @notice D39: a second `convert` in the same block.
+    error AlreadyConvertedThisBlock();
+
     /// @notice D32: owner moved the output floor (bps of the spot implied output).
     event SpotFloorBpsSet(uint256 oldBps, uint256 newBps);
+    /// @notice D39: owner moved the per convert price impact cap.
+    event MaxImpactBpsSet(uint256 oldBps, uint256 newBps);
+
+    /// @notice D39: default output floor, 95% of the spot implied output.
+    uint256 public constant DEFAULT_SPOT_FLOOR_BPS = 9500;
 
     /// @notice Constructor parameter bundle.
     /// @dev `artCoin` may be zero; the deployer then binds it via `setup`.
@@ -115,6 +123,10 @@ contract FeeAutoSwapperV2 is
     /// @notice Output floor in bps of the spot implied output (D32), owner
     ///         tunable within [SPOT_FLOOR_MIN_BPS, SPOT_FLOOR_MAX_BPS].
     uint256 public spotFloorBps;
+    /// @notice D39: price impact cap per convert in bps, owner tunable within
+    ///         [BURN_IMPACT_MIN, BURN_IMPACT_MAX]. The swap's price limit is
+    ///         the tighter of this and `maxSlippageBps`.
+    uint256 public maxImpactBps;
 
     constructor(Config memory c) Ownable(c.owner) {
         if (c.poolManager == address(0)) revert ZeroAddress("poolManager");
@@ -138,11 +150,13 @@ contract FeeAutoSwapperV2 is
         maxSlippageBps = c.maxSlippageBps;
         minBlocksBetweenConverts = c.minBlocksBetweenConverts;
         maxStepIn = c.maxStepIn;
-        spotFloorBps = Constants.SPOT_FLOOR_BPS;
+        spotFloorBps = DEFAULT_SPOT_FLOOR_BPS;
+        maxImpactBps = Constants.BURN_IMPACT_DEFAULT;
         emit MaxSlippageBpsSet(0, c.maxSlippageBps);
         emit MinBlocksBetweenConvertsSet(0, c.minBlocksBetweenConverts);
         emit MaxStepInSet(0, c.maxStepIn);
-        emit SpotFloorBpsSet(0, Constants.SPOT_FLOOR_BPS);
+        emit SpotFloorBpsSet(0, DEFAULT_SPOT_FLOOR_BPS);
+        emit MaxImpactBpsSet(0, Constants.BURN_IMPACT_DEFAULT);
 
         // b5: a third party can no longer push escrowed fees into this contract.
         IArtCoinsFeeEscrowV2(c.feeEscrow).setSelfClaimOnly(true);
@@ -179,15 +193,19 @@ contract FeeAutoSwapperV2 is
 
     /// @inheritdoc IFeeAutoSwapperV2
     /// @dev Guards, all against the pre swap spot: the swap's price limit caps
-    ///      the move at `maxSlippageBps` (a binding limit partial fills, the
-    ///      rest waits for the next call); the output must clear both the
+    ///      the move at min(`maxImpactBps`, `maxSlippageBps`) (a binding limit
+    ///      partial fills, the rest waits); the output must clear both the
     ///      caller's `minOut` and `spotFloorBps` of the spot implied output
-    ///      for the input actually consumed. Pacing (`minBlocksBetweenConverts`)
-    ///      stops looping the limit within a block. Same tx spot manipulation
-    ///      is bounded by the limit and pacing, not prevented; keepers should
-    ///      pass a `minOut` from an off chain reference.
+    ///      for the input actually consumed; at most `maxStepIn` per call; one
+    ///      convert per block, then `minBlocksBetweenConverts` pacing (D39).
+    ///      A caller can still move the spot before calling in the same tx
+    ///      (V2B-02); the impact cap bounds how much coin the swapper sells
+    ///      into that moved price, so the sandwich gain per call is about the
+    ///      cap times the consumed value, against the attacker's round trip
+    ///      fees. Not prevented: keepers should pass an off chain `minOut`.
     function convert(uint256 minOut) external nonReentrant returns (uint256 pairedOut) {
         if (!_finalized) revert NotFinalized();
+        if (lastConvertBlock == block.number) revert AlreadyConvertedThisBlock();
         uint256 next = lastConvertBlock + minBlocksBetweenConverts;
         if (lastConvertBlock != 0 && block.number < next) revert ConvertTooEarly(next);
 
@@ -237,10 +255,10 @@ contract FeeAutoSwapperV2 is
 
         // coin is currency1 (native eth sorts first), selling it raises the
         // price. limit = spot * sqrt(1 + bps / BPS), rounded down, so the
-        // realized price move never exceeds `maxSlippageBps` (the v1 linear
-        // approximation overshot by bps^2 / 4).
-        uint256 factor =
-            FixedPointMathLib.sqrt((Constants.BPS + maxSlippageBps) * 1e36 / Constants.BPS);
+        // realized price move never exceeds bps = min(impact, slippage) (the
+        // v1 linear approximation overshot by bps^2 / 4).
+        uint256 bps = maxImpactBps < maxSlippageBps ? maxImpactBps : maxSlippageBps;
+        uint256 factor = FixedPointMathLib.sqrt((Constants.BPS + bps) * 1e36 / Constants.BPS);
         uint256 c = FullMath.mulDiv(uint256(spot), factor, 1e18);
         uint160 limit =
             c >= uint256(TickMath.MAX_SQRT_PRICE) ? TickMath.MAX_SQRT_PRICE - 1 : uint160(c);
@@ -336,6 +354,16 @@ contract FeeAutoSwapperV2 is
         _checkStep(maxIn);
         emit MaxStepInSet(maxStepIn, maxIn);
         maxStepIn = maxIn;
+    }
+
+    /// @notice D39: sets the per convert price impact cap within the burn
+    ///         impact bounds.
+    function setMaxImpactBps(uint256 bps) external onlyOwner {
+        if (bps < Constants.BURN_IMPACT_MIN || bps > Constants.BURN_IMPACT_MAX) {
+            revert OutOfBounds(bps, Constants.BURN_IMPACT_MIN, Constants.BURN_IMPACT_MAX);
+        }
+        emit MaxImpactBpsSet(maxImpactBps, bps);
+        maxImpactBps = bps;
     }
 
     /// @notice D32: sets the output floor within Constants bounds.

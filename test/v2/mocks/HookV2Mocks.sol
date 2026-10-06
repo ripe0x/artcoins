@@ -84,16 +84,11 @@ contract HV2EmptyFallback {
     fallback() external payable {}
 }
 
-/// answers any call with data with 100kb of returndata (fits under the stream
-/// gas cap, so the call succeeds and the blob is offered to the caller);
-/// accepts plain eth. `bombs` counts successful bomb calls.
+/// answers every call, plain eth included, with 100kb of returndata. under
+/// the 2,300 gas push stipend the memory expansion runs out of gas, so the
+/// push fails and lands in escrow.
 contract HV2ReturnBomb {
-    uint256 public bombs;
-
-    receive() external payable {}
-
     fallback() external payable {
-        bombs++;
         assembly {
             return(0, 100000)
         }
@@ -263,9 +258,10 @@ contract HV2AddRemoveRouter is IUnlockCallback {
     }
 }
 
-/// runs several swaps inside ONE unlock, then settles eth from its own
-/// balance and takes the net coin credit to `owner`. a step with
-/// `amount == 0` sells the router's whole coin credit so far (exact in).
+/// runs several swaps inside ONE unlock, then settles from `currencyDelta`
+/// (as V4Router does): eth from its own balance, coin by transfer from its
+/// own balance, credits taken to `owner`. a step with `amount == 0` sells the
+/// router's whole coin credit so far (exact in). `limit == 0` means no limit.
 contract HV2SwapSeqRouter is IUnlockCallback {
     using TransientStateLibrary for IPoolManager;
 
@@ -273,11 +269,18 @@ contract HV2SwapSeqRouter is IUnlockCallback {
         PoolKey key;
         bool zeroForOne;
         int256 amount;
+        uint160 limit;
+        bytes hookData;
     }
 
     IPoolManager public immutable pm;
     address public immutable owner;
+    /// router deltas at the end of the last run, before settlement.
+    int256 public lastNet0;
+    int256 public lastNet1;
     uint256 public lastTake1;
+    /// BalanceDelta.amount0 returned by the last swap call.
+    int256 public lastReturned0;
 
     constructor(IPoolManager pm_) {
         pm = pm_;
@@ -300,25 +303,61 @@ contract HV2SwapSeqRouter is IUnlockCallback {
             coin = st.key.currency1;
             int256 amt = st.amount;
             if (amt == 0) amt = -pm.currencyDelta(address(this), coin);
-            pm.swap(
+            uint160 lim = st.limit;
+            if (lim == 0) {
+                lim = st.zeroForOne ? 4295128740 : 1461446703485210103287273052203988822378723970341;
+            }
+            BalanceDelta d = pm.swap(
                 st.key,
                 IPoolManager.SwapParams({
-                    zeroForOne: st.zeroForOne,
-                    amountSpecified: amt,
-                    sqrtPriceLimitX96: st.zeroForOne ? 4295128740 : 1461446703485210103287273052203988822378723970341
+                    zeroForOne: st.zeroForOne, amountSpecified: amt, sqrtPriceLimitX96: lim
                 }),
-                ""
+                st.hookData
             );
+            lastReturned0 = d.amount0();
         }
-        int256 d0 = pm.currencyDelta(address(this), Currency.wrap(address(0)));
-        if (d0 < 0) pm.settle{value: uint256(-d0)}();
-        else if (d0 > 0) pm.take(Currency.wrap(address(0)), address(this), uint256(d0));
+        Currency eth = Currency.wrap(address(0));
+        int256 d0 = pm.currencyDelta(address(this), eth);
         int256 d1 = pm.currencyDelta(address(this), coin);
-        require(d1 >= 0, "coin owed");
-        if (d1 > 0) {
+        lastNet0 = d0;
+        lastNet1 = d1;
+        if (d0 < 0) pm.settle{value: uint256(-d0)}();
+        else if (d0 > 0) pm.take(eth, address(this), uint256(d0));
+        if (d1 < 0) {
+            pm.sync(coin);
+            IHV2Erc20(Currency.unwrap(coin)).transfer(address(pm), uint256(-d1));
+            pm.settle();
+        } else if (d1 > 0) {
             lastTake1 = uint256(d1);
             pm.take(coin, owner, uint256(d1));
         }
         return "";
+    }
+}
+
+/// a fee recipient that tries to act on the PoolManager from `receive`
+/// while the victim's unlock is open. mode 0: take 1 wei eth (leave a debt,
+/// revert the victim at settlement). 1: take 1e18 coin (spend the buyer's
+/// tax exemption or out grant). 2: sync the coin (break a router that
+/// settles native without syncing). 3: mint 1 wei eth claim (leave a debt).
+contract HV2HostileRecipient {
+    IPoolManager public immutable pm;
+    uint8 public immutable mode;
+    address public coin;
+
+    constructor(IPoolManager pm_, uint8 mode_) {
+        pm = pm_;
+        mode = mode_;
+    }
+
+    function setCoin(address c) external {
+        coin = c;
+    }
+
+    receive() external payable {
+        if (mode == 0) pm.take(Currency.wrap(address(0)), address(this), 1);
+        else if (mode == 1) pm.take(Currency.wrap(coin), address(this), 1e18);
+        else if (mode == 2) pm.sync(Currency.wrap(coin));
+        else pm.mint(address(this), 0, 1);
     }
 }

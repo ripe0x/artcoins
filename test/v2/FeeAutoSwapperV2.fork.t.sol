@@ -28,6 +28,9 @@ contract FeeAutoSwapperV2ForkTest is P1Base {
         _setUpChain();
         end = new P1Sink();
         swapper = _deploy(address(end), address(coin));
+        // STEP (~1 eth) fits within 300 bps on the 100 eth test pool; the
+        // default 100 bps cap is covered by its own tests.
+        swapper.setMaxImpactBps(Constants.BURN_IMPACT_MAX);
         escrow.addDepositor(address(this), false);
         escrow.addDepositor(address(swapper), false);
         coin.approve(address(escrow), type(uint256).max);
@@ -207,10 +210,14 @@ contract FeeAutoSwapperV2ForkTest is P1Base {
         uint256 next = block.number + 50;
         assertEq(swapper.nextConvertibleBlock(), next);
 
+        vm.expectRevert(FeeAutoSwapperV2.AlreadyConvertedThisBlock.selector);
+        swapper.convert(0);
+
+        vm.roll(block.number + 1);
         vm.expectRevert(abi.encodeWithSelector(IFeeAutoSwapperV2.ConvertTooEarly.selector, next));
         swapper.convert(0);
 
-        vm.roll(block.number + 49);
+        vm.roll(block.number + 48);
         vm.expectRevert(abi.encodeWithSelector(IFeeAutoSwapperV2.ConvertTooEarly.selector, next));
         swapper.convert(0);
 
@@ -228,6 +235,57 @@ contract FeeAutoSwapperV2ForkTest is P1Base {
         assertLe(_priceMoveBps(pre, post), 200, "move capped");
         assertGt(coin.balanceOf(address(swapper)), 0, "rest waits for next call");
         assertEq(address(swapper).balance, 0, "invariant");
+    }
+
+    // ── D39 impact cap, one convert per block ────────────────────────────
+
+    function test_swapperV2_impactCap_defaultBindsBelowSlippage() public {
+        FeeAutoSwapperV2 s = _deploy(address(end), address(coin)); // slippage 500
+        escrow.addDepositor(address(s), false);
+        assertEq(s.maxImpactBps(), Constants.BURN_IMPACT_DEFAULT, "default 100");
+        s.setMaxStepIn(1e27);
+        coin.transfer(address(s), 1e27);
+        uint160 pre = _spot();
+        s.convert(0);
+        uint256 moved = _priceMoveBps(pre, _spot());
+        assertLe(moved, Constants.BURN_IMPACT_DEFAULT, "impact cap, not the 500 bps slippage");
+        assertGt(moved, Constants.BURN_IMPACT_DEFAULT - 5, "limit reached");
+        assertGt(coin.balanceOf(address(s)), 0, "partial fill");
+        assertEq(address(s).balance, 0, "invariant");
+
+        // drains over later blocks, one convert per block
+        vm.expectRevert(FeeAutoSwapperV2.AlreadyConvertedThisBlock.selector);
+        s.convert(0);
+        vm.roll(block.number + 50);
+        uint256 before = coin.balanceOf(address(s));
+        s.convert(0);
+        assertLt(coin.balanceOf(address(s)), before);
+    }
+
+    function test_swapperV2_maxImpact_bounds() public {
+        uint256 lo = Constants.BURN_IMPACT_MIN;
+        uint256 hi = Constants.BURN_IMPACT_MAX;
+        vm.expectRevert(abi.encodeWithSelector(IFeeAutoSwapperV2.OutOfBounds.selector, lo - 1, lo, hi));
+        swapper.setMaxImpactBps(lo - 1);
+        vm.expectRevert(abi.encodeWithSelector(IFeeAutoSwapperV2.OutOfBounds.selector, hi + 1, lo, hi));
+        swapper.setMaxImpactBps(hi + 1);
+        vm.expectEmit(false, false, false, true, address(swapper));
+        emit FeeAutoSwapperV2.MaxImpactBpsSet(hi, lo);
+        swapper.setMaxImpactBps(lo);
+        assertEq(swapper.maxImpactBps(), lo);
+
+        // tighter of impact and slippage applies
+        swapper.setMaxImpactBps(hi);
+        swapper.setMaxSlippageBps(Constants.SWAPPER_SLIPPAGE_MIN);
+        swapper.setMaxStepIn(1e27);
+        coin.transfer(address(swapper), 1e27);
+        uint160 pre = _spot();
+        swapper.convert(0);
+        assertLe(_priceMoveBps(pre, _spot()), Constants.SWAPPER_SLIPPAGE_MIN, "slippage tighter");
+
+        vm.prank(attacker);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
+        swapper.setMaxImpactBps(100);
     }
 
     function test_swapperV2_convert_nothing_reverts() public {
@@ -335,7 +393,8 @@ contract FeeAutoSwapperV2ForkTest is P1Base {
     }
 
     function test_swapperV2_spotFloor_bounds() public {
-        assertEq(swapper.spotFloorBps(), Constants.SPOT_FLOOR_BPS, "default 80%");
+        assertEq(swapper.spotFloorBps(), 9500, "D39 default 95%");
+        assertEq(swapper.DEFAULT_SPOT_FLOOR_BPS(), 9500);
         uint256 lo = Constants.SPOT_FLOOR_MIN_BPS;
         uint256 hi = Constants.SPOT_FLOOR_MAX_BPS;
         vm.expectRevert(
@@ -347,7 +406,7 @@ contract FeeAutoSwapperV2ForkTest is P1Base {
         );
         swapper.setSpotFloorBps(hi + 1);
         vm.expectEmit(false, false, false, true, address(swapper));
-        emit FeeAutoSwapperV2.SpotFloorBpsSet(Constants.SPOT_FLOOR_BPS, lo);
+        emit FeeAutoSwapperV2.SpotFloorBpsSet(9500, lo);
         swapper.setSpotFloorBps(lo);
         assertEq(swapper.spotFloorBps(), lo);
         swapper.setSpotFloorBps(hi);
@@ -362,7 +421,7 @@ contract FeeAutoSwapperV2ForkTest is P1Base {
 
     /// @notice The floor the view reports and convert enforces uses the stored bps.
     function test_swapperV2_spotFloor_usesStoredValue() public {
-        assertEq(swapper.floorFor(STEP), _expectedFloor(STEP, Constants.SPOT_FLOOR_BPS));
+        assertEq(swapper.floorFor(STEP), _expectedFloor(STEP, 9500));
         swapper.setSpotFloorBps(Constants.SPOT_FLOOR_MIN_BPS);
         assertEq(swapper.floorFor(STEP), _expectedFloor(STEP, Constants.SPOT_FLOOR_MIN_BPS));
         swapper.setSpotFloorBps(Constants.SPOT_FLOOR_MAX_BPS);

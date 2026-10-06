@@ -16,11 +16,11 @@ import {
     HV2EmptyFallback,
     HV2Extension,
     HV2GasBurner,
+    HV2HostileRecipient,
     HV2LyingModule,
     HV2Rejecter,
     HV2ReturnBomb,
     HV2RevertingModule,
-    HV2RevertingPayout,
     HV2StreamRecipient,
     HV2SwapSeqRouter
 } from "./mocks/HookV2Mocks.sol";
@@ -46,6 +46,19 @@ import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+
+/// v4 periphery ExactInputSingleParams as the live universal router decodes it.
+struct URExactInSingle {
+    PoolKey poolKey;
+    bool zeroForOne;
+    uint128 amountIn;
+    uint128 amountOutMinimum;
+    bytes hookData;
+}
+
+interface IUniversalRouterLike {
+    function execute(bytes calldata commands, bytes[] calldata inputs, uint256 deadline) external payable;
+}
 
 /// exposes the internal hookData parser.
 contract HV2CalldataHarness {
@@ -131,15 +144,16 @@ contract HookV2ForkTest is HookV2ForkBase {
         HV2ReturnBomb r = new HV2ReturnBomb();
         vm.deal(address(r), 1 ether);
         PoolKey memory key = _launchSimple(address(r));
-        _swap(key, true, -0.1 ether, 0, ""); // warm the pool
+        _swap(key, true, -0.1 ether, 0, ""); // warm the pool and the escrow slot
         uint256 g0 = gasleft();
         _swap(key, true, -1 ether, 0, "");
         uint256 used = g0 - gasleft();
-        // probe capped at preSwapStreamGas, 100kb of returndata never copied
-        assertLt(used, refGas + hook.globals().preSwapStreamGas + 10_000, "return bomb bounded");
-        assertEq(r.bombs(), 2, "probe succeeded and offered the blob twice");
+        // the push carries only the 2,300 stipend; 100kb of returndata runs
+        // the bomb out of gas, nothing is copied, the leg lands in escrow
+        assertLt(used, refGas + 20_000, "return bomb bounded");
         (uint256 bounty,) = _legs((1 ether * uint256(BASELINE)) / D, BASELINE);
-        assertGe(address(r).balance, 1 ether + bounty, "pushed");
+        assertGe(_escrowed(address(r)), bounty, "escrowed");
+        assertEq(address(r).balance, 1 ether);
     }
 
     /// gas of a warm 1 eth exact in buy on a pool whose bounty recipient is an eoa.
@@ -153,7 +167,6 @@ contract HookV2ForkTest is HookV2ForkBase {
 
     function test_swap_bountyGasBurner_bounded() public onlyFork {
         uint256 refGas = _refSwapGas();
-
         HV2GasBurner r = new HV2GasBurner();
         vm.deal(address(r), 1 ether);
         PoolKey memory key = _launchSimple(address(r));
@@ -161,10 +174,8 @@ contract HookV2ForkTest is HookV2ForkBase {
         uint256 g0 = gasleft();
         _swap(key, true, -1 ether, 0, "");
         uint256 used = g0 - gasleft();
-
-        IArtCoinsHookV2.HookGlobals memory g = hook.globals();
-        // probe + push caps + one cold escrow credit
-        assertLt(used, refGas + g.preSwapStreamGas + g.pushGas + 80_000, "gas burner bounded");
+        // stipend only push (D41) + a warm escrow credit
+        assertLt(used, refGas + 20_000, "gas burner bounded");
         assertGt(_escrowed(address(r)), 0, "bounty escrowed");
     }
 
@@ -196,14 +207,53 @@ contract HookV2ForkTest is HookV2ForkBase {
         assertEq(_escrowed(address(burner)), protocol);
     }
 
-    function test_swap_streamProbe_onlyAboveFloor() public onlyFork {
+    /// D41: no `streamForward` probe, whatever the recipient's balance.
+    function test_swap_noStreamProbe() public onlyFork {
         HV2StreamRecipient r = new HV2StreamRecipient();
+        vm.deal(address(r), 100 ether);
         PoolKey memory key = _launchSimple(address(r));
-        _swap(key, true, -0.01 ether, 0, ""); // recipient balance below 0.01 eth
-        assertEq(r.streams(), 0, "below floor: no probe");
-        vm.deal(address(r), 1 ether);
-        _swap(key, true, -0.01 ether, 0, "");
-        assertEq(r.streams(), 1, "probed once");
+        uint256 b0 = address(r).balance;
+        _swap(key, true, -1 ether, 0, "");
+        assertEq(r.streams(), 0, "never probed");
+        (uint256 bounty,) = _legs((1 ether * uint256(BASELINE)) / D, BASELINE);
+        assertEq(address(r).balance - b0, bounty, "empty receive gets the stipend push");
+    }
+
+    /// V2H-01 regression: a recipient that acts on the PoolManager from
+    /// `receive` (take 1 wei, sync the coin, mint a claim) while the swapper's
+    /// unlock is open cannot revert the swap. PoolSwapTest settles native eth
+    /// without syncing, so a surviving coin sync would revert it too.
+    function test_swap_hostileRecipient_cannotRevertSwap() public onlyFork {
+        uint8[3] memory modes = [uint8(0), 2, 3];
+        for (uint256 i; i < 3; ++i) {
+            HV2HostileRecipient r = new HV2HostileRecipient(pm, modes[i]);
+            (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(_defaults(address(r)));
+            r.setCoin(address(token));
+            _swap(key, true, -1 ether, 0, ""); // buy: eth settled after the push
+            _swap(key, false, -1 ether, 0, ""); // sell
+            // modes 0 and 3 run out of gas (escrowed); a coin sync may fit the
+            // stipend and is undone by the hook. either way the swaps settled.
+            assertGt(address(r).balance + _escrowed(address(r)), 0, "legs delivered");
+            assertEq(pm.balanceOf(address(r), 0), 0, "no claim minted");
+        }
+    }
+
+    /// V2H-01 regression: a VENUE bounty recipient that tries to spend the
+    /// buyer's exemption (take coin from the PoolManager inside `receive`)
+    /// fails; the buyer's take stays fully exempt (expected tax 0).
+    function test_swap_hostileRecipient_cannotSpendBuyerExemption() public onlyFork {
+        HV2HostileRecipient r = new HV2HostileRecipient(pm, 1);
+        Launch memory l = _defaults(address(r));
+        l.taxMode = Constants.TAX_MODE_VENUE;
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(l);
+        r.setCoin(address(token));
+        uint256 bal0 = token.balanceOf(address(this));
+        uint256 dead0 = token.balanceOf(Constants.DEAD);
+        BalanceDelta d = _swap(key, true, -1 ether, 0, "");
+        assertEq(token.balanceOf(address(this)) - bal0, uint256(int256(d.amount1())), "untaxed");
+        assertEq(token.balanceOf(Constants.DEAD), dead0, "no tax");
+        assertEq(token.balanceOf(address(r)), 0);
+        assertGt(_escrowed(address(r)), 0);
     }
 
     // ─── b3 / H4 H5: skim on the realized fill, unfilled share refunded ───
@@ -222,17 +272,19 @@ contract HookV2ForkTest is HookV2ForkBase {
         uint256 requested = a - charged;
         uint256 b0 = _paid(bountyEoa);
         uint256 p0 = _paid(protocolR);
+        uint256 eth0 = address(seq).balance;
 
-        BalanceDelta d = _swap(key, true, -int256(a), TickMath.getSqrtPriceAtTick(-100), "");
+        (int256 net0,) = _swapNet(key, true, -int256(a), TickMath.getSqrtPriceAtTick(-100), "");
 
-        uint256 paid = uint256(-int256(d.amount0()));
-        uint256 r = paid - charged; // realized pool input
+        uint256 fair = (_paid(bountyEoa) - b0) + (_paid(protocolR) - p0);
+        uint256 spent = eth0 - address(seq).balance; // swapper balance, directly
+        assertEq(spent, uint256(-net0));
+        uint256 r = spent - fair; // realized pool input
         assertLt(r, requested / 4, "partial fill");
-        uint256 fair = (charged * r) / requested;
-        uint256 legs = (_paid(bountyEoa) - b0) + (_paid(protocolR) - p0);
-        assertEq(legs, fair, "legs on the fill");
-        assertEq(_escrowed(address(swapRouter)), charged - fair, "unfilled skim refunded to caller");
-        // effective rate on the fill stays the nominal 6% (v1: unbounded)
+        assertApproxEqAbs(fair, (charged * r) / requested, 1, "legs on the fill");
+        // D42: the unfilled skim never left the swapper; nothing in escrow
+        assertEq(_escrowed(address(seq)), 0, "no escrow refund");
+        assertLt(spent, a - charged / 2, "swapper paid fill plus fair skim only");
         assertApproxEqRel(fair * D, (r + fair) * BASELINE, 1e12);
     }
 
@@ -243,19 +295,56 @@ contract HookV2ForkTest is HookV2ForkBase {
         uint256 requested = a + charged;
         uint256 b0 = _paid(bountyEoa);
         uint256 p0 = _paid(protocolR);
+        uint256 eth0 = address(seq).balance;
 
-        BalanceDelta d = _swap(key, false, int256(a), TickMath.getSqrtPriceAtTick(100), "");
+        (int256 net0,) = _swapNet(key, false, int256(a), TickMath.getSqrtPriceAtTick(100), "");
 
-        int256 r = int256(d.amount0()) + int256(charged); // realized pool output
-        assertGt(r, 0);
-        assertLt(uint256(r), requested / 4, "partial fill");
-        uint256 fair = (charged * uint256(r)) / requested;
-        uint256 refund = charged - fair;
-        assertEq(_escrowed(address(swapRouter)), refund, "unfilled skim refunded to caller");
-        uint256 legs = (_paid(bountyEoa) - b0) + (_paid(protocolR) - p0);
-        assertEq(legs, fair);
-        // H5: net of the refund the seller receives eth, never pays it
-        assertGt(int256(d.amount0()) + int256(refund), 0, "seller nets eth");
+        // V2H-06: after the unlock the seller only receives eth, never owes it
+        assertGt(net0, 0, "seller nets eth inside the swap");
+        assertEq(address(seq).balance - eth0, uint256(net0), "swapper balance");
+        uint256 fair = (_paid(bountyEoa) - b0) + (_paid(protocolR) - p0);
+        uint256 r = uint256(net0) + fair; // realized pool output
+        assertLt(r, requested / 4, "partial fill");
+        assertApproxEqAbs(fair, (charged * r) / requested, 1);
+        assertEq(_escrowed(address(seq)), 0, "no escrow refund");
+        // the returned BalanceDelta still shows the gross charge (documented)
+        assertEq(seq.lastReturned0(), int256(r) - int256(charged));
+    }
+
+    /// D42 / V2H-03 through the live universal router (V4Router, min price
+    /// limit): a buy past the last launch position fills partially; the
+    /// unfilled skim is credited to UR's delta and settled back to the user;
+    /// nothing is stranded in the escrow under UR.
+    function test_skim_universalRouterPartialFill_nothingInEscrow() public onlyFork {
+        address ur = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af;
+        ArtCoinsTokenV2 token = _newToken(0, bountyEoa, address(hook));
+        PoolKey memory key = hook.initializePool(_params(_defaults(bountyEoa), address(token)));
+        _modify(key, -2000, 2000, int256(LIQ), 0); // narrow: ~105 eth exhausts it
+        hook.initializeMevModule(key, "");
+
+        uint256 a = 300 ether;
+        uint256 charged = (a * BASELINE) / D;
+        bytes memory actions = abi.encodePacked(uint8(0x06), uint8(0x0c), uint8(0x0f));
+        bytes[] memory params = new bytes[](3);
+        params[0] = abi.encode(URExactInSingle(key, true, uint128(a), uint128(0), bytes("")));
+        params[1] = abi.encode(key.currency0, a);
+        params[2] = abi.encode(key.currency1, uint256(0));
+        bytes[] memory inputs = new bytes[](2);
+        inputs[0] = abi.encode(actions, params);
+        inputs[1] = abi.encode(address(0), address(this), uint256(0)); // sweep eth
+        uint256 eth0 = address(this).balance;
+        uint256 b0 = _paid(bountyEoa);
+        uint256 p0 = _paid(protocolR);
+        IUniversalRouterLike(ur).execute{value: a}(abi.encodePacked(uint8(0x10), uint8(0x04)), inputs, block.timestamp);
+
+        uint256 spent = eth0 - address(this).balance;
+        uint256 fair = (_paid(bountyEoa) - b0) + (_paid(protocolR) - p0);
+        uint256 r = spent - fair;
+        assertLt(r, (a - charged) / 2, "partial fill");
+        assertApproxEqAbs(fair, (charged * r) / (a - charged), 1);
+        assertEq(_escrowed(ur), 0, "nothing stranded under UR");
+        assertEq(ur.balance, 0);
+        assertGt(token.balanceOf(address(this)), 0);
     }
 
     function test_skim_quoteUnspecified_realized() public onlyFork {
@@ -540,6 +629,15 @@ contract HookV2ForkTest is HookV2ForkBase {
         vm.expectRevert(IArtCoinsHookV2.ReferralPayoutZero.selector);
         hook.initializePool(p);
 
+        // V2H-08: recipients that can never receive eth
+        p = _params(_defaults(address(hook)), address(1));
+        vm.expectRevert(abi.encodeWithSelector(ArtCoinsHookV2.RecipientCannotReceive.selector, address(hook)));
+        hook.initializePool(p);
+        p = _params(_defaults(bountyEoa), address(1));
+        p.skim.protocolRecipient = payable(POOL_MANAGER);
+        vm.expectRevert(abi.encodeWithSelector(ArtCoinsHookV2.RecipientCannotReceive.selector, POOL_MANAGER));
+        hook.initializePool(p);
+
         p = _params(_defaults(bountyEoa), address(1));
         p.skim.quoteToken = address(2);
         vm.expectRevert(IArtCoinsHookV2.QuoteTokenMustBeNative.selector);
@@ -548,36 +646,50 @@ contract HookV2ForkTest is HookV2ForkBase {
 
     // ─── d1 / D16 / H13: referral leg ────────────────────────────────────
 
+    /// V2H-05: the referral base is the realized pool side quote amount `r`
+    /// for every shape. exact in buy, full fill: r = a - skim.
     function test_referral_paidAndCapped() public onlyFork {
         PoolKey memory key = _launchSimple(bountyEoa);
         address ref = makeAddr("ref");
         uint256 p0 = protocolR.balance;
         _swap(key, true, -1 ether, 0, _attribution(ref, 1000)); // asks 1%, cap 0.25%
-        uint256 referral = (1 ether * uint256(MAX_REF)) / D;
-        assertEq(payout.credited(ref), referral);
-        (, uint256 protocol) = _legs((1 ether * uint256(BASELINE)) / D, BASELINE);
+        uint256 skim = (1 ether * uint256(BASELINE)) / D;
+        uint256 referral = ((1 ether - skim) * uint256(MAX_REF)) / D;
+        assertEq(ref.balance, referral, "pushed to the referrer (D41)");
+        assertEq(payout.credited(ref), 0, "payout not called during the swap");
+        (, uint256 protocol) = _legs(skim, BASELINE);
         assertEq(protocolR.balance - p0, protocol - referral, "referral comes out of protocol");
+
+        // exact in sell: r = pool output before skim
+        _checkSellReferral(key, ref);
+    }
+
+    function _checkSellReferral(PoolKey memory key, address ref) internal {
+        uint256 r0 = ref.balance;
+        BalanceDelta d = _swap(key, false, -1 ether, 0, _attribution(ref, 250));
+        uint256 net = uint256(int256(d.amount0())); // r - skim
+        uint256 r = (net * D) / (D - uint256(BASELINE)); // +-1
+        assertApproxEqAbs(ref.balance - r0, (r * uint256(MAX_REF)) / D, 1);
     }
 
     function test_referral_selfReferralByCaller_refused() public onlyFork {
         PoolKey memory key = _launchSimple(bountyEoa);
         uint256 p0 = protocolR.balance;
+        uint256 r0 = address(swapRouter).balance;
         _swap(key, true, -1 ether, 0, _attribution(address(swapRouter), 250));
-        assertEq(payout.credited(address(swapRouter)), 0, "caller cannot name itself");
+        assertEq(address(swapRouter).balance, r0, "caller cannot name itself");
         (, uint256 protocol) = _legs((1 ether * uint256(BASELINE)) / D, BASELINE);
         assertEq(protocolR.balance - p0, protocol, "protocol leg intact");
     }
 
-    function test_referral_payoutReverts_creditsReferrer() public onlyFork {
-        HV2RevertingPayout bad = new HV2RevertingPayout();
-        Launch memory l = _defaults(bountyEoa);
-        l.referralPayout = address(bad);
-        (PoolKey memory key,) = _launch(l);
-        address ref = makeAddr("ref");
-        _swap(key, true, -1 ether, 0, _attribution(ref, 250));
-        assertEq(
-            _escrowed(ref), (1 ether * uint256(MAX_REF)) / D, "referrer credited, not protocol"
-        );
+    /// D16 under D41: a referrer that cannot take a stipend push is credited
+    /// in escrow, not folded into protocol.
+    function test_referral_rejectingReferrer_escrowed() public onlyFork {
+        PoolKey memory key = _launchSimple(bountyEoa);
+        HV2Rejecter ref = new HV2Rejecter();
+        _swap(key, true, -1 ether, 0, _attribution(address(ref), 250));
+        uint256 skim = (1 ether * uint256(BASELINE)) / D;
+        assertEq(_escrowed(address(ref)), ((1 ether - skim) * uint256(MAX_REF)) / D);
     }
 
     function test_hookData_malformed_neverReverts() public onlyFork {
@@ -602,11 +714,10 @@ contract HookV2ForkTest is HookV2ForkBase {
         l.extension = address(ext);
         (PoolKey memory key,) = _launch(l);
         bytes memory hd = _attribution(makeAddr("ref"), 100);
-        BalanceDelta d = _swap(key, true, -100 ether, TickMath.getSqrtPriceAtTick(-100), hd);
+        (int256 net0,) = _swapNet(key, true, -100 ether, TickMath.getSqrtPriceAtTick(-100), hd);
         assertEq(ext.swaps(), 1);
-        // trader paid paid = r + charged at the PoolManager, refund comes back via escrow
-        uint256 refund = _escrowed(address(swapRouter));
-        assertEq(int256(ext.lastAmount0()), int256(d.amount0()) + int256(refund));
+        // trader facing: fill plus fair skim, the unfilled skim never charged
+        assertEq(int256(ext.lastAmount0()), net0);
         assertEq(
             keccak256(ext.lastData()),
             keccak256(abi.decode(hd, (IArtCoinsHook.PoolSwapData)).poolExtensionSwapData)
@@ -648,9 +759,9 @@ contract HookV2ForkTest is HookV2ForkBase {
         HV2SwapSeqRouter router = new HV2SwapSeqRouter(pm);
         vm.deal(address(router), 10 ether);
         HV2SwapSeqRouter.Step[] memory steps = new HV2SwapSeqRouter.Step[](3);
-        steps[0] = HV2SwapSeqRouter.Step(key, true, -1 ether); // canonical buy
-        steps[1] = HV2SwapSeqRouter.Step(key, false, 0); // sell it all back
-        steps[2] = HV2SwapSeqRouter.Step(side, true, -0.5 ether); // side pool buy
+        steps[0] = HV2SwapSeqRouter.Step(key, true, -1 ether, 0, ""); // canonical buy
+        steps[1] = HV2SwapSeqRouter.Step(key, false, 0, 0, ""); // sell it all back
+        steps[2] = HV2SwapSeqRouter.Step(side, true, -0.5 ether, 0, ""); // side pool buy
 
         uint256 bal0 = token.balanceOf(address(this));
         uint256 dead0 = token.balanceOf(Constants.DEAD);
@@ -664,15 +775,19 @@ contract HookV2ForkTest is HookV2ForkBase {
         assertEq(b, 0, "no budget left");
     }
 
-    function test_hard_addThenRemoveSameTx_grantsNoOutflow() public onlyFork {
+    /// V2H-02 flipped (D43): HARD reports the removal, the token nets it
+    /// against the add, no grant survives in either direction.
+    function test_hard_addThenRemoveSameTx_leavesNoGrant() public onlyFork {
         Launch memory l = _defaults(bountyEoa);
         l.taxMode = Constants.TAX_MODE_HARD;
         (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(l);
         HV2AddRemoveRouter router = _fundedRouter(token);
-        (, uint256 o0,) = token.pendingCanonical();
+        (, uint256 o0, uint256 i0) = token.pendingCanonical();
+        assertEq(o0 + i0, 0);
         router.run(key, -2000, 2000, 50e18, bytes32(uint256(7)), 0);
-        (, uint256 o1,) = token.pendingCanonical();
-        assertEq(o1, o0, "no outflow grant");
+        (, uint256 o1, uint256 i1) = token.pendingCanonical();
+        assertEq(o1, 0, "no out grant");
+        assertEq(i1, 0, "no free in grant");
     }
 
     function test_venue_canonicalBuy_untaxed() public onlyFork {
@@ -719,13 +834,13 @@ contract HookV2ForkTest is HookV2ForkBase {
         HV2ReturnBomb r = new HV2ReturnBomb();
         vm.deal(address(r), 1 ether);
         PoolKey memory key = _launchSimple(address(r));
-        // _swap asserts zero erc6909 claims and zero eth on the hook after each
+        // _swap and _swapNet assert zero erc6909 claims and zero eth on the hook
         _swap(key, true, -1 ether, 0, "");
         _swap(key, true, 1 ether, 0, "");
         _swap(key, false, -1 ether, 0, "");
         _swap(key, false, 1 ether, 0, "");
-        _swap(key, true, -50 ether, TickMath.getSqrtPriceAtTick(-60), "");
-        _swap(key, false, 50 ether, TickMath.getSqrtPriceAtTick(60), "");
+        _swapNet(key, true, -50 ether, TickMath.getSqrtPriceAtTick(-60), "");
+        _swapNet(key, false, 50 ether, TickMath.getSqrtPriceAtTick(60), "");
         _swap(key, true, -1, 0, ""); // dust: zero skim
     }
 
@@ -985,6 +1100,15 @@ contract HookV2PriorTxHardTest is HookV2PriorTxBase {
         assertEq(token.balanceOf(address(this)) - bal0, router.lastTake1());
         (, uint256 o,) = token.pendingCanonical();
         assertEq(o, 0, "grant consumed exactly");
+    }
+
+    /// V2H-02 flipped (D43): increase then decrease a prior tx position in
+    /// one unlock leaves no grant and does not revert.
+    function test_hard_increaseThenDecreasePrior_leavesNoGrant() public onlyFork {
+        router.run(key, -2000, 2000, POS_LIQ, SALT, 0);
+        (, uint256 o, uint256 i) = token.pendingCanonical();
+        assertEq(o, 0);
+        assertEq(i, 0);
     }
 
     function test_hard_addCollectsFees_pass() public onlyFork {
