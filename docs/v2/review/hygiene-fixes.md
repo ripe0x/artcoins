@@ -22,6 +22,30 @@ source: findings in `repo-hygiene.md` (ids H1 to H25). this file lists only what
 | H5, H9 | `foundry.toml` | new `[profile.fork]`: `eth_rpc_url = "${MAINNET_RPC_URL}"`, `fork_block_number = 26130269` (keep equal to `ForkBase.FORK_BLOCK`), storage caching on | one command for a local pinned fork run. forge 1.7.1 has no config key for retries, so retries stay as cli flags |
 | fmt | `src/`, `test/`, `script/` | `forge fmt` at 1.7.1 over the tree. `script-js/gen-addresses.mjs` now writes block numbers with `_` separators so the generated `script/Addresses.sol` stays fmt clean | `forge fmt --check` is part of ci and was failing |
 
+## fork job scope and known fork failures
+
+the `fork-tests` job does not run the whole suite under `--fork-url`. it selects by path: every `test/*Fork*.t.sol`, `Integration.t.sol`, the onlyFork gated suites without `Fork` in the file name (BurnRouter, ArtCoinsFactory, FeeAutoSwapper invariants, AuditFixes, LayerRetrofit, HookMevDecodeTolerance, HookProtocolFeeNumeratorZero, LLOnchainRenderer.AnimationHtml, LaunchStressSims, LpPresetCompare, LpTierWalkthrough, ArtCoinsUniv4EthDevBuy), and `test/v2/**` minus `test/v2/review/**` and `test/v2/review-v2/**`. the plain unit contracts `BurnRouterTest` and `ArtCoinsFactoryTest` that share a file with a fork contract are excluded by name. `test/v2/review*` proof tests pass by demonstrating v1 bugs, so they run in a separate `review-proofs` job with `continue-on-error: true`.
+
+why the scoping: a first run with `--fork-url` over everything (65 suites, block 26130269) gave 691 passed, 13 failed, 3 skipped. 9 of the 13 are plain unit tests that fail only because a global fork replaces the empty local state with mainnet state (the test contract address holds mainnet eth, or addresses collide with live contracts). they pass without a fork.
+
+| polluted unit failure (not run by the fork job) | symptom |
+|---|---|
+| `test/ProtocolFeeController.t.sol`: `test_processNativeFees_8020Instance`, `test_processNativeFees_revertsWhenEmpty`, `test_processNativeFees_splitsCorrectly`, `test_receivesEth` | treasury balance 0 or a balance off by live eth |
+| `test/legacy/ProtocolFeeController.t.sol`: `test_adminRescueEth` | balance 12641 eth instead of 0.4 |
+| `test/legacy/ArtCoinsFactory.t.sol`: `test_recoverETH_sweepsOwnerOnly` | balance off by live eth |
+| `test/legacy/BurnRouter.t.sol`: `test_processBurnWeth_revertsBelowOwnerFloor`, `test_processBurnWeth_revertsWhenFloorUnset`, `test_processBurnWeth_succeedsAtOwnerFloor` | revert shape differs because live pools and balances exist |
+
+known v1 state mismatches (real fork failures at block 26130269, not fixed, they stay red in the fork job until the tests or the pinned block change):
+
+| test | failure | reason |
+|---|---|---|
+| `BurnRouterForkTest.test_fork_processBurnWeth_keeperRewardCapped` | `InsufficientLayerOut` | the burn router owner floor on the live v1 stack is above what the pool at this block returns for the swap (out 0.50 vs floor 7.99 in the test's units), so the swap fails the floor check. the test encodes a different pool price |
+| `BurnRouterForkTest.test_fork_processBurnWeth_paysKeeperReward` | `InsufficientLayerOut` | same floor against pool output (0.50 vs 0.80) |
+| `MainnetLaunchRehearsalForkTest.test_rehearsal_s06_highSuccess_burnCadence` | `InsufficientLayerOut` | same floor check in the burn cadence scenario (1.04e24 out vs 1.33e24 floor) |
+| `EOAPermit2SwapForkTest.test_rehearsal_s06_highSuccess_burnCadence` | `InsufficientLayerOut` | same scenario as the rehearsal, same floor against pool output at this block |
+
+invariants: `FeeAutoSwapperInvariants` stays in the job at `FOUNDRY_INVARIANT_RUNS=16`, `FOUNDRY_INVARIANT_DEPTH=50`. with 4 runs at depth 10 it passes 7 of 7; the default 256 x 500 did not finish in 25 minutes on the public gateway.
+
 ## not changed (open)
 
 | item | why |
