@@ -11,7 +11,7 @@ run (forge rejects two `--match-path` flags, so one brace glob):
   --skip "test/v2/review/**" --skip "test/v2/review-v2/**" -vv
 ```
 
-result on the current tree: 26 tests, 22 pass, 4 fail (the D51 tests, marked `// BUG: h1`). no src file needed a `--skip`.
+result on the current tree: 28 tests, 28 pass, 0 fail. partial fill tests follow D58; no BUG markers remain. no src file needed a `--skip`.
 
 ## coverage
 
@@ -32,8 +32,10 @@ result on the current tree: 26 tests, 22 pass, 4 fail (the D51 tests, marked `//
 | 4 | `test_i1_feeFlow_keeperCollectFlushConvert_controllerSplit_burn_everyWeiAccounted` | four phases, each balanced to the wei from the contracts' own events, plus the total: recipient deltas + escrow credits + eth burned == skim legs + refunds + lp eth + convert proceeds. coin side balanced too. keeper rewards (locker 1%, swapper 0.5%, burn 0.5%) paid; second burn in a block reverts |
 | 5 | `test_i1_antiSniper_skimDecaysLinearlyToBaseline` | charged skim equals the module's linear schedule at 0, 1/4, 1/2, 3/4, end-1, end, end+1h; add lock closed in the window, open after |
 | 5 | `test_i1_antiSniper_moduleTreatedAsExpiredAfterMaxWindow` | factory enabled module that reports active forever: trusted until `createdAt + MAX_MEV_WINDOW`, baseline skim and open lp from then on |
-| 6 | `test_i1_partialFill_{exactInBuy,exactOutSell}_{deltaRouter,universalRouter}` | the D51 contract: swapper moves exactly realized +/- fair skim, no escrow residue, hook holds nothing. FAIL today, see bugs |
-| 6 | `test_i1_partialFill_netOfClaimableRefund_isFair_bothShapesBothRouters` | what holds today and after D51: net of the claimable refund the swapper paid realized +/- fair skim; with a refund address nothing is stranded under the universal router; a currencyDelta router is made whole by a permissionless claim |
+| 6 | `test_i1_partialFill_{exactInBuy,exactOutSell}_{poolSwapTest,deltaRouter}_refundToNamed` | D58, price limited: the swapper pays the full charge in the swap, `SkimRefunded` and the escrow credit `charged - fair` to the refund address named in hookData, nothing under the router, a stranger's `escrow.claim(refundTo, 0)` delivers it, net of it the swapper paid realized + fair (buy) or received realized - fair (sell); returned delta == transient delta; hook holds no eth or claims |
+| 6 | `test_i1_partialFill_universalRouter_noRefundAddress_creditedToRouter_V2H03` | live universal router, both shapes, no refund address: the refund is credited to the router in the escrow and is stranded (V2H-03, documented); the user paid realized + full charge |
+| 6 | `test_i1_partialFill_universalRouter_withRefundAddress_nothingStranded` | same swaps with a refund address: nothing under the router, D58 holds for both shapes, escrow empty after the claims |
+| 6 | `test_i1_partialFill_netOfClaimableRefund_isFair_bothShapesBothRouters` | D58 default recipients: with no refund address the PoolManager caller is credited and a permissionless claim makes a currencyDelta router whole; net of the claimable refund every shape and router paid realized +/- fair skim |
 | 7 | `test_i1_referral_paysReferrer_protocolNeverBelowFloor` | launch with cap above the D52 bound refused; at the bound, referral = min(cap, protocol - floor), protocol >= floor, carved from the protocol leg only; eoa referrer pushed, rejecting referrer escrowed and pulled with `claimTo`; payout pointer = escrow (D57) |
 | 7 | `test_i1_referral_protocolFloorFrozenIntoHook` | `hook.minProtocolShareBps(pid) == factory.minProtocolSkimShareBps()` |
 | 8 | `test_i1_versionAndDiscovery_launchEventDecodesToConfigHash` | `poolInfo(pid).version == 2` and every field, `isOfficialPool`, `isArtCoin`, `launcherVersion() == 2`, `deploymentInfo`, `predictToken`; one `TokenCreatedV2` whose topics match and whose decoded config hashes to the event's and the factory's `configHash` |
@@ -45,7 +47,7 @@ result on the current tree: 26 tests, 22 pass, 4 fail (the D51 tests, marked `//
 
 | pkg | finding | test |
 |---|---|---|
-| h1 | D42 and D51 (skim over charge refunded inside the swap) are recorded as decisions but not implemented; h1-notes says they cannot be (v4 applies the afterSwap return delta to the unspecified currency, which is the coin for both quote specified shapes). the refund goes to the escrow: the swapper pays realized + full charged skim and must claim the difference; under the universal router without a refund address in hookData it is credited to the router and stranded (V2H-03). the four D51 tests fail by the over charge, marked `// BUG: h1`. either amend D42/D51 to the escrow design or implement a refund the four tests accept | `test_i1_partialFill_*` (4) |
+| h1 | D42/D51 (refund inside the swap) are superseded by D58: v4 cannot refund eth in the swap, the over charge is credited in the escrow to the hookData refund address, else the PoolManager caller. the partial fill tests are written to D58 and carry no BUG marker. residual V2H-03: a universal router swap with no refund address strands the refund under the router; the mitigation is the refund address (ui and integrators must pass it). residual V2H-06: an exact out seller whose fill is below the charge owes eth until the claim | `test_i1_partialFill_*` (7) |
 | f1 | fixed during this run: the factory now passes `minProtocolSkimShareBps` into `PoolInitParams.minProtocolShareBps` (was a `TODO(D52)`) | `test_i1_referral_protocolFloorFrozenIntoHook` passes |
 
 ## notes for integrators and the director
@@ -55,7 +57,8 @@ result on the current tree: 26 tests, 22 pass, 4 fail (the D51 tests, marked `//
 | D57 wording | the referral leg is pushed straight to the referrer with the stipend (D41); it reaches the escrow only when that push fails. `referralPayout` (= escrow) is stored but never called during a swap |
 | forge and transient storage | one test function is one transaction, so a grant left by one call (a HARD buy taken as claims) is still live for later calls in the same test. the HARD side pool test seeds in `setUp` (its own transaction). verified with a throwaway probe |
 | via-ir and `block.timestamp` | reads of `block.timestamp` and `block.number` get reordered past `vm.warp` and `vm.roll`; the suite uses `vm.getBlockTimestamp()` and `vm.getBlockNumber()` |
-| v2h-06 | an exact out sell whose fill is smaller than the charged skim leaves the seller owing eth until the refund is claimed; the universal router then reverts at TAKE_ALL. the tests size requests so the fill exceeds the charge |
+| v2h-06 | an exact out sell whose fill is smaller than the charged skim leaves the seller owing eth until the refund is claimed (D58); the universal router then reverts at TAKE_ALL. the tests size requests so the fill exceeds the charge |
+| stray mainnet eth | test contracts deploy at the same CREATE addresses on every fork; the PoolSwapTest address holds a little mainnet eth and forwards it to the caller on its first swap. balance based eth accounting must include it |
 | run command | the brief's command passes `--match-path` twice; forge 1.7.1 rejects that. use the brace glob above |
 
 ## gas table

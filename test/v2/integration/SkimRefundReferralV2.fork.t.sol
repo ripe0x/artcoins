@@ -6,10 +6,13 @@ pragma solidity ^0.8.26;
 //     baseline over the window; a module that keeps reporting an open window
 //     is treated as expired at createdAt + MAX_MEV_WINDOW (skim and add lock).
 //   6 price limited partial fills, both quote specified shapes (exact in buy,
-//     exact out sell), through the live universal router and through a
-//     currencyDelta settling router: the swapper pays (or receives) exactly
-//     realized plus (minus) the fair skim, nothing is left in the escrow, the
-//     hook holds nothing (D42, D51).
+//     exact out sell), through PoolSwapTest, a currencyDelta settling router
+//     and the live universal router (D58): the swapper pays the full charge,
+//     the escrow credits charged - fair to the refund address named in
+//     hookData (else the PoolManager caller), a permissionless claim delivers
+//     it, net of it the swapper paid realized +/- fair skim, the hook holds
+//     nothing. without a refund address the universal router's refund is
+//     stranded under the router (V2H-03).
 //   7 referral: a referred swap pays the referrer (escrow on failure, D16,
 //     D57) without taking the protocol leg below its floor (D52).
 
@@ -29,6 +32,7 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
 /// v4 periphery single hop params as the live universal router decodes them.
@@ -161,63 +165,123 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         _pastWindow();
     }
 
-    /// the D51 contract for a partial quote specified fill: the swapper's eth
-    /// moves by exactly the realized pool amount plus (buy) or minus (sell)
-    /// the fair skim; no refund is left in the escrow; the hook holds nothing.
-    function _assertFairPartial(
+    address internal refundMe = makeAddr("i1.refundMe");
+
+    function _chargedBuy(uint256 a) internal pure returns (uint256) {
+        return (a * BASELINE) / D;
+    }
+
+    function _chargedSell(uint256 a) internal pure returns (uint256) {
+        return (a * BASELINE) / (D - BASELINE);
+    }
+
+    /// D58 for one price limited quote specified swap. `raw` is the swapper's
+    /// eth movement during the swap (spent for a buy, received for a sell).
+    /// the swapper pays the full `charged` skim; the escrow credits
+    /// `charged - fair` to `refundTo`; a permissionless claim delivers it;
+    /// net of the refund the swapper paid realized + fair (buy) or received
+    /// realized - fair (sell); the hook holds nothing.
+    function _assertD58(
         Legs memory l,
-        uint256 ethMoved,
+        uint256 raw,
         bool buy,
         uint256 requested,
-        address swapper,
-        address router,
+        uint256 charged,
+        address refundTo,
+        uint256 escrowBefore,
         PoolKey memory key
-    ) internal view {
+    ) internal {
         uint256 fair = l.bounty + l.protocol + l.referral;
         assertEq(l.splits, 1);
         assertGt(l.volume, 0, "filled");
         assertLt(l.volume, requested, "partial fill");
         // exact in buy: fair = r * b / (D - b); exact out sell: fair = r * b / D
         assertApproxEqRel(fair * (buy ? D - BASELINE : D), l.volume * BASELINE, 1e15, "fair skim on the realized fill");
-        // h1 refunds the over charge through the escrow (SkimRefunded), not inside the swap: D42/D51 not implemented
-        assertEq(ethMoved, buy ? l.volume + fair : l.volume - fair, "swapper moved realized +/- fair skim (D51)");
-        assertEq(l.refunded, 0, "no escrow refund (D51)");
-        assertEq(_escrowed(swapper), 0, "no escrow residue for the swapper");
-        assertEq(_escrowed(router), 0, "no escrow residue for the router");
+        assertEq(l.refunded, charged - fair, "SkimRefunded = charged - fair");
+        assertEq(raw, buy ? l.volume + charged : l.volume - charged, "swapper paid the full charge in the swap");
+        assertEq(_escrowed(refundTo) - escrowBefore, charged - fair, "escrow credits the refund address");
         _assertHookHoldsNothing(key);
+
+        uint256 b0 = refundTo.balance;
+        vm.prank(stranger);
+        v2.escrow.claim(refundTo, address(0));
+        uint256 refund = refundTo.balance - b0;
+        assertEq(refund, charged - fair + escrowBefore, "claim delivers it");
+        refund -= escrowBefore;
+        assertEq(_escrowed(refundTo), 0);
+        if (buy) assertEq(raw - refund, l.volume + fair, "net: realized + fair");
+        else assertEq(raw + refund, l.volume - fair, "net: realized - fair");
     }
 
-    // BUG: h1 D42/D51 over charge on a partial fill is escrowed, not refunded in the swap (fails by charged - fair)
-    function test_i1_partialFill_exactInBuy_deltaRouter() public onlyFork {
+    function test_i1_partialFill_exactInBuy_poolSwapTest_refundToNamed() public onlyFork {
         (, PoolKey memory key) = _narrowLaunch();
-        vm.deal(address(deltaRouter), 100 ether);
         uint256 a = 10 ether;
         uint160 limit = TickMath.getSqrtPriceAtTick(199_400); // inside the narrow range
-        uint256 e0 = address(deltaRouter).balance;
+        // PoolSwapTest sends its whole eth balance to the caller after a swap;
+        // its fork address can hold stray mainnet eth, so count it in.
+        uint256 e0 = address(this).balance + address(swapRouter).balance;
         vm.recordLogs();
-        deltaRouter.swap(key, true, -int256(a), limit, "");
+        swapRouter.swap{value: a}(
+            key,
+            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: -int256(a), sqrtPriceLimitX96: limit}),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            _refundData(refundMe)
+        );
         Legs memory l = _legs(vm.getRecordedLogs());
-        assertEq(deltaRouter.lastReturned0(), deltaRouter.lastNet0(), "returned delta == transient delta");
         (uint160 sqrtAfter,,,) = readSlot0(key);
         assertEq(sqrtAfter, limit, "stopped at the price limit");
-        _assertFairPartial(l, e0 - address(deltaRouter).balance, true, a, address(deltaRouter), address(deltaRouter), key);
+        assertEq(_escrowed(address(swapRouter)), 0, "nothing under the router");
+        _assertD58(l, e0 - address(this).balance, true, a, _chargedBuy(a), refundMe, 0, key);
     }
 
-    // BUG: h1 D42/D51 over charge on a partial fill is escrowed, not refunded in the swap (fails by charged - fair)
-    function test_i1_partialFill_exactOutSell_deltaRouter() public onlyFork {
+    function test_i1_partialFill_exactOutSell_poolSwapTest_refundToNamed() public onlyFork {
         (address coin, PoolKey memory key) = _narrowLaunch();
-        uint256 got = _buy(key, 1 ether); // full fill: the pool now holds about 1 eth
-        IERC20(coin).transfer(address(deltaRouter), got);
+        _buy(key, 1 ether); // full fill: the pool now holds about 1 eth
+        IERC20(coin).approve(address(swapRouter), type(uint256).max);
         uint256 a = 5 ether; // more eth than the pool holds
         (, int24 tick,,) = readSlot0(key);
         uint160 limit = TickMath.getSqrtPriceAtTick(tick + 200); // well short of the fill
+        uint256 e0 = address(this).balance;
+        vm.recordLogs();
+        swapRouter.swap(
+            key,
+            IPoolManager.SwapParams({zeroForOne: false, amountSpecified: int256(a), sqrtPriceLimitX96: limit}),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            _refundData(refundMe)
+        );
+        Legs memory l = _legs(vm.getRecordedLogs());
+        assertEq(_escrowed(address(swapRouter)), 0, "nothing under the router");
+        _assertD58(l, address(this).balance - e0, false, a, _chargedSell(a), refundMe, 0, key);
+    }
+
+    function test_i1_partialFill_exactInBuy_deltaRouter_refundToNamed() public onlyFork {
+        (, PoolKey memory key) = _narrowLaunch();
+        vm.deal(address(deltaRouter), 100 ether);
+        uint256 a = 10 ether;
+        uint160 limit = TickMath.getSqrtPriceAtTick(199_400);
         uint256 e0 = address(deltaRouter).balance;
         vm.recordLogs();
-        deltaRouter.swap(key, false, int256(a), limit, "");
+        deltaRouter.swap(key, true, -int256(a), limit, _refundData(refundMe));
         Legs memory l = _legs(vm.getRecordedLogs());
         assertEq(deltaRouter.lastReturned0(), deltaRouter.lastNet0(), "returned delta == transient delta");
-        // l.volume is the gross pool output; requested gross = a + charged
-        _assertFairPartial(l, address(deltaRouter).balance - e0, false, a, address(deltaRouter), address(deltaRouter), key);
+        assertEq(_escrowed(address(deltaRouter)), 0, "nothing under the router");
+        _assertD58(l, e0 - address(deltaRouter).balance, true, a, _chargedBuy(a), refundMe, 0, key);
+    }
+
+    function test_i1_partialFill_exactOutSell_deltaRouter_refundToNamed() public onlyFork {
+        (address coin, PoolKey memory key) = _narrowLaunch();
+        uint256 got = _buy(key, 1 ether);
+        IERC20(coin).transfer(address(deltaRouter), got);
+        uint256 a = 5 ether;
+        (, int24 tick,,) = readSlot0(key);
+        uint160 limit = TickMath.getSqrtPriceAtTick(tick + 200);
+        uint256 e0 = address(deltaRouter).balance;
+        vm.recordLogs();
+        deltaRouter.swap(key, false, int256(a), limit, _refundData(refundMe));
+        Legs memory l = _legs(vm.getRecordedLogs());
+        assertEq(deltaRouter.lastReturned0(), deltaRouter.lastNet0(), "returned delta == transient delta");
+        assertEq(_escrowed(address(deltaRouter)), 0, "nothing under the router");
+        _assertD58(l, address(deltaRouter).balance - e0, false, a, _chargedSell(a), refundMe, 0, key);
     }
 
     function _ur() internal pure returns (II1UniversalRouter) {
@@ -270,22 +334,45 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         assertLt(IERC20(coin).balanceOf(address(this)), bal, "sold");
     }
 
-    // BUG: h1 D42/D51 over charge on a partial fill is escrowed, not refunded in the swap (fails by charged - fair)
-    function test_i1_partialFill_exactInBuy_universalRouter() public onlyFork {
-        (address coin, PoolKey memory key) = _narrowLaunch();
+    /// V2H-03, documented: the universal router passes its own address as
+    /// the PoolManager caller, so without a refund address in hookData the
+    /// over charge is credited to the router in the escrow and nobody can use
+    /// it. the user paid realized + full charge. the mitigation is the refund
+    /// address (next test).
+    function test_i1_partialFill_universalRouter_noRefundAddress_creditedToRouter_V2H03() public onlyFork {
+        (, PoolKey memory key) = _narrowLaunch();
         uint256 a = 10 ether; // the narrow range sells out near 2.2 eth
         (uint256 spent, Legs memory l) = _urBuy(key, a, "");
-        assertGt(IERC20(coin).balanceOf(address(this)), 0, "bought");
-        _assertFairPartial(l, spent, true, a, address(this), UNIVERSAL_ROUTER, key);
+        uint256 fair = l.bounty + l.protocol + l.referral;
+        assertLt(l.volume, a - _chargedBuy(a), "partial fill");
+        assertEq(spent, l.volume + _chargedBuy(a), "user paid the full charge");
+        assertEq(_escrowed(UNIVERSAL_ROUTER), _chargedBuy(a) - fair, "refund credited to the router (stranded)");
+        assertEq(_escrowed(address(this)), 0, "nothing for the user");
+        _assertHookHoldsNothing(key);
+
+        uint256 stranded = _escrowed(UNIVERSAL_ROUTER);
+        uint256 a2 = 5 ether;
+        uint256 received;
+        (received, l) = _urSellExactOut(key, a2, "");
+        fair = l.bounty + l.protocol + l.referral;
+        assertEq(received, l.volume - _chargedSell(a2), "seller received realized - full charge");
+        assertEq(_escrowed(UNIVERSAL_ROUTER) - stranded, _chargedSell(a2) - fair, "sell refund also under the router");
+        _assertHookHoldsNothing(key);
     }
 
-    // BUG: h1 D42/D51 over charge on a partial fill is escrowed, not refunded in the swap (fails by charged - fair)
-    function test_i1_partialFill_exactOutSell_universalRouter() public onlyFork {
+    function test_i1_partialFill_universalRouter_withRefundAddress_nothingStranded() public onlyFork {
         (, PoolKey memory key) = _narrowLaunch();
-        _buy(key, 1 ether);
-        uint256 a = 5 ether; // more eth than the pool holds
-        (uint256 received, Legs memory l) = _urSellExactOut(key, a, "");
-        _assertFairPartial(l, received, false, a, address(this), UNIVERSAL_ROUTER, key);
+        uint256 a = 10 ether;
+        (uint256 spent, Legs memory l) = _urBuy(key, a, _refundData(refundMe));
+        assertEq(_escrowed(UNIVERSAL_ROUTER), 0, "nothing stranded under the router");
+        _assertD58(l, spent, true, a, _chargedBuy(a), refundMe, 0, key);
+
+        uint256 a2 = 5 ether;
+        uint256 received;
+        (received, l) = _urSellExactOut(key, a2, _refundData(refundMe));
+        assertEq(_escrowed(UNIVERSAL_ROUTER), 0, "nothing stranded under the router");
+        _assertD58(l, received, false, a2, _chargedSell(a2), refundMe, 0, key);
+        assertEq(_owed(), 0, "escrow empty");
     }
 
     /// claims `who`'s escrowed refund (anyone may) and returns it.
@@ -297,11 +384,10 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         }
     }
 
-    /// what holds today (escrow refund, b3, V2H-03) and after D51 alike: net
-    /// of the refund it can claim, the swapper paid (received) exactly the
-    /// realized pool amount plus (minus) the fair skim; with a refund address
-    /// in hookData nothing is stranded under the universal router; a
-    /// currencyDelta router is made whole by a permissionless claim.
+    /// D58 default refund recipients: with no refund address the PoolManager
+    /// caller is credited (a currencyDelta router is made whole by a
+    /// permissionless claim); net of the claimable refund every shape and
+    /// router paid realized +/- fair skim.
     function test_i1_partialFill_netOfClaimableRefund_isFair_bothShapesBothRouters() public onlyFork {
         (address coin, PoolKey memory key) = _narrowLaunch();
         vm.deal(address(deltaRouter), 100 ether);
