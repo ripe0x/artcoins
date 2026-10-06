@@ -10,6 +10,7 @@
 | venues | add only, <= MAX_TAX_VENUES, venueAdmin (default token admin) renounceable. `addTaxVenue` needs a contract that reports the coin as token0/token1; derived venues are CREATE2 hashes. PoolManager, hook, launcher, token refused |
 | rate | token admin, VENUE only, <= taxBpsMax |
 | votes | no ERC20Votes, no delegate, no checkpoints |
+| strings (D30) | name 64, symbol 16, image 2048, metadata 4096, context 4096 bytes, at construction and in updateImage / updateMetadata. `StringTooLong(uint8 field, uint256 len)`, field 0 name, 1 symbol, 2 image, 3 metadata, 4 context. caps exposed as `MAX_*_BYTES` constants on the token |
 | json | default contractURI escapes name, symbol, description, image with escapeJSON; renderer output is the renderer's job |
 | deployer | CREATE2, factory supplied salt `keccak256(abi.encode(sender, configHash))`, factory only, launcher must be the factory, `predict` hashes the same initcode |
 
@@ -21,3 +22,11 @@
 | HARD: prepay style settle (transfer before the swap) reverts | design known limit, routers settle after |
 | HARD: listing a venue freezes coin inside it (lp included) | by design, venue admin is the deployer's choice |
 | FT-05 image and metadata remain admin mutable | DESIGN section 2 keeps them cosmetic and admin owned; interface is frozen |
+
+## sizes (ci profile, runs 200)
+| contract | runtime | initcode |
+|---|---|---|
+| ArtCoinsTokenV2 | 12,363 | 17,937 |
+| ArtCoinsDeployerV2 | 20,838 | 20,991 |
+
+the factory embeds the deployer initcode (about 21k) in its own initcode via `new ArtCoinsDeployerV2`; the factory initcode must stay under the 49,152 byte EIP-3860 limit.

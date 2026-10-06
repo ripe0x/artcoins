@@ -27,6 +27,7 @@ import {PoolManager} from "@uniswap/v4-core/src/PoolManager.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
+import {CustomRevert} from "@uniswap/v4-core/src/libraries/CustomRevert.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
@@ -330,6 +331,11 @@ abstract contract TokenV2Base is Test {
         );
     }
 
+    /// @dev Computed locally (no external call), so it does not eat a vm.prank.
+    function _pid() internal view returns (bytes32) {
+        return PoolId.unwrap(_canonKey().toId());
+    }
+
     function _pending() internal view returns (uint256 b, uint256 o, uint256 i) {
         return token.pendingCanonical();
     }
@@ -385,7 +391,7 @@ contract TokenV2Test is TokenV2Base {
         _assertNoPending();
         PoolKey memory side = _sideKey();
         pm.initialize(side, SQRT_1_1);
-        vm.expectRevert(IArtCoinsTokenV2.CanonicalFlowRequired.selector);
+        vm.expectPartialRevert(IArtCoinsTokenV2.CanonicalFlowRequired.selector);
         liqRouter.modifyLiquidity{value: 11 ether}(side, _liq(10e18), "");
     }
 
@@ -408,8 +414,29 @@ contract TokenV2Test is TokenV2Base {
         actor.run(2, side, 5e18); // side liquidity paid with claims, no erc20 moved
         assertGt(pm.balanceOf(address(actor), side.currency1.toId()), 0, "claims left");
 
-        vm.expectRevert(IArtCoinsTokenV2.CanonicalFlowRequired.selector);
-        actor.run(3, side, 0.1 ether);
+        // the PoolManager wraps the token revert: WrappedError(token, transfer, reason, ERC20TransferFailed)
+        try actor.run(3, side, 0.1 ether) {
+            fail("side take passed");
+        } catch (bytes memory err) {
+            assertEq(bytes4(err), CustomRevert.WrappedError.selector, "wrapped");
+            bytes memory inner = new bytes(err.length - 4);
+            for (uint256 i; i < inner.length; ++i) {
+                inner[i] = err[i + 4];
+            }
+            (address target,, bytes memory reason,) = abi.decode(inner, (address, bytes4, bytes, bytes));
+            assertEq(target, address(token));
+            assertEq(bytes4(reason), IArtCoinsTokenV2.CanonicalFlowRequired.selector, "token reason");
+            (address from, address to,) = abi.decode(_tail(reason), (address, address, uint256));
+            assertEq(from, address(pm));
+            assertEq(to, address(actor));
+        }
+    }
+
+    function _tail(bytes memory b) internal pure returns (bytes memory t) {
+        t = new bytes(b.length - 4);
+        for (uint256 i; i < t.length; ++i) {
+            t[i] = b[i + 4];
+        }
     }
 
     function test_hard_prepaySettle_reverts() public {
@@ -456,7 +483,7 @@ contract TokenV2Test is TokenV2Base {
         token.grantCanonicalFlow(bytes32(uint256(1)), 100, 100);
         _assertNoPending();
         vm.prank(address(hook));
-        token.attestCanonicalBudget(token.canonicalPoolId(), 100); // wrong mode, no op
+        token.attestCanonicalBudget(_pid(), 100); // wrong mode, no op
         _assertNoPending();
     }
 
@@ -543,7 +570,7 @@ contract TokenV2Test is TokenV2Base {
         token.transfer(address(pool), 1000e18);
 
         vm.prank(address(hook));
-        token.attestCanonicalBudget(token.canonicalPoolId(), 1000e18);
+        token.attestCanonicalBudget(_pid(), 1000e18);
         pool.pay(address(token), alice, 100e18);
         assertEq(token.balanceOf(alice), 85e18, "venue still taxed");
         (uint256 b,,) = _pending();
@@ -555,7 +582,7 @@ contract TokenV2Test is TokenV2Base {
         token.transfer(address(pm), 10_000e18); // inflow untaxed
         token.transfer(alice, 1000e18);
         vm.prank(address(hook));
-        token.attestCanonicalBudget(token.canonicalPoolId(), 1000e18);
+        token.attestCanonicalBudget(_pid(), 1000e18);
 
         // wallet to wallet: no tax, no budget draw
         vm.prank(alice);
@@ -586,7 +613,7 @@ contract TokenV2Test is TokenV2Base {
         assertTrue(token.isTaxExempt(locker));
         token.transfer(address(pm), 1000e18);
         vm.prank(address(hook));
-        token.attestCanonicalBudget(token.canonicalPoolId(), 100e18);
+        token.attestCanonicalBudget(_pid(), 100e18);
         vm.prank(address(pm));
         token.transfer(locker, 100e18);
         assertEq(token.balanceOf(locker), 100e18);
@@ -597,7 +624,7 @@ contract TokenV2Test is TokenV2Base {
         _deployMode(Constants.TAX_MODE_VENUE);
         vm.startPrank(address(hook));
         token.attestCanonicalBudget(bytes32(uint256(1)), 100);
-        token.attestCanonicalBudget(token.canonicalPoolId(), 0);
+        token.attestCanonicalBudget(_pid(), 0);
         token.grantCanonicalFlow(token.canonicalPoolId(), 100, 100); // wrong mode
         vm.stopPrank();
         _assertNoPending();
@@ -972,6 +999,87 @@ contract TokenV2Test is TokenV2Base {
         vm.prank(alice);
         token.burnFrom(address(this), 5);
         assertEq(token.totalSupply(), s - 15);
+    }
+
+    // ── string caps (D30) ─────────────────────────────────────────────────
+
+    function _str(uint256 n) internal pure returns (string memory) {
+        bytes memory b = new bytes(n);
+        for (uint256 i; i < n; ++i) {
+            b[i] = "a";
+        }
+        return string(b);
+    }
+
+    function _expectTooLong(uint8 field, uint256 len) internal {
+        vm.expectRevert(abi.encodeWithSelector(IArtCoinsTokenV2.StringTooLong.selector, field, len));
+    }
+
+    function _newToken(IArtCoinsFactoryV2.TokenConfigV2 memory t) internal returns (ArtCoinsTokenV2) {
+        return new ArtCoinsTokenV2(t, 1e18, _taxCfg(Constants.TAX_MODE_NONE), _canon(), address(this));
+    }
+
+    function test_strings_atCapPass() public {
+        IArtCoinsFactoryV2.TokenConfigV2 memory t = _tokenCfg(_str(64));
+        t.symbol = _str(16);
+        t.image = _str(2048);
+        t.metadata = _str(4096);
+        t.context = _str(4096);
+        ArtCoinsTokenV2 tk = _newToken(t);
+        assertEq(bytes(tk.name()).length, 64);
+        assertEq(bytes(tk.context()).length, 4096);
+        vm.startPrank(admin);
+        tk.updateImage(_str(2048));
+        tk.updateMetadata(_str(4096));
+        vm.stopPrank();
+        assertEq(tk.MAX_NAME_BYTES(), 64);
+        assertEq(tk.MAX_SYMBOL_BYTES(), 16);
+        assertEq(tk.MAX_IMAGE_BYTES(), 2048);
+        assertEq(tk.MAX_METADATA_BYTES(), 4096);
+        assertEq(tk.MAX_CONTEXT_BYTES(), 4096);
+    }
+
+    function test_strings_nameOverCap_reverts() public {
+        _expectTooLong(0, 65);
+        _newToken(_tokenCfg(_str(65)));
+    }
+
+    function test_strings_symbolOverCap_reverts() public {
+        IArtCoinsFactoryV2.TokenConfigV2 memory t = _tokenCfg("Art");
+        t.symbol = _str(17);
+        _expectTooLong(1, 17);
+        _newToken(t);
+    }
+
+    function test_strings_imageOverCap_reverts() public {
+        IArtCoinsFactoryV2.TokenConfigV2 memory t = _tokenCfg("Art");
+        t.image = _str(2049);
+        _expectTooLong(2, 2049);
+        _newToken(t);
+    }
+
+    function test_strings_metadataOverCap_reverts() public {
+        IArtCoinsFactoryV2.TokenConfigV2 memory t = _tokenCfg("Art");
+        t.metadata = _str(4097);
+        _expectTooLong(3, 4097);
+        _newToken(t);
+    }
+
+    function test_strings_contextOverCap_reverts() public {
+        IArtCoinsFactoryV2.TokenConfigV2 memory t = _tokenCfg("Art");
+        t.context = _str(4097);
+        _expectTooLong(4, 4097);
+        _newToken(t);
+    }
+
+    function test_strings_settersOverCap_revert() public {
+        _deployMode(Constants.TAX_MODE_NONE);
+        vm.startPrank(admin);
+        _expectTooLong(2, 2049);
+        token.updateImage(_str(2049));
+        _expectTooLong(3, 4097);
+        token.updateMetadata(_str(4097));
+        vm.stopPrank();
     }
 
     // ── deployer (b4) ─────────────────────────────────────────────────────

@@ -86,6 +86,14 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     /// @inheritdoc IArtCoinsFactoryV2
     uint16 public constant STACK_VERSION = Constants.STACK_VERSION;
 
+    /// @dev D30 string caps, equal to `ArtCoinsTokenV2.MAX_*_BYTES` (the test
+    ///      suite asserts the match).
+    uint256 private constant _MAX_NAME = 64;
+    uint256 private constant _MAX_SYMBOL = 16;
+    uint256 private constant _MAX_IMAGE = 2048;
+    uint256 private constant _MAX_METADATA = 4096;
+    uint256 private constant _MAX_CONTEXT = 4096;
+
     /// @notice The Uniswap v4 PoolManager every enabled hook must answer.
     address public immutable poolManager;
     /// @notice CREATE2 token deployer, created in this constructor and bound to this factory.
@@ -280,6 +288,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         returns (uint256 extensionsSupply, uint256 extensionsValue)
     {
         if (c.token.tokenAdmin == address(0)) revert ZeroAddress();
+        _validateStrings(c.token);
         if (!enabledHooks[c.pool.hook]) revert HookNotEnabled();
         if (protocolRecipient == address(0) || referralPayout == address(0)) revert ZeroAddress();
 
@@ -288,6 +297,21 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         _validateMev(c.mev, c.pool.hook, c.fee.baselineSkimBps);
         _validateTax(c.tax, c.fee.bountyRecipient);
         return _validateExtensions(c.extensions, supply);
+    }
+
+    /// @dev D30: the token's own string caps, checked up front so a long
+    ///      field fails with the token's `StringTooLong(field, len)` before any
+    ///      deploy work. Field codes match `ArtCoinsTokenV2.FIELD_*`.
+    function _validateStrings(TokenConfigV2 calldata t) internal pure {
+        _cap(bytes(t.name).length, _MAX_NAME, 0);
+        _cap(bytes(t.symbol).length, _MAX_SYMBOL, 1);
+        _cap(bytes(t.image).length, _MAX_IMAGE, 2);
+        _cap(bytes(t.metadata).length, _MAX_METADATA, 3);
+        _cap(bytes(t.context).length, _MAX_CONTEXT, 4);
+    }
+
+    function _cap(uint256 len, uint256 max, uint8 field) internal pure {
+        if (len > max) revert IArtCoinsTokenV2.StringTooLong(field, len);
     }
 
     function _validateFee(FeeConfigV2 calldata f) internal view {
@@ -349,7 +373,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     ///      not exist); VENUE needs 0 < taxBpsMax <= TAX_BPS_ABSOLUTE_MAX and
     ///      taxBps <= taxBpsMax; HARD has no rate and no exempt set, its sink is
     ///      display only and may be 0.
-    function _validateTax(TaxConfigV2 calldata t, address bountyRecipient) internal pure {
+    function _validateTax(TaxConfigV2 calldata t, address bountyRecipient) internal view {
         uint8 mode = t.mode;
         if (mode == Constants.TAX_MODE_NONE) {
             if (
@@ -382,8 +406,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         ) {
             revert InvalidTaxConfig();
         }
+        // mirrors the token (FT-07): exempt entries are contracts that exist at launch
         for (uint256 i; i < t.exempt.length; ++i) {
-            if (t.exempt[i] == address(0)) revert InvalidTaxConfig();
+            if (t.exempt[i].code.length == 0) revert InvalidTaxConfig();
         }
     }
 

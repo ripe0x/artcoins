@@ -515,7 +515,10 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
             let m := mload(0x40)
             mstore(m, sel)
             mstore(add(m, 0x04), pid)
-            if and(staticcall(_MODULE_GAS, module, m, 0x24, m, 0x40), gt(returndatasize(), 0x3f)) {
+            // yul evaluates arguments right to left: bind the call result
+            // first so returndatasize() reads this call, not the previous one.
+            let ok := staticcall(_MODULE_GAS, module, m, 0x24, m, 0x40)
+            if and(ok, gt(returndatasize(), 0x3f)) {
                 v := mload(m)
                 active := mload(add(m, 0x20))
             }
@@ -530,7 +533,8 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
             let m := mload(0x40)
             mstore(m, sel)
             mstore(add(m, 0x04), pid)
-            if and(staticcall(_MODULE_GAS, module, m, 0x24, m, 0x20), gt(returndatasize(), 0x1f)) {
+            let ok := staticcall(_MODULE_GAS, module, m, 0x24, m, 0x20)
+            if and(ok, gt(returndatasize(), 0x1f)) {
                 end := mload(m)
             }
         }

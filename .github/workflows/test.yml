@@ -96,6 +96,11 @@ jobs:
     env:
       # secret first, public gateway as the fallback (see `Resolve rpc` below).
       MAINNET_RPC_SECRET: ${{ secrets.MAINNET_RPC_URL }}
+      # Invariant suites on a fork do an rpc round trip per cold slot; the
+      # default 256 runs x 500 depth did not finish in 25 minutes against the
+      # public gateway. Bounded here, raise with a keyed rpc.
+      FOUNDRY_INVARIANT_RUNS: "16"
+      FOUNDRY_INVARIANT_DEPTH: "50"
     steps:
       - uses: actions/checkout@v5
         with:

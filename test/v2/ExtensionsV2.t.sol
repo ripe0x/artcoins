@@ -403,7 +403,8 @@ contract AirdropV2Test is ExtBase {
         air.claim(address(coin), 0, alice, 700e18, pa);
         air.claim(address(coin), 0, bob, 600e18, pb);
         assertEq(coin.balanceOf(bob), 300e18); // capped
-        vm.expectRevert(IArtCoinsAirdropV2.UserMaxClaimed.selector);
+        // supply is exhausted: the tranche level cap trips before the leaf level one
+        vm.expectRevert(IArtCoinsAirdropV2.TotalMaxClaimed.selector);
         air.claim(address(coin), 0, bob, 600e18, pb);
         assertEq(air.tranche(address(coin), 0).totalClaimed, SUPPLY);
     }
@@ -638,8 +639,9 @@ contract VaultV2Test is ExtBase {
         _launch(_data(ben, 7 days - 1, VEST));
         vm.expectRevert(IArtCoinsVaultV2.VaultVestingDurationTooShort.selector);
         _launch(_data(ben, LOCK, 90 days - 1));
+        uint256 maxDur = vault.MAX_DURATION();
         vm.expectRevert(IArtCoinsVaultV2.DurationTooLong.selector);
-        _launch(_data(ben, vault.MAX_DURATION() + 1, VEST));
+        _launch(_data(ben, maxDur + 1, VEST));
         // minimums are accepted
         _launch(_data(ben, 7 days, 90 days));
     }

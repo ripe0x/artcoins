@@ -69,6 +69,9 @@ contract DevBuyV2ForkTest is Test {
     DBCoin internal coin;
     PoolKey internal key;
     bool internal onFork;
+    /// @dev eth already sitting at the deterministic deploy address on the fork.
+    uint256 internal dust;
+    uint256 internal stubDust;
 
     address internal buyer = makeAddr("buyer");
     address internal refund = makeAddr("refund");
@@ -91,6 +94,8 @@ contract DevBuyV2ForkTest is Test {
         coin = new DBCoin();
         coin.approve(address(liq), type(uint256).max);
         vm.deal(address(this), 1000 ether);
+        dust = address(devBuy).balance;
+        stubDust = address(stub).balance;
 
         key = PoolKey({
             currency0: Currency.wrap(address(0)),
@@ -245,8 +250,8 @@ contract DevBuyV2ForkTest is Test {
         assertLt(got, 1000e18, "price moved against the buyer");
         assertEq(balBefore - address(this).balance, 1 ether, "full 1 eth spent");
         assertEq(refund.balance, 0, "full fill: no refund");
-        assertEq(address(devBuy).balance, 0, "no eth stranded");
-        assertEq(address(stub).balance, 0);
+        assertEq(address(devBuy).balance, dust, "no eth stranded");
+        assertEq(address(stub).balance, stubDust, "factory kept nothing");
         assertEq(coin.balanceOf(address(devBuy)), 0, "no coin stranded");
     }
 
@@ -269,7 +274,7 @@ contract DevBuyV2ForkTest is Test {
         assertGt(got, 1e18, "tokens delivered");
         assertGt(refunded, 20 ether, "most of the eth could not be taken");
         assertLt(refunded, sent, "something was spent");
-        assertEq(address(devBuy).balance, 0, "no eth stranded");
+        assertEq(address(devBuy).balance, dust, "no eth stranded");
         assertEq(coin.balanceOf(address(devBuy)), 0);
         assertGt(sent - refunded, 5 ether, "the pool took the depth it had");
     }

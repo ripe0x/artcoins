@@ -618,6 +618,40 @@ contract RendererV2Test is Test {
         _measureAll("24kb", false);
     }
 
+    /// @dev the assembly glyph writer matches an independent solidity reference
+    ///      byte for byte (positions use v1's hash, digits have no leading zeros).
+    function test_renderV2_spriteGlyphsMatchReference() public {
+        tok.set("n", "s", "d", "");
+        counter.set(300, 4);
+        string memory want = '<g fill="#22c55e" font-family="monospace" font-size="40" font-weight="700" text-anchor="middle">';
+        for (uint256 i = 0; i < Constants.MAX_GLYPHS; i++) {
+            bytes32 h = keccak256(abi.encode(address(tok), uint256(0), i));
+            want = string.concat(
+                want,
+                '<text x="',
+                LibString.toString(uint256(h) % 1000),
+                '" y="',
+                LibString.toString((uint256(h) >> 128) % 1000),
+                '">+</text>'
+            );
+        }
+        want = string.concat(want, '</g><g fill="#ef4444" font-family="monospace" font-size="40" font-weight="700" text-anchor="middle">');
+        for (uint256 i = 0; i < 4; i++) {
+            bytes32 h = keccak256(abi.encode(address(tok), uint256(1), i));
+            want = string.concat(
+                want,
+                '<text x="',
+                LibString.toString(uint256(h) % 1000),
+                '" y="',
+                LibString.toString((uint256(h) >> 128) % 1000),
+                unicode'">−</text>'
+            );
+        }
+        want = string.concat(want, "</g></svg>");
+        string memory svg = _svg(sprite, address(tok));
+        assertTrue(LibString.endsWith(svg, want), "glyph layers differ from reference");
+    }
+
     function test_renderV2_spriteGlyphCountsFollowCounterAndCap() public {
         tok.set("n", "s", "d", "i");
         counter.set(3, 0);

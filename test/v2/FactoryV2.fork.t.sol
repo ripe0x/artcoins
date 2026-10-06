@@ -17,6 +17,7 @@ import {ArtCoinsHookV2} from "../../src/v2/hooks/ArtCoinsHookV2.sol";
 import {IArtCoinsFactoryV2} from "../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsHookV2} from "../../src/v2/interfaces/IArtCoinsHookV2.sol";
 import {IArtCoinsLpLockerV2} from "../../src/v2/interfaces/IArtCoinsLpLockerV2.sol";
+import {IArtCoinsTokenV2} from "../../src/v2/interfaces/IArtCoinsTokenV2.sol";
 import {IConstantsBound} from "../../src/v2/interfaces/IConstantsBound.sol";
 import {ArtCoinsLpLockerV2} from "../../src/v2/lp-lockers/ArtCoinsLpLockerV2.sol";
 import {ArtCoinsMevLinearSkimV2} from "../../src/v2/mev-modules/ArtCoinsMevLinearSkimV2.sol";
@@ -312,6 +313,10 @@ contract FactoryV2ForkTest is ForkBase {
         for (uint256 i; i < c.tax.exempt.length; ++i) {
             c.tax.exempt[i] = address(uint160(0x1000 + i));
         }
+        _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidTaxConfig.selector));
+        // FT-07: an eoa cannot be exempted
+        c.tax.exempt = new address[](1);
+        c.tax.exempt[0] = alice;
         _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidTaxConfig.selector));
         c.tax.exempt = new address[](0);
         c.tax.venues = new IArtCoinsFactoryV2.TaxVenue[](Constants.MAX_TAX_VENUES + 1);
@@ -752,6 +757,63 @@ contract FactoryV2ForkTest is ForkBase {
         hook.initializeMevModule(_key(t), "");
     }
 
+    /// D30: string caps are checked before any deploy work, same error as the token.
+    function test_tokenStrings_capPasses_capPlusOneReverts() public onlyFork {
+        ArtCoinsTokenV2 ref = ArtCoinsTokenV2(_deploy(alice, _cfg()));
+        uint256[5] memory caps = [
+            ref.MAX_NAME_BYTES(),
+            ref.MAX_SYMBOL_BYTES(),
+            ref.MAX_IMAGE_BYTES(),
+            ref.MAX_METADATA_BYTES(),
+            ref.MAX_CONTEXT_BYTES()
+        ];
+        assertEq(caps[0], 64);
+        assertEq(caps[1], 16);
+        assertEq(caps[2], 2048);
+        assertEq(caps[3], 4096);
+        assertEq(caps[4], 4096);
+
+        for (uint8 f; f < 5; ++f) {
+            IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
+            c.token.salt = bytes32(uint256(100 + f));
+            _setString(c, f, string(new bytes(caps[f] + 1)));
+            _expectRevertDeploy(
+                c,
+                abi.encodeWithSelector(
+                    IArtCoinsTokenV2.StringTooLong.selector, f, caps[f] + 1
+                )
+            );
+        }
+        // every field at its cap at once
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory ok = _cfg();
+        ok.token.salt = bytes32(uint256(200));
+        for (uint8 f; f < 5; ++f) {
+            _setString(ok, f, string(_filled(caps[f])));
+        }
+        ArtCoinsTokenV2 t = ArtCoinsTokenV2(_deploy(alice, ok));
+        assertEq(bytes(t.name()).length, 64);
+        assertEq(bytes(t.symbol()).length, 16);
+        assertEq(bytes(t.context()).length, 4096);
+    }
+
+    function _filled(uint256 n) internal pure returns (bytes memory b) {
+        b = new bytes(n);
+        for (uint256 i; i < n; ++i) {
+            b[i] = "a";
+        }
+    }
+
+    function _setString(IArtCoinsFactoryV2.DeploymentConfigV2 memory c, uint8 f, string memory v)
+        internal
+        pure
+    {
+        if (f == 0) c.token.name = v;
+        else if (f == 1) c.token.symbol = v;
+        else if (f == 2) c.token.image = v;
+        else if (f == 3) c.token.metadata = v;
+        else c.token.context = v;
+    }
+
     // ══════════════════════════════════════════════════════════════════════
     // event, dust
     // ══════════════════════════════════════════════════════════════════════
@@ -764,7 +826,7 @@ contract FactoryV2ForkTest is ForkBase {
         c.tax.taxBpsMax = 1500;
         c.tax.taxSink = bounty;
         c.tax.exempt = new address[](1);
-        c.tax.exempt[0] = project;
+        c.tax.exempt[0] = POSITION_MANAGER;
         c.extensions = new IArtCoinsFactoryV2.ExtensionConfigV2[](1);
         c.extensions[0] = _ext(address(e), 0.5 ether, 700);
         c.token.renderer = address(0);
@@ -795,7 +857,7 @@ contract FactoryV2ForkTest is ForkBase {
         // the whole config round trips byte for byte
         assertEq(keccak256(abi.encode(got)), keccak256(abi.encode(c)), "full config");
         assertEq(got.tax.taxSink, bounty);
-        assertEq(got.tax.exempt[0], project);
+        assertEq(got.tax.exempt[0], POSITION_MANAGER);
         assertEq(got.extensions[0].msgValue, 0.5 ether);
         assertEq(got.locker.rewardRecipients[0], project);
 

@@ -132,7 +132,7 @@ contract TokenV2ForkTest is TokenV2Base {
         address pool = _listAndCreateV3();
         TV2V3Actor actor = new TV2V3Actor();
         token.transfer(address(actor), 1000e18);
-        deal(WETH, address(actor), 100 ether);
+        deal(WETH, address(actor), 200 ether);
         actor.mint(pool, 100e18); // coin into a venue is untaxed
         assertGt(token.balanceOf(pool), 0, "lp placed");
 
@@ -153,11 +153,11 @@ contract TokenV2ForkTest is TokenV2Base {
         address pool = _listAndCreateV3();
         TV2V3Actor actor = new TV2V3Actor();
         token.transfer(address(actor), 1000e18);
-        deal(WETH, address(actor), 100 ether);
+        deal(WETH, address(actor), 200 ether);
         actor.mint(pool, 100e18);
 
         vm.prank(address(hook));
-        token.attestCanonicalBudget(token.canonicalPoolId(), 1_000_000e18);
+        token.attestCanonicalBudget(_pid(), 1_000_000e18);
         bool wethIs0 = WETH < address(token);
         (int256 a0, int256 a1) = actor.swap(
             pool, alice, wethIs0, 1 ether, wethIs0 ? MIN_SQRT_RATIO_P1 : MAX_SQRT_RATIO_M1
@@ -173,7 +173,7 @@ contract TokenV2ForkTest is TokenV2Base {
         address pool = _listAndCreateV3();
         TV2V3Actor actor = new TV2V3Actor();
         token.transfer(address(actor), 1000e18);
-        deal(WETH, address(actor), 100 ether);
+        deal(WETH, address(actor), 200 ether);
         vm.expectRevert(abi.encodeWithSelector(IArtCoinsTokenV2.VenueTransferBlocked.selector, pool));
         actor.mint(pool, 100e18);
     }
@@ -201,7 +201,7 @@ contract TokenV2ForkTest is TokenV2Base {
         // a side pool on the live PoolManager cannot be funded with erc20
         IPoolManager livePm = IPoolManager(POOL_MANAGER);
         livePm.initialize(_sideKey(), SQRT_1_1);
-        vm.expectRevert(IArtCoinsTokenV2.CanonicalFlowRequired.selector);
+        vm.expectPartialRevert(IArtCoinsTokenV2.CanonicalFlowRequired.selector);
         liqRouter.modifyLiquidity{value: 11 ether}(_sideKey(), _liq(10e18), "");
     }
 }

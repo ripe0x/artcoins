@@ -150,15 +150,64 @@ contract SpriteRendererV2 is IMetadataRenderer {
                 )
             )
         );
-        bytes memory glyphBytes = bytes(glyph);
-        for (uint256 i = 0; i < count; i++) {
-            bytes32 h = keccak256(abi.encode(token, typeSalt, i));
-            uint256 x = uint256(h) % VIEW_SIZE;
-            uint256 y = (uint256(h) >> 128) % VIEW_SIZE;
-            buf.p('<text x="', bytes(LibString.toString(x)), '" y="', bytes(LibString.toString(y)));
-            buf.p('">', glyphBytes, "</text>");
-        }
+        buf.p(_glyphs(token, count, typeSalt, bytes(glyph)));
         buf.p("</g>");
+    }
+
+    /// @dev `count` elements `<text x="X" y="Y">G</text>` written straight into one
+    ///      preallocated buffer (at most 32 bytes per element), no per glyph
+    ///      allocation. Position is `keccak256(abi.encode(token, typeSalt, i))`
+    ///      as in v1. `glyph` is at most 3 bytes (`+` or the minus sign).
+    function _glyphs(address token, uint256 count, uint256 typeSalt, bytes memory glyph)
+        internal
+        pure
+        returns (bytes memory out)
+    {
+        // 32 bytes per element, 0x40 slack for the last overlapping word write, 0x60 hash scratch
+        out = new bytes(count * 32 + 0xa0);
+        /// @solidity memory-safe-assembly
+        assembly {
+            let glen := mload(glyph)
+            let gword := mload(add(glyph, 0x20))
+            let start := add(out, 0x20)
+            let p := start
+            let t := add(start, sub(mload(out), 0x60)) // hash scratch at the end of the buffer
+            mstore(t, token)
+            mstore(add(t, 0x20), typeSalt)
+            for { let i := 0 } lt(i, count) { i := add(i, 1) } {
+                mstore(add(t, 0x40), i)
+                let h := keccak256(t, 0x60)
+                mstore(p, shl(184, 0x3c7465787420783d22)) // <text x="
+                p := add(p, 9)
+                for { let k := 0 } lt(k, 2) { k := add(k, 1) } {
+                    let v := mod(h, 1000)
+                    h := shr(128, h)
+                    let hu := div(v, 100)
+                    let te := mod(div(v, 10), 10)
+                    if hu {
+                        mstore8(p, add(48, hu))
+                        p := add(p, 1)
+                    }
+                    if or(hu, te) {
+                        mstore8(p, add(48, te))
+                        p := add(p, 1)
+                    }
+                    mstore8(p, add(48, mod(v, 10)))
+                    p := add(p, 1)
+                    if iszero(k) {
+                        mstore(p, shl(216, 0x2220793d22)) // " y="
+                        p := add(p, 5)
+                    }
+                }
+                mstore(p, shl(240, 0x223e)) // ">
+                p := add(p, 2)
+                mstore(p, gword)
+                p := add(p, glen)
+                mstore(p, shl(200, 0x3c2f746578743e)) // </text>
+                p := add(p, 7)
+            }
+            mstore(out, sub(p, start))
+        }
     }
 
     function _capped(uint128 n) internal pure returns (uint256) {
