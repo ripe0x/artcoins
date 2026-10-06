@@ -57,6 +57,16 @@ wave 2 plan was: v2 implementation packages from DESIGN.md, registry wiring into
 | s1 deploy script | script/v2/DeployV2Lib.sol, DeployV2Stack.s.sol, LaunchV2Coin.s.sol, verify-v2.sh, README.md, test/v2/DeployV2Stack.fork.t.sol | done: fork dry run passes every post deploy check (30 txs, ~29.5m gas) |
 | i1 integration | test/v2/integration/**, test/v2/IntegrationV2.fork.t.sol | done: 28 tests, every treasury shape, both tax modes, fee flow balanced to the wei |
 
+## wave 4 (after the owner's morning review: continue toward deploy)
+
+| item | output | state |
+|---|---|---|
+| k3 weth aware keeper for LAYER | src/v2/keepers/CollectFlushKeeperLayer.sol, test/v2/KeeperLayer.fork.t.sol, script/v2/RunKeeperLayer.s.sol, RUNBOOK action 2b | running |
+| github ci red on v2 | .github/workflows/test.yml fixes, docs/v2/review/hygiene-fixes.md | running |
+| registry verifier profile aware bytecode compare | script-js/verify-registry.mjs, deployments/mainnet.json source.profile, registry.yml | running |
+| ui airdrop claim v2 abi (V2B-04), S-01 renounce guard, keeper test decoupled from swapper Config | ui/, script/DeployConversionLockerAndWire.s.sol, test/v2/DeployV2Stack.fork.t.sol | running |
+| browser smoke of the ui on an anvil fork (playwright) | ui/e2e/, docs/v2/review/ui-e2e.md | running |
+
 ## how to run tests
 
 all commands assume `source .env` with `MAINNET_RPC_URL` (tenderly public gateway works) and forge 1.7.1. full numbers and the exact ci commands are in docs/v2/review/test-run.md.
