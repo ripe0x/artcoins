@@ -48,7 +48,10 @@ abstract contract TaxModesV2Helpers is IntegrationV2Base {
     }
 
     /// hookless side pool at the canonical pool's price.
-    function _initSide(PoolKey memory canonical, address coin) internal returns (PoolKey memory side) {
+    function _initSide(PoolKey memory canonical, address coin)
+        internal
+        returns (PoolKey memory side)
+    {
         side = _sideKey(coin);
         (uint160 sp,,,) = readSlot0(canonical);
         pm.initialize(side, sp);
@@ -90,7 +93,10 @@ abstract contract TaxModesV2Helpers is IntegrationV2Base {
             TickMath.getSqrtPriceAtTick(lo), TickMath.getSqrtPriceAtTick(hi), ethAmt
         );
         p = IPoolManager.ModifyLiquidityParams({
-            tickLower: lo, tickUpper: hi, liquidityDelta: int256(uint256(liq)), salt: bytes32(uint256(1))
+            tickLower: lo,
+            tickUpper: hi,
+            liquidityDelta: int256(uint256(liq)),
+            salt: bytes32(uint256(1))
         });
     }
 
@@ -98,15 +104,24 @@ abstract contract TaxModesV2Helpers is IntegrationV2Base {
         return PoolSwapTest.TestSettings({takeClaims: takeClaims, settleUsingBurn: false});
     }
 
-    function _sp(bool zeroForOne, int256 amount) internal pure returns (IPoolManager.SwapParams memory) {
+    function _sp(bool zeroForOne, int256 amount)
+        internal
+        pure
+        returns (IPoolManager.SwapParams memory)
+    {
         return IPoolManager.SwapParams({
             zeroForOne: zeroForOne,
             amountSpecified: amount,
-            sqrtPriceLimitX96: zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
+            sqrtPriceLimitX96: zeroForOne
+                ? TickMath.MIN_SQRT_PRICE + 1
+                : TickMath.MAX_SQRT_PRICE - 1
         });
     }
 
-    function _hardLaunch(address treasury, address slot) internal returns (address coin, PoolKey memory key) {
+    function _hardLaunch(address treasury, address slot)
+        internal
+        returns (address coin, PoolKey memory key)
+    {
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _hardConfig(treasury);
         c.locker.rewardRecipients[0] = slot;
         IArtCoinsFactoryV2.TaxVenue[] memory v = new IArtCoinsFactoryV2.TaxVenue[](1);
@@ -122,7 +137,10 @@ contract TaxModesV2ForkTest is TaxModesV2Helpers {
     // VENUE
     // ══════════════════════════════════════════════════════════════════════
 
-    function test_i1_venue_canonicalUntaxed_sidePoolTaxed_v3VenueTaxed_thirdPartyAddClosed() public onlyFork {
+    function test_i1_venue_canonicalUntaxed_sidePoolTaxed_v3VenueTaxed_thirdPartyAddClosed()
+        public
+        onlyFork
+    {
         I1EmptyTreasury treasury = new I1EmptyTreasury();
         address coin = _ownerLaunch(_creditsConfig(address(treasury)));
         ArtCoinsTokenV2 tok = _token(coin);
@@ -150,7 +168,10 @@ contract TaxModesV2ForkTest is TaxModesV2Helpers {
         ) {
             fail("third party add on the canonical pool must revert");
         } catch (bytes memory err) {
-            assertTrue(_contains(err, ArtCoinsHookV2.TaxedPoolLiquidityClosed.selector), "TaxedPoolLiquidityClosed");
+            assertTrue(
+                _contains(err, ArtCoinsHookV2.TaxedPoolLiquidityClosed.selector),
+                "TaxedPoolLiquidityClosed"
+            );
         }
 
         // a hookless side v4 pool: lp in is free, a buy out of it is taxed to the sink
@@ -169,7 +190,11 @@ contract TaxModesV2ForkTest is TaxModesV2Helpers {
         vm.prank(admin);
         address v3 = tok.addDerivedTaxVenue(_v3Venue());
         assertTrue(tok.isTaxVenue(v3), "listed");
-        assertEq(II1V3Factory(V3_FACTORY).createPool(coin, WETH, 3000), v3, "derived address = v3 factory address");
+        assertEq(
+            II1V3Factory(V3_FACTORY).createPool(coin, WETH, 3000),
+            v3,
+            "derived address = v3 factory address"
+        );
         II1V3Pool(v3).initialize(2 ** 96);
         I1V3Actor actor = new I1V3Actor();
         c.transfer(address(actor), 2e18); // holder to holder: untaxed
@@ -179,7 +204,11 @@ contract TaxModesV2ForkTest is TaxModesV2Helpers {
         sink0 = c.balanceOf(address(treasury));
         bool wethIs0 = II1V3Pool(v3).token0() == WETH;
         (int256 a0, int256 a1) = actor.swap(
-            v3, buyer, wethIs0, -0.1e18, wethIs0 ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
+            v3,
+            buyer,
+            wethIs0,
+            -0.1e18,
+            wethIs0 ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
         );
         uint256 v3Gross = uint256(-(wethIs0 ? a1 : a0));
         uint256 v3Tax = (v3Gross * 1000) / 10_000;
@@ -215,7 +244,9 @@ contract TaxModesV2ForkTest is TaxModesV2Helpers {
         vm.prank(keeperCaller);
         v2.locker.collectRewards(coin);
         assertGt(IERC20(coin).balanceOf(address(sw)), 0, "swapper got the coin side");
-        assertGt(IERC20(coin).balanceOf(address(v2.controller)), 0, "protocol slot got the coin side");
+        assertGt(
+            IERC20(coin).balanceOf(address(v2.controller)), 0, "protocol slot got the coin side"
+        );
 
         // fee swapper convert passes (sell grant covers the settle)
         vm.roll(vm.getBlockNumber() + 1);
@@ -272,7 +303,10 @@ contract TaxModesHardSideV2ForkTest is TaxModesV2Helpers {
         liqRouter.modifyLiquidity{value: 2 ether}(side, _ethOnly(side, 1 ether), "");
     }
 
-    function test_i1_hard_canonicalPasses_sidePoolTakeAndSettleRevert_venueTransferReverts() public onlyFork {
+    function test_i1_hard_canonicalPasses_sidePoolTakeAndSettleRevert_venueTransferReverts()
+        public
+        onlyFork
+    {
         ArtCoinsTokenV2 tok = _token(coin);
         IERC20 c = IERC20(coin);
         assertEq(tok.taxMode(), Constants.TAX_MODE_HARD);
@@ -288,7 +322,9 @@ contract TaxModesHardSideV2ForkTest is TaxModesV2Helpers {
 
         // a prepaid settle (coin straight into the PoolManager) has no grant
         vm.expectRevert(
-            abi.encodeWithSelector(IArtCoinsTokenV2.CanonicalFlowRequired.selector, address(this), POOL_MANAGER, 1)
+            abi.encodeWithSelector(
+                IArtCoinsTokenV2.CanonicalFlowRequired.selector, address(this), POOL_MANAGER, 1
+            )
         );
         c.transfer(POOL_MANAGER, 1);
 
@@ -300,19 +336,26 @@ contract TaxModesHardSideV2ForkTest is TaxModesV2Helpers {
         try liqRouter.modifyLiquidity(side, add, "") {
             fail("side pool coin settle must revert");
         } catch (bytes memory err) {
-            assertTrue(_contains(err, IArtCoinsTokenV2.CanonicalFlowRequired.selector), "lp settle blocked");
+            assertTrue(
+                _contains(err, IArtCoinsTokenV2.CanonicalFlowRequired.selector), "lp settle blocked"
+            );
         }
         try swapRouter.swap(side, _sp(false, -int256(got / 8)), _settings(false), "") {
             fail("side pool sell settle must revert");
         } catch (bytes memory err) {
-            assertTrue(_contains(err, IArtCoinsTokenV2.CanonicalFlowRequired.selector), "sell settle blocked");
+            assertTrue(
+                _contains(err, IArtCoinsTokenV2.CanonicalFlowRequired.selector),
+                "sell settle blocked"
+            );
         }
 
         // side pool take of coin as erc20 reverts
         try swapRouter.swap{value: 0.01 ether}(side, _sp(true, -0.01 ether), _settings(false), "") {
             fail("side pool take must revert");
         } catch (bytes memory err) {
-            assertTrue(_contains(err, IArtCoinsTokenV2.CanonicalFlowRequired.selector), "take blocked");
+            assertTrue(
+                _contains(err, IArtCoinsTokenV2.CanonicalFlowRequired.selector), "take blocked"
+            );
         }
         // residual (D24): the same buy taken as erc6909 claims stays inside the PoolManager
         uint256 cl0 = pm.balanceOf(address(this), uint256(uint160(coin)));

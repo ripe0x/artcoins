@@ -23,14 +23,15 @@ import {
 
 import {IArtCoinsFeeEscrowV2} from "../../../src/v2/interfaces/IArtCoinsFeeEscrowV2.sol";
 
-import {Vm} from "forge-std/Vm.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 contract TreasuryMocksV2ForkTest is IntegrationV2Base {
     bytes32 internal constant REWARD_DELIVERED_SIG =
         keccak256("RewardDelivered(address,address,address,uint256,bool)");
-    bytes32 internal constant REWARDS_COLLECTED_SIG = keccak256("RewardsCollected(address,uint256,uint256)");
+    bytes32 internal constant REWARDS_COLLECTED_SIG =
+        keccak256("RewardsCollected(address,uint256,uint256)");
 
     // ── helpers ───────────────────────────────────────────────────────────
 
@@ -83,7 +84,8 @@ contract TreasuryMocksV2ForkTest is IntegrationV2Base {
             if (g.topics[0] == REWARDS_COLLECTED_SIG) {
                 (a0, a1) = abi.decode(g.data, (uint256, uint256));
             } else if (
-                g.topics[0] == REWARD_DELIVERED_SIG && address(uint160(uint256(g.topics[3]))) == treasury
+                g.topics[0] == REWARD_DELIVERED_SIG
+                    && address(uint160(uint256(g.topics[3]))) == treasury
                     && g.topics[2] == bytes32(0)
             ) {
                 (uint256 amt, bool esc) = abi.decode(g.data, (uint256, bool));
@@ -101,7 +103,11 @@ contract TreasuryMocksV2ForkTest is IntegrationV2Base {
             assertEq(_escrowed(treasury) - e0, share0, "locker push escrowed");
             assertEq(treasury.balance, t0);
         }
-        assertEq(IERC20(coin).balanceOf(treasury) - k0, (a1 * 8000) / 10_000, "coin share by transfer, no callback");
+        assertEq(
+            IERC20(coin).balanceOf(treasury) - k0,
+            (a1 * 8000) / 10_000,
+            "coin share by transfer, no callback"
+        );
     }
 
     // ── 2a. no code ───────────────────────────────────────────────────────
@@ -246,7 +252,9 @@ contract TreasuryMocksV2ForkTest is IntegrationV2Base {
         I1StreamTreasury t = new I1StreamTreasury();
         vm.deal(address(t), 50 ether); // far above the v1 probe floor
         (address coin, PoolKey memory key) = _launchWith(address(t));
-        vm.expectCall(address(t), abi.encodeWithSelector(I1StreamTreasury.streamForward.selector), 0);
+        vm.expectCall(
+            address(t), abi.encodeWithSelector(I1StreamTreasury.streamForward.selector), 0
+        );
         (, uint256 pushed, uint256 escrowed) = _trade(key, address(t));
         assertGt(pushed, 0, "empty receive gets the stipend push");
         assertEq(escrowed, 0);

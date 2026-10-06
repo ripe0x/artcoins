@@ -83,6 +83,19 @@ The fee-decay approach is inspired by PunkStrategy's launch mechanics.
 
 `current` is the only stack to build against. `open` is superseded (callable by anyone, no coin was ever launched on it) and `legacy` holds LAYER. The `escrow` of the legacy stack is its fee locker.
 
+## v2 (branch `v2`, not deployed)
+
+The `v2` branch carries the next stack: immutable coins, an owner changeable factory side, no recipient code during swaps, two fee dodge modes (venue tax or hard transfer restriction), locker only liquidity on taxed pools, a version tag per pool, and a verified deployment registry. Nothing from v2 is deployed yet.
+
+| read | what |
+|---|---|
+| [docs/v2/STATUS.md](docs/v2/STATUS.md) | what is done, what is open |
+| [docs/v2/SYSTEM-REVIEW.md](docs/v2/SYSTEM-REVIEW.md) | the full system review, findings by area, proofs, what was not verified (not a formal audit) |
+| [docs/v2/DESIGN.md](docs/v2/DESIGN.md) and [docs/v2/DECISIONS.md](docs/v2/DECISIONS.md) | the design and every decision made with its alternatives |
+| [docs/v2/RUNBOOK.md](docs/v2/RUNBOOK.md) | owner actions on the live stacks today, then the v2 rollout order and the public gate list |
+| [docs/v2/CREDITS-ENGINE-INTERFACE.md](docs/v2/CREDITS-ENGINE-INTERFACE.md) | what a fee recipient contract must satisfy on v2 |
+| [script/v2/README.md](script/v2/README.md) | deploy, launch and verify commands |
+
 ## Build & test
 
 ```bash

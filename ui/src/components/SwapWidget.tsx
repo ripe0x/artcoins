@@ -20,7 +20,8 @@ import {
   coinIsCurrency0,
   priceImpactPercent,
 } from '../lib/swap';
-import { encodeAttributionHookData, hasAnyAttribution } from '../lib/attribution';
+import { encodeSwapHookData } from '../lib/attribution';
+import { getV2Stack } from '../lib/v2';
 import { useReferrer } from '../lib/useReferrer';
 import { useAddressesOrNull, useWalletGate } from '../lib/useChain';
 import { describeError } from '../lib/errors';
@@ -66,7 +67,7 @@ export default function SwapWidget({ tokenAddress, tokenSymbol, poolKey, feeSumm
   const { address } = useAccount();
   const gate = useWalletGate();
   const client = usePublicClient();
-  const { addresses } = useAddressesOrNull();
+  const { chainId, addresses } = useAddressesOrNull();
   const referrer = useReferrer();
 
   const [direction, setDirection] = useState<Direction>('buy');
@@ -82,10 +83,16 @@ export default function SwapWidget({ tokenAddress, tokenSymbol, poolKey, feeSumm
   const poolId = useMemo(() => computePoolId(poolKey), [poolKey]);
 
   // The same hookData goes to the quoter and the swap, so the quote prices what is sent.
-  const hookData: Hex = useMemo(() => {
-    const attr = { referrer: referrer.referrer ?? undefined };
-    return hasAnyAttribution(attr) ? encodeAttributionHookData(attr) : '0x';
-  }, [referrer.referrer]);
+  // v2 pools: the hook refunds an over charged skim (price limited fill) to the address named in
+  // mevModuleSwapData (D58, V2H-03). Without it a universal router swap strands the refund in the escrow
+  // under the router, so every v2 swap names the connected wallet. v1 hooks do not read it.
+  const v2Hook = getV2Stack(chainId)?.hook;
+  const isV2Pool = !!v2Hook && poolKey.hooks.toLowerCase() === v2Hook.toLowerCase();
+  const refundTo = isV2Pool ? address : undefined;
+  const hookData: Hex = useMemo(
+    () => encodeSwapHookData({ referrer: referrer.referrer ?? undefined, refundTo }),
+    [referrer.referrer, refundTo]
+  );
 
   // ── balances ────────────────────────────────────────────────────────
   const { data: ethBalance } = useBalance({ address, query: { refetchInterval: 15_000, enabled: !!address } });

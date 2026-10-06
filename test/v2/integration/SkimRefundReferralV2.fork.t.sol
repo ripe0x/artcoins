@@ -25,15 +25,15 @@ import {ArtCoinsHookV2} from "../../../src/v2/hooks/ArtCoinsHookV2.sol";
 import {IArtCoinsFactoryV2} from "../../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsHookV2} from "../../../src/v2/interfaces/IArtCoinsHookV2.sol";
 
-import {Vm} from "forge-std/Vm.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IPermit2} from "@uniswap/permit2/src/interfaces/IPermit2.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
-import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 /// v4 periphery single hop params as the live universal router decodes them.
 struct I1ExactInSingle {
@@ -53,7 +53,9 @@ struct I1ExactOutSingle {
 }
 
 interface II1UniversalRouter {
-    function execute(bytes calldata commands, bytes[] calldata inputs, uint256 deadline) external payable;
+    function execute(bytes calldata commands, bytes[] calldata inputs, uint256 deadline)
+        external
+        payable;
 }
 
 contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
@@ -77,12 +79,17 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         s = l.bounty + l.protocol + l.referral;
     }
 
-    function _ethOnlyAdd(PoolKey memory key, bytes32 salt) internal returns (bool ok, bytes memory err) {
+    function _ethOnlyAdd(PoolKey memory key, bytes32 salt)
+        internal
+        returns (bool ok, bytes memory err)
+    {
         (, int24 tc,,) = readSlot0(key);
         int24 lo = (tc / 200) * 200 + 400;
         try liqRouter.modifyLiquidity{value: 1 ether}(
             key,
-            IPoolManager.ModifyLiquidityParams({tickLower: lo, tickUpper: lo + 2000, liquidityDelta: 1e15, salt: salt}),
+            IPoolManager.ModifyLiquidityParams({
+                tickLower: lo, tickUpper: lo + 2000, liquidityDelta: 1e15, salt: salt
+            }),
             ""
         ) {
             ok = true;
@@ -100,7 +107,9 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         assertEq(v2.mev.schedule(pid).endSkimBps, BASELINE, "decays to the pool baseline");
 
         uint256 a = 0.01 ether;
-        uint32[7] memory dts = [uint32(0), WINDOW / 4, WINDOW / 2, (3 * WINDOW) / 4, WINDOW - 1, WINDOW, WINDOW + 3600];
+        uint32[7] memory dts = [
+            uint32(0), WINDOW / 4, WINDOW / 2, (3 * WINDOW) / 4, WINDOW - 1, WINDOW, WINDOW + 3600
+        ];
         for (uint256 i; i < dts.length; ++i) {
             vm.warp(t0 + dts[i]);
             uint256 bps = dts[i] < WINDOW
@@ -146,7 +155,11 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         vm.warp(t0 + Constants.MAX_MEV_WINDOW);
         (, active) = lying.currentSkimBps(_pid(coin));
         assertTrue(active, "module still lies");
-        assertEq(_skimOfBuy(key, a), (a * BASELINE) / D, "expired at createdAt + MAX_MEV_WINDOW: baseline");
+        assertEq(
+            _skimOfBuy(key, a),
+            (a * BASELINE) / D,
+            "expired at createdAt + MAX_MEV_WINDOW: baseline"
+        );
         (ok,) = _ethOnlyAdd(key, bytes32(uint256(2)));
         assertTrue(ok, "add lock ends at the cap");
     }
@@ -196,10 +209,21 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         assertGt(l.volume, 0, "filled");
         assertLt(l.volume, requested, "partial fill");
         // exact in buy: fair = r * b / (D - b); exact out sell: fair = r * b / D
-        assertApproxEqRel(fair * (buy ? D - BASELINE : D), l.volume * BASELINE, 1e15, "fair skim on the realized fill");
+        assertApproxEqRel(
+            fair * (buy ? D - BASELINE : D),
+            l.volume * BASELINE,
+            1e15,
+            "fair skim on the realized fill"
+        );
         assertEq(l.refunded, charged - fair, "SkimRefunded = charged - fair");
-        assertEq(raw, buy ? l.volume + charged : l.volume - charged, "swapper paid the full charge in the swap");
-        assertEq(_escrowed(refundTo) - escrowBefore, charged - fair, "escrow credits the refund address");
+        assertEq(
+            raw,
+            buy ? l.volume + charged : l.volume - charged,
+            "swapper paid the full charge in the swap"
+        );
+        assertEq(
+            _escrowed(refundTo) - escrowBefore, charged - fair, "escrow credits the refund address"
+        );
         _assertHookHoldsNothing(key);
 
         uint256 b0 = refundTo.balance;
@@ -223,7 +247,9 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         vm.recordLogs();
         swapRouter.swap{value: a}(
             key,
-            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: -int256(a), sqrtPriceLimitX96: limit}),
+            IPoolManager.SwapParams({
+                zeroForOne: true, amountSpecified: -int256(a), sqrtPriceLimitX96: limit
+            }),
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
             _refundData(refundMe)
         );
@@ -245,7 +271,9 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         vm.recordLogs();
         swapRouter.swap(
             key,
-            IPoolManager.SwapParams({zeroForOne: false, amountSpecified: int256(a), sqrtPriceLimitX96: limit}),
+            IPoolManager.SwapParams({
+                zeroForOne: false, amountSpecified: int256(a), sqrtPriceLimitX96: limit
+            }),
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
             _refundData(refundMe)
         );
@@ -263,7 +291,9 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         vm.recordLogs();
         deltaRouter.swap(key, true, -int256(a), limit, _refundData(refundMe));
         Legs memory l = _legs(vm.getRecordedLogs());
-        assertEq(deltaRouter.lastReturned0(), deltaRouter.lastNet0(), "returned delta == transient delta");
+        assertEq(
+            deltaRouter.lastReturned0(), deltaRouter.lastNet0(), "returned delta == transient delta"
+        );
         assertEq(_escrowed(address(deltaRouter)), 0, "nothing under the router");
         _assertD58(l, e0 - address(deltaRouter).balance, true, a, _chargedBuy(a), refundMe, 0, key);
     }
@@ -279,9 +309,13 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         vm.recordLogs();
         deltaRouter.swap(key, false, int256(a), limit, _refundData(refundMe));
         Legs memory l = _legs(vm.getRecordedLogs());
-        assertEq(deltaRouter.lastReturned0(), deltaRouter.lastNet0(), "returned delta == transient delta");
+        assertEq(
+            deltaRouter.lastReturned0(), deltaRouter.lastNet0(), "returned delta == transient delta"
+        );
         assertEq(_escrowed(address(deltaRouter)), 0, "nothing under the router");
-        _assertD58(l, address(deltaRouter).balance - e0, false, a, _chargedSell(a), refundMe, 0, key);
+        _assertD58(
+            l, address(deltaRouter).balance - e0, false, a, _chargedSell(a), refundMe, 0, key
+        );
     }
 
     function _ur() internal pure returns (II1UniversalRouter) {
@@ -290,7 +324,10 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
 
     /// exact in buy of `a` eth through the live universal router (V4Router
     /// settles the full debt, sweeps the rest back). returns the eth spent.
-    function _urBuy(PoolKey memory key, uint256 a, bytes memory hd) internal returns (uint256 spent, Legs memory l) {
+    function _urBuy(PoolKey memory key, uint256 a, bytes memory hd)
+        internal
+        returns (uint256 spent, Legs memory l)
+    {
         bytes memory actions = abi.encodePacked(SWAP_EXACT_IN_SINGLE, SETTLE_ALL, TAKE_ALL);
         bytes[] memory params = new bytes[](3);
         params[0] = abi.encode(I1ExactInSingle(key, true, uint128(a), 0, hd));
@@ -318,7 +355,10 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         // draining the pool's eth needs more coin than the buys returned (lp fee)
         uint256 bal = 3 * IERC20(coin).balanceOf(address(this)) + 1e24;
         deal(coin, address(this), bal);
-        IPermit2(PERMIT2).approve(coin, UNIVERSAL_ROUTER, type(uint160).max, uint48(vm.getBlockTimestamp() + 1 days));
+        IPermit2(PERMIT2)
+            .approve(
+                coin, UNIVERSAL_ROUTER, type(uint160).max, uint48(vm.getBlockTimestamp() + 1 days)
+            );
         bytes memory actions = abi.encodePacked(SWAP_EXACT_OUT_SINGLE, SETTLE_ALL, TAKE_ALL);
         bytes[] memory params = new bytes[](3);
         params[0] = abi.encode(I1ExactOutSingle(key, false, uint128(a), type(uint128).max, hd));
@@ -339,14 +379,21 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
     /// over charge is credited to the router in the escrow and nobody can use
     /// it. the user paid realized + full charge. the mitigation is the refund
     /// address (next test).
-    function test_i1_partialFill_universalRouter_noRefundAddress_creditedToRouter_V2H03() public onlyFork {
+    function test_i1_partialFill_universalRouter_noRefundAddress_creditedToRouter_V2H03()
+        public
+        onlyFork
+    {
         (, PoolKey memory key) = _narrowLaunch();
         uint256 a = 10 ether; // the narrow range sells out near 2.2 eth
         (uint256 spent, Legs memory l) = _urBuy(key, a, "");
         uint256 fair = l.bounty + l.protocol + l.referral;
         assertLt(l.volume, a - _chargedBuy(a), "partial fill");
         assertEq(spent, l.volume + _chargedBuy(a), "user paid the full charge");
-        assertEq(_escrowed(UNIVERSAL_ROUTER), _chargedBuy(a) - fair, "refund credited to the router (stranded)");
+        assertEq(
+            _escrowed(UNIVERSAL_ROUTER),
+            _chargedBuy(a) - fair,
+            "refund credited to the router (stranded)"
+        );
         assertEq(_escrowed(address(this)), 0, "nothing for the user");
         _assertHookHoldsNothing(key);
 
@@ -356,11 +403,18 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         (received, l) = _urSellExactOut(key, a2, "");
         fair = l.bounty + l.protocol + l.referral;
         assertEq(received, l.volume - _chargedSell(a2), "seller received realized - full charge");
-        assertEq(_escrowed(UNIVERSAL_ROUTER) - stranded, _chargedSell(a2) - fair, "sell refund also under the router");
+        assertEq(
+            _escrowed(UNIVERSAL_ROUTER) - stranded,
+            _chargedSell(a2) - fair,
+            "sell refund also under the router"
+        );
         _assertHookHoldsNothing(key);
     }
 
-    function test_i1_partialFill_universalRouter_withRefundAddress_nothingStranded() public onlyFork {
+    function test_i1_partialFill_universalRouter_withRefundAddress_nothingStranded()
+        public
+        onlyFork
+    {
         (, PoolKey memory key) = _narrowLaunch();
         uint256 a = 10 ether;
         (uint256 spent, Legs memory l) = _urBuy(key, a, _refundData(refundMe));
@@ -388,7 +442,10 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
     /// caller is credited (a currencyDelta router is made whole by a
     /// permissionless claim); net of the claimable refund every shape and
     /// router paid realized +/- fair skim.
-    function test_i1_partialFill_netOfClaimableRefund_isFair_bothShapesBothRouters() public onlyFork {
+    function test_i1_partialFill_netOfClaimableRefund_isFair_bothShapesBothRouters()
+        public
+        onlyFork
+    {
         (address coin, PoolKey memory key) = _narrowLaunch();
         vm.deal(address(deltaRouter), 100 ether);
         uint256 fair;
@@ -401,7 +458,11 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         uint256 refund = _claimRefund(address(deltaRouter));
         assertEq(refund, l.refunded, "refund credited to the PoolManager caller");
         fair = l.bounty + l.protocol + l.referral;
-        assertEq(e0 - address(deltaRouter).balance, l.volume + fair, "delta router buy: net = realized + fair");
+        assertEq(
+            e0 - address(deltaRouter).balance,
+            l.volume + fair,
+            "delta router buy: net = realized + fair"
+        );
         _assertHookHoldsNothing(key);
 
         // 2. delta router, exact out sell, price limited
@@ -413,7 +474,11 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         refund = _claimRefund(address(deltaRouter));
         assertEq(refund, l.refunded);
         fair = l.bounty + l.protocol + l.referral;
-        assertEq(address(deltaRouter).balance - e0, l.volume - fair, "delta router sell: net = realized - fair");
+        assertEq(
+            address(deltaRouter).balance - e0,
+            l.volume - fair,
+            "delta router sell: net = realized - fair"
+        );
         _assertHookHoldsNothing(key);
 
         // 3. universal router, exact in buy past the range, refund address = the user
@@ -459,13 +524,18 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         assertGt(l.referral, 0, "referrer paid");
         assertEq(l.referral, capped < room ? capped : room, "referral = min(cap, protocol - floor)");
         assertGe(l.protocol, floor, "protocol leg never below the floor (D52)");
-        assertEq(l.protocol + l.referral, protocolBefore, "referral carved from the protocol leg only");
-        assertEq(referrer.balance + _escrowed(referrer) - paidBefore, l.referral, "referral delivered");
+        assertEq(
+            l.protocol + l.referral, protocolBefore, "referral carved from the protocol leg only"
+        );
+        assertEq(
+            referrer.balance + _escrowed(referrer) - paidBefore, l.referral, "referral delivered"
+        );
     }
 
     function test_i1_referral_paysReferrer_protocolNeverBelowFloor() public onlyFork {
         // a launch above the floor bound is refused
-        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _creditsConfig(address(new I1EmptyTreasury()));
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c =
+            _creditsConfig(address(new I1EmptyTreasury()));
         uint24 cap = _refCapAtBound();
         assertEq(v2.factory.minProtocolSkimShareBps(), 1000, "deploy script floor (D52)");
         c.fee.maxReferralBpsOfVolume = cap + 1;
@@ -510,7 +580,11 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         address payable target = payable(makeAddr("i1.refTarget"));
         rref.pull(v2.escrow, target);
         assertEq(target.balance, l.referral, "referrer pulled it");
-        assertEq(v2.hook.skimConfig(_pid(coin)).referralPayout, address(v2.escrow), "payout = escrow (D57)");
+        assertEq(
+            v2.hook.skimConfig(_pid(coin)).referralPayout,
+            address(v2.escrow),
+            "payout = escrow (D57)"
+        );
     }
 
     /// D52: the pool's protocol floor is frozen into the hook at launch, so the

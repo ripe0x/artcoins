@@ -16,7 +16,9 @@ pragma solidity ^0.8.26;
 
 import {IntegrationV2Base} from "./integration/IntegrationV2Base.sol";
 import {
-    I1EmptyTreasury, I1GasBurnerTreasury, I1StreamTreasury
+    I1EmptyTreasury,
+    I1GasBurnerTreasury,
+    I1StreamTreasury
 } from "./integration/mocks/I1Mocks.sol";
 
 import {Constants} from "../../src/Constants.sol";
@@ -32,12 +34,12 @@ import {IFeeAutoSwapperV2} from "../../src/v2/interfaces/IFeeAutoSwapperV2.sol";
 import {ArtCoinsLpLockerV2} from "../../src/v2/lp-lockers/ArtCoinsLpLockerV2.sol";
 import {ArtCoinsDeployerV2} from "../../src/v2/utils/ArtCoinsDeployerV2.sol";
 
-import {console2} from "forge-std/console2.sol";
-import {Vm} from "forge-std/Vm.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {Vm} from "forge-std/Vm.sol";
+import {console2} from "forge-std/console2.sol";
 
 contract IntegrationV2ForkTest is IntegrationV2Base {
     using PoolIdLibrary for PoolKey;
@@ -46,7 +48,10 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
     // 1. owner launch while deprecated, then open
     // ══════════════════════════════════════════════════════════════════════
 
-    function test_i1_ownerLaunchWhileDeprecated_thenOpen_strangerLaunch_bothPoolsSwap() public onlyFork {
+    function test_i1_ownerLaunchWhileDeprecated_thenOpen_strangerLaunch_bothPoolsSwap()
+        public
+        onlyFork
+    {
         I1EmptyTreasury treasury = new I1EmptyTreasury();
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _creditsConfig(address(treasury));
         assertTrue(v2.factory.deprecated(), "stack ships deprecated");
@@ -86,7 +91,9 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         assertTrue(coin2 != coin1, "sender in salt");
         assertEq(LIVE_OWNER.balance - teamBefore, fee, "fee to team recipient");
         assertEq(strangerBefore - stranger.balance, fee, "stranger paid exactly the fee");
-        assertEq(v2.locker.rewardRecipients(coin2)[1], address(v2.controller), "default protocol slot");
+        assertEq(
+            v2.locker.rewardRecipients(coin2)[1], address(v2.controller), "default protocol slot"
+        );
         assertEq(v2.locker.rewardBps(coin2)[1], v2.factory.defaultProtocolFeeBps());
 
         // both pools swap both ways, inside the anti sniper window; the
@@ -103,7 +110,9 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
             Legs memory l = _legs(logs);
             assertEq(l.splits, 2, "two skims");
             assertEq(address(treasury).balance - t0, l.bounty, "bounty pushed to the treasury");
-            assertEq(address(v2.controller).balance - p0, l.protocol, "protocol leg to the controller");
+            assertEq(
+                address(v2.controller).balance - p0, l.protocol, "protocol leg to the controller"
+            );
             assertEq(l.refunded, 0);
             _assertHookHoldsNothing(key);
         }
@@ -160,7 +169,10 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         uint256 found;
         for (uint256 i; i < logs.length; ++i) {
             Vm.Log memory g = logs[i];
-            if (g.emitter != address(v2.factory) || g.topics[0] != IArtCoinsFactoryV2.TokenCreatedV2.selector) {
+            if (
+                g.emitter != address(v2.factory)
+                    || g.topics[0] != IArtCoinsFactoryV2.TokenCreatedV2.selector
+            ) {
                 continue;
             }
             ++found;
@@ -178,7 +190,16 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
                 IArtCoinsFactoryV2.DeploymentConfigV2 memory cfg
             ) = abi.decode(
                 g.data,
-                (uint16, bytes32, address, address, uint16, uint256, uint256, IArtCoinsFactoryV2.DeploymentConfigV2)
+                (
+                    uint16,
+                    bytes32,
+                    address,
+                    address,
+                    uint16,
+                    uint256,
+                    uint256,
+                    IArtCoinsFactoryV2.DeploymentConfigV2
+                )
             );
             assertEq(stackVersion, 2, "event version");
             assertEq(cfgHash, h, "event configHash");
@@ -277,7 +298,10 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         // hook: globals only
         escrow2.addDepositor(address(v2.hook), true);
         escrow2.addDepositor(address(v2.locker), true);
-        v2.hook.setDeliveryParams(Constants.PUSH_GAS_MAX, Constants.STREAM_GAS_MAX, Constants.STREAM_MIN_BALANCE_MAX);
+        v2.hook
+            .setDeliveryParams(
+                Constants.PUSH_GAS_MAX, Constants.STREAM_GAS_MAX, Constants.STREAM_MIN_BALANCE_MAX
+            );
         v2.hook.setExtensionAllowlist(address(0));
         v2.hook.setLauncher(address(v2.factory), false);
         v2.hook.setLauncher(other, true);
@@ -306,8 +330,14 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         vm.stopPrank();
 
         assertEq(_perCoin(coin, sw), before, "no owner setter reached a per coin field");
-        assertEq(v2.hook.skimConfig(_pid(coin)).protocolRecipient, address(v2.controller), "protocol frozen");
-        assertEq(v2.locker.rewardRecipients(coin)[1], address(v2.controller), "protocol slot frozen");
+        assertEq(
+            v2.hook.skimConfig(_pid(coin)).protocolRecipient,
+            address(v2.controller),
+            "protocol frozen"
+        );
+        assertEq(
+            v2.locker.rewardRecipients(coin)[1], address(v2.controller), "protocol slot frozen"
+        );
 
         // the pool still swaps and pays the frozen recipients; failed pushes
         // would land in the new escrow (a global pointer, by design)
@@ -316,12 +346,18 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         vm.recordLogs();
         uint256 got = _buy(key, 0.5 ether);
         Legs memory l = _legs(vm.getRecordedLogs());
-        assertEq(l.bounty + l.protocol, (0.5 ether * uint256(BASELINE)) / D, "skim still the frozen baseline");
+        assertEq(
+            l.bounty + l.protocol,
+            (0.5 ether * uint256(BASELINE)) / D,
+            "skim still the frozen baseline"
+        );
         uint256 base = l.bounty + l.protocol;
         assertEq(l.protocol, base - (base * BOUNTY_BPS) / 10_000, "bounty share still frozen");
         _sell(key, got / 2);
         assertEq(address(treasury).balance - t0 >= l.bounty, true, "bounty to the frozen recipient");
-        assertGt(address(v2.controller).balance - p0, l.protocol, "protocol to the frozen recipient");
+        assertGt(
+            address(v2.controller).balance - p0, l.protocol, "protocol to the frozen recipient"
+        );
         assertEq(other.balance, 0, "new protocol recipient gets nothing from this pool");
         assertEq(escrow2.totalOwed(address(0)), 0, "nothing failed");
 
@@ -352,13 +388,17 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
 
         vm.startPrank(LIVE_OWNER);
         // escrow: nothing beyond owed
-        vm.expectRevert(abi.encodeWithSelector(IArtCoinsFeeEscrowV2.RescueExceedsExcess.selector, 1, 0));
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsFeeEscrowV2.RescueExceedsExcess.selector, 1, 0)
+        );
         v2.escrow.rescue(address(0), LIVE_OWNER, 1);
         vm.stopPrank();
         vm.deal(address(v2.escrow), address(v2.escrow).balance + 1 ether); // stray eth
         vm.startPrank(LIVE_OWNER);
         vm.expectRevert(
-            abi.encodeWithSelector(IArtCoinsFeeEscrowV2.RescueExceedsExcess.selector, 1 ether + 1, 1 ether)
+            abi.encodeWithSelector(
+                IArtCoinsFeeEscrowV2.RescueExceedsExcess.selector, 1 ether + 1, 1 ether
+            )
         );
         v2.escrow.rescue(address(0), LIVE_OWNER, 1 ether + 1);
         v2.escrow.rescue(address(0), LIVE_OWNER, 1 ether); // stray only

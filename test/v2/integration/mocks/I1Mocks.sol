@@ -189,9 +189,13 @@ contract I1DeltaRouter is IUnlockCallback {
 
     receive() external payable {}
 
-    function swap(PoolKey calldata key, bool zeroForOne, int256 amount, uint160 limit, bytes calldata hd)
-        external
-    {
+    function swap(
+        PoolKey calldata key,
+        bool zeroForOne,
+        int256 amount,
+        uint160 limit,
+        bytes calldata hd
+    ) external {
         pm.unlock(abi.encode(key, zeroForOne, amount, limit, hd));
     }
 
@@ -199,10 +203,14 @@ contract I1DeltaRouter is IUnlockCallback {
         require(msg.sender == address(pm), "pm");
         (PoolKey memory key, bool zeroForOne, int256 amount, uint160 limit, bytes memory hd) =
             abi.decode(raw, (PoolKey, bool, int256, uint160, bytes));
-        if (limit == 0) limit = zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1;
+        if (limit == 0) {
+            limit = zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1;
+        }
         BalanceDelta d = pm.swap(
             key,
-            IPoolManager.SwapParams({zeroForOne: zeroForOne, amountSpecified: amount, sqrtPriceLimitX96: limit}),
+            IPoolManager.SwapParams({
+                zeroForOne: zeroForOne, amountSpecified: amount, sqrtPriceLimitX96: limit
+            }),
             hd
         );
         lastReturned0 = d.amount0();
@@ -231,9 +239,13 @@ interface II1V3Pool {
     function mint(address recipient, int24 lo, int24 hi, uint128 amount, bytes calldata data)
         external
         returns (uint256, uint256);
-    function swap(address recipient, bool zeroForOne, int256 amountSpecified, uint160 limit, bytes calldata data)
-        external
-        returns (int256, int256);
+    function swap(
+        address recipient,
+        bool zeroForOne,
+        int256 amountSpecified,
+        uint160 limit,
+        bytes calldata data
+    ) external returns (int256, int256);
 }
 
 /// v3 lp and trader: pays mint and swap callbacks from its own balance.

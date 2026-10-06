@@ -19,14 +19,16 @@ import {FeeAutoSwapperV2} from "../../../src/v2/FeeAutoSwapperV2.sol";
 import {IArtCoinsFactoryV2} from "../../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
 import {IBurnRouterV2} from "../../../src/v2/interfaces/IBurnRouterV2.sol";
 
-import {console2} from "forge-std/console2.sol";
-import {Vm} from "forge-std/Vm.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {Vm} from "forge-std/Vm.sol";
+import {console2} from "forge-std/console2.sol";
 
 contract FeeFlowV2ForkTest is IntegrationV2Base {
-    bytes32 internal constant REWARDS_COLLECTED_SIG = keccak256("RewardsCollected(address,uint256,uint256)");
-    bytes32 internal constant CONVERTED_SIG = keccak256("Converted(address,uint256,uint256,uint256,uint256)");
+    bytes32 internal constant REWARDS_COLLECTED_SIG =
+        keccak256("RewardsCollected(address,uint256,uint256)");
+    bytes32 internal constant CONVERTED_SIG =
+        keccak256("Converted(address,uint256,uint256,uint256,uint256)");
     bytes32 internal constant BURNED_SIG = keccak256("Burned(address,uint256,uint256,uint256)");
 
     I1EmptyTreasury internal treasury;
@@ -58,8 +60,8 @@ contract FeeFlowV2ForkTest is IntegrationV2Base {
     function _actorsEth() internal view returns (uint256) {
         return address(treasury).balance + address(v2.controller).balance + protocolTreasury.balance
             + address(v2.burnRouter).balance + address(sw).balance + address(v2.keeper).balance
-            + keeperCaller.balance + burnCaller.balance + address(v2.locker).balance + address(v2.hook).balance
-            + _owed();
+            + keeperCaller.balance + burnCaller.balance + address(v2.locker).balance
+            + address(v2.hook).balance + _owed();
     }
 
     function _coinOf(address a) internal view returns (uint256) {
@@ -70,7 +72,10 @@ contract FeeFlowV2ForkTest is IntegrationV2Base {
         return l.bounty + l.protocol + l.referral + l.refunded;
     }
 
-    function test_i1_feeFlow_keeperCollectFlushConvert_controllerSplit_burn_everyWeiAccounted() public onlyFork {
+    function test_i1_feeFlow_keeperCollectFlushConvert_controllerSplit_burn_everyWeiAccounted()
+        public
+        onlyFork
+    {
         uint256 start = _actorsEth();
 
         // ── phase 1: trading accrues skim (now) and lp fees (in the pool) ──
@@ -101,7 +106,9 @@ contract FeeFlowV2ForkTest is IntegrationV2Base {
         assertGt(lpCoin, 0, "coin lp fees collected");
         assertGt(convOut, 0, "converted");
         uint256 fees2 = lpEth + convOut + _skimTotal(l2);
-        assertEq(_actorsEth() - a, fees2, "phase 2: lp eth + convert proceeds + its skim, all delivered");
+        assertEq(
+            _actorsEth() - a, fees2, "phase 2: lp eth + convert proceeds + its skim, all delivered"
+        );
         assertEq(address(sw).balance, 0, "swapper slot flushed");
         assertGt(address(treasury).balance - treasury0, 0, "treasury paid by the swapper");
         assertGt(keeperCaller.balance, 0, "keeper rewards forwarded to the caller");
@@ -109,8 +116,9 @@ contract FeeFlowV2ForkTest is IntegrationV2Base {
         assertEq(address(v2.locker).balance, 0, "locker holds nothing");
         assertEq(
             lpCoin,
-            (_coinOf(address(sw)) - swCoin0) + coinIn + (_coinOf(address(v2.controller)) - ctrlCoin0)
-                + _coinOf(address(v2.keeper)) + _coinOf(keeperCaller) + v2.escrow.totalOwed(coin),
+            (_coinOf(address(sw)) - swCoin0) + coinIn
+                + (_coinOf(address(v2.controller)) - ctrlCoin0) + _coinOf(address(v2.keeper))
+                + _coinOf(keeperCaller) + v2.escrow.totalOwed(coin),
             "coin lp fees: swapper slot (held + converted) + protocol slot"
         );
 
@@ -136,7 +144,9 @@ contract FeeFlowV2ForkTest is IntegrationV2Base {
 
         // ── phase 4: the burn router buys and burns, one per block ──
         vm.roll(vm.getBlockNumber() + 1);
-        assertGe(address(v2.burnRouter).balance, v2.burnRouter.minProcessThreshold(), "router funded");
+        assertGe(
+            address(v2.burnRouter).balance, v2.burnRouter.minProcessThreshold(), "router funded"
+        );
         a = _actorsEth();
         supply0 = IERC20(coin).totalSupply();
         vm.recordLogs();
@@ -150,7 +160,9 @@ contract FeeFlowV2ForkTest is IntegrationV2Base {
         assertEq(supply0 - IERC20(coin).totalSupply(), burned, "coin burned");
         assertEq(burnCaller.balance, reward, "burn keeper paid");
         assertGt(reward, 0, "burn keeper reward");
-        assertEq(_actorsEth() + paid, a + _skimTotal(l4), "phase 4: eth in = eth burned, skim delivered");
+        assertEq(
+            _actorsEth() + paid, a + _skimTotal(l4), "phase 4: eth in = eth burned, skim delivered"
+        );
         vm.prank(burnCaller);
         vm.expectRevert(IBurnRouterV2.AlreadyBurnedThisBlock.selector);
         v2.burnRouter.processBurn(0);
@@ -158,7 +170,11 @@ contract FeeFlowV2ForkTest is IntegrationV2Base {
         // ── total ──
         uint256 feesTaken = fees1 + fees2 + _skimTotal(l4);
         uint256 delivered = _actorsEth() - start;
-        assertEq(delivered + paid, feesTaken, "recipient deltas + escrow credits + eth burned == fees taken");
+        assertEq(
+            delivered + paid,
+            feesTaken,
+            "recipient deltas + escrow credits + eth burned == fees taken"
+        );
         console2.log("i1 fee flow: fees taken (wei)", feesTaken);
         console2.log("  skim legs and refunds", fees1 + _skimTotal(l2) + _skimTotal(l4));
         console2.log("  lp eth collected", lpEth);
@@ -182,7 +198,8 @@ contract FeeFlowV2ForkTest is IntegrationV2Base {
                 lpEth += x;
                 lpCoin += y;
             } else if (g.emitter == address(sw) && g.topics[0] == CONVERTED_SIG) {
-                (uint256 cin, uint256 out,,) = abi.decode(g.data, (uint256, uint256, uint256, uint256));
+                (uint256 cin, uint256 out,,) =
+                    abi.decode(g.data, (uint256, uint256, uint256, uint256));
                 coinIn += cin;
                 convOut += out;
             }
@@ -192,7 +209,10 @@ contract FeeFlowV2ForkTest is IntegrationV2Base {
     function _burnReward(Vm.Log[] memory logs) internal view returns (uint256 reward) {
         for (uint256 i; i < logs.length; ++i) {
             Vm.Log memory g = logs[i];
-            if (g.emitter == address(v2.burnRouter) && g.topics.length != 0 && g.topics[0] == BURNED_SIG) {
+            if (
+                g.emitter == address(v2.burnRouter) && g.topics.length != 0
+                    && g.topics[0] == BURNED_SIG
+            ) {
                 (,, reward) = abi.decode(g.data, (uint256, uint256, uint256));
             }
         }

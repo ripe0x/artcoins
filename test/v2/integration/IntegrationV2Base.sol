@@ -18,7 +18,6 @@ import {FeeAutoSwapperV2} from "../../../src/v2/FeeAutoSwapperV2.sol";
 import {IArtCoinsFactoryV2} from "../../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsHookV2} from "../../../src/v2/interfaces/IArtCoinsHookV2.sol";
 
-import {Vm} from "forge-std/Vm.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
@@ -26,6 +25,7 @@ import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 abstract contract IntegrationV2Base is ForkStack {
     using PoolIdLibrary for PoolKey;
@@ -48,8 +48,10 @@ abstract contract IntegrationV2Base is ForkStack {
         0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54;
 
     // event topics
-    bytes32 internal constant SKIM_SPLIT_SIG = keccak256("SkimSplit(bytes32,uint256,uint256,uint256,uint256)");
-    bytes32 internal constant SKIM_REFUNDED_SIG = keccak256("SkimRefunded(bytes32,address,uint256)");
+    bytes32 internal constant SKIM_SPLIT_SIG =
+        keccak256("SkimSplit(bytes32,uint256,uint256,uint256,uint256)");
+    bytes32 internal constant SKIM_REFUNDED_SIG =
+        keccak256("SkimRefunded(bytes32,address,uint256)");
     bytes32 internal constant FEE_DELIVERED_SIG =
         keccak256("FeeDelivered(bytes32,uint8,address,uint256,bool)");
 
@@ -153,7 +155,11 @@ abstract contract IntegrationV2Base is ForkStack {
     }
 
     /// Same coin with no tax mode (open lp, plain erc20).
-    function _noneConfig(address bounty) internal view returns (IArtCoinsFactoryV2.DeploymentConfigV2 memory c) {
+    function _noneConfig(address bounty)
+        internal
+        view
+        returns (IArtCoinsFactoryV2.DeploymentConfigV2 memory c)
+    {
         c = _creditsConfig(bounty);
         c.token.symbol = "NONE";
         c.tax.mode = Constants.TAX_MODE_NONE;
@@ -162,7 +168,11 @@ abstract contract IntegrationV2Base is ForkStack {
     }
 
     /// HARD mode: no rate, no exempt set, sink DEAD (display only).
-    function _hardConfig(address bounty) internal view returns (IArtCoinsFactoryV2.DeploymentConfigV2 memory c) {
+    function _hardConfig(address bounty)
+        internal
+        view
+        returns (IArtCoinsFactoryV2.DeploymentConfigV2 memory c)
+    {
         c = _creditsConfig(bounty);
         c.token.symbol = "HARD";
         c.tax.mode = Constants.TAX_MODE_HARD;
@@ -214,7 +224,10 @@ abstract contract IntegrationV2Base is ForkStack {
 
     // ── launch ────────────────────────────────────────────────────────────
 
-    function _ownerLaunch(IArtCoinsFactoryV2.DeploymentConfigV2 memory c) internal returns (address token) {
+    function _ownerLaunch(IArtCoinsFactoryV2.DeploymentConfigV2 memory c)
+        internal
+        returns (address token)
+    {
         uint256 fee = v2.factory.deployFee();
         vm.deal(LIVE_OWNER, LIVE_OWNER.balance + fee);
         vm.prank(LIVE_OWNER);
@@ -257,17 +270,26 @@ abstract contract IntegrationV2Base is ForkStack {
     function _attribution(address referrer, uint24 bps) internal pure returns (bytes memory) {
         PCSwapData memory inner = PCSwapData({
             attribution: PCAttribution({
-                sourceId: bytes32("i1"), referrer: referrer, campaignId: bytes16("i1c"), referralBps: bps
+                sourceId: bytes32("i1"),
+                referrer: referrer,
+                campaignId: bytes16("i1c"),
+                referralBps: bps
             }),
             extensionPayload: ""
         });
         return abi.encode(
-            IArtCoinsHook.PoolSwapData({mevModuleSwapData: "", poolExtensionSwapData: abi.encode(inner)})
+            IArtCoinsHook.PoolSwapData({
+                mevModuleSwapData: "", poolExtensionSwapData: abi.encode(inner)
+            })
         );
     }
 
     function _refundData(address to) internal pure returns (bytes memory) {
-        return abi.encode(IArtCoinsHook.PoolSwapData({mevModuleSwapData: abi.encode(to), poolExtensionSwapData: ""}));
+        return abi.encode(
+            IArtCoinsHook.PoolSwapData({
+                mevModuleSwapData: abi.encode(to), poolExtensionSwapData: ""
+            })
+        );
     }
 
     // ── logs and reads ────────────────────────────────────────────────────
@@ -298,7 +320,10 @@ abstract contract IntegrationV2Base is ForkStack {
     {
         for (uint256 i; i < logs.length; ++i) {
             Vm.Log memory g = logs[i];
-            if (g.emitter != address(v2.hook) || g.topics.length != 4 || g.topics[0] != FEE_DELIVERED_SIG) {
+            if (
+                g.emitter != address(v2.hook) || g.topics.length != 4
+                    || g.topics[0] != FEE_DELIVERED_SIG
+            ) {
                 continue;
             }
             if (address(uint160(uint256(g.topics[3]))) != to) continue;
