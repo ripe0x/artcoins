@@ -209,7 +209,7 @@ contract KeeperLayer_ForkTest is ForkBase {
     }
 
     /// @dev an owner floor above spot blocks the weth burn: reported, the rest of the run completes.
-    ///      floor 0 (paused) is reported without calling the router.
+    ///      floor 0 (paused) is the router's own `SlippageFloorNotSet`, reported.
     function test_layerKeeper_ownerFloorGuards() public onlyFork {
         _makeFees(3 ether);
         uint256 snap = vm.snapshotState();
@@ -234,7 +234,9 @@ contract KeeperLayer_ForkTest is ForkBase {
         keeper.run(true, 0, false);
         (n, reason) = _skips(vm.getRecordedLogs(), 5, R0);
         assertEq(n, 1);
-        assertEq(bytes4(reason), bytes4(keccak256("SlippageFloorNotSet()")), "router guard reported");
+        assertEq(
+            bytes4(reason), bytes4(keccak256("SlippageFloorNotSet()")), "router guard reported"
+        );
     }
 
     /// @dev the caller's rate only tightens: an impossible rate makes the burn skip, not the run revert.

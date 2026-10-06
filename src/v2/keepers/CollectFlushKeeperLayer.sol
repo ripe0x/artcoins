@@ -4,14 +4,11 @@ pragma solidity ^0.8.26;
 import {IArtCoinsFeeLocker} from "../../interfaces/IArtCoinsFeeLocker.sol";
 import {IArtCoinsLpLocker} from "../../interfaces/IArtCoinsLpLocker.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {FixedPoint128} from "@uniswap/v4-core/src/libraries/FixedPoint128.sol";
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
-import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
-import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {IPositionManager} from "@uniswap/v4-periphery/src/interfaces/IPositionManager.sol";
 import {IWETH9} from "@uniswap/v4-periphery/src/interfaces/external/IWETH9.sol";
 import {
@@ -19,7 +16,7 @@ import {
     PositionInfoLibrary
 } from "@uniswap/v4-periphery/src/libraries/PositionInfoLibrary.sol";
 
-/// @dev shared by the three live LAYER routers; the current stack one has no `minLayerOutPerWeth` (spot floor)
+/// @dev the three live LAYER routers; the current stack one has no `minLayerOutPerWeth` (spot floor instead)
 interface ILayerBurnRouter {
     function processBurnLayer() external returns (uint256);
     function processBurnWeth(uint256 minLayerOut) external returns (uint256, uint256);
@@ -33,40 +30,30 @@ interface ILayerFeeController {
 }
 
 /// @title  CollectFlushKeeperLayer
-/// @notice Stateless keeper for the live LAYER fee path (legacy stack): collect lp fees into the fee locker,
-///         push the controller and burn router slots, split the controller, burn LAYER and (optionally) weth
-///         at the routers, forward what the keeper received to the caller. No owner, holds nothing.
-/// @dev    D49: each step starts only above its gas floor and then gets all remaining gas. A collect revert
-///         bubbles, any other step's revert is reported (`StepSkipped`), a revert that leaves gas under the
-///         floor reverts `InsufficientGas(step)`. The owner slot (eoa) is never claimed, that is the owner's call.
+/// @notice Stateless keeper for the live LAYER fee path (legacy stack): collect, push the controller and
+///         router fee locker slots, split, burn LAYER and weth, forward what it got to the caller. No owner.
+/// @dev    D49 floors (see `_step`). The owner slot (eoa) is never claimed, that is the owner's call.
 contract CollectFlushKeeperLayer {
     using StateLibrary for IPoolManager;
-    using PoolIdLibrary for PoolKey;
     using PositionInfoLibrary for PositionInfo;
 
-    IPoolManager internal constant POOL_MANAGER =
-        IPoolManager(0x000000000004444c5dc75cB358380D2e3dE08A90);
-
+    IPoolManager internal constant PM = IPoolManager(0x000000000004444c5dc75cB358380D2e3dE08A90);
     IArtCoinsLpLocker public immutable locker;
     address public immutable layer;
     address public immutable weth;
     IArtCoinsFeeLocker public immutable feeLocker;
     address public immutable controller; // locker recipient, sends 40% of what it holds to router0
-    /// @dev router0 is the locker recipient and controller burn router; 1 and 2 are other routers on the
-    ///      same pool (zero disables a slot)
+    /// @dev router0: locker recipient and controller burn router. 1, 2: other routers on the LAYER pool
     address public immutable router0;
     address public immutable router1;
     address public immutable router2;
-
-    /// @dev floors, not caps, from fork measurements (docs/v2/review/keeper-111.md). a weth burn is a swap,
-    ///      and every LAYER swap runs the hook's own lp collect, so it costs a collect too.
+    /// @dev gas floors, not caps (docs/v2/review/keeper-111.md). a weth burn swaps, so it pays a hook collect
     uint256 internal constant COLLECT_GAS = 640_000;
     uint256 internal constant CLAIM_GAS = 60_000;
     uint256 internal constant FEES_GAS = 80_000;
     uint256 internal constant BURN_LAYER_GAS = 60_000;
     uint256 internal constant BURN_WETH_GAS = 900_000;
     uint256 internal constant MARGIN = 50_000;
-
     event KeeperRun(address indexed caller, uint256[5] amounts); // same order as `run` returns
     /// @dev step 2 claim, 3 processFees, 4 processBurnLayer, 5 processBurnWeth; `reason` is the revert data
     event StepSkipped(uint8 indexed step, address indexed target, bytes reason);
@@ -84,36 +71,24 @@ contract CollectFlushKeeperLayer {
     receive() external payable {}
 
     /// @param doBurn also `processBurnWeth` on every router at or above its threshold
-    /// @param minLayerOutPerWeth caller floor in LAYER per 1e18 weth (the routers' unit); the keeper passes
-    ///        `max(it, router owner floor) * balance / 1e18`, so 0 means the router's own floor
+    /// @param minLayerOutPerWeth LAYER per 1e18 weth; a router with an owner floor gets
+    ///        `max(it, floor) * balance / 1e18`, one without gets 0 (its own spot floor)
     /// @param unwrap send weth the keeper received as eth
-    /// @return lCol LAYER and `wCol` weth the collect credited to the fee locker (all three slots)
-    /// @return lBurn LAYER burned directly (`processBurnLayer`); `wBurn` weth in and `lBought` LAYER out of burns
+    /// @dev returns collect credits (LAYER, weth; all slots), LAYER burned directly, weth burns in and out
     function run(bool doBurn, uint256 minLayerOutPerWeth, bool unwrap)
         external
         returns (uint256 lCol, uint256 wCol, uint256 lBurn, uint256 wBurn, uint256 lBought)
     {
         uint256 l0 = IERC20(layer).balanceOf(address(feeLocker));
         uint256 w0 = IERC20(weth).balanceOf(address(feeLocker));
-        _gas(1, COLLECT_GAS);
-        try locker.collectRewards(layer) {}
-        catch (bytes memory r) {
-            if (gasleft() < COLLECT_GAS + MARGIN) revert InsufficientGas(1);
-            assembly ("memory-safe") {
-                revert(add(r, 0x20), mload(r))
-            }
-        }
+        _step(1, COLLECT_GAS, address(locker), abi.encodeCall(locker.collectRewards, (layer)));
         lCol = IERC20(layer).balanceOf(address(feeLocker)) - l0;
         wCol = IERC20(weth).balanceOf(address(feeLocker)) - w0;
-
-        address[2] memory tokens = [layer, weth];
-        address[2] memory slots = [controller, router0];
+        address[2] memory tokens = [layer, weth]; // controller first, its burn share lands at router0
         for (uint256 i; i < 4; ++i) {
-            (address slot, address token) = (slots[i / 2], tokens[i % 2]);
-            bytes memory c = abi.encodeCall(IArtCoinsFeeLocker.claim, (slot, token));
-            if (feeLocker.availableFees(slot, token) > 0) {
-                _step(2, CLAIM_GAS, address(feeLocker), c);
-            }
+            (address s, address t) = (i < 2 ? controller : router0, tokens[i % 2]);
+            bytes memory c = abi.encodeCall(IArtCoinsFeeLocker.claim, (s, t));
+            if (feeLocker.availableFees(s, t) > 0) _step(2, CLAIM_GAS, address(feeLocker), c);
         }
         for (uint256 i; i < 2; ++i) {
             bytes memory c = abi.encodeCall(ILayerFeeController.processFees, (tokens[i]));
@@ -122,7 +97,6 @@ contract CollectFlushKeeperLayer {
         address[3] memory routers = [router0, router1, router2];
         for (uint256 i; i < 3; ++i) {
             address r = routers[i];
-            if (r == address(0)) continue;
             bytes memory c = abi.encodeCall(ILayerBurnRouter.processBurnLayer, ());
             if (IERC20(layer).balanceOf(r) > 0) {
                 (bool ok, bytes memory ret) = _step(4, BURN_LAYER_GAS, r, c);
@@ -130,41 +104,46 @@ contract CollectFlushKeeperLayer {
             }
             uint256 bal = IERC20(weth).balanceOf(r) + r.balance;
             if (!doBurn || bal == 0 || bal < ILayerBurnRouter(r).minProcessThreshold()) continue;
-            uint256 minOut = Math.mulDiv(bal, minLayerOutPerWeth, 1e18);
-            // owner floor 0 (paused) reverts `SlippageFloorNotSet` in the router; no floor getter: spot floor
+            uint256 minOut = FullMath.mulDiv(bal, minLayerOutPerWeth, 1e18);
+            // owner floor 0 reverts `SlippageFloorNotSet` in the router. no floor getter (0x0EB2): pass 0, its
+            // 1% impact clamp and spot floor on the consumed amount apply (a partial fill would trip a minimum)
             try ILayerBurnRouter(r).minLayerOutPerWeth() returns (uint256 f) {
-                minOut = Math.max(minOut, Math.mulDiv(bal, f, 1e18));
-            } catch {}
+                uint256 need = FullMath.mulDiv(bal, f, 1e18);
+                if (need > minOut) minOut = need;
+            } catch {
+                minOut = 0;
+            }
             c = abi.encodeCall(ILayerBurnRouter.processBurnWeth, (minOut));
             (bool ok2, bytes memory ret2) = _step(5, BURN_WETH_GAS, r, c);
             if (ok2) {
                 (uint256 wIn, uint256 lOut) = abi.decode(ret2, (uint256, uint256));
-                wBurn += wIn;
-                lBought += lOut;
+                (wBurn, lBought) = (wBurn + wIn, lBought + lOut);
             }
         }
         _forward(unwrap);
         emit KeeperRun(msg.sender, [lCol, wCol, lBurn, wBurn, lBought]);
     }
 
+    /// @dev D49: starts only above `floor` plus margin, then gets all remaining gas. A revert that leaves gas
+    ///      under that reverts `InsufficientGas`, else collect (step 1) bubbles and the rest are reported.
     function _step(uint8 step, uint256 floor, address target, bytes memory data)
         internal
         returns (bool ok, bytes memory ret)
     {
-        _gas(step, floor);
-        (ok, ret) = target.call(data);
-        if (!ok) {
-            if (gasleft() < floor + MARGIN) revert InsufficientGas(step);
-            emit StepSkipped(step, target, ret);
-        }
-    }
-
-    function _gas(uint8 step, uint256 cost) internal view {
-        uint256 g = cost + MARGIN;
+        uint256 g = floor + MARGIN;
         if (gasleft() < g + g / 63 + 20_000) revert InsufficientGas(step);
+        (ok, ret) = target.call(data);
+        if (ok) return (ok, ret);
+        if (gasleft() < g) revert InsufficientGas(step);
+        if (step == 1) {
+            assembly ("memory-safe") {
+                revert(add(ret, 0x20), mload(ret))
+            }
+        }
+        emit StepSkipped(step, target, ret);
     }
 
-    /// @dev router rewards arrive as eth, dust can arrive as anything: all of it leaves now
+    /// @dev router rewards arrive as eth, dust as anything: all of it leaves now
     function _forward(bool unwrap) internal {
         uint256 w = IERC20(weth).balanceOf(address(this));
         if (w > 0 && unwrap) IWETH9(payable(weth)).withdraw(w);
@@ -177,9 +156,8 @@ contract CollectFlushKeeperLayer {
         }
     }
 
-    /// @notice Runner view. `uncollected*`: lp fees owed to the locker positions, both currencies. `claimable`:
-    ///         fee locker slots the keeper pushes [controller LAYER, controller weth, router0 LAYER, router0
-    ///         weth]. `routerWeth`: weth plus eth per router (what a burn swaps) vs its `minProcessThreshold`.
+    /// @notice `uncollected*`: lp fees owed to the positions. `claimable`: [controller LAYER, controller weth,
+    ///         router0 LAYER, router0 weth]. `routerWeth`: weth plus eth per router vs `minProcessThreshold`.
     function preview()
         external
         view
@@ -193,29 +171,27 @@ contract CollectFlushKeeperLayer {
     {
         IArtCoinsLpLocker.TokenRewardInfo memory info = locker.tokenRewards(layer);
         IPositionManager pm = ILayerFeeController(address(locker)).positionManager();
-        PoolId pid = info.poolKey.toId();
-        uint256 f0;
-        uint256 f1;
+        PoolId pid = PoolIdLibrary.toId(info.poolKey);
+        uint256[2] memory f;
         for (uint256 i; i < info.numPositions; ++i) {
             PositionInfo p = pm.positionInfo(info.positionId + i);
-            (uint256 g0, uint256 g1) =
-                POOL_MANAGER.getFeeGrowthInside(pid, p.tickLower(), p.tickUpper());
-            (uint128 liq, uint256 a0, uint256 a1) = POOL_MANAGER.getPositionInfo(
+            (uint256 g0, uint256 g1) = PM.getFeeGrowthInside(pid, p.tickLower(), p.tickUpper());
+            (uint128 liq, uint256 a0, uint256 a1) = PM.getPositionInfo(
                 pid, address(pm), p.tickLower(), p.tickUpper(), bytes32(info.positionId + i)
             );
             unchecked {
-                f0 += FullMath.mulDiv(g0 - a0, liq, FixedPoint128.Q128);
-                f1 += FullMath.mulDiv(g1 - a1, liq, FixedPoint128.Q128);
+                f[0] += FullMath.mulDiv(g0 - a0, liq, FixedPoint128.Q128);
+                f[1] += FullMath.mulDiv(g1 - a1, liq, FixedPoint128.Q128);
             }
         }
-        bool layer0 = Currency.unwrap(info.poolKey.currency0) == layer;
-        (uncollectedLayer, uncollectedWeth) = layer0 ? (f0, f1) : (f1, f0);
+        // v4 sorts currencies by address
+        (uncollectedLayer, uncollectedWeth) = layer < weth ? (f[0], f[1]) : (f[1], f[0]);
         for (uint256 i; i < 4; ++i) {
-            claimable[i] = feeLocker.availableFees(i < 2 ? controller : router0, i % 2 == 0 ? layer : weth);
+            claimable[i] =
+                feeLocker.availableFees(i < 2 ? controller : router0, i % 2 == 0 ? layer : weth);
         }
         address[3] memory rs = [router0, router1, router2];
         for (uint256 i; i < 3; ++i) {
-            if (rs[i] == address(0)) continue;
             routerWeth[i] = IERC20(weth).balanceOf(rs[i]) + rs[i].balance;
             routerThreshold[i] = ILayerBurnRouter(rs[i]).minProcessThreshold();
         }

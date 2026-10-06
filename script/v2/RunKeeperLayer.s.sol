@@ -72,8 +72,9 @@ contract RunKeeperLayer is SupersededGuard {
 
     /// @notice Rate for `run`: simulate the whole run at current state (reverted after) with rate 0, so each
     ///         router applies its own floor, take the realized LAYER per weth of the weth burns, subtract
-    ///         `slippageBps`. 0 when the simulation burns no weth (all routers under threshold or blocked);
-    ///         the router floors still apply then.
+    ///         `slippageBps`. The keeper applies the rate to routers with an owner floor (0x2eDB, 0xE600) as
+    ///         `max(rate, floor)`; 0x0EB2 always gets 0 and relies on its impact clamp and spot floor. Returns 0
+    ///         when the simulation burns no weth; the router floors still apply then.
     function quoteRate(CollectFlushKeeperLayer keeper, uint256 slippageBps)
         public
         returns (uint256)
