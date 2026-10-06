@@ -281,7 +281,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         PoolKey calldata key,
         IPoolManager.ModifyLiquidityParams calldata,
         bytes calldata
-    ) internal override returns (bytes4) {
+    ) internal view override returns (bytes4) {
         PoolId pid = key.toId();
         PoolInfo storage info = _info[pid];
         if (block.timestamp < uint256(info.createdAt) + Constants.MAX_MEV_WINDOW) {
