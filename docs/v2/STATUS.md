@@ -62,10 +62,10 @@ wave 2 plan was: v2 implementation packages from DESIGN.md, registry wiring into
 | item | output | state |
 |---|---|---|
 | k3 weth aware keeper for LAYER | src/v2/keepers/CollectFlushKeeperLayer.sol, test/v2/KeeperLayer.fork.t.sol, script/v2/RunKeeperLayer.s.sol, keeper-111.md (LAYER keeper), RUNBOOK action 2b and gate 9b | done: 11/11 fork tests at the pin. collect, claim router and controller slots, split, burn LAYER and weth on 0x2eDB, 0xE600, 0x0EB2; owner slot never claimed. no LF-02 shape on LAYER (recipients book by balance). gas sweep 23 completed, 24 reverted, 0 skipped. run arg is a LAYER per weth rate, not an absolute minOut |
-| github ci red on v2 | .github/workflows/test.yml fixes, docs/v2/review/hygiene-fixes.md | running |
-| registry verifier profile aware bytecode compare | script-js/verify-registry.mjs, deployments/mainnet.json source.profile, registry.yml | running |
-| ui airdrop claim v2 abi (V2B-04), S-01 renounce guard, keeper test decoupled from swapper Config | ui/, script/DeployConversionLockerAndWire.s.sol, test/v2/DeployV2Stack.fork.t.sol | running |
-| browser smoke of the ui on an anvil fork (playwright) | ui/e2e/, docs/v2/review/ui-e2e.md | running |
+| github ci red on v2 | .github/workflows/test.yml fixes, docs/v2/review/hygiene-fixes.md | done: cause was the no network job compiling 431 files in one process (runner killed, oom); build and v1 tests now run in batches; the four floor bound v1 fork tests skip with reasons; fork job locally 402 pass 0 fail 7 skip. github run on baded9a pending |
+| registry verifier profile aware bytecode compare | script-js/verify-registry.mjs, deployments/mainnet.json source.profile, registry.yml | done: 0 drift; 18 bytecode rows stay mismatch because the repo history starts 2026-06-13, after every stack was live, so the deployed source of the older contracts is not in git (documented per contract) |
+| ui airdrop claim v2 abi (V2B-04), S-01 renounce guard, keeper test decoupled from swapper Config | ui/, script/DeployConversionLockerAndWire.s.sol, test/v2/DeployV2Stack.fork.t.sol | done |
+| browser smoke of the ui on an anvil fork (playwright) | ui/e2e/, docs/v2/review/ui-e2e.md | done: 19/19 after fixing the six bugs it found (LAYER not tradeable, sell above balance, browser clock deadlines, stale referral copy, v2 notice wording, 111 contractURI gas). `cd ui && npm run test:e2e` |
 
 ## how to run tests
 
