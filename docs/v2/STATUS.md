@@ -17,11 +17,27 @@ worktree `.claude/worktrees/artcoins-v2-handoff-8404d2`, local branch `v2-direct
 | ui unit, build, lint | `cd ui && npm test && npm run build && npm run lint` | 74 | 74 pass, build and lint green |
 | ui e2e | anvil fork on port 8546, v2 stack deployed, `E2E_FORK_RPC=http://127.0.0.1:8546` | 19 | 19 pass after the harness fix: console load errors are judged by resource url against an allowlist of third party hosts (api.web3modal.org 403, pulse.walletconnect.org 400, ipfs.io 429). first run gave 3 pass, 10 fail, 6 not run on those errors alone |
 
+after D65 to D70 (merged head, same commands):
+
+| group | result |
+|---|---|
+| v2 unit | 238 pass |
+| v2 fork | 364 pass |
+| deploy rehearsal | 6 pass |
+| review proofs | 101 pass |
+| sizes (ci) | hook 16,716, factory 20,424, deployer 21,166, locker 13,626, dev buy 4,367, controller 3,971 |
+| keeper runner | 70 pass |
+| ui unit, build, lint | 74 pass, green |
+| registry `--build --require-artifacts` | 56 contracts, 2 coins, 0 drift, 0 warnings |
+| `DRY_RUN=0 script/v2/deploy.sh local` on an anvil fork | post deploy asserts ok, 10 contracts 0 drift, record tmp/v2-local-1.json |
+| ui e2e on that record | 18 pass, 1 timeout in the wallet dialog (`05-deploy-closed`, element detached during the connect click); the spec passes 3 of 3 on rerun |
+| `DRY_RUN=1 script/v2/deploy.sh mainnet` | refuses: TREASURY unset (owner to set TREASURY, TREASURY_BPS, DEPLOY_FEE, PROTOCOL_BPS in script/v2/env/mainnet.env) |
+
 | open item (HANDOFF) | state |
 |---|---|
 | 1 runbook part 1 | owner ran action 1 (block 26135717) and action 5 (26135720, 26135723) before this session. open: action 2 collect LAYER, action 4 deprecate 0xf051, action 3 deploy 111 helper, action 8 claim owner LAYER fees. all simulated at block 26136123 |
 | 2 audit tags | done. `v2-audit-1` = 9fed001, `v2-audit-2` = d8575db pushed to origin; the mirror job skipped both (not on master), public repo has none |
-| D65 to D68 | proposed, waiting for the owner |
+| D65 to D68 | accepted (D69), implemented, reviewed, merged; tag `v2-audit-3` is the reviewer's recheck target. D70 records the FeeDelivery revert |
 | ui finding (item 12) | the ui loads coin images from one public gateway (`IPFS_GATEWAY = https://ipfs.io/ipfs/` in ui/src/lib/security.ts). ipfs.io answered 429 during the e2e run, so visitors see broken images whenever it throttles. fix before the site deploy: a gateway fallback list or a dedicated gateway |
 
 ## environment (session of 2026-10-06)

@@ -62,12 +62,12 @@ you are taking over the artcoins v2 project from the cloud session that built it
 
 | group | command | expected |
 |---|---|---|
-| v2 unit, no fork | `forge test --match-path "test/v2/**" --match-contract "^(EscrowV2Test|FeeDeliveryTest|TokenV2Test|ConstantsV2Test|MevLinearSkimV2Test|KeeperV2Test|ProtocolFeeControllerV2Test|RendererV2Test|AirdropV2Test|VaultV2Test)$"` | 235 pass |
-| v2 tree, fork | `FOUNDRY_PROFILE=ci forge test --match-path "test/v2/**" --fork-url $ETH_RPC_URL --fork-block-number 26130269 --fork-retries 8 --fork-retry-backoff 2000 --no-match-contract "^(EscrowV2Test|FeeDeliveryTest|TokenV2Test|ConstantsV2Test|MevLinearSkimV2Test|KeeperV2Test|ProtocolFeeControllerV2Test|RendererV2Test|AirdropV2Test|VaultV2Test)$"` | 354 pass |
+| v2 unit, no fork | `forge test --match-path "test/v2/**" --match-contract "^(EscrowV2Test|FeeDeliveryTest|TokenV2Test|ConstantsV2Test|MevLinearSkimV2Test|KeeperV2Test|ProtocolFeeControllerV2Test|RendererV2Test|AirdropV2Test|VaultV2Test)$"` | 238 pass |
+| v2 tree, fork | `FOUNDRY_PROFILE=ci forge test --match-path "test/v2/**" --fork-url $ETH_RPC_URL --fork-block-number 26130269 --fork-retries 8 --fork-retry-backoff 2000 --no-match-contract "^(EscrowV2Test|FeeDeliveryTest|TokenV2Test|ConstantsV2Test|MevLinearSkimV2Test|KeeperV2Test|ProtocolFeeControllerV2Test|RendererV2Test|AirdropV2Test|VaultV2Test)$"` | 364 pass |
 | deploy rehearsal | `FOUNDRY_PROFILE=ci forge test --match-path "test/v2/DeployV2Stack.fork.t.sol" --fork-url $ETH_RPC_URL --fork-block-number 26130269 -vv` | 6 pass |
-| review proofs | `forge test --match-path "test/v2/{review,review-v2}/**" --fork-url $ETH_RPC_URL --fork-block-number 26130269 --fork-retries 8 --fork-retry-backoff 2000` | 94 pass |
+| review proofs | `forge test --match-path "test/v2/{review,review-v2}/**" --fork-url $ETH_RPC_URL --fork-block-number 26130269 --fork-retries 8 --fork-retry-backoff 2000` | 101 pass |
 | keeper runner | `cd keeper && npm ci && npm test` | 70 pass |
-| ui | `cd ui && npm ci && npm test && npm run build && npm run lint`, then anvil fork and `npm run test:e2e` | 74 unit, 19 e2e |
+| ui | `cd ui && npm ci && npm test && npm run build && npm run lint`, then anvil fork, `DRY_RUN=0 script/v2/deploy.sh local` and `npm run test:e2e` (ui/README.md) | 74 unit, 19 e2e |
 | sizes | `FOUNDRY_PROFILE=ci forge build --sizes --skip "test/**" --skip script` | hook 16,716 bytes, headroom 7,860 |
 | registry | `cd script-js && npm ci && node verify-registry.mjs --build --require-artifacts` | 0 drift; 18 older rows mismatch by design (registry-notes.md) |
 
