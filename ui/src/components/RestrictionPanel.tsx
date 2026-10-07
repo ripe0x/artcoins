@@ -89,7 +89,7 @@ export default function RestrictionPanel({ token, admin, fromBlock }: Props) {
 
   return (
     <InfoCard title="Transfer restriction">
-      <InfoRow label="Status" value={status} />
+      <InfoRow label="Restriction" value={status} />
       {restricted && <InfoRow label="Allowlist entries" value={allowlist ? allowlist.length : '...'} />}
       <InfoRow label="Locked" value={locked === undefined ? '...' : locked ? 'yes, the allowlist and the switch are frozen' : 'no'} />
       {isAdmin && locked === false && (
