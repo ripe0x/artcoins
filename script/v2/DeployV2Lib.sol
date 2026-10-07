@@ -79,7 +79,6 @@ library DeployV2Lib {
         address poolManager;
         address positionManager;
         address permit2;
-        address universalRouter;
         address create2Deployer;
         address treasury;
         uint16 treasuryBps;
@@ -116,7 +115,6 @@ library DeployV2Lib {
         address poolManager,
         address positionManager,
         address permit2,
-        address universalRouter,
         address create2Deployer
     ) internal pure returns (Params memory p) {
         p.owner = owner;
@@ -124,7 +122,6 @@ library DeployV2Lib {
         p.poolManager = poolManager;
         p.positionManager = positionManager;
         p.permit2 = permit2;
-        p.universalRouter = universalRouter;
         p.create2Deployer = create2Deployer;
         p.treasury = owner;
         p.treasuryBps = TREASURY_BPS;
@@ -253,22 +250,14 @@ library DeployV2Lib {
         f.setDefaultProtocolFeeBps(p.protocolBps);
         f.setMinProtocolSkimShareBps(p.minProtocolSkimShareBps);
         f.setMinLpFee(p.minLpFee);
-        f.setDefaultAllowed(_defaultAllowed(p));
+        // defaultAllowed ships empty. A restricted coin trades through the
+        // standard routers without any router on the allowlist, because the
+        // only coin move is directly between the PoolManager and the user,
+        // covered by the per swap allowance the hook grants. A forwarding
+        // contract (router, aggregator, multicall) must never be allowlisted:
+        // the transfer rule checks from and to only, so an allowlisted
+        // forwarder lets a user move coin wallet to wallet through it.
         // deprecated stays true (constructor). opening is a separate owner tx.
-    }
-
-    /// @dev Seeded into every restricted coin's allowlist: permit2 and, when
-    ///      set, the universal router, so a restricted coin trades through the
-    ///      standard routers at launch.
-    function _defaultAllowed(Params memory p) private pure returns (address[] memory a) {
-        if (p.universalRouter == address(0)) {
-            a = new address[](1);
-            a[0] = p.permit2;
-            return a;
-        }
-        a = new address[](2);
-        a[0] = p.permit2;
-        a[1] = p.universalRouter;
     }
 
     /// @dev Step 12. Two step: OWNER must `acceptOwnership` on each.
@@ -378,12 +367,7 @@ library DeployV2Lib {
         require(f.defaultProtocolFeeBps() == p.protocolBps, "v2: protocol bps");
         require(f.minProtocolSkimShareBps() == p.minProtocolSkimShareBps, "v2: min skim share");
         require(f.minLpFee() == p.minLpFee, "v2: min lp fee");
-        address[] memory da = f.defaultAllowed();
-        address[] memory want = _defaultAllowed(p);
-        require(da.length == want.length, "v2: default allowed length");
-        for (uint256 i; i < da.length; ++i) {
-            require(da[i] == want[i], "v2: default allowed");
-        }
+        require(f.defaultAllowed().length == 0, "v2: default allowed must ship empty");
         require(f.deprecated(), "v2: factory must ship deprecated");
         require(f.STACK_VERSION() == Constants.STACK_VERSION, "v2: stack version");
     }

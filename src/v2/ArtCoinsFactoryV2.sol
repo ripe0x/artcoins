@@ -155,8 +155,15 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     mapping(address => bool) public enabledEscrows;
     /// @notice Owner set addresses seeded into every restricted coin's launch
     ///         allowlist, on top of the stack escrow, the launch locker and the
-    ///         launch extensions. Holds permit2 and the universal router so a
-    ///         restricted coin trades through the standard routers.
+    ///         launch extensions. Ships empty. Only a contract whose coin
+    ///         outflows are fixed by its own logic belongs here; a contract that
+    ///         sends coin where its caller directs (a router, aggregator,
+    ///         multicall or smart wallet) must never be added, because the
+    ///         transfer rule checks the two parties only, so an allowlisted
+    ///         forwarder lets any user move coin wallet to wallet through it. A
+    ///         restricted coin trades through the standard routers with no
+    ///         router allowlisted: the only coin move is between the PoolManager
+    ///         and the user, covered by the per swap allowance.
     address[] private _defaultAllowed;
 
     // ── launch records ────────────────────────────────────────────────────
