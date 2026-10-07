@@ -58,8 +58,21 @@ test('refuses the owner key', () => {
   assert.throws(() => loadConfig(baseEnv(tmpDir(), { KEEPER_PRIVATE_KEY: '0x1234' }), realRegistry()), /32 bytes/);
 });
 
-test('keeper addresses come from the registry when recorded, env overrides', () => {
+// the real registry without its keeper rows, for tests that record their own
+function registryWithoutKeepers() {
   const reg = realRegistry();
+  reg.contracts = reg.contracts.filter((c) => c.role !== 'keeper');
+  return reg;
+}
+
+test('the recorded 111 keeper resolves from the real registry', () => {
+  const env = { KEEPER_PRIVATE_KEY: TEST_KEY, STATE_PATH: tmpDir() + '/s.json', DRY_RUN: '1' };
+  const k = loadConfig(env, realRegistry()).keepers.find((x) => x.id === '111');
+  assert.equal(k.address, getAddress('0xa8fd2c8DB6A8EDfBa9eC2993b37F534e34D0B50E'));
+});
+
+test('keeper addresses come from the registry when recorded, env overrides', () => {
+  const reg = registryWithoutKeepers();
   reg.contracts.push({ name: 'CollectFlushKeeperV1', address: '0x00000000000000000000000000000000000000aa', stack: 'current', role: 'keeper', status: 'current' });
   reg.contracts.push({ name: 'CollectFlushKeeperLayer', address: '0x00000000000000000000000000000000000000bb', stack: 'legacy', role: 'keeper', status: 'legacy' });
   const env = { KEEPER_PRIVATE_KEY: TEST_KEY, STATE_PATH: tmpDir() + '/s.json', DRY_RUN: '1' };
@@ -68,7 +81,7 @@ test('keeper addresses come from the registry when recorded, env overrides', () 
   const over = loadConfig({ ...env, KEEPER_111: K111 }, reg);
   assert.equal(over.keepers[0].address, K111);
   // neither recorded nor set: address null (the runner logs no_address and skips it)
-  assert.equal(loadConfig(env, realRegistry()).keepers[0].address, null);
+  assert.equal(loadConfig(env, registryWithoutKeepers()).keepers[0].address, null);
   // two different live entries with the same name: refuse to guess
   reg.contracts.push({ name: 'CollectFlushKeeperV1', address: '0x00000000000000000000000000000000000000cc', stack: 'current', role: 'keeper', status: 'current' });
   assert.throws(() => findContract(reg, 'CollectFlushKeeperV1'), /2 live/);
