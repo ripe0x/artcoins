@@ -99,11 +99,11 @@ if [ "$REQUIRE_CLEAN_GIT" = true ]; then
     remote=$(git ls-remote --tags origin "refs/tags/$tag^{}" "refs/tags/$tag" | awk 'NR==1{c=$1} /\^\{\}$/{c=$1} END{print c}') \
       || soft "git ls-remote origin failed"
     [ "${remote:-}" = "$head" ] || soft "tag $tag is not on origin at HEAD $head"
-  elif [ "$branch" = v2 ]; then
-    git fetch --quiet origin v2 || soft "git fetch origin v2 failed"
-    [ "$head" = "$(git rev-parse origin/v2 2>/dev/null || echo none)" ] || soft "HEAD is not origin/v2"
+  elif [ "$branch" = master ]; then
+    git fetch --quiet origin master || soft "git fetch origin master failed"
+    [ "$head" = "$(git rev-parse origin/master 2>/dev/null || echo none)" ] || soft "HEAD is not origin/master"
   else
-    soft "HEAD is on $branch, deploy from branch v2 or a tag"
+    soft "HEAD is on $branch, deploy from branch master or a tag"
   fi
   [ -z "$(git status --porcelain)" ] || soft "working tree is not clean"
   echo "ok   git ${tag:-$branch} ${head:0:8}"
