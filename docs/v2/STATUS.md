@@ -33,7 +33,7 @@ after D65 to D70 (merged head, same commands):
 | ui e2e on that record | 18 pass, 1 timeout in the wallet dialog (`05-deploy-closed`, element detached during the connect click); the spec passes 3 of 3 on rerun |
 | `DRY_RUN=1 script/v2/deploy.sh mainnet` | refuses: TREASURY unset (owner to set TREASURY, TREASURY_BPS, DEPLOY_FEE, PROTOCOL_BPS in script/v2/env/mainnet.env) |
 
-**deploy blocked (2026-10-07):** the independent audit of `v2-audit-3` found ACV2-01 (high): a canonical grant consumed by a side pool take survives an offsetting canonical swap, so VENUE side buys skip tax and HARD side pool coin exits as erc20. reproduced on the fork (`test/v2/review-v3/ACV2_01.fork.t.sol`). fix per D71 in progress on branch `acv2-01`; then the full table, an independent re review, tag `v2-audit-4`.
+**deploy waits on the v2-audit-4 audit (2026-10-07):** the independent audit of `v2-audit-3` found ACV2-01 (high). the owner retired the tax modes for a `restricted` launch flag (D73, fee priced per D74). `v2-audit-4` = 0e56d32f is the audit target. verified there: 207 unit (also on a fork), 343 fork, 6 deploy rehearsal, 102 review proofs, keeper 71, ui 75, ui e2e 19 (after a ui label fix, 773bd2c9), registry 0 drift, wrapper local deploy ok, mainnet dry run ok.
 
 | open item (HANDOFF) | state |
 |---|---|
