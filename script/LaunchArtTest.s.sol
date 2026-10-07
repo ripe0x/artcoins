@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+// targets superseded stack legacy; current stack is 0x4959… (Addresses.CURRENT_FACTORY).
+// Mainnet runs are refused unless ALLOW_SUPERSEDED=1.
+
 import {Script, console2} from "forge-std/Script.sol";
 
 import {ArtCoinsToken} from "../src/ArtCoinsToken.sol";
@@ -10,6 +13,7 @@ import {ArtCoinsMevSniperSteppedFees} from "../src/mev-modules/ArtCoinsMevSniper
 import {IArtCoinsFactory} from "../src/interfaces/IArtCoinsFactory.sol";
 import {IArtCoinsHook} from "../src/interfaces/IArtCoinsHook.sol";
 
+import {Addresses} from "./Addresses.sol";
 import {LaunchDefaults} from "./LaunchDefaults.sol";
 
 /// @title LaunchArtTest
@@ -31,7 +35,7 @@ import {LaunchDefaults} from "./LaunchDefaults.sol";
 ///   STARTING_TICK            Aligned-to-200 starting tick.
 contract LaunchArtTest is Script {
     address constant SEPOLIA_WETH = 0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14;
-    address constant MAINNET_WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+    address constant MAINNET_WETH = Addresses.WETH;
 
     function _weth() internal view returns (address) {
         if (block.chainid == 11_155_111) return SEPOLIA_WETH;
@@ -39,7 +43,16 @@ contract LaunchArtTest is Script {
         revert("Unsupported chain");
     }
 
+    /// @dev Drives the legacy factory ABI (stack `legacy`, LAYER). On mainnet it refuses
+    ///      to run unless ALLOW_SUPERSEDED=1.
+    function _requireSupersededAllowed() internal view {
+        if (block.chainid == Addresses.CHAIN_ID && vm.envOr("ALLOW_SUPERSEDED", uint256(0)) != 1) {
+            revert("targets superseded stack legacy; set ALLOW_SUPERSEDED=1 to run on mainnet");
+        }
+    }
+
     function run() public {
+        _requireSupersededAllowed();
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(pk);
         address artistTreasury = vm.envAddress("ARTIST_TREASURY");

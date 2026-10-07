@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+// targets superseded stack legacy; current stack is 0x4959… (Addresses.CURRENT_FACTORY).
+// Mainnet runs are refused unless ALLOW_SUPERSEDED=1.
+
 import {Script, console2} from "forge-std/Script.sol";
 
 import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
@@ -30,6 +33,8 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 
+import {Addresses} from "./Addresses.sol";
+
 /// @notice Full stack deployment for ArtCoins token launcher
 /// @dev Supports ETH mainnet and Sepolia. Auto-detects chain.
 ///
@@ -46,10 +51,10 @@ import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 /// `forge verify-contract` is idempotent.
 contract DeployScript is Script {
     // ETH Mainnet
-    address constant MAINNET_POOL_MANAGER = 0x000000000004444c5dc75cB358380D2e3dE08A90;
-    address constant MAINNET_POSITION_MANAGER = 0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e;
-    address constant MAINNET_WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-    address constant MAINNET_UNIVERSAL_ROUTER = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af;
+    address constant MAINNET_POOL_MANAGER = Addresses.POOL_MANAGER;
+    address constant MAINNET_POSITION_MANAGER = Addresses.POSITION_MANAGER;
+    address constant MAINNET_WETH = Addresses.WETH;
+    address constant MAINNET_UNIVERSAL_ROUTER = Addresses.UNIVERSAL_ROUTER;
 
     // Sepolia
     address constant SEPOLIA_POOL_MANAGER = 0xE03A1074c86CFeDd5C142C4F04F1a1536e203543;
@@ -58,10 +63,10 @@ contract DeployScript is Script {
     address constant SEPOLIA_UNIVERSAL_ROUTER = 0x3A9D48AB9751398BbFa63ad67599Bb04e4BdF98b;
 
     // Shared
-    address constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
-    address constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
-    address constant SCRIPTY_BUILDER = 0xD7587F110E08F4D120A231bA97d3B577A81Df022;
-    address constant SCRIPTY_STORAGE = 0xbD11994aABB55Da86DC246EBB17C1Be0af5b7699;
+    address constant PERMIT2 = Addresses.PERMIT2;
+    address constant CREATE2_DEPLOYER = Addresses.CREATE2_DEPLOYER;
+    address constant SCRIPTY_BUILDER = Addresses.SCRIPTY_BUILDER;
+    address constant SCRIPTY_STORAGE = Addresses.SCRIPTY_STORAGE;
     uint256 constant LAYER_INITIAL_SUPPLY = 1_000_000_000e18;
 
     struct Network {
@@ -398,7 +403,15 @@ contract DeployScript is Script {
         }
     }
 
+    /// @dev Mainnet runs are refused unless ALLOW_SUPERSEDED=1 (superseded stack legacy).
+    function _requireSupersededAllowed() internal view {
+        if (block.chainid == Addresses.CHAIN_ID && vm.envOr("ALLOW_SUPERSEDED", uint256(0)) != 1) {
+            revert("targets a superseded stack; set ALLOW_SUPERSEDED=1 to run on mainnet");
+        }
+    }
+
     function run() public {
+        _requireSupersededAllowed();
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
         Network memory net = _getNetwork();

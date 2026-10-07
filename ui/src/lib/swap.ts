@@ -1,30 +1,41 @@
-import {
-  encodeAbiParameters,
-  type Address,
-  type Hex,
-} from 'viem';
+// Universal Router calldata for buying and selling a coin against its native eth pool (every v2 pool and
+// the live skim pools) and, for old weth paired pools, against weth.
+//
+// Command order matters. Router facts (lib/universal-router, lib/v4-periphery V4Router):
+//   SETTLE_ALL(currency, max)   pays the whole debt: native eth from the router's own balance (msg.value),
+//                               erc20 from msg.sender through permit2
+//   TAKE_ALL(currency, min)     pays the whole credit to msg.sender, reverts below `min`
+//   TAKE(currency, to, amount)  amount 0 = the whole credit, `to` address(2) = the router itself
+//   UNWRAP_WETH(to, min)        unwraps the router's own weth balance, reverts when it holds less than `min`
+// Old sell path (UI-06): TAKE_ALL sent the weth to the user, UNWRAP_WETH then saw a zero balance and
+// reverted InsufficientETH. The weth sell now takes to the router first, then unwraps. Native pools need
+// neither wrap nor unwrap: the PoolManager sends eth straight to the user on TAKE_ALL.
+import { encodeAbiParameters, type Address, type Hex } from 'viem';
 import type { PoolKey } from './pool';
+import { ZERO_ADDRESS } from './constants';
 
 // Universal Router commands
-const CMD_V4_SWAP = 0x10;
-const CMD_WRAP_ETH = 0x0b;
-const CMD_UNWRAP_WETH = 0x0c;
+export const CMD_V4_SWAP = 0x10;
+export const CMD_WRAP_ETH = 0x0b;
+export const CMD_UNWRAP_WETH = 0x0c;
 
-// V4 router actions
-const ACT_SWAP_EXACT_IN_SINGLE = 0x06;
-const ACT_SETTLE = 0x0b;     // (Currency, uint256, bool payerIsUser)
-const ACT_SETTLE_ALL = 0x0c; // (Currency, uint256 maxAmount)  — payer is always msg.sender
-const ACT_TAKE_ALL = 0x0f;
+// V4 router actions (lib/v4-periphery Actions.sol)
+export const ACT_SWAP_EXACT_IN_SINGLE = 0x06;
+export const ACT_SETTLE = 0x0b; // (Currency, uint256 amount, bool payerIsUser)
+export const ACT_SETTLE_ALL = 0x0c; // (Currency, uint256 maxAmount), payer is always msg.sender
+export const ACT_TAKE = 0x0e; // (Currency, address recipient, uint256 amount)
+export const ACT_TAKE_ALL = 0x0f; // (Currency, uint256 minAmount), recipient is always msg.sender
 
-/** Zero address — used as the "currency" sentinel meaning ETH for the router */
-const ETH_ADDRESS: Address = '0x0000000000000000000000000000000000000000';
+/** ActionConstants: recipient meaning the router itself, amount meaning "the whole open delta" */
+export const ADDRESS_THIS: Address = '0x0000000000000000000000000000000000000002';
+export const OPEN_DELTA = 0n;
+/** WRAP_ETH amount sentinel: the router's whole eth balance */
+export const CONTRACT_BALANCE: bigint = 1n << 255n;
 
-/** Universal Router constants for `amount` fields */
-const CONTRACT_BALANCE: bigint = 1n << 255n; // sentinel: "use full balance on router"
+const ETH_ADDRESS: Address = ZERO_ADDRESS;
 
 function packBytes1(values: number[]): Hex {
-  const hex = values.map(v => v.toString(16).padStart(2, '0')).join('');
-  return `0x${hex}` as Hex;
+  return `0x${values.map((v) => v.toString(16).padStart(2, '0')).join('')}` as Hex;
 }
 
 const poolKeyComponents = [
@@ -43,205 +54,213 @@ const exactInputSingleComponents = [
   { name: 'hookData', type: 'bytes' },
 ] as const;
 
-/**
- * Encode V4 SWAP_EXACT_IN_SINGLE + SETTLE/SETTLE_ALL + TAKE_ALL.
- *
- * @param payerIsUser
- *   - `true` → SETTLE_ALL: pulls input token from the user (msg.sender) via Permit2.
- *              Used for SELL (user's token → WETH).
- *   - `false` → SETTLE: pays from the router's own balance (address(this)).
- *              Used for BUY (ETH was already wrapped to WETH on the router via WRAP_ETH).
- */
-function encodeV4SwapInput(params: {
+const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
+
+export type PoolKind = 'native' | 'weth';
+
+/** The pool pairs the coin with native eth, with `weth` (old pools), or is not a pool this ui can trade. */
+export function classifyPool(poolKey: PoolKey, coin: Address, weth: Address): PoolKind | null {
+  const coinIs0 = same(poolKey.currency0, coin);
+  const coinIs1 = same(poolKey.currency1, coin);
+  if (coinIs0 === coinIs1) return null;
+  const other = coinIs0 ? poolKey.currency1 : poolKey.currency0;
+  if (same(other, ETH_ADDRESS)) return 'native';
+  if (same(other, weth)) return 'weth';
+  return null;
+}
+
+/** Direction is derived from the pool key and the coin address, never from a chain read. */
+export function coinIsCurrency0(poolKey: PoolKey, coin: Address): boolean {
+  return same(poolKey.currency0, coin);
+}
+
+function swapInput(p: {
   poolKey: PoolKey;
   zeroForOne: boolean;
   amountIn: bigint;
   amountOutMinimum: bigint;
   hookData: Hex;
-  inputToken: Address;
-  outputToken: Address;
-  payerIsUser: boolean;
 }): Hex {
-  const settleAction = params.payerIsUser ? ACT_SETTLE_ALL : ACT_SETTLE;
-
-  const actions = packBytes1([
-    ACT_SWAP_EXACT_IN_SINGLE,
-    settleAction,
-    ACT_TAKE_ALL,
-  ]);
-
-  // Encode ExactInputSingleParams as a single dynamic tuple — matching abi.encode(struct).
-  // Because the struct contains a dynamic field (bytes hookData), abi.encode(struct) wraps
-  // the data with a leading offset word (0x20). The V4Router's CalldataDecoder dereferences
-  // this offset in assembly: `swapParams := add(params.offset, calldataload(params.offset))`.
-  // Passing the fields as flat top-level params would omit the offset, causing a revert.
-  const swapParams = encodeAbiParameters(
+  // abi.encode(struct) with a dynamic member carries a leading offset word, V4Router decodes it
+  return encodeAbiParameters(
     [{ type: 'tuple', components: exactInputSingleComponents }],
     [
       {
         poolKey: {
-          currency0: params.poolKey.currency0,
-          currency1: params.poolKey.currency1,
-          fee: params.poolKey.fee,
-          tickSpacing: params.poolKey.tickSpacing,
-          hooks: params.poolKey.hooks,
+          currency0: p.poolKey.currency0,
+          currency1: p.poolKey.currency1,
+          fee: p.poolKey.fee,
+          tickSpacing: p.poolKey.tickSpacing,
+          hooks: p.poolKey.hooks,
         },
-        zeroForOne: params.zeroForOne,
-        amountIn: params.amountIn,
-        amountOutMinimum: params.amountOutMinimum,
-        hookData: params.hookData,
+        zeroForOne: p.zeroForOne,
+        amountIn: p.amountIn,
+        amountOutMinimum: p.amountOutMinimum,
+        hookData: p.hookData,
       },
     ]
   );
+}
 
-  // SETTLE_ALL: (Currency, uint256 maxAmount)
-  // SETTLE:     (Currency, uint256 amount, bool payerIsUser)
-  const settleParams = params.payerIsUser
-    ? encodeAbiParameters(
-        [{ type: 'address' }, { type: 'uint256' }],
-        [params.inputToken, params.amountIn]
-      )
-    : encodeAbiParameters(
-        [{ type: 'address' }, { type: 'uint256' }, { type: 'bool' }],
-        [params.inputToken, params.amountIn, false]
-      );
+const addrUint = [{ type: 'address' }, { type: 'uint256' }] as const;
+const UINT128_MAX = (1n << 128n) - 1n;
 
-  const takeParams = encodeAbiParameters(
-    [{ type: 'address' }, { type: 'uint256' }],
-    [params.outputToken, params.amountOutMinimum]
-  );
+function checkAmounts(amountIn: bigint, minOut: bigint): void {
+  if (amountIn <= 0n || amountIn > UINT128_MAX) throw new Error('amount in out of range');
+  // never send a swap without a floor: a missing quote must block the swap, not become a zero minimum
+  if (minOut <= 0n || minOut > UINT128_MAX) throw new Error('refusing a swap with a zero or invalid minimum out');
+}
 
-  return encodeAbiParameters(
-    [{ type: 'bytes' }, { type: 'bytes[]' }],
-    [actions, [swapParams, settleParams, takeParams]]
-  );
+export interface BuiltSwap {
+  commands: Hex;
+  inputs: Hex[];
+  value: bigint;
 }
 
 export interface BuildBuyArgs {
   poolKey: PoolKey;
-  /** Is NewMaterial token0? (derived from the hook) */
-  newMaterialIsToken0: boolean;
-  /** WETH address (paired token) */
-  weth: Address;
-  /** Token being bought (NewMaterial) */
   token: Address;
-  /** Amount of ETH being spent */
+  /** weth address, only used to recognise an old weth pool */
+  weth: Address;
   ethAmount: bigint;
-  /** Minimum amount of token to receive (slippage-protected) */
+  /** floor from a fresh quote, must be > 0 */
   minTokenOut: bigint;
-  /** Hook data — usually `0x` */
   hookData?: Hex;
 }
 
 /**
- * Build Universal Router inputs for a buy (ETH → Token).
- * Flow: WRAP_ETH → V4_SWAP (WETH → Token)
- * ETH is sent as msg.value and wrapped by the router.
+ * Buy. Native pool: V4_SWAP[SWAP_EXACT_IN_SINGLE, SETTLE_ALL(eth), TAKE_ALL(coin)] with msg.value = eth.
+ * Weth pool: WRAP_ETH to the router first, then V4_SWAP with SETTLE(payerIsUser false).
  */
-export function buildBuyCalldata(args: BuildBuyArgs): {
-  commands: Hex;
-  inputs: Hex[];
-  value: bigint;
-} {
+export function buildBuyCalldata(args: BuildBuyArgs): BuiltSwap {
+  const kind = classifyPool(args.poolKey, args.token, args.weth);
+  if (!kind) throw new Error('pool is not a coin / native eth or coin / weth pool');
+  checkAmounts(args.ethAmount, args.minTokenOut);
   const hookData: Hex = args.hookData ?? '0x';
 
-  const commands = packBytes1([CMD_WRAP_ETH, CMD_V4_SWAP]);
+  if (kind === 'native') {
+    // eth is currency0 (address 0 sorts first), buying the coin is zeroForOne
+    const swap = swapInput({
+      poolKey: args.poolKey,
+      zeroForOne: true,
+      amountIn: args.ethAmount,
+      amountOutMinimum: args.minTokenOut,
+      hookData,
+    });
+    const actions = packBytes1([ACT_SWAP_EXACT_IN_SINGLE, ACT_SETTLE_ALL, ACT_TAKE_ALL]);
+    const settle = encodeAbiParameters([...addrUint], [ETH_ADDRESS, args.ethAmount]);
+    const take = encodeAbiParameters([...addrUint], [args.token, args.minTokenOut]);
+    return {
+      commands: packBytes1([CMD_V4_SWAP]),
+      inputs: [encodeAbiParameters([{ type: 'bytes' }, { type: 'bytes[]' }], [actions, [swap, settle, take]])],
+      value: args.ethAmount,
+    };
+  }
 
-  // WRAP_ETH: (recipient, amount) — recipient = router (address(2) = ADDRESS_THIS), amount = contract balance
-  const wrapInput = encodeAbiParameters(
-    [{ type: 'address' }, { type: 'uint256' }],
-    ['0x0000000000000000000000000000000000000002', CONTRACT_BALANCE]
-  );
-
-  // V4 swap: zeroForOne = true if paying token0 (WETH) for token1 (NM), false otherwise
-  // We're selling WETH → NM. So zeroForOne is true iff WETH is token0.
-  const wethIsToken0 = !args.newMaterialIsToken0;
-  const zeroForOne = wethIsToken0;
-
-  const v4Input = encodeV4SwapInput({
+  // weth pool
+  const wethIs0 = same(args.poolKey.currency0, args.weth);
+  const swap = swapInput({
     poolKey: args.poolKey,
-    zeroForOne,
+    zeroForOne: wethIs0,
     amountIn: args.ethAmount,
     amountOutMinimum: args.minTokenOut,
     hookData,
-    inputToken: args.weth,
-    outputToken: args.token,
-    payerIsUser: false, // router pays from its own WETH (wrapped via WRAP_ETH)
   });
-
+  const actions = packBytes1([ACT_SWAP_EXACT_IN_SINGLE, ACT_SETTLE, ACT_TAKE_ALL]);
+  const settle = encodeAbiParameters(
+    [{ type: 'address' }, { type: 'uint256' }, { type: 'bool' }],
+    [args.weth, args.ethAmount, false]
+  );
+  const take = encodeAbiParameters([...addrUint], [args.token, args.minTokenOut]);
+  const wrap = encodeAbiParameters([...addrUint], [ADDRESS_THIS, CONTRACT_BALANCE]);
   return {
-    commands,
-    inputs: [wrapInput, v4Input],
+    commands: packBytes1([CMD_WRAP_ETH, CMD_V4_SWAP]),
+    inputs: [wrap, encodeAbiParameters([{ type: 'bytes' }, { type: 'bytes[]' }], [actions, [swap, settle, take]])],
     value: args.ethAmount,
   };
 }
 
 export interface BuildSellArgs {
   poolKey: PoolKey;
-  newMaterialIsToken0: boolean;
-  weth: Address;
   token: Address;
-  /** Amount of token being sold */
+  weth: Address;
   tokenAmount: bigint;
-  /** Minimum amount of ETH to receive */
+  /** floor from a fresh quote, must be > 0 */
   minEthOut: bigint;
-  /** Recipient of the ETH */
+  /** receives the eth, used only on the weth path (the native path pays msg.sender) */
   recipient: Address;
   hookData?: Hex;
 }
 
 /**
- * Build Universal Router inputs for a sell (Token → ETH).
- * Flow: V4_SWAP (Token → WETH) → UNWRAP_WETH (to recipient)
- * User must have approved Token → Permit2 and Permit2 → UniversalRouter beforehand.
+ * Sell. Native pool: V4_SWAP[SWAP_EXACT_IN_SINGLE, SETTLE_ALL(coin), TAKE_ALL(eth)], eth lands at msg.sender.
+ * Weth pool: V4_SWAP[SWAP_EXACT_IN_SINGLE, SETTLE_ALL(coin), TAKE(weth, router)] then UNWRAP_WETH(recipient).
+ * The user approves coin -> permit2 and permit2 -> router beforehand.
  */
-export function buildSellCalldata(args: BuildSellArgs): {
-  commands: Hex;
-  inputs: Hex[];
-  value: bigint;
-} {
+export function buildSellCalldata(args: BuildSellArgs): BuiltSwap {
+  const kind = classifyPool(args.poolKey, args.token, args.weth);
+  if (!kind) throw new Error('pool is not a coin / native eth or coin / weth pool');
+  checkAmounts(args.tokenAmount, args.minEthOut);
   const hookData: Hex = args.hookData ?? '0x';
-
-  const commands = packBytes1([CMD_V4_SWAP, CMD_UNWRAP_WETH]);
-
-  // Selling NM for WETH. zeroForOne true iff NM is token0.
-  const zeroForOne = args.newMaterialIsToken0;
-
-  const v4Input = encodeV4SwapInput({
+  const swap = swapInput({
     poolKey: args.poolKey,
-    zeroForOne,
+    zeroForOne: coinIsCurrency0(args.poolKey, args.token),
     amountIn: args.tokenAmount,
     amountOutMinimum: args.minEthOut,
     hookData,
-    inputToken: args.token,
-    outputToken: args.weth,
-    payerIsUser: true, // user pays via Permit2 (token approved beforehand)
   });
+  const settle = encodeAbiParameters([...addrUint], [args.token, args.tokenAmount]);
 
-  // UNWRAP_WETH: (recipient, amountMin)
-  const unwrapInput = encodeAbiParameters(
-    [{ type: 'address' }, { type: 'uint256' }],
-    [args.recipient, args.minEthOut]
+  if (kind === 'native') {
+    const actions = packBytes1([ACT_SWAP_EXACT_IN_SINGLE, ACT_SETTLE_ALL, ACT_TAKE_ALL]);
+    const take = encodeAbiParameters([...addrUint], [ETH_ADDRESS, args.minEthOut]);
+    return {
+      commands: packBytes1([CMD_V4_SWAP]),
+      inputs: [encodeAbiParameters([{ type: 'bytes' }, { type: 'bytes[]' }], [actions, [swap, settle, take]])],
+      value: 0n,
+    };
+  }
+
+  const actions = packBytes1([ACT_SWAP_EXACT_IN_SINGLE, ACT_SETTLE_ALL, ACT_TAKE]);
+  const take = encodeAbiParameters(
+    [{ type: 'address' }, { type: 'address' }, { type: 'uint256' }],
+    [args.weth, ADDRESS_THIS, OPEN_DELTA]
   );
-
+  const unwrap = encodeAbiParameters([...addrUint], [args.recipient, args.minEthOut]);
   return {
-    commands,
-    inputs: [v4Input, unwrapInput],
+    commands: packBytes1([CMD_V4_SWAP, CMD_UNWRAP_WETH]),
+    inputs: [encodeAbiParameters([{ type: 'bytes' }, { type: 'bytes[]' }], [actions, [swap, settle, take]]), unwrap],
     value: 0n,
   };
 }
 
-/** Apply slippage tolerance (in basis points) to an expected amount. */
+/** Apply slippage tolerance (bps) to an expected amount. 0 bps keeps the quote, never goes below 1 wei. */
 export function applySlippage(expected: bigint, slippageBps: number): bigint {
-  if (slippageBps <= 0) return expected;
-  const denominator = 10_000n;
-  const bpsLeft = denominator - BigInt(slippageBps);
-  return (expected * bpsLeft) / denominator;
+  if (!Number.isFinite(slippageBps) || slippageBps < 0 || slippageBps >= 10_000) throw new Error('slippage out of range');
+  const out = (expected * BigInt(10_000 - Math.round(slippageBps))) / 10_000n;
+  return out > 0n ? out : 0n;
 }
 
-/** Max uint160 — used for "infinite" Permit2 allowance. */
+/**
+ * Execution price versus the pool mid price, in percent, positive = worse than mid. Includes fees and the
+ * anti sniper skim because the quote does. `midCoinPerEth` is coin per eth at the current tick.
+ * buy:  amountIn eth,  amountOut coin  -> executed coin per eth = out / in
+ * sell: amountIn coin, amountOut eth   -> executed coin per eth = in / out
+ */
+export function priceImpactPercent(
+  direction: 'buy' | 'sell',
+  amountIn: bigint,
+  amountOut: bigint,
+  midCoinPerEth: number
+): number | null {
+  if (amountIn <= 0n || amountOut <= 0n || !(midCoinPerEth > 0) || !Number.isFinite(midCoinPerEth)) return null;
+  const executed = direction === 'buy' ? Number(amountOut) / Number(amountIn) : Number(amountIn) / Number(amountOut);
+  if (!Number.isFinite(executed) || executed <= 0) return null;
+  return direction === 'buy' ? (1 - executed / midCoinPerEth) * 100 : (executed / midCoinPerEth - 1) * 100;
+}
+
+/** Permit2 only reads `amount` and `expiration` as uint160 / uint48 */
 export const MAX_UINT160 = (1n << 160n) - 1n;
-/** Max uint256 — used for "infinite" ERC20 allowance to Permit2. */
 export const MAX_UINT256 = (1n << 256n) - 1n;
 
 export { ETH_ADDRESS };

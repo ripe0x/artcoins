@@ -42,6 +42,11 @@ export default function ImageUploader({ value, onChange, placeholder }: Props) {
         });
         return;
       }
+      // svg can carry script and external references, never offer it as a token image
+      if (file.type === 'image/svg+xml') {
+        setStatus({ kind: 'error', message: 'SVG images are not accepted. Use png, jpeg, gif or webp.' });
+        return;
+      }
       if (file.size > MAX_UPLOAD_BYTES) {
         setStatus({
           kind: 'error',

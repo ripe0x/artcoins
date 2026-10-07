@@ -1,6 +1,7 @@
 # Compiler output
 cache/
 foundry-out/
+foundry-out-*/
 out/
 
 # Broadcast logs
@@ -18,7 +19,8 @@ ui/.env.*
 !ui/.env.example
 
 # Docs
-docs/
+docs/*
+!docs/v2/
 
 # OS
 .DS_Store
@@ -31,7 +33,7 @@ ui/.env
 
 # Node (script-js/)
 script-js/node_modules/
-script-js/package-lock.json
+# script-js/package-lock.json is committed (reproducible installs)
 
 # IDE
 .vscode/

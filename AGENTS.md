@@ -61,5 +61,20 @@ not on GitHub.
   public audience.
 - **`broadcast/` directory**: deploy-script artifacts that change every
   time a deploy is run. Don't commit them unless you mean to.
-- **Mainnet live**: factory deployed 2026-05-18; see README for the
-  current addresses.
+- **Mainnet live**: three factories, the current one is
+  0x49596c375c139E79bb937bcf826068a8F78D4e0e (deployed 2026-06-06). See
+  [Deployments](README.md#deployments) in the README, the table there is
+  generated from the registry.
+
+## Deployments and registry
+
+`deployments/mainnet.json` is the source of truth for every mainnet
+address (stacks `current`, `open` superseded, `legacy` LAYER). Check it with
+`node script-js/verify-registry.mjs` (chain reads plus bytecode compare, ci
+runs it). Never hardcode a stack address in a script, the ui or a doc: run
+`cd script-js && npm run gen:addresses` and use the generated
+`script/Addresses.sol` (forge scripts) or `ui/src/lib/deployments.generated.ts`
+(ui). `node script-js/sync-addresses.mjs --stack <id>` prints the launch
+script env vars from the registry. A script that targets a superseded stack
+must say so in a top comment and refuse mainnet unless `ALLOW_SUPERSEDED=1`.
+`broadcast/` is not a reliable record: the current stack has no entry there.

@@ -1,0 +1,11 @@
+# build context is the repo root (fly deploy . --config keeper/fly.toml --dockerfile keeper/Dockerfile
+# --ignorefile keeper/.dockerignore). send only the runner and the registry.
+*
+!keeper/
+!deployments/mainnet.json
+keeper/node_modules
+keeper/test
+keeper/state.json
+keeper/*.tmp
+keeper/fly.toml
+keeper/.env*

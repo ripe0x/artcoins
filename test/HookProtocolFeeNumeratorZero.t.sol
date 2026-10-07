@@ -65,14 +65,14 @@ contract HookProtocolFeeNumeratorZeroTest is Test {
     }
 
     modifier onlyFork() {
-        if (!_onFork) return;
+        if (!_onFork) vm.skip(true);
         _;
     }
 
     receive() external payable {}
 
     /// @dev Hard invariant: artcoins v1 hooks must have zero numerator.
-    function test_protocolFeeNumeratorIsZero() public view onlyFork {
+    function test_protocolFeeNumeratorIsZero() public onlyFork {
         assertEq(
             IHookProtocolFee(HOOK).protocolFeeNumerator(),
             0,

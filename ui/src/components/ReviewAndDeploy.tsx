@@ -1,387 +1,246 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useAccount, useChainId, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { usePublicClient, useWaitForTransactionReceipt, useWriteContract } from 'wagmi';
 import { useQueryClient } from '@tanstack/react-query';
-import { parseEther, decodeEventLog, type Address } from 'viem';
-import { factoryAbi } from '../lib/abi';
-import { getAddresses } from '../lib/config';
-import {
-  generateSalt,
-  encodePoolData,
-  encodeMevLinearData,
-  encodeMevDescendingData,
-  encodeVaultData,
-  encodeAirdropData,
-  percentToFeeUnits,
-  toWei,
-} from '../lib/encode';
-import type {
-  TokenFormState,
-  PoolFormState,
-  MevFormState,
-  RewardsFormState,
-  ExtensionsFormState,
-} from '../lib/types';
+import { formatEther, parseEventLogs, type Address } from 'viem';
+import { factoryV2Abi } from '../lib/abi/v2/factory';
+import { buildLaunchConfigV2, percentToBps, percentToSkim, validateLaunch, type LaunchContext } from '../lib/encodeV2';
+import { maxReferralCapSkim, parseAllowedInput } from '../lib/launchRules';
+import type { LaunchForm } from '../lib/types';
+import type { V2Stack } from '../lib/v2';
+import type { FactoryState } from '../lib/factoryState';
+import { useWalletGate } from '../lib/useChain';
+import { describeError } from '../lib/errors';
+import { impliedFdvEth } from '../lib/curve';
+import { estimateDevBuy } from '../lib/devBuy';
+import { Issues } from './formUi';
 
 interface Props {
-  tokenForm: TokenFormState;
-  poolForm: PoolFormState;
-  mevForm: MevFormState;
-  rewardsForm: RewardsFormState;
-  extensionsForm: ExtensionsFormState;
+  form: LaunchForm;
+  ctx: LaunchContext;
+  v2: V2Stack | null;
+  state: FactoryState;
+  /** reasons the page already knows deploy is closed (no v2 stack, deprecated and not owner) */
+  pageBlock: string | null;
+  supplyWhole: number;
 }
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex justify-between py-1.5 border-b border-zinc-800 last:border-0">
-      <span className="text-sm text-zinc-500">{label}</span>
-      <span className="text-sm text-white text-right max-w-[60%] break-all">{value}</span>
+    <div className="flex justify-between py-1.5 border-b border-zinc-800 last:border-0 gap-4">
+      <span className="text-sm text-zinc-500 flex-shrink-0">{label}</span>
+      <span className="text-sm text-white text-right break-all">{value}</span>
     </div>
   );
 }
 
-export default function ReviewAndDeploy({
-  tokenForm,
-  poolForm,
-  mevForm,
-  rewardsForm,
-  extensionsForm,
-}: Props) {
-  const { address, isConnected } = useAccount();
-  const chainId = useChainId();
-  const addresses = getAddresses(chainId);
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">{title}</h4>
+      <div className="rounded-lg border border-zinc-800 bg-zinc-800/30 px-4 py-2">{children}</div>
+    </div>
+  );
+}
+
+const pct = (n: number, digits = 2) => `${n.toFixed(digits).replace(/\.?0+$/, '')}%`;
+
+export default function ReviewAndDeploy({ form, ctx, v2, state, pageBlock, supplyWhole }: Props) {
+  const gate = useWalletGate();
+  const client = usePublicClient();
   const queryClient = useQueryClient();
+  const { writeContractAsync, data: txHash, isPending, reset } = useWriteContract();
+  const { data: receipt, isLoading: isConfirming, error: receiptError } = useWaitForTransactionReceipt({ hash: txHash });
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
 
-  const { writeContract, data: txHash, isPending, error: writeError } = useWriteContract();
-
-  const { data: receipt, isLoading: isConfirming } = useWaitForTransactionReceipt({
-    hash: txHash,
-  });
-
-  const [deployedToken, setDeployedToken] = useState<string | null>(null);
-
-  // Parse TokenCreated event from receipt
-  if (receipt && !deployedToken) {
-    for (const log of receipt.logs) {
-      try {
-        const decoded = decodeEventLog({
-          abi: factoryAbi,
-          data: log.data,
-          topics: log.topics,
-        });
-        if (decoded.eventName === 'TokenCreated') {
-          const args = decoded.args as { tokenAddress?: string };
-          if (args.tokenAddress) {
-            setDeployedToken(args.tokenAddress);
-          }
-        }
-      } catch {
-        // not our event
-      }
+  const issues = useMemo(() => validateLaunch(form, ctx), [form, ctx]);
+  const errors = issues.filter((i) => i.severity === 'error');
+  const built = useMemo(() => {
+    if (errors.length > 0) return null;
+    try {
+      return buildLaunchConfigV2(form, ctx);
+    } catch {
+      return null;
     }
-  }
+  }, [form, ctx, errors.length]);
 
-  // Invalidate the tokens list cache when a new token is deployed so it
-  // shows up on /tokens without a manual refresh.
+  // the token address comes from the launch event of the factory that was called, nothing else
+  const deployedToken = useMemo<Address | null>(() => {
+    if (!receipt || receipt.status !== 'success' || !v2) return null;
+    const logs = receipt.logs.filter((l) => l.address.toLowerCase() === v2.factory.toLowerCase());
+    try {
+      const parsed = parseEventLogs({ abi: factoryV2Abi, eventName: 'TokenCreatedV2', logs });
+      return parsed[0]?.args.token ?? null;
+    } catch {
+      return null;
+    }
+  }, [receipt, v2]);
+  const reverted = receipt?.status === 'reverted';
+
   useEffect(() => {
-    if (deployedToken) {
-      queryClient.invalidateQueries({ queryKey: ['tokens', chainId] });
-    }
-  }, [deployedToken, chainId, queryClient]);
+    if (deployedToken) void queryClient.invalidateQueries({ queryKey: ['tokens'] });
+  }, [deployedToken, queryClient]);
 
-  const etherscanBase = chainId === 1 ? 'https://etherscan.io' : 'https://sepolia.etherscan.io';
+  const blocker =
+    pageBlock ??
+    (!state.ok && !state.loading ? 'Could not read the factory, try again' : null) ??
+    (errors.length > 0 ? `${errors.length} problem${errors.length === 1 ? '' : 's'} to fix above` : null);
+  const walletBlock = gate.reason;
+  const dev = form.extensions.devBuy.enabled ? estimateDevBuy(form) : null;
 
-  const handleDeploy = () => {
-    if (!address) return;
-
-    const admin = (tokenForm.admin || address) as Address;
-    const salt = generateSalt();
-
-    // Resolve paired token address
-    const pairedToken: Address =
-      poolForm.pairedToken === 'weth'
-        ? addresses.weth
-        : (poolForm.customPairedToken as Address);
-
-    // Pool data
-    const poolData = encodePoolData(
-      percentToFeeUnits(poolForm.buyFeePercent),
-      percentToFeeUnits(poolForm.sellFeePercent)
-    );
-
-    // MEV module
-    let mevModule: Address = '0x0000000000000000000000000000000000000000';
-    let mevModuleData: `0x${string}` = '0x';
-
-    if (mevForm.moduleType === 'linear') {
-      mevModule = addresses.mevLinearFees;
-      mevModuleData = encodeMevLinearData(
-        percentToFeeUnits(mevForm.linearStartPercent),
-        percentToFeeUnits(mevForm.linearEndPercent),
-        mevForm.linearDurationMin * 60
-      );
-    } else if (mevForm.moduleType === 'descending') {
-      mevModule = addresses.mevDescFees;
-      mevModuleData = encodeMevDescendingData(
-        percentToFeeUnits(mevForm.descStartPercent),
-        percentToFeeUnits(mevForm.descEndPercent),
-        mevForm.descDurationSec
-      );
-    } else if (mevForm.moduleType === 'timeDelay') {
-      mevModule = addresses.mevTimeDelay;
-      mevModuleData = '0x';
-    }
-
-    // Locker config
-    const rewardAdmins: Address[] = rewardsForm.recipients.map(r => (r.admin || address) as Address);
-    const rewardRecipients: Address[] = rewardsForm.recipients.map(r => (r.recipient || address) as Address);
-    const rewardBps: number[] = rewardsForm.recipients.map(r => r.bps);
-    const tickLower: number[] = rewardsForm.positions.map(p => p.tickLower);
-    const tickUpper: number[] = rewardsForm.positions.map(p => p.tickUpper);
-    const positionBps: number[] = rewardsForm.positions.map(p => p.bps);
-
-    // Total supply
-    const supplyNum = Number(tokenForm.totalSupply);
-    const totalSupply = supplyNum > 0 ? toWei(supplyNum) : 0n;
-
-    // Extensions
-    type ExtConfig = {
-      extension: Address;
-      msgValue: bigint;
-      extensionBps: number;
-      extensionData: `0x${string}`;
-    };
-    const extensionConfigs: ExtConfig[] = [];
-
-    if (extensionsForm.vault.enabled) {
-      const vaultAdmin = (extensionsForm.vault.admin || address) as Address;
-      extensionConfigs.push({
-        extension: addresses.vault,
-        msgValue: 0n,
-        extensionBps: extensionsForm.vault.allocationPercent * 100,
-        extensionData: encodeVaultData(
-          vaultAdmin,
-          extensionsForm.vault.lockupDays,
-          extensionsForm.vault.vestingDays
-        ),
+  const handleDeploy = async () => {
+    if (!v2 || !client || !gate.address || !built) return;
+    setSendError(null);
+    setNotice(null);
+    setChecking(true);
+    try {
+      // 1. read the fee and the gate again right before signing, the owner can change both
+      const [deprecated, fee] = await Promise.all([
+        client.readContract({ address: v2.factory, abi: factoryV2Abi, functionName: 'deprecated' }),
+        client.readContract({ address: v2.factory, abi: factoryV2Abi, functionName: 'deployFee' }),
+      ]);
+      if (fee !== ctx.deployFee) {
+        state.refetch();
+        setNotice(`The deploy fee changed from ${formatEther(ctx.deployFee)} to ${formatEther(fee)} ETH. Review and press deploy again.`);
+        return;
+      }
+      if (deprecated && !state.deprecated) {
+        state.refetch();
+        setNotice('The factory was just closed to public launches. Nothing was sent.');
+        return;
+      }
+      // 2. simulate with the exact value, a revert is shown with its reason and nothing is signed
+      const sim = await client.simulateContract({
+        account: gate.address,
+        address: v2.factory,
+        abi: factoryV2Abi,
+        functionName: 'deployToken',
+        args: [built.config],
+        value: built.value,
       });
+      // 3. send
+      await writeContractAsync(sim.request);
+    } catch (e) {
+      setSendError(describeError(e));
+    } finally {
+      setChecking(false);
     }
-
-    if (extensionsForm.airdrop.enabled) {
-      const airdropAdmin = (extensionsForm.airdrop.admin || address) as Address;
-      const merkleRoot = (extensionsForm.airdrop.merkleRoot ||
-        '0x0000000000000000000000000000000000000000000000000000000000000000') as `0x${string}`;
-      extensionConfigs.push({
-        extension: addresses.airdrop,
-        msgValue: 0n,
-        extensionBps: extensionsForm.airdrop.allocationPercent * 100,
-        extensionData: encodeAirdropData(
-          airdropAdmin,
-          merkleRoot,
-          extensionsForm.airdrop.lockupDays,
-          extensionsForm.airdrop.vestingDays
-        ),
-      });
-    }
-
-    if (extensionsForm.devBuy.enabled) {
-      extensionConfigs.push({
-        extension: addresses.devBuy,
-        msgValue: parseEther(extensionsForm.devBuy.ethAmount || '0'),
-        extensionBps: extensionsForm.devBuy.allocationPercent * 100,
-        extensionData: '0x',
-      });
-    }
-
-    // Total ETH value
-    const totalValue = extensionConfigs.reduce((sum, ext) => sum + ext.msgValue, 0n);
-
-    const deploymentConfig = {
-      tokenConfig: {
-        tokenAdmin: admin,
-        name: tokenForm.name,
-        symbol: tokenForm.symbol,
-        salt,
-        image: tokenForm.image,
-        metadata: tokenForm.metadata,
-        context: tokenForm.context,
-        totalSupply,
-      },
-      poolConfig: {
-        hook: addresses.hook,
-        pairedToken,
-        tickIfToken0IsNewMaterial: poolForm.startingTick,
-        tickSpacing: poolForm.tickSpacing,
-        poolData,
-      },
-      lockerConfig: {
-        locker: addresses.locker,
-        rewardAdmins,
-        rewardRecipients,
-        rewardBps,
-        tickLower,
-        tickUpper,
-        positionBps,
-        lockerData: '0x' as `0x${string}`,
-      },
-      mevModuleConfig: {
-        mevModule,
-        mevModuleData,
-      },
-      extensionConfigs,
-    };
-
-    writeContract({
-      address: addresses.factory,
-      abi: factoryAbi,
-      functionName: 'deployToken',
-      args: [deploymentConfig],
-      value: totalValue,
-    });
   };
 
-  const mevLabel =
-    mevForm.moduleType === 'none'
-      ? 'None'
-      : mevForm.moduleType === 'linear'
-        ? `Linear (${mevForm.linearStartPercent}% -> ${mevForm.linearEndPercent}% over ${mevForm.linearDurationMin}m)`
-        : mevForm.moduleType === 'descending'
-          ? `Descending (${mevForm.descStartPercent}% -> ${mevForm.descEndPercent}% over ${mevForm.descDurationSec}s)`
-          : `Time Delay (${mevForm.timeDelaySec}s)`;
-
-  const totalExtAlloc =
-    (extensionsForm.vault.enabled ? extensionsForm.vault.allocationPercent : 0) +
-    (extensionsForm.airdrop.enabled ? extensionsForm.airdrop.allocationPercent : 0) +
-    (extensionsForm.devBuy.enabled ? extensionsForm.devBuy.allocationPercent : 0);
+  const mev = form.mev;
+  const restrictionLabel = form.restriction.restricted
+    ? `Restricted: no wallet to wallet transfers (${parseAllowedInput(form.restriction.allowed).length} extra allowlist entries)`
+    : 'None';
+  const totalExt =
+    (form.extensions.vault.enabled ? form.extensions.vault.allocationPercent : 0) + (form.extensions.airdrop.enabled ? form.extensions.airdrop.allocationPercent : 0);
+  const sumRewards = form.rewards.recipients.reduce((s, r) => s + r.bps, 0);
+  const disabled = !!blocker || !!walletBlock || isPending || isConfirming || checking || !built;
 
   return (
     <div className="space-y-6">
-      {/* Summary */}
       <div className="space-y-4">
-        <div>
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Token</h4>
-          <div className="rounded-lg border border-zinc-800 bg-zinc-800/30 px-4 py-2">
-            <Row label="Name" value={tokenForm.name || '-'} />
-            <Row label="Symbol" value={tokenForm.symbol || '-'} />
-            <Row label="Admin" value={tokenForm.admin || 'Connected wallet'} />
-            <Row label="Supply" value={Number(tokenForm.totalSupply) > 0 ? Number(tokenForm.totalSupply).toLocaleString() : 'Factory default'} />
-          </div>
-        </div>
+        <Section title="Token">
+          <Row label="Name" value={form.token.name || '-'} />
+          <Row label="Symbol" value={form.token.symbol || '-'} />
+          <Row label="Admin" value={form.token.admin || 'Connected wallet'} />
+          <Row label="Supply" value={Number(form.token.totalSupply) > 0 ? Number(form.token.totalSupply).toLocaleString() : 'Factory default (1,000,000,000)'} />
+          <Row label="Renderer" value={form.token.renderer || 'default'} />
+        </Section>
 
-        <div>
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Pool</h4>
-          <div className="rounded-lg border border-zinc-800 bg-zinc-800/30 px-4 py-2">
-            <Row label="Paired Token" value={poolForm.pairedToken === 'weth' ? 'WETH' : poolForm.customPairedToken} />
-            <Row label="Tick Spacing" value={poolForm.tickSpacing} />
-            <Row label="Starting Tick" value={poolForm.startingTick} />
-            <Row label="Buy Fee" value={`${poolForm.buyFeePercent}%`} />
-            <Row label="Sell Fee" value={`${poolForm.sellFeePercent}%`} />
-          </div>
-        </div>
+        <Section title="Pool and fees">
+          <Row label="Paired with" value="native ETH" />
+          <Row label="Tick spacing / start tick" value={`${form.pool.tickSpacing} / ${form.pool.startingTick}`} />
+          <Row label="Launch fdv" value={`${impliedFdvEth(form.pool.startingTick, supplyWhole).toLocaleString(undefined, { maximumFractionDigits: 3 })} ETH`} />
+          <Row label="LP fee" value={`${pct(form.pool.lpFeePercent)} (factory minimum ${pct(ctx.minLpFee / 10_000)})`} />
+          <Row label="Baseline skim" value={`${pct(form.pool.baselineSkimPercent)} of volume`} />
+          <Row label="Bounty share of skim" value={pct(form.pool.bountyPercent)} />
+          <Row
+            label="Referral cap"
+            value={`${pct(form.pool.referralCapPercent, 3)} of volume (maximum for these fees ${pct(maxReferralCapSkim(percentToSkim(form.pool.baselineSkimPercent), percentToBps(form.pool.bountyPercent), ctx.minProtocolSkimShareBps) / 1_000, 3)}), paid to the referrer on each swap`}
+          />
+          <Row label="Protocol keeps at least" value={`${pct(ctx.minProtocolSkimShareBps / 100)} of the skim`} />
+          <Row label="Anti sniper" value={mev.enabled ? `${pct(mev.startPercent)} decaying to ${pct(form.pool.baselineSkimPercent)} over ${mev.windowMin} min` : 'Off'} />
+          <Row label="Transfer restriction" value={restrictionLabel} />
+        </Section>
 
-        <div>
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">MEV Protection</h4>
-          <div className="rounded-lg border border-zinc-800 bg-zinc-800/30 px-4 py-2">
-            <Row label="Module" value={mevLabel} />
-          </div>
-        </div>
+        <Section title="Rewards">
+          <Row label="Your recipients" value={`${form.rewards.recipients.length} (${sumRewards / 100}% of LP rewards)`} />
+          <Row label="Protocol slot" value={`${ctx.protocolBps / 100}% of LP rewards, set by the factory`} />
+          <Row label="Positions" value={`${form.rewards.positions.length}, locked forever`} />
+        </Section>
 
-        <div>
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Rewards</h4>
-          <div className="rounded-lg border border-zinc-800 bg-zinc-800/30 px-4 py-2">
-            <Row label="Mode" value={rewardsForm.mode} />
-            <Row label="Recipients" value={rewardsForm.recipients.length} />
-            <Row label="Positions" value={rewardsForm.positions.length} />
-          </div>
-        </div>
+        <Section title="Extensions">
+          <Row label="Vault" value={form.extensions.vault.enabled ? `${form.extensions.vault.allocationPercent}%` : 'Off'} />
+          <Row label="Airdrop" value={form.extensions.airdrop.enabled ? `${form.extensions.airdrop.allocationPercent}%` : 'Off'} />
+          <Row
+            label="Dev buy"
+            value={form.extensions.devBuy.enabled ? `${form.extensions.devBuy.ethAmount} ETH, at least ${form.extensions.devBuy.minTokenOut || '?'} coins${dev ? ` (est. ${Number(dev.coinOut / 10n ** 18n).toLocaleString()})` : ''}` : 'Off'}
+          />
+          <Row label="To liquidity" value={pct(100 - totalExt)} />
+        </Section>
 
-        <div>
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Extensions</h4>
-          <div className="rounded-lg border border-zinc-800 bg-zinc-800/30 px-4 py-2">
-            <Row label="Vault" value={extensionsForm.vault.enabled ? `${extensionsForm.vault.allocationPercent}%` : 'Disabled'} />
-            <Row label="Airdrop" value={extensionsForm.airdrop.enabled ? `${extensionsForm.airdrop.allocationPercent}%` : 'Disabled'} />
-            <Row label="Dev Buy" value={extensionsForm.devBuy.enabled ? `${extensionsForm.devBuy.ethAmount} ETH (${extensionsForm.devBuy.allocationPercent}%)` : 'Disabled'} />
-            <Row label="Liquidity" value={`${100 - totalExtAlloc}%`} />
-          </div>
-        </div>
+        <Section title="Cost">
+          <Row label="Deploy fee (from the factory)" value={state.ok ? `${formatEther(ctx.deployFee)} ETH` : 'unknown'} />
+          <Row label="Extension ETH" value={`${formatEther(built?.extensionValue ?? 0n)} ETH`} />
+          <Row label="Total sent" value={<strong>{built ? `${formatEther(built.value)} ETH` : '-'}</strong>} />
+        </Section>
       </div>
 
-      {/* Deploy */}
+      <Issues issues={issues} prefix={['token', 'pool', 'mev', 'restriction', 'rewards', 'positions', 'vault', 'airdrop', 'devBuy', 'extensions']} />
+
       {deployedToken ? (
         <div className="rounded-lg border border-green-800 bg-green-900/20 p-4 space-y-2">
-          <h4 className="text-green-400 font-semibold">Token Deployed Successfully</h4>
+          <h4 className="text-green-400 font-semibold">Token launched</h4>
           <p className="text-sm text-zinc-300 font-mono break-all">{deployedToken}</p>
           <div className="flex flex-wrap gap-3">
-            <Link
-              to={`/tokens/${deployedToken}`}
-              className="text-sm text-violet-400 hover:text-violet-300 underline"
-            >
-              View token details
-            </Link>
-            <a
-              href={`${etherscanBase}/address/${deployedToken}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-violet-400 hover:text-violet-300 underline"
-            >
-              View on Etherscan
-            </a>
-            {txHash && (
-              <a
-                href={`${etherscanBase}/tx/${txHash}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-violet-400 hover:text-violet-300 underline"
-              >
-                View Transaction
-              </a>
-            )}
+            <Link to={`/tokens/${deployedToken}`} className="text-sm text-violet-400 hover:text-violet-300 underline">View token</Link>
+            <a href={`https://etherscan.io/address/${deployedToken}`} target="_blank" rel="noopener noreferrer" className="text-sm text-violet-400 hover:text-violet-300 underline">Etherscan</a>
+            {txHash && <a href={`https://etherscan.io/tx/${txHash}`} target="_blank" rel="noopener noreferrer" className="text-sm text-violet-400 hover:text-violet-300 underline">Transaction</a>}
           </div>
         </div>
       ) : (
         <>
-          {!isConnected && (
-            <p className="text-sm text-amber-400">Connect your wallet to deploy.</p>
+          {pageBlock && <p className="text-sm text-amber-400">{pageBlock}</p>}
+          {!pageBlock && walletBlock && (
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-amber-400">{walletBlock}.</p>
+              {gate.needsSwitch && (
+                <button type="button" onClick={gate.switchToMainnet} className="text-sm text-violet-400 underline">Switch</button>
+              )}
+            </div>
           )}
+          {notice && <p className="text-sm text-amber-300">{notice}</p>}
 
           {txHash && isConfirming && (
             <div className="rounded-lg border border-zinc-700 bg-zinc-800/50 p-4 space-y-2">
-              <p className="text-sm text-zinc-300">
-                Transaction submitted. Waiting for confirmation...
-              </p>
-              <a
-                href={`${etherscanBase}/tx/${txHash}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-violet-400 hover:text-violet-300 underline font-mono break-all"
-              >
-                {txHash}
-              </a>
+              <p className="text-sm text-zinc-300">Transaction submitted. Waiting for confirmation. If it takes long, check the link, a dropped transaction never confirms.</p>
+              <a href={`https://etherscan.io/tx/${txHash}`} target="_blank" rel="noopener noreferrer" className="text-sm text-violet-400 hover:text-violet-300 underline font-mono break-all">{txHash}</a>
             </div>
           )}
-
-          {writeError && (
+          {reverted && (
+            <div className="rounded-lg border border-red-800 bg-red-900/20 p-3 space-y-1">
+              <p className="text-sm text-red-400">The launch transaction was mined but reverted. No token was created.</p>
+              <button type="button" onClick={() => reset()} className="text-xs text-red-300 underline">Dismiss</button>
+            </div>
+          )}
+          {(sendError || receiptError) && (
             <div className="rounded-lg border border-red-800 bg-red-900/20 p-3">
-              <p className="text-sm text-red-400">
-                {writeError.message.length > 200
-                  ? writeError.message.slice(0, 200) + '...'
-                  : writeError.message}
-              </p>
+              <p className="text-sm text-red-400 break-words">{sendError ?? describeError(receiptError)}</p>
+              <p className="text-xs text-zinc-500 mt-1">Nothing was signed unless a wallet prompt appeared before this message.</p>
             </div>
           )}
 
           <button
             type="button"
-            onClick={handleDeploy}
-            disabled={!isConnected || isPending || isConfirming || !tokenForm.name || !tokenForm.symbol}
+            onClick={() => void handleDeploy()}
+            disabled={disabled}
             className="w-full rounded-xl bg-violet-600 py-3 text-base font-semibold text-white transition-colors hover:bg-violet-500 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed"
           >
-            {isPending
-              ? 'Confirm in Wallet...'
-              : isConfirming
-                ? 'Confirming...'
-                : 'Deploy Token'}
+            {isPending ? 'Confirm in wallet...' : isConfirming ? 'Confirming...' : checking ? 'Checking the launch...' : (pageBlock ?? blocker ?? walletBlock ?? `Deploy token (${built ? formatEther(built.value) : '-'} ETH)`)}
           </button>
+          <p className="text-xs text-zinc-600">The launch is simulated against the chain first. If the simulation reverts you see the reason and nothing is sent.</p>
         </>
       )}
     </div>

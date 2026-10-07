@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+// targets superseded stack legacy (LAYER); current stack is 0x4959… (Addresses.CURRENT_FACTORY).
+// Mainnet runs are refused unless ALLOW_SUPERSEDED=1.
+
 import {Script, console2} from "forge-std/Script.sol";
 
 import {
@@ -11,6 +14,8 @@ import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+
+import {Addresses} from "./Addresses.sol";
 
 interface ILayerHook {
     function poolExtensionAllowlist() external view returns (address);
@@ -56,13 +61,13 @@ contract SetUpLayerAutoForward is Script {
 
     // ── Mainnet immutable infrastructure ───────────────────────────────
 
-    address constant LAYER = 0xb7287e4A5b605aB92A8589C62af8A4ebD347E6c9;
-    address constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-    address constant HOOK = 0xA5eA9904F2cD572c638a1eF81463BDAbEa9D28cc;
-    address constant LP_LOCKER = 0x75BE7E95745915fD0C1761B74F3f9650ad2d1118;
-    address constant FEE_LOCKER = 0x1143db0913Ca5eCe8A42FC01b625fD81F9386b05;
-    address constant PFC = 0x5fDc39756A64A84518ef00CB6a0ED46971e00A60;
-    address constant BURN_ROUTER = 0x2eDBdF011768d8cd4Ef537658b41440900C52000;
+    address constant LAYER = Addresses.COIN_LAYER;
+    address constant WETH = Addresses.WETH;
+    address constant HOOK = Addresses.LEGACY_HOOK;
+    address constant LP_LOCKER = Addresses.LEGACY_LOCKER;
+    address constant FEE_LOCKER = Addresses.LEGACY_FEE_LOCKER;
+    address constant PFC = Addresses.LEGACY_PROTOCOL_FEE_CONTROLLER;
+    address constant BURN_ROUTER = Addresses.LEGACY_BURN_ROUTER;
 
     // ── LAYER pool key (must match what the hook stored at init time) ──
 
@@ -100,7 +105,15 @@ contract SetUpLayerAutoForward is Script {
 
     // ── Run ───────────────────────────────────────────────────────────
 
+    /// @dev Drives the legacy stack (LAYER). On mainnet it refuses to run unless ALLOW_SUPERSEDED=1.
+    function _requireSupersededAllowed() internal view {
+        if (block.chainid == Addresses.CHAIN_ID && vm.envOr("ALLOW_SUPERSEDED", uint256(0)) != 1) {
+            revert("targets superseded stack legacy; set ALLOW_SUPERSEDED=1 to run on mainnet");
+        }
+    }
+
     function run() external {
+        _requireSupersededAllowed();
         PoolKey memory pk = _layerPoolKey();
         PoolId pid = pk.toId();
 

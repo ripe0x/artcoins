@@ -4,18 +4,39 @@ permissions: {}
 
 on:
   push:
+    branches: [master, v2]
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
 env:
   FOUNDRY_PROFILE: ci
+  # One forge version for ci and local dev: `forge fmt --check` output changes
+  # between releases, so a floating install flags cosmetic diffs. Bump together
+  # with a repo wide `forge fmt`.
+  FOUNDRY_VERSION: v1.7.1
+  # Default public gateway used when the MAINNET_RPC_URL secret is not set.
+  DEFAULT_MAINNET_RPC: https://mainnet.gateway.tenderly.co
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # No network job: fmt, build + sizes at the ci profile, deterministic tests.
+  # Fork gated tests skip themselves (vm.skip) and are reported as skipped.
+  # ---------------------------------------------------------------------------
   check:
-    name: Foundry project
+    name: Foundry project (no network)
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       contents: read
+    env:
+      # Never touch the network: the harness honours SKIP_FORK_TESTS, and the
+      # unreachable url makes every other self forking suite skip in setUp.
+      SKIP_FORK_TESTS: "true"
+      MAINNET_RPC_URL: http://127.0.0.1:9
     steps:
       - uses: actions/checkout@v5
         with:
@@ -23,13 +44,9 @@ jobs:
           submodules: recursive
 
       - name: Install Foundry
-        # Pin to a specific release so CI's `forge fmt --check` matches local
-        # `forge fmt`. Without a pin, the action installs whatever's current
-        # at job start, which has caused CI to flag cosmetic diffs that local
-        # fmt doesn't produce.
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: v1.5.0
+          version: ${{ env.FOUNDRY_VERSION }}
 
       - name: Show Forge version
         run: forge --version
@@ -37,14 +54,276 @@ jobs:
       - name: Run Forge fmt
         run: forge fmt --check
 
-      - name: Run Forge build
-        run: forge build --sizes
+      # Compile in batches. One cold `forge build` of the whole tree (431 files,
+      # via-IR, one solc input) was killed on the hosted runner after 13 to 17
+      # minutes (exit 143, runner shutdown signal: memory). Every batch below
+      # peaks under 4 GB locally. The cache carries src between steps, so each
+      # later step only compiles its own files. See docs/v2/review/hygiene-fixes.md,
+      # "github ci run".
+      - name: Run Forge build (src only, sizes)
+        run: forge build --sizes --skip test --skip script
 
-      - name: Run Forge tests
-        # CI runs the deterministic, network-free suite. Fork-gated tests
-        # detect the absence of a fork (no code at the mainnet PoolManager) and
-        # skip themselves, so they cost nothing here. The two self-forking
-        # suites call `vm.createSelectFork` unconditionally and would reach a
-        # public RPC on every run — exclude them. Run fork tests locally with
-        # `forge test --fork-url $MAINNET_RPC_URL` when needed.
-        run: forge test --no-match-contract "AutoBurnOpenTab|DeployConversionLockerAndWire" -vvv
+      - name: Run Forge build (scripts)
+        run: forge build --skip test
+
+      - name: Size gate, ArtCoinsHookV2 headroom
+        # The hook only fits EIP-170 (24,576 bytes) at the ci / tune profile
+        # (optimizer_runs 200). Fail when it has under 1,024 bytes of runtime
+        # headroom so a small edit cannot silently push it over the limit.
+        # `src/hooks/legacy/ArtCoinsHookV2.sol` and `src/v2/hooks/ArtCoinsHookV2.sol`
+        # share a contract name, so forge keys the json by
+        # `ArtCoinsHookV2 (src/v2/hooks/ArtCoinsHookV2.sol)`. Match on the prefix
+        # and the v2 path, and fail (never skip) when the key is missing or ambiguous.
+        run: |
+          set -euo pipefail
+          MIN_HEADROOM=1024
+          forge build --sizes --json --skip "test/**" --skip script > sizes.json
+          keys=$(jq -r 'keys[] | select(startswith("ArtCoinsHookV2") and contains("src/v2/hooks/ArtCoinsHookV2.sol"))' sizes.json)
+          if [ "$(printf '%s\n' "$keys" | grep -c .)" -ne 1 ]; then
+            echo "::error::expected exactly one ArtCoinsHookV2 (src/v2/hooks/ArtCoinsHookV2.sol) entry in the size json, got: ${keys:-none}"
+            exit 1
+          fi
+          size=$(jq -r --arg k "$keys" '.[$k].runtime_size' sizes.json)
+          margin=$(jq -r --arg k "$keys" '.[$k].runtime_margin' sizes.json)
+          echo "$keys runtime size $size bytes, headroom $margin bytes (min $MIN_HEADROOM)"
+          if ! [ "$margin" -ge "$MIN_HEADROOM" ] 2>/dev/null; then
+            echo "::error::$keys headroom $margin is below the $MIN_HEADROOM byte minimum (or not a number)"
+            exit 1
+          fi
+
+      # Deterministic, network free v1 suite, in three batches by file name (one
+      # compile per batch, see the build note above). Two suites call
+      # `vm.createSelectFork` unconditionally and are excluded; run them locally
+      # with a fork url when needed. Everything else that needs a fork skips and
+      # shows as skipped. The whole v2 tree is left to the next step and the fork
+      # jobs: its review proofs fork in setUp and would fail without a network.
+      # Batch 3 is the complement of 1 and 2 (minus v2), so a new test file is
+      # never left out.
+      - name: Run Forge tests (v1, batch 1 of 3, test/A*)
+        run: forge test --match-path "test/A*.t.sol" --no-match-contract "AutoBurnOpenTab|DeployConversionLockerAndWire" -vvv
+
+      - name: Run Forge tests (v1, batch 2 of 3, test/[B-K]*)
+        run: forge test --match-path "test/[B-K]*.t.sol" --no-match-contract "AutoBurnOpenTab|DeployConversionLockerAndWire" -vvv
+
+      - name: Run Forge tests (v1, batch 3 of 3, the rest incl. test/legacy)
+        run: forge test --no-match-path "test/{[A-K]*.t.sol,v2/**}" --no-match-contract "AutoBurnOpenTab|DeployConversionLockerAndWire" -vvv
+
+      - name: Run v2 unit suites (no fork)
+        # The v2 suites that need no fork. They run here and nowhere else: the
+        # fork job excludes exactly this list by name (`--no-match-contract`),
+        # because under a global `--fork-url` the test contract address and
+        # balances come from mainnet state and these suites fail. Keep the two
+        # lists in sync. (Extension tests live in AirdropV2Test and VaultV2Test.)
+        run: forge test --match-path "test/v2/**" --match-contract "^(EscrowV2Test|FeeDeliveryTest|TokenV2Test|ConstantsV2Test|MevLinearSkimV2Test|KeeperV2Test|ProtocolFeeControllerV2Test|RendererV2Test|AirdropV2Test|VaultV2Test)$" -vvv
+
+  # ---------------------------------------------------------------------------
+  # Fork job: the fork gated suites and test/v2 against a pinned mainnet block.
+  # ---------------------------------------------------------------------------
+  fork-tests:
+    name: Foundry fork tests (pinned mainnet block)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      # secret first, public gateway as the fallback (see `Resolve rpc` below).
+      MAINNET_RPC_SECRET: ${{ secrets.MAINNET_RPC_URL }}
+      # Invariant suites on a fork do an rpc round trip per cold slot; the
+      # default 256 runs x 500 depth did not finish in 25 minutes against the
+      # public gateway. Bounded here, raise with a keyed rpc.
+      FOUNDRY_INVARIANT_RUNS: "16"
+      FOUNDRY_INVARIANT_DEPTH: "50"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: ${{ env.FOUNDRY_VERSION }}
+
+      - name: Resolve rpc and pinned block
+        run: |
+          set -euo pipefail
+          rpc="${MAINNET_RPC_SECRET:-$DEFAULT_MAINNET_RPC}"
+          # The single source of truth for the block is ForkBase.FORK_BLOCK.
+          block=$(grep -oP 'FORK_BLOCK\s*=\s*\K[0-9_]+' test/v2/harness/ForkBase.sol | head -n1 | tr -d '_')
+          if [ -z "$block" ]; then
+            echo "::error::could not read FORK_BLOCK from test/v2/harness/ForkBase.sol"
+            exit 1
+          fi
+          echo "MAINNET_RPC_URL=$rpc" >> "$GITHUB_ENV"
+          echo "FORK_BLOCK=$block" >> "$GITHUB_ENV"
+          echo "fork block $block"
+
+      # Compile in batches before the fork run (same reason as the check job:
+      # one cold solc input of the fork tree, 301 files, is killed on a 7 GB
+      # runner with exit 143). Each step compiles only what the cache lacks.
+      - name: Run Forge build (src only)
+        run: forge build --skip "test/**" --skip script
+
+      - name: Run Forge build (scripts)
+        run: forge build --skip "test/**"
+
+      - name: Run Forge build (v1 tests, batch 1 of 2)
+        run: forge build --skip "test/v2/**" --skip "test/[L-Zl-z]*" --skip "test/legacy/**"
+
+      - name: Run Forge build (v1 tests, batch 2 of 2)
+        run: forge build --skip "test/v2/**"
+
+      - name: Run Forge build (v2 package suites)
+        run: forge build --skip "test/v2/review/**" --skip "test/v2/review-v2/**" --skip "test/v2/integration/**" --skip "test/[A-Za-z]*.t.sol" --skip "test/legacy/**" --skip "test/mocks/**"
+
+      - name: Run Forge build (v2 review proofs, v1 bugs)
+        run: forge build --skip "test/v2/review-v2/**" --skip "test/v2/integration/**"
+
+      - name: Run Forge build (v2 review proofs, second pass)
+        run: forge build --skip "test/v2/integration/**"
+
+      - name: Run Forge build (v2 integration suites)
+        run: forge build
+
+      - name: Run fork tests
+        # Only suites that need a fork (a global `--fork-url` pollutes plain
+        # unit suites: the test contract address and balances come from
+        # mainnet state). Paths: every `*Fork*` file, the onlyFork gated
+        # suites without Fork in the name, and the v2 tree minus the review
+        # proofs (own job below). Plain unit contracts that share a file with a
+        # fork contract are excluded by name, and so are the v2 unit suites that
+        # run in the no network job (same list as its `Run v2 unit suites`
+        # step). `--fork-url` forks every test at the pinned block (cached after the first read); retries and backoff
+        # ride out 429s from the public gateway.
+        run: >
+          forge test
+          --match-path "test/{*Fork*.t.sol,Integration.t.sol,BurnRouter.t.sol,ArtCoinsFactory.t.sol,FeeAutoSwapper.invariants.t.sol,FeeAutoSwapperAuditFixes.t.sol,FeeAutoSwapperLayerRetrofit.t.sol,HookMevDecodeTolerance.t.sol,HookProtocolFeeNumeratorZero.t.sol,LLOnchainRenderer.AnimationHtml.t.sol,LaunchStressSims.t.sol,LpPresetCompareTest.t.sol,LpTierWalkthroughTest.t.sol,ArtCoinsUniv4EthDevBuy.t.sol,v2/**}"
+          --no-match-path "test/v2/{review,review-v2}/**"
+          --no-match-contract "AutoBurnOpenTab|DeployConversionLockerAndWire|^BurnRouterTest$|^ArtCoinsFactoryTest$|^(EscrowV2Test|FeeDeliveryTest|TokenV2Test|ConstantsV2Test|MevLinearSkimV2Test|KeeperV2Test|ProtocolFeeControllerV2Test|RendererV2Test|AirdropV2Test|VaultV2Test)$"
+          --fork-url "$MAINNET_RPC_URL"
+          --fork-block-number "$FORK_BLOCK"
+          --fork-retries 8
+          --fork-retry-backoff 2000
+          -vvv
+
+  # ---------------------------------------------------------------------------
+  # Review proofs: tests under test/v2/review* that pass by demonstrating bugs
+  # in the v1 contracts. Informational only, never blocks.
+  # ---------------------------------------------------------------------------
+  review-proofs:
+    name: Review proof tests (non blocking)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    continue-on-error: true
+    permissions:
+      contents: read
+    env:
+      MAINNET_RPC_SECRET: ${{ secrets.MAINNET_RPC_URL }}
+      FOUNDRY_INVARIANT_RUNS: "16"
+      FOUNDRY_INVARIANT_DEPTH: "50"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: ${{ env.FOUNDRY_VERSION }}
+
+      - name: Resolve rpc and pinned block
+        run: |
+          set -euo pipefail
+          rpc="${MAINNET_RPC_SECRET:-$DEFAULT_MAINNET_RPC}"
+          # The single source of truth for the block is ForkBase.FORK_BLOCK.
+          block=$(grep -oP 'FORK_BLOCK\s*=\s*\K[0-9_]+' test/v2/harness/ForkBase.sol | head -n1 | tr -d '_')
+          if [ -z "$block" ]; then
+            echo "::error::could not read FORK_BLOCK from test/v2/harness/ForkBase.sol"
+            exit 1
+          fi
+          echo "MAINNET_RPC_URL=$rpc" >> "$GITHUB_ENV"
+          echo "FORK_BLOCK=$block" >> "$GITHUB_ENV"
+          echo "fork block $block"
+
+      - name: Run review proofs
+        run: >
+          forge test
+          --match-path "test/v2/{review,review-v2}/**"
+          --fork-url "$MAINNET_RPC_URL"
+          --fork-block-number "$FORK_BLOCK"
+          --fork-retries 8
+          --fork-retry-backoff 2000
+          -vvv
+
+  # ---------------------------------------------------------------------------
+  # keeper runner (keeper/, node): unit tests. no MAINNET_RPC_URL and no anvil
+  # here, so the fork and local anvil tests skip themselves.
+  # ---------------------------------------------------------------------------
+  keeper:
+    name: keeper runner tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: keeper
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: keeper/package-lock.json
+
+      - name: Install (no lifecycle scripts)
+        run: npm ci --ignore-scripts
+
+      - name: Test
+        run: npm test
+
+  # ---------------------------------------------------------------------------
+  # ui: build and lint.
+  # ---------------------------------------------------------------------------
+  ui:
+    name: ui build and lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # TODO UI-03 (docs/v2/review/ui.md): the ui does not build clean today
+    # (stale abi, `tsc -b` errors, eslint errors), so this job is expected to
+    # be red on a clean checkout. It runs on every push so the failures stay
+    # visible. Remove continue-on-error once the ui builds, then make the job
+    # required.
+    continue-on-error: true
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install (no lifecycle scripts)
+        run: npm ci --ignore-scripts
+
+      - name: Build
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Audit (runtime deps, informational)
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true

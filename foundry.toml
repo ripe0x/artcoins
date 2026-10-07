@@ -11,6 +11,7 @@ optimizer = true
 optimizer_runs = 20_000
 fs_permissions = [
     { access = "read",       path = "script-js/data" },
+    { access = "read",       path = "script/v2/launch-configs" },
     { access = "read-write", path = "tmp" },
 ]
 
@@ -30,11 +31,10 @@ tab_width = 4
 
 
 # [profile.tune] — used exclusively for forge script DeployV1Stack.s.sol.
-# The hook bytecode MUST be < 24,576 bytes (EIP-170). Calibrated runs that
-# keep it under the ceiling while maximising gas efficiency on the swap hot
-# path.  At optimizer_runs = 200 + viaIR the hook lands at ~24,547 bytes
-# (29 bytes of headroom). Raising runs above ~210 blows the limit; lowering
-# below 100 costs a few hundred gas per swap with no meaningful size benefit.
+# The hook bytecode MUST be < 24,576 bytes (EIP-170). Measured at
+# optimizer_runs = 200 + viaIR: v1 ArtCoinsHookSkimFee 20,558 bytes, v2
+# ArtCoinsHookV2 (src/v2/hooks) 16,716 bytes (7,860 bytes headroom).
+# Rule: ci fails under 1,024 bytes headroom at runs 200.
 [profile.tune]
 viaIR = true
 optimizer = true
@@ -47,11 +47,9 @@ stackAllocation = true
 
 # [profile.ci] — used by the GitHub Actions "Foundry project" job
 # (the workflow sets FOUNDRY_PROFILE=ci). Mirrors [profile.tune] so that
-# `forge build --sizes` validates the runtime bytecode we actually ship:
-# the size-critical contracts (ArtCoinsHookSkimFee, ArtCoinsLpLocker) only fit
-# under EIP-170 (24,576 bytes) at
-# optimizer_runs = 200. Building CI at the default 20,000 runs overflows the
-# limit and fails the size check on a configuration that is never deployed.
+# `forge build --sizes` validates the runtime bytecode we actually ship.
+# Measured at runs 200: v2 ArtCoinsHookV2 (src/v2/hooks) 16,716 bytes, 7,860
+# bytes headroom. Rule: ci fails under 1,024 bytes headroom at runs 200.
 # Keep these settings in sync with [profile.tune].
 [profile.ci]
 viaIR = true
@@ -61,3 +59,17 @@ optimizer_runs = 200
 yul = true
 [profile.ci.optimizer_details.yulDetails]
 stackAllocation = true
+
+
+# [profile.fork] — opt in fork runs against the pinned mainnet block:
+#   FOUNDRY_PROFILE=fork forge test --fork-retries 8 --fork-retry-backoff 2000 --match-path "test/v2/**"
+# Keep fork_block_number equal to ForkBase.FORK_BLOCK (test/v2/harness/ForkBase.sol).
+# Set MAINNET_RPC_URL (the tenderly public gateway works, rate limited; ci falls back to
+# it in the workflow env). forge 1.7.1 has no fork_retries config key, so retries are
+# cli flags only (so is --compute-units-per-second). Same optimizer as the default
+# profile; use FOUNDRY_PROFILE=ci for sizes.
+[profile.fork]
+eth_rpc_url = "${MAINNET_RPC_URL}"
+fork_block_number = 26130269
+rpc_storage_caching = { chains = ["mainnet"], endpoints = "remote" }
+no_storage_caching = false

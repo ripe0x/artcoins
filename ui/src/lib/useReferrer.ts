@@ -1,157 +1,137 @@
 /**
- * Resolves the referrer address for a swap, in priority order:
+ * Resolves the referrer credited on a swap, in priority order:
  *
- *   1. `?ref=0x...` in the URL (current visit). Persisted to localStorage.
- *   2. Previously stored value in localStorage (sticky from a prior `?ref`).
- *   3. `defaultReferrer` from `/config.json` — the artcoins-operator
- *      fallback, served as a static asset from `ui/public/config.json`.
- *      Runtime-tunable: the operator edits and re-uploads the JSON to
- *      swap the default without a frontend rebuild. Fetched once per
- *      session and cached in module memory. NOT written to localStorage.
- *   4. `null` — no attribution. Hook leaves the referral slice in the
- *      protocol leg.
+ *   1. `?ref=0x...` in the current url. Kept for the browser session only (sessionStorage), never in
+ *      localStorage, so a crafted link cannot replace the default referrer forever (UI-17).
+ *   2. the value stored earlier in this session.
+ *   3. `defaultReferrer` from `/config.json`, fetched fresh (no cache) so operator edits propagate.
+ *   4. none: the hook leaves the referral slice with the protocol.
  *
- * Async note: the runtime default arrives a fraction of a second after
- * mount. A swap that fires before `/config.json` resolves uses URL/storage
- * if available, else `null` (no operator-default applied). Acceptable
- * tradeoff for runtime tunability — see permanent-collection's
- * `app/lib/swap/useReferrer.ts` for the same pattern.
+ * A candidate is accepted only when it is a valid address (mixed case must carry a correct checksum),
+ * is not the zero address and is not the connected wallet. The referral is carved from the protocol
+ * side of the skim, the trader never pays more or less because of it.
  *
- * Vite analogue of permanent-collection/app/lib/swap/useReferrer.ts.
+ * The ui always shows the active referrer and lets the user turn it off for the session.
  */
-
-import { useEffect, useState } from 'react';
-import { getAddress, isAddress } from 'viem';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
+import { useAccount } from 'wagmi';
+import type { Address } from 'viem';
+import { checkReferrer } from './referrerCheck';
 
 const STORAGE_KEY = 'artcoins:referrer';
+const OPTOUT_KEY = 'artcoins:referrer:optout';
 
-/** Module-level cache for the runtime `defaultReferrer`. Populated on
- *  first fetch; subsequent mounts read it synchronously. */
-let runtimeDefault: `0x${string}` | null = null;
-let runtimeFetchPromise: Promise<`0x${string}` | null> | null = null;
+export type ReferrerSource = 'link' | 'session' | 'default';
 
-function fetchRuntimeDefault(): Promise<`0x${string}` | null> {
-  if (runtimeDefault !== null) return Promise.resolve(runtimeDefault);
-  if (runtimeFetchPromise) return runtimeFetchPromise;
-  runtimeFetchPromise = (async () => {
+export interface ReferrerState {
+  referrer: Address | null;
+  source: ReferrerSource | null;
+  /** why a candidate was dropped, shown next to the indicator */
+  rejected: string | null;
+  optedOut: boolean;
+  optOut: () => void;
+  optIn: () => void;
+}
+
+let runtimeDefault: Address | null = null;
+let runtimeFetch: Promise<Address | null> | null = null;
+
+function fetchRuntimeDefault(): Promise<Address | null> {
+  if (runtimeDefault) return Promise.resolve(runtimeDefault);
+  if (runtimeFetch) return runtimeFetch;
+  runtimeFetch = (async () => {
     try {
-      const res = await fetch('/config.json', { cache: 'force-cache' });
+      const res = await fetch('/config.json', { cache: 'no-cache' });
       if (!res.ok) return null;
       const data = (await res.json()) as { defaultReferrer?: unknown };
-      const raw = data?.defaultReferrer;
-      if (typeof raw !== 'string') return null;
-      if (!isAddress(raw, { strict: false })) return null;
-      try {
-        const checksummed = getAddress(raw);
-        if (checksummed === '0x0000000000000000000000000000000000000000') {
-          return null;
-        }
-        runtimeDefault = checksummed;
-        return checksummed;
-      } catch {
-        return null;
-      }
+      const c = checkReferrer(typeof data?.defaultReferrer === 'string' ? data.defaultReferrer : null);
+      if (!c.ok) return null;
+      runtimeDefault = c.address;
+      return c.address;
     } catch {
       return null;
     } finally {
-      runtimeFetchPromise = null;
+      runtimeFetch = null;
     }
   })();
-  return runtimeFetchPromise;
+  return runtimeFetch;
 }
 
-function normalize(raw: string | null): `0x${string}` | null {
-  if (!raw) return null;
-  if (!isAddress(raw, { strict: false })) return null;
+function readSession(key: string): string | null {
   try {
-    return getAddress(raw);
+    return window.sessionStorage.getItem(key);
   } catch {
     return null;
   }
 }
-
-function readStorage(): `0x${string}` | null {
-  if (typeof window === 'undefined') return null;
+function writeSession(key: string, value: string | null) {
   try {
-    return normalize(window.localStorage.getItem(STORAGE_KEY));
+    if (value === null) window.sessionStorage.removeItem(key);
+    else window.sessionStorage.setItem(key, value);
   } catch {
-    return null;
+    // storage can be blocked (private mode), the referrer then lives only in memory for this page view
   }
 }
 
-function writeStorage(value: `0x${string}` | null) {
-  if (typeof window === 'undefined') return;
-  try {
-    if (value) window.localStorage.setItem(STORAGE_KEY, value);
-    else window.localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // localStorage may be disabled (private browsing). Best-effort only.
-  }
-}
-
-export function useReferrer(): `0x${string}` | null {
-  const [ref, setRef] = useState<`0x${string}` | null>(null);
+export function useReferrer(): ReferrerState {
+  const { address: self } = useAccount();
+  const { search } = useLocation();
+  const [defaultRef, setDefaultRef] = useState<Address | null>(runtimeDefault);
+  const [optedOut, setOptedOut] = useState<boolean>(() => readSession(OPTOUT_KEY) === '1');
 
   useEffect(() => {
     let cancelled = false;
-    const resolve = () => {
-      if (typeof window === 'undefined') return;
-      const params = new URL(window.location.href).searchParams;
-      const urlRef = normalize(params.get('ref'));
-      if (urlRef) {
-        writeStorage(urlRef);
-        setRef(urlRef);
-        return;
-      }
-      const stored = readStorage();
-      if (stored) {
-        setRef(stored);
-        return;
-      }
-      // Set whatever the runtime cache has synchronously, then upgrade
-      // once /config.json resolves.
-      setRef(runtimeDefault);
-      void fetchRuntimeDefault().then((v) => {
-        if (cancelled) return;
-        const live = normalize(
-          new URL(window.location.href).searchParams.get('ref'),
-        );
-        if (live || readStorage()) return;
-        setRef(v);
-      });
-    };
-
-    resolve();
-
-    const onPop = () => resolve();
-    window.addEventListener('popstate', onPop);
-    const origPush = window.history.pushState;
-    const origReplace = window.history.replaceState;
-    window.history.pushState = function patchedPush(...args) {
-      const r = origPush.apply(this, args);
-      resolve();
-      return r;
-    };
-    window.history.replaceState = function patchedReplace(...args) {
-      const r = origReplace.apply(this, args);
-      resolve();
-      return r;
-    };
+    void fetchRuntimeDefault().then((v) => {
+      if (!cancelled) setDefaultRef(v);
+    });
     return () => {
       cancelled = true;
-      window.removeEventListener('popstate', onPop);
-      window.history.pushState = origPush;
-      window.history.replaceState = origReplace;
     };
   }, []);
 
-  return ref;
-}
+  const linkRaw = useMemo(() => new URLSearchParams(search).get('ref'), [search]);
 
-export function getStoredReferrer(): `0x${string}` | null {
-  return readStorage();
-}
+  // a valid link value is remembered for this session only
+  useEffect(() => {
+    if (!linkRaw) return;
+    const c = checkReferrer(linkRaw);
+    if (c.ok) writeSession(STORAGE_KEY, c.address);
+  }, [linkRaw]);
 
-export function clearStoredReferrer(): void {
-  writeStorage(null);
+  const optOut = useCallback(() => {
+    writeSession(OPTOUT_KEY, '1');
+    setOptedOut(true);
+  }, []);
+  const optIn = useCallback(() => {
+    writeSession(OPTOUT_KEY, null);
+    setOptedOut(false);
+  }, []);
+
+  return useMemo<ReferrerState>(() => {
+    let rejected: string | null = null;
+    const candidates: [ReferrerSource, string | null][] = [
+      ['link', linkRaw],
+      ['session', readSession(STORAGE_KEY)],
+      ['default', defaultRef],
+    ];
+    let found: { address: Address; source: ReferrerSource } | null = null;
+    for (const [source, raw] of candidates) {
+      if (!raw) continue;
+      const c = checkReferrer(raw, self);
+      if (c.ok) {
+        found = { address: c.address, source };
+        break;
+      }
+      if (source === 'link') rejected = `ignored ?ref: ${c.reason}`;
+    }
+    return {
+      referrer: optedOut ? null : (found?.address ?? null),
+      source: optedOut ? null : (found?.source ?? null),
+      rejected,
+      optedOut,
+      optOut,
+      optIn,
+    };
+  }, [linkRaw, defaultRef, self, optedOut, optOut, optIn]);
 }

@@ -1,51 +1,44 @@
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { useChainId, usePublicClient, useReadContracts } from 'wagmi';
+import { usePublicClient, useReadContract, useReadContracts } from 'wagmi';
 import { useQuery } from '@tanstack/react-query';
-import type { Address } from 'viem';
+import type { Address, Hex } from 'viem';
 
 import InfoCard from '../components/InfoCard';
 import InfoRow from '../components/InfoRow';
 import CopyableAddress from '../components/CopyableAddress';
 import SwapWidget from '../components/SwapWidget';
 import TokenMetadataModal from '../components/TokenMetadataModal';
-import {
-  getAddresses,
-  getFactoryDeploymentBlock,
-  uniswapTokenUrl,
-  uniswapSwapUrl,
-} from '../lib/config';
-import {
-  tokenAbi,
-  hookAbi,
-  mevLinearAbi,
-  lockerAbi,
-  stateViewAbi,
-} from '../lib/abi';
-import { fetchAllTokenCreatedEvents, type TokenCreatedEvent } from '../lib/events';
-import { resolveImage, parseContractURI } from '../lib/metadata';
-import {
-  buildPoolKey,
-  resolveTickSpacing,
-  newMaterialPriceInPaired,
-} from '../lib/pool';
-import {
-  shortAddr,
-  formatSupply,
-  formatFeeBps,
-  formatDuration,
-  formatTimestamp,
-  formatPrice,
-} from '../lib/format';
+import OfficialBadge from '../components/OfficialBadge';
+import RestrictionPanel from '../components/RestrictionPanel';
+import { uniswapTokenUrl } from '../lib/config';
+import { stateViewAbi } from '../lib/abi';
+import { tokenV1Abi } from '../lib/abi/v1/token';
+import { hookV1Abi } from '../lib/abi/v1/hook';
+import { hookV2Abi } from '../lib/abi/v2/hook';
+import { lockerV1Abi } from '../lib/abi/v1/locker';
+import { lockerV2Abi } from '../lib/abi/v2/locker';
+import { mevLinearSkimV1Abi } from '../lib/abi/v1/mevLinearSkim';
+import { mevSkimV2Abi } from '../lib/abi/v2/mevSkim';
+import { factoryV2Abi } from '../lib/abi/v2/factory';
+import { parseContractURI, resolveImage } from '../lib/metadata';
+import { computePoolId, priceFromSqrtX96, type PoolKey } from '../lib/pool';
+import { cleanText, MAX_DESCRIPTION, MAX_NAME, MAX_SYMBOL } from '../lib/security';
+import { feeSummary, normalizeSkim, skimPercent, feePercent } from '../lib/poolReads';
+import { shortAddr, formatSupply, formatDuration, formatPrice } from '../lib/format';
+import { useToken } from '../lib/useTokens';
+import { useAddressesOrNull } from '../lib/useChain';
+import { getV2Stack } from '../lib/v2';
+import { impliedFdvEth } from '../lib/curve';
+import { classifyPool } from '../lib/swap';
+import { readContractUri } from '../lib/contractUri';
+import { useChainNow } from '../lib/useChainNow';
+
+const ZERO = '0x0000000000000000000000000000000000000000';
 
 function explorerUrl(chainId: number, addr: string): string {
   const base = chainId === 1 ? 'https://etherscan.io' : 'https://sepolia.etherscan.io';
   return `${base}/address/${addr}`;
-}
-
-function pairedTokenLabel(address: string, weth: string): string {
-  if (address.toLowerCase() === weth.toLowerCase()) return 'WETH';
-  return shortAddr(address);
 }
 
 function CardSkeleton({ height = 'h-40' }: { height?: string }) {
@@ -53,223 +46,207 @@ function CardSkeleton({ height = 'h-40' }: { height?: string }) {
 }
 
 export default function TokenDetailPage() {
-  const { address: tokenAddressParam } = useParams<{ address: string }>();
-  const tokenAddress = (tokenAddressParam ?? '').toLowerCase() as Address;
-  const chainId = useChainId();
-  const client = usePublicClient();
-  const addresses = getAddresses(chainId);
-
-  // ── 1. Find the TokenCreated event for this address ──────────────
-  const { data: allEvents, isLoading: eventsLoading } = useQuery({
-    queryKey: ['tokens', chainId],
-    queryFn: async () => {
-      if (!client) throw new Error('No client');
-      return fetchAllTokenCreatedEvents(
-        client,
-        addresses.factory,
-        getFactoryDeploymentBlock(chainId)
-      );
-    },
-    enabled:
-      !!client &&
-      addresses.factory !== '0x0000000000000000000000000000000000000000',
-    staleTime: 60_000,
-  });
-
-  const event: TokenCreatedEvent | undefined = useMemo(() => {
-    if (!allEvents) return undefined;
-    return allEvents.find(e => e.tokenAddress.toLowerCase() === tokenAddress);
-  }, [allEvents, tokenAddress]);
-
-  // ── 2. Derive tickSpacing and poolKey ─────────────────────────────
-  const { tickSpacing, poolKey } = useMemo(() => {
-    if (!event) return { tickSpacing: 60, poolKey: null };
-    const ts = resolveTickSpacing(
-      event.tokenAddress,
-      event.pairedToken,
-      event.poolHook,
-      event.poolId
-    );
-    return {
-      tickSpacing: ts,
-      poolKey: buildPoolKey(event.tokenAddress, event.pairedToken, ts, event.poolHook),
-    };
-  }, [event]);
-
-  // ── 3. Multicall: token + hook + locker state ────────────────────
-  const staticContracts = useMemo(() => {
-    if (!event) return [];
-    return [
-      // Token
-      { address: event.tokenAddress, abi: tokenAbi, functionName: 'name' } as const,
-      { address: event.tokenAddress, abi: tokenAbi, functionName: 'symbol' } as const,
-      { address: event.tokenAddress, abi: tokenAbi, functionName: 'totalSupply' } as const,
-      { address: event.tokenAddress, abi: tokenAbi, functionName: 'admin' } as const,
-      { address: event.tokenAddress, abi: tokenAbi, functionName: 'imageUrl' } as const,
-      { address: event.tokenAddress, abi: tokenAbi, functionName: 'metadata' } as const,
-      { address: event.tokenAddress, abi: tokenAbi, functionName: 'contractURI' } as const,
-      { address: event.tokenAddress, abi: tokenAbi, functionName: 'isVerified' } as const,
-      { address: event.tokenAddress, abi: tokenAbi, functionName: 'metadataRenderer' } as const,
-      // Hook
-      { address: event.poolHook, abi: hookAbi, functionName: 'newMaterialIsToken0', args: [event.poolId] } as const,
-      { address: event.poolHook, abi: hookAbi, functionName: 'mevModuleEnabled', args: [event.poolId] } as const,
-      { address: event.poolHook, abi: hookAbi, functionName: 'poolCreationTimestamp', args: [event.poolId] } as const,
-      { address: event.poolHook, abi: hookAbi, functionName: 'newMaterialFee', args: [event.poolId] } as const,
-      { address: event.poolHook, abi: hookAbi, functionName: 'pairedFee', args: [event.poolId] } as const,
-      // Locker
-      { address: event.locker, abi: lockerAbi, functionName: 'tokenRewards', args: [event.tokenAddress] } as const,
-      // Protocol fee numerator (index 15)
-      { address: event.poolHook, abi: hookAbi, functionName: 'protocolFeeNumerator' } as const,
-    ];
-  }, [event]);
-
-  const { data: staticData, isLoading: readsLoading, refetch: refetchStatic } = useReadContracts({
-    contracts: staticContracts,
-    allowFailure: true,
-    query: { enabled: staticContracts.length > 0, staleTime: 15_000 },
-  });
-
+  const { address: param } = useParams<{ address: string }>();
+  const { token: record, validAddress, isLoading, supported } = useToken(param);
+  const { chainId, addresses } = useAddressesOrNull();
   const [metadataModalOpen, setMetadataModalOpen] = useState(false);
 
-  const name = staticData?.[0]?.result as string | undefined;
-  const symbol = staticData?.[1]?.result as string | undefined;
-  const totalSupply = staticData?.[2]?.result as bigint | undefined;
-  const currentAdmin = staticData?.[3]?.result as Address | undefined;
-  const imageUrl = staticData?.[4]?.result as string | undefined;
-  const metadataText = staticData?.[5]?.result as string | undefined;
-  const contractURI = staticData?.[6]?.result as string | undefined;
-  const isVerified = staticData?.[7]?.result as boolean | undefined;
-  const metadataRenderer = staticData?.[8]?.result as Address | undefined;
-  const isToken0 = staticData?.[9]?.result as boolean | undefined;
-  const mevModuleEnabled = staticData?.[10]?.result as boolean | undefined;
-  const poolCreationTimestamp = staticData?.[11]?.result as bigint | undefined;
-  const buyFee = staticData?.[12]?.result as number | undefined;
-  const sellFee = staticData?.[13]?.result as number | undefined;
-  const tokenRewards = staticData?.[14]?.result as
+  const version = record?.version ?? 1;
+  const coin = record?.token;
+
+  // ── 1. the pool key comes from the locker record, not from guessing a tick spacing ──
+  const lockerAbi = version === 2 ? lockerV2Abi : lockerV1Abi;
+  const { data: rewards, isLoading: rewardsLoading } = useReadContract({
+    address: record?.locker,
+    abi: lockerAbi,
+    functionName: 'tokenRewards',
+    args: coin ? [coin] : undefined,
+    query: { enabled: !!record, staleTime: 60_000 },
+  });
+  const rewardsView = rewards as
     | {
-        rewardAdmins: readonly Address[];
-        rewardRecipients: readonly Address[];
+        token: Address;
+        poolKey: PoolKey;
         rewardBps: readonly number[];
-        tickLower: readonly number[];
-        tickUpper: readonly number[];
-        positionBps: readonly number[];
+        rewardRecipients: readonly Address[];
+        numPositions: bigint;
       }
     | undefined;
-  const protocolFeeNumerator = staticData?.[15]?.result as bigint | undefined;
+  const poolKey = rewardsView?.poolKey ?? null;
+  const poolId: Hex | undefined = useMemo(() => (poolKey ? computePoolId(poolKey) : undefined), [poolKey]);
+  // the pool this record announced must be the pool the locker holds, else do not trade it
+  const pairKind = poolKey && record && addresses ? classifyPool(poolKey, record.token, addresses.weth) : null;
+  const pairLabel = !poolKey ? '…' : pairKind === 'native' ? 'native ETH' : pairKind === 'weth' ? 'WETH' : 'not a native ETH or WETH pair';
+  const poolMatches = !!poolKey && !!record && poolId?.toLowerCase() === record.poolId.toLowerCase();
 
-  // ── 4. Live MEV state (only while enabled) ────────────────────────
-  const { data: mevLiveData } = useReadContracts({
+  // ── 2. token, hook and mev reads ──
+  const v2 = getV2Stack(chainId);
+  const contracts = useMemo(() => {
+    if (!record || !poolId) return [];
+    const t = record.token;
+    const list = [
+      { address: t, abi: tokenV1Abi, functionName: 'name' },
+      { address: t, abi: tokenV1Abi, functionName: 'symbol' },
+      { address: t, abi: tokenV1Abi, functionName: 'totalSupply' },
+      { address: t, abi: tokenV1Abi, functionName: 'admin' },
+      { address: t, abi: tokenV1Abi, functionName: 'imageUrl' },
+      { address: t, abi: tokenV1Abi, functionName: 'metadata' },
+      { address: t, abi: tokenV1Abi, functionName: 'isVerified' },
+      { address: t, abi: tokenV1Abi, functionName: 'metadataRenderer' },
+      { address: record.hook, abi: record.version === 2 ? hookV2Abi : hookV1Abi, functionName: 'skimConfig', args: [poolId] },
+    ] as const;
+    return list;
+  }, [record, poolId]);
+
+  const { data: staticData, isLoading: readsLoading, refetch: refetchStatic } = useReadContracts({
+    contracts: contracts as never,
+    allowFailure: true,
+    query: { enabled: contracts.length > 0, staleTime: 15_000 },
+  });
+  const sd = staticData as readonly { result?: unknown }[] | undefined;
+  const r = (i: number) => sd?.[i]?.result;
+  const name = r(0) as string | undefined;
+  const symbol = r(1) as string | undefined;
+  const totalSupply = r(2) as bigint | undefined;
+  const currentAdmin = r(3) as Address | undefined;
+  const imageUrl = r(4) as string | undefined;
+  const metadataText = r(5) as string | undefined;
+  const creatorConfirmed = r(6) as boolean | undefined;
+  const metadataRenderer = r(7) as Address | undefined;
+  const skim = normalizeSkim(r(8));
+
+  // contractURI() can be an on chain renderer (~180M gas, hundreds of kB). It is read alone with its own gas
+  // limit and a timeout, never in the multicall above, so a slow or refusing rpc cannot hold the token card.
+  // A failure shows the placeholder (the card then falls back to imageUrl).
+  const publicClient = usePublicClient();
+  const uriQuery = useQuery({
+    queryKey: ['contractURI', chainId, record?.token],
+    enabled: !!record && !!publicClient,
+    queryFn: () => readContractUri(publicClient as never, record!.token),
+    staleTime: 300_000,
+    gcTime: 300_000,
+    retry: false,
+  });
+  const contractURI = uriQuery.data;
+  const uriState: 'loading' | 'ready' | 'failed' = uriQuery.isError ? 'failed' : uriQuery.data !== undefined ? 'ready' : 'loading';
+
+  // v2: independent confirmation from the factory
+  const { data: v2Data } = useReadContracts({
     contracts:
-      event && poolKey && event.mevModule.toLowerCase() === addresses.mevLinearFees.toLowerCase()
-        ? [
-            {
-              address: event.mevModule,
-              abi: mevLinearAbi,
-              functionName: 'getCurrentFee',
-              args: [poolKey],
-            } as const,
-            {
-              address: event.mevModule,
-              abi: mevLinearAbi,
-              functionName: 'getTimeRemaining',
-              args: [poolKey],
-            } as const,
-            {
-              address: event.mevModule,
-              abi: mevLinearAbi,
-              functionName: 'feeConfigs',
-              args: [event.poolId],
-            } as const,
-          ]
+      record && record.version === 2
+        ? ([
+            { address: record.factory, abi: factoryV2Abi, functionName: 'isArtCoin', args: [record.token] },
+          ] as const)
         : [],
     allowFailure: true,
-    query: {
-      enabled: !!event && !!poolKey && mevModuleEnabled === true,
-      refetchInterval: mevModuleEnabled ? 10_000 : false,
-    },
+    query: { enabled: !!record && record.version === 2 },
   });
+  const isArtCoin = v2Data?.[0]?.result as boolean | undefined;
 
-  const currentMevFee = mevLiveData?.[0]?.result as number | undefined;
-  const mevTimeRemaining = mevLiveData?.[1]?.result as bigint | undefined;
-  const mevConfig = mevLiveData?.[2]?.result as
-    | readonly [number, number, number, bigint]
-    | undefined;
-
-  // ── 5. Pool slot0 (sqrtPriceX96) ──────────────────────────────────
-  const { data: slot0 } = useReadContracts({
+  // ── 3. anti sniper state ──
+  // the legacy stack's mev modules are older contracts with other abis: no anti sniper reads for them
+  const mevAddr = record && !record.legacy && record.mevModule !== ZERO ? record.mevModule : undefined;
+  const { data: mevData } = useReadContracts({
     contracts:
-      event && addresses.stateView !== '0x0000000000000000000000000000000000000000'
-        ? [
-            {
-              address: addresses.stateView,
-              abi: stateViewAbi,
-              functionName: 'getSlot0',
-              args: [event.poolId],
-            } as const,
-          ]
+      record && poolId && mevAddr
+        ? record.version === 2
+          ? ([
+              { address: mevAddr, abi: mevSkimV2Abi, functionName: 'currentSkimBps', args: [poolId] },
+              { address: mevAddr, abi: mevSkimV2Abi, functionName: 'windowEnd', args: [poolId] },
+            ] as const)
+          : ([
+              { address: mevAddr, abi: mevLinearSkimV1Abi, functionName: 'currentSkimBps', args: [poolId] },
+              { address: mevAddr, abi: mevLinearSkimV1Abi, functionName: 'skimConfigs', args: [poolId] },
+              { address: mevAddr, abi: mevLinearSkimV1Abi, functionName: 'operational', args: [poolId] },
+            ] as const)
         : [],
     allowFailure: true,
-    query: { enabled: !!event, refetchInterval: 15_000 },
+    query: { enabled: !!mevAddr && !!poolId, refetchInterval: 10_000 },
   });
+  const md = mevData as readonly { result?: unknown }[] | undefined;
+  let mevSkimBps: number | undefined;
+  let mevActive = false;
+  let mevEnd: number | undefined;
+  if (record?.version === 2) {
+    const cur = md?.[0]?.result as readonly [number, boolean] | undefined;
+    mevSkimBps = cur ? Number(cur[0]) : undefined;
+    mevActive = cur ? !!cur[1] : false;
+    mevEnd = md?.[1]?.result ? Number(md[1].result as bigint) : undefined;
+  } else if (record) {
+    mevSkimBps = md?.[0]?.result !== undefined ? Number(md[0].result as number) : undefined;
+    const cfg = md?.[1]?.result as readonly [number, number, number, bigint] | undefined;
+    mevActive = !!(md?.[2]?.result as boolean | undefined);
+    mevEnd = cfg ? Number(cfg[3]) + Number(cfg[2]) : undefined;
+  }
+  // the window end is a block timestamp: count down against the chain clock, not the browser's
+  const chainNow = useChainNow();
+  const mevRemaining = mevEnd !== undefined ? Math.max(0, mevEnd - chainNow) : undefined;
 
-  const slot0Result = slot0?.[0]?.result as readonly [bigint, number, number, number] | undefined;
-  const sqrtPriceX96 = slot0Result?.[0];
-  const currentPrice =
-    sqrtPriceX96 !== undefined && isToken0 !== undefined
-      ? newMaterialPriceInPaired(sqrtPriceX96, isToken0)
-      : undefined;
+  // ── 4. pool price ──
+  const { data: slot0 } = useReadContract({
+    address: addresses?.stateView,
+    abi: stateViewAbi,
+    functionName: 'getSlot0',
+    args: poolId ? [poolId] : undefined,
+    query: { enabled: !!poolId && !!addresses && addresses.stateView !== ZERO, refetchInterval: 15_000 },
+  });
+  const coinPerEth = slot0 && slot0[0] > 0n ? priceFromSqrtX96(slot0[0]) : undefined;
+  const ethPerCoin = coinPerEth ? 1 / coinPerEth : undefined;
+  const supplyWhole = totalSupply !== undefined ? Number(totalSupply / 10n ** 18n) : undefined;
 
-  // ── Render ────────────────────────────────────────────────────────
-
-  if (eventsLoading && !event) {
+  // ── render ──
+  if (!validAddress) {
+    return (
+      <main className="mx-auto max-w-4xl px-4 py-16 text-center">
+        <h1 className="text-xl font-semibold mb-2">Not a token address</h1>
+        <Link to="/tokens" className="text-violet-400 hover:text-violet-300 text-sm">← Back to all tokens</Link>
+      </main>
+    );
+  }
+  if (!supported) {
+    return (
+      <main className="mx-auto max-w-4xl px-4 py-16 text-center text-zinc-400">
+        No artcoins deployment is configured for this network. Switch to Ethereum mainnet.
+      </main>
+    );
+  }
+  if (isLoading && !record) {
     return (
       <main className="mx-auto max-w-4xl px-4 py-8 space-y-6">
         <div className="h-8 w-48 bg-zinc-800 rounded animate-pulse" />
         <CardSkeleton />
-        <div className="grid md:grid-cols-2 gap-4">
-          <CardSkeleton />
-          <CardSkeleton />
-        </div>
+        <div className="grid md:grid-cols-2 gap-4"><CardSkeleton /><CardSkeleton /></div>
       </main>
     );
   }
-
-  if (!event) {
+  if (!record) {
     return (
       <main className="mx-auto max-w-4xl px-4 py-16 text-center">
         <h1 className="text-xl font-semibold mb-2">Token not found</h1>
         <p className="text-zinc-500 text-sm mb-6">
-          No token with address <span className="font-mono">{shortAddr(tokenAddress)}</span> was
-          found in the factory's event log.
+          <span className="font-mono">{shortAddr(param)}</span> was not launched by a factory in the deployment registry, so
+          this ui does not show it.
         </p>
-        <Link
-          to="/tokens"
-          className="text-violet-400 hover:text-violet-300 text-sm"
-        >
-          ← Back to all tokens
-        </Link>
+        <Link to="/tokens" className="text-violet-400 hover:text-violet-300 text-sm">← Back to all tokens</Link>
       </main>
     );
   }
 
-  const image = resolveImage(contractURI, imageUrl ?? event.tokenImage);
+  const shownName = cleanText(name ?? record.name, MAX_NAME);
+  const shownSymbol = cleanText(symbol ?? record.symbol, MAX_SYMBOL);
+  const image = resolveImage(contractURI, imageUrl ?? record.image);
   const parsedMeta = parseContractURI(contractURI);
-  const description = metadataText || parsedMeta?.description || event.tokenMetadata;
-
-  const uniswapView = uniswapTokenUrl(chainId, event.tokenAddress);
-  const uniswapSwap = uniswapSwapUrl(chainId, event.tokenAddress);
-  const etherscanToken = explorerUrl(chainId, event.tokenAddress);
+  const description = cleanText(metadataText || (typeof parsedMeta?.description === 'string' ? parsedMeta.description : '') || record.metadata, MAX_DESCRIPTION);
+  const etherscanToken = explorerUrl(chainId, record.token);
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-8 space-y-6">
-      {/* Breadcrumb */}
       <div className="text-sm text-zinc-500">
         <Link to="/tokens" className="hover:text-zinc-300">Tokens</Link>
         <span className="mx-2">/</span>
-        <span className="text-zinc-300">{symbol ?? event.tokenSymbol}</span>
+        <span className="text-zinc-300">{shownSymbol}</span>
       </div>
 
-      {/* Header */}
       <div className="flex flex-col sm:flex-row gap-6">
         <div className="flex-shrink-0">
           <button
@@ -281,396 +258,206 @@ export default function TokenDetailPage() {
             {image ? (
               <img
                 src={image}
-                alt={symbol ?? ''}
+                alt={shownSymbol}
+                referrerPolicy="no-referrer"
+                decoding="async"
                 className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                onError={e => {
+                onError={(e) => {
                   (e.currentTarget as HTMLImageElement).style.display = 'none';
                 }}
               />
             ) : (
-              <div className="w-full h-full bg-gradient-to-br from-violet-900/30 to-zinc-900 flex items-center justify-center">
-                <span className="font-mono text-3xl font-bold text-zinc-600">
-                  {(symbol || event.tokenSymbol || '??').slice(0, 4)}
-                </span>
+              <div
+                className="w-full h-full bg-gradient-to-br from-violet-900/30 to-zinc-900 flex items-center justify-center"
+                title={uriState === 'loading' ? 'loading the metadata…' : uriState === 'failed' ? 'the metadata could not be read, showing a placeholder' : undefined}
+              >
+                <span className="font-mono text-3xl font-bold text-zinc-600">{shownSymbol.slice(0, 4) || '??'}</span>
               </div>
             )}
-            {/* Hover overlay with "View details" hint */}
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-end justify-center pb-3 opacity-0 group-hover:opacity-100">
-              <span className="text-xs font-medium text-white bg-violet-600/90 px-3 py-1.5 rounded-full backdrop-blur-sm inline-flex items-center gap-1.5">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <circle cx="11" cy="11" r="8" />
-                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                </svg>
-                View details
-              </span>
-            </div>
           </button>
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold">
-              {name ?? event.tokenName}{' '}
-              <span className="text-zinc-500 font-normal">({symbol ?? event.tokenSymbol})</span>
+              {shownName} <span className="text-zinc-500 font-normal">({shownSymbol})</span>
             </h1>
-            {isVerified && (
-              <span className="px-2 py-0.5 text-xs rounded-full bg-violet-600/20 text-violet-300 border border-violet-600/30">
-                Verified
-              </span>
+            <OfficialBadge version={record.version} legacy={record.legacy} />
+            {record.version === 2 && isArtCoin === false && (
+              <span className="px-2 py-0.5 text-xs rounded-full bg-red-600/20 text-red-300 border border-red-600/30">factory does not list this token</span>
+            )}
+            {record.lookalike && (
+              <span className="px-2 py-0.5 text-xs rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30">another token has a similar name or symbol</span>
             )}
           </div>
-          <CopyableAddress
-            address={event.tokenAddress}
-            short={false}
-            explorerUrl={explorerUrl(chainId, event.tokenAddress)}
-            className="mt-1 text-zinc-400"
-          />
-          {description && (
-            <p className="text-sm text-zinc-400 mt-3 line-clamp-3">{description}</p>
-          )}
+          <CopyableAddress address={record.token} short={false} explorerUrl={etherscanToken} className="mt-1 text-zinc-400" />
+          <p className="text-xs text-amber-300/80 mt-2">
+            Always compare this contract address with the one you meant to trade. Anyone can launch a token with any name.
+          </p>
+          {description && <p className="text-sm text-zinc-400 mt-3 line-clamp-3 whitespace-pre-wrap">{description}</p>}
         </div>
         <div className="flex flex-col gap-2 self-start">
-          <a
-            href={etherscanToken}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded-xl border border-zinc-700 hover:border-zinc-500 px-5 py-2 text-xs font-medium text-zinc-300 hover:text-white flex items-center justify-center gap-2"
-          >
-            Etherscan
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
-              <polyline points="15 3 21 3 21 9" />
-              <line x1="10" y1="14" x2="21" y2="3" />
-            </svg>
-          </a>
-          <a
-            href={uniswapView}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded-xl border border-zinc-700 hover:border-zinc-500 px-5 py-2 text-xs font-medium text-zinc-300 hover:text-white flex items-center justify-center gap-2"
-          >
-            Uniswap
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
-              <polyline points="15 3 21 3 21 9" />
-              <line x1="10" y1="14" x2="21" y2="3" />
-            </svg>
-          </a>
-          <Link
-            to={`/tokens/${event.tokenAddress}/claim`}
-            className="rounded-xl border border-violet-600/40 bg-violet-950/20 hover:border-violet-500 px-5 py-2 text-xs font-medium text-violet-200 hover:text-white flex items-center justify-center gap-2"
-          >
-            Claim airdrop
-          </Link>
-          <Link
-            to={`/tokens/${event.tokenAddress}/referrals`}
-            className="rounded-xl border border-violet-600/40 bg-violet-950/20 hover:border-violet-500 px-5 py-2 text-xs font-medium text-violet-200 hover:text-white flex items-center justify-center gap-2"
-          >
-            Referral earnings
-          </Link>
+          <a href={etherscanToken} target="_blank" rel="noopener noreferrer" className="rounded-xl border border-zinc-700 hover:border-zinc-500 px-5 py-2 text-xs font-medium text-zinc-300 hover:text-white text-center">Etherscan</a>
+          <a href={uniswapTokenUrl(chainId, record.token)} target="_blank" rel="noopener noreferrer" className="rounded-xl border border-zinc-700 hover:border-zinc-500 px-5 py-2 text-xs font-medium text-zinc-300 hover:text-white text-center">Uniswap</a>
+          <Link to={`/tokens/${record.token}/claim`} className="rounded-xl border border-violet-600/40 bg-violet-950/20 hover:border-violet-500 px-5 py-2 text-xs font-medium text-violet-200 hover:text-white text-center">Claim airdrop</Link>
+          <Link to={`/tokens/${record.token}/referrals`} className="rounded-xl border border-violet-600/40 bg-violet-950/20 hover:border-violet-500 px-5 py-2 text-xs font-medium text-violet-200 hover:text-white text-center">Referral earnings</Link>
         </div>
       </div>
 
-      {/* Swap widget — primary action. Only render when we have a poolKey and the
-          paired token is WETH (the widget assumes ETH<->Token via WETH). */}
-      {poolKey && event.pairedToken.toLowerCase() === addresses.weth.toLowerCase() && (
+      {rewardsLoading && <CardSkeleton height="h-64" />}
+      {!rewardsLoading && poolKey && poolMatches && (
         <SwapWidget
-          tokenAddress={event.tokenAddress}
-          tokenSymbol={symbol ?? event.tokenSymbol}
+          tokenAddress={record.token}
+          tokenSymbol={shownSymbol}
           poolKey={poolKey}
-          newMaterialIsToken0={!!isToken0}
-          mevActive={!!mevModuleEnabled && (mevTimeRemaining ?? 0n) > 0n}
+          feeSummary={skim ? feeSummary(skim) : undefined}
+          mevActive={mevActive}
+          attribution={!record.legacy}
+          mevSkimPercent={mevSkimBps !== undefined ? skimPercent(mevSkimBps) : undefined}
         />
       )}
+      {!rewardsLoading && poolKey && !poolMatches && (
+        <div className="rounded-xl border border-red-900 bg-red-950/30 p-4 text-sm text-red-300">
+          The locker's pool for this token does not match the pool announced at launch. Trading is disabled in this ui.
+        </div>
+      )}
+      {!rewardsLoading && !poolKey && (
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">Could not read the pool from the locker, trading is disabled.</div>
+      )}
 
-      {/* MEV banner */}
-      {mevModuleEnabled && mevTimeRemaining !== undefined && mevTimeRemaining > 0n && (
+      {mevActive && mevSkimBps !== undefined && (
         <div className="rounded-xl border border-violet-600/40 bg-violet-950/20 p-4 flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium text-violet-200">Anti-sniper protection active</p>
+            <p className="text-sm font-medium text-violet-200">Anti-sniper skim active</p>
             <p className="text-xs text-violet-300/80 mt-1">
-              Current buy fee: <strong>{formatFeeBps(currentMevFee)}</strong>. Decaying to normal
-              fees in {formatDuration(mevTimeRemaining)}.
+              Current skim: <strong>{skimPercent(mevSkimBps).toFixed(2)}%</strong> of volume, decaying to the baseline{mevRemaining !== undefined ? ` in ${formatDuration(mevRemaining)}` : ''}.
             </p>
           </div>
-          <div className="text-right">
-            <div className="text-2xl font-bold text-violet-100">{formatFeeBps(currentMevFee)}</div>
-            <div className="text-xs text-violet-300/60">{formatDuration(mevTimeRemaining)}</div>
-          </div>
+          <div className="text-2xl font-bold text-violet-100">{skimPercent(mevSkimBps).toFixed(2)}%</div>
         </div>
       )}
 
-      {/* Info cards */}
       <div className="grid md:grid-cols-2 gap-4">
         <InfoCard title="Token">
-          <InfoRow label="Name" value={name ?? event.tokenName} />
-          <InfoRow label="Symbol" value={symbol ?? event.tokenSymbol} />
-          <InfoRow
-            label="Supply"
-            value={
-              totalSupply !== undefined
-                ? `${formatSupply(totalSupply)} ${symbol ?? ''}`
-                : readsLoading
-                ? '…'
-                : '—'
-            }
-          />
-          <InfoRow
-            label="Admin"
-            value={
-              currentAdmin ? (
-                <CopyableAddress
-                  address={currentAdmin}
-                  explorerUrl={explorerUrl(chainId, currentAdmin)}
-                />
-              ) : (
-                '—'
-              )
-            }
-          />
-          <InfoRow
-            label="Deployer"
-            value={
-              <CopyableAddress
-                address={event.tokenAdmin}
-                explorerUrl={explorerUrl(chainId, event.tokenAdmin)}
-              />
-            }
-          />
+          <InfoRow label="Name" value={shownName} />
+          <InfoRow label="Symbol" value={shownSymbol} />
+          <InfoRow label="Supply" value={totalSupply !== undefined ? `${formatSupply(totalSupply)} ${shownSymbol}` : readsLoading ? '…' : '—'} />
+          <InfoRow label="Admin" value={currentAdmin ? <CopyableAddress address={currentAdmin} explorerUrl={explorerUrl(chainId, currentAdmin)} /> : '—'} />
+          <InfoRow label="Launched by" value={<CopyableAddress address={record.sender} explorerUrl={explorerUrl(chainId, record.sender)} />} />
+          <InfoRow label="Factory" value={<CopyableAddress address={record.factory} explorerUrl={explorerUrl(chainId, record.factory)} />} />
           <InfoRow
             label="Renderer"
             value={
-              metadataRenderer &&
-              metadataRenderer !== '0x0000000000000000000000000000000000000000' ? (
-                <CopyableAddress
-                  address={metadataRenderer}
-                  explorerUrl={explorerUrl(chainId, metadataRenderer)}
-                />
+              metadataRenderer === undefined ? (
+                <span className="text-zinc-500" title={readsLoading ? undefined : 'the renderer could not be read from the token'}>
+                  {readsLoading ? '…' : '—'}
+                </span>
+              ) : metadataRenderer !== ZERO ? (
+                <CopyableAddress address={metadataRenderer} explorerUrl={explorerUrl(chainId, metadataRenderer)} />
               ) : (
                 <span className="text-zinc-500">default (on-chain)</span>
               )
             }
           />
-          <InfoRow label="Verified" value={isVerified ? 'Yes' : 'No'} />
+          <InfoRow
+            label="Creator flag"
+            value={<span title="Set by the token's own admin. It is not a trust signal.">{creatorConfirmed ? 'admin set the verified flag' : 'not set'}</span>}
+          />
         </InfoCard>
+
+        {record.version === 2 && <RestrictionPanel token={record.token} admin={currentAdmin} fromBlock={record.blockNumber} />}
 
         <InfoCard title="Pool">
-          <InfoRow
-            label="Paired Token"
-            value={pairedTokenLabel(event.pairedToken, addresses.weth)}
-          />
-          <InfoRow
-            label="Current Price"
-            value={
-              currentPrice !== undefined
-                ? `${formatPrice(currentPrice)} ${pairedTokenLabel(event.pairedToken, addresses.weth)}`
-                : 'loading…'
-            }
-          />
-          <InfoRow label="Buy Fee (total)" value={formatFeeBps(buyFee)} />
-          <InfoRow label="Sell Fee (total)" value={formatFeeBps(sellFee)} />
-          <InfoRow label="Starting Tick" value={event.startingTick.toLocaleString()} />
-          <InfoRow label="Tick Spacing" value={tickSpacing} />
-          <InfoRow
-            label="Hook"
-            value={
-              <CopyableAddress
-                address={event.poolHook}
-                explorerUrl={explorerUrl(chainId, event.poolHook)}
-              />
-            }
-          />
-          <InfoRow
-            label="Pool ID"
-            value={<span className="font-mono text-xs">{shortAddr(event.poolId)}</span>}
-          />
-          <InfoRow
-            label="Created"
-            value={formatTimestamp(poolCreationTimestamp)}
-          />
+          <InfoRow label="Pair" value={pairLabel} />
+          <InfoRow label="Price" value={ethPerCoin !== undefined ? `${formatPrice(ethPerCoin)} ETH` : 'loading…'} />
+          <InfoRow label="Implied fdv" value={ethPerCoin !== undefined && supplyWhole !== undefined ? `${(ethPerCoin * supplyWhole).toLocaleString(undefined, { maximumFractionDigits: 2 })} ETH` : '—'} />
+          {record.startingTick !== null && supplyWhole !== undefined && (
+            <InfoRow label="Launch fdv" value={`${impliedFdvEth(record.startingTick, supplyWhole).toLocaleString(undefined, { maximumFractionDigits: 2 })} ETH`} />
+          )}
+          {skim && <InfoRow label="Fees" value={`${feePercent(skim.lpFee).toFixed(2)}% lp + ${skimPercent(skim.baselineSkimBps).toFixed(2)}% skim`} />}
+          {poolKey && <InfoRow label="Tick spacing" value={poolKey.tickSpacing} />}
+          <InfoRow label="Hook" value={<CopyableAddress address={record.hook} explorerUrl={explorerUrl(chainId, record.hook)} />} />
+          <InfoRow label="Pool ID" value={<span className="font-mono text-xs">{shortAddr(record.poolId)}</span>} />
+          <InfoRow label="Locker" value={<CopyableAddress address={record.locker} explorerUrl={explorerUrl(chainId, record.locker)} />} />
+          {v2 && record.version === 2 && <InfoRow label="Stack" value="v2" />}
         </InfoCard>
 
-        <InfoCard title="Anti-Sniper (MEV)">
-          <InfoRow
-            label="Module"
-            value={
-              <CopyableAddress
-                address={event.mevModule}
-                explorerUrl={explorerUrl(chainId, event.mevModule)}
-              />
-            }
-          />
-          <InfoRow
-            label="Status"
-            value={
-              mevModuleEnabled === undefined
-                ? '…'
-                : mevModuleEnabled
-                ? 'Active'
-                : 'Completed / inactive'
-            }
-          />
-          {mevConfig && (
-            <>
-              <InfoRow label="Starting Fee" value={formatFeeBps(mevConfig[0])} />
-              <InfoRow label="Ending Fee" value={formatFeeBps(mevConfig[1])} />
-              <InfoRow label="Duration" value={formatDuration(mevConfig[2])} />
-            </>
-          )}
-          {mevModuleEnabled && currentMevFee !== undefined && (
-            <InfoRow label="Current Fee" value={formatFeeBps(currentMevFee)} />
-          )}
-          {mevModuleEnabled && mevTimeRemaining !== undefined && (
-            <InfoRow label="Time Remaining" value={formatDuration(mevTimeRemaining)} />
-          )}
-        </InfoCard>
-
-        <InfoCard title="Fee Distribution">
-          {buyFee !== undefined && protocolFeeNumerator !== undefined && tokenRewards ? (
-            (() => {
-              // Protocol fee is protocolFeeNumerator / 1_000_000 of the LP fee
-              const protocolPct = Number(protocolFeeNumerator) / 10_000; // as %
-              const lpPct = 100 - protocolPct;
-
-              return (
-                <div className="space-y-3">
-                  <p className="text-xs text-zinc-500">
-                    Each swap pays a fee that is split between the protocol and LP reward
-                    recipients.
-                  </p>
-                  <div className="text-sm space-y-1.5">
-                    <div className="flex justify-between">
-                      <span className="text-zinc-400">Protocol (factory owner)</span>
-                      <span className="text-white">{protocolPct.toFixed(1)}% of fee</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-400">LP Reward Recipients</span>
-                      <span className="text-white">{lpPct.toFixed(1)}% of fee</span>
-                    </div>
-                  </div>
-                  {tokenRewards.rewardRecipients.length > 0 && (
-                    <div className="border-t border-zinc-800 pt-2 space-y-1">
-                      <p className="text-xs text-zinc-500 mb-1">
-                        LP share ({lpPct.toFixed(0)}%) is split among:
-                      </p>
-                      {tokenRewards.rewardRecipients.map((recipient, i) => (
-                        <div key={i} className="flex items-center justify-between text-sm">
-                          <CopyableAddress
-                            address={recipient}
-                            explorerUrl={explorerUrl(chainId, recipient)}
-                          />
-                          <span className="text-zinc-300">
-                            {tokenRewards.rewardBps[i] / 100}%
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <div className="border-t border-zinc-800 pt-2">
-                    <p className="text-xs text-zinc-500">
-                      Example: on a {formatFeeBps(buyFee)} buy fee,{' '}
-                      {((buyFee ?? 0) * Number(protocolFeeNumerator) / 1_000_000 / 10_000).toFixed(3)}% goes
-                      to protocol and{' '}
-                      {((buyFee ?? 0) * (1 - Number(protocolFeeNumerator) / 1_000_000) / 10_000).toFixed(3)}% goes
-                      to LP recipients.
-                    </p>
-                  </div>
-                </div>
-              );
-            })()
+        <InfoCard title="Fee distribution">
+          {skim ? (
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-between"><span className="text-zinc-400">LP fee</span><span>{feePercent(skim.lpFee).toFixed(2)}% of the swap</span></div>
+              <div className="flex justify-between"><span className="text-zinc-400">Baseline skim</span><span>{skimPercent(skim.baselineSkimBps).toFixed(2)}% of volume</span></div>
+              <div className="flex justify-between"><span className="text-zinc-400">Bounty share of skim</span><span>{(skim.bountyBps / 100).toFixed(2)}%</span></div>
+              <div className="flex justify-between"><span className="text-zinc-400">Protocol share of skim</span><span>{(100 - skim.bountyBps / 100).toFixed(2)}%</span></div>
+              <div className="flex justify-between"><span className="text-zinc-400">Referral cap</span><span>{skimPercent(skim.maxReferralBpsOfVolume).toFixed(2)}% of volume, paid from the protocol share</span></div>
+              <div className="flex justify-between"><span className="text-zinc-400">Bounty recipient</span><CopyableAddress address={skim.bountyRecipient} explorerUrl={explorerUrl(chainId, skim.bountyRecipient)} /></div>
+            </div>
           ) : (
-            <p className="text-sm text-zinc-500 py-2">
-              {readsLoading ? 'Loading…' : '—'}
-            </p>
+            <p className="text-sm text-zinc-500 py-2">{readsLoading ? 'Loading…' : 'Fee config unavailable.'}</p>
           )}
         </InfoCard>
 
-        <InfoCard title="LP Positions">
-          <InfoRow
-            label="Locker"
-            value={
-              <CopyableAddress
-                address={event.locker}
-                explorerUrl={explorerUrl(chainId, event.locker)}
+        <InfoCard title="LP rewards split">
+          {rewardsView && rewardsView.rewardRecipients.length > 0 ? (
+            rewardsView.rewardRecipients.map((recipient, i) => (
+              <InfoRow
+                key={i}
+                label={`Recipient ${i + 1}`}
+                value={
+                  <span>
+                    <CopyableAddress address={recipient} explorerUrl={explorerUrl(chainId, recipient)} />{' '}
+                    <span className="text-zinc-500">({rewardsView.rewardBps[i] / 100}%)</span>
+                    {skim && recipient.toLowerCase() === skim.protocolRecipient.toLowerCase() && <span className="text-zinc-500"> protocol</span>}
+                  </span>
+                }
               />
-            }
-          />
-          {tokenRewards && tokenRewards.rewardRecipients.length > 0 ? (
-            <>
-              {tokenRewards.rewardRecipients.map((recipient, i) => (
-                <InfoRow
-                  key={i}
-                  label={`Recipient ${i + 1}`}
-                  value={
-                    <span>
-                      <CopyableAddress
-                        address={recipient}
-                        explorerUrl={explorerUrl(chainId, recipient)}
-                      />{' '}
-                      <span className="text-zinc-500">({tokenRewards.rewardBps[i] / 100}%)</span>
-                    </span>
-                  }
-                />
-              ))}
-              {tokenRewards.tickLower.map((tl, i) => (
-                <InfoRow
-                  key={`pos-${i}`}
-                  label={`Position ${i + 1}`}
-                  value={`${tl.toLocaleString()} → ${tokenRewards.tickUpper[i].toLocaleString()} (${tokenRewards.positionBps[i] / 100}%)`}
-                />
-              ))}
-            </>
+            ))
           ) : (
-            <p className="text-sm text-zinc-500 py-2">
-              {readsLoading ? 'Loading…' : 'No reward data available.'}
-            </p>
+            <p className="text-sm text-zinc-500 py-2">{readsLoading || rewardsLoading ? 'Loading…' : 'No reward data available.'}</p>
+          )}
+          {record.config && (
+            record.config.locker.tickLower.map((tl, i) => (
+              <InfoRow key={`pos-${i}`} label={`Position ${i + 1}`} value={`${tl.toLocaleString()} → ${record.config!.locker.tickUpper[i].toLocaleString()} (${record.config!.locker.positionBps[i] / 100}%)`} />
+            ))
           )}
         </InfoCard>
+
+        {mevAddr && (
+          <InfoCard title="Anti-sniper">
+            <InfoRow label="Module" value={<CopyableAddress address={mevAddr} explorerUrl={explorerUrl(chainId, mevAddr)} />} />
+            <InfoRow label="Status" value={md ? (mevActive ? 'Active' : 'Completed') : '…'} />
+            {mevSkimBps !== undefined && <InfoRow label="Current skim" value={`${skimPercent(mevSkimBps).toFixed(2)}% of volume`} />}
+            {mevRemaining !== undefined && mevActive && <InfoRow label="Time remaining" value={formatDuration(mevRemaining)} />}
+          </InfoCard>
+        )}
       </div>
 
-      {/* Trading note */}
       <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4 text-xs text-zinc-500 space-y-2">
         <p>
-          <strong className="text-zinc-400">About this pool:</strong> Swaps go directly through
-          Uniswap V4's Universal Router with this token's custom hook (
-          <span className="font-mono">{shortAddr(event.poolHook)}</span>). Uniswap's default
-          frontend doesn't auto-discover custom-hook pools, so use the in-app swap above or the{' '}
-          <a
-            href={uniswapSwap}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-violet-400 hover:text-violet-300 underline"
-          >
-            Uniswap swap page
-          </a>{' '}
-          (which may require pasting the pool info).
+          <strong className="text-zinc-400">About this pool:</strong> swaps go through Uniswap V4's Universal Router with this
+          token's hook (<span className="font-mono">{shortAddr(record.hook)}</span>). Uniswap's default frontend does not
+          discover custom hook pools, use the swap above.
         </p>
       </div>
 
-      {/* Deployment tx */}
       <div className="text-center text-xs text-zinc-600">
-        Deployed in{' '}
-        <a
-          href={`${chainId === 1 ? 'https://etherscan.io' : 'https://sepolia.etherscan.io'}/tx/${event.transactionHash}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-zinc-500 hover:text-zinc-300 underline"
-        >
-          block {event.blockNumber.toString()}
+        Launched in{' '}
+        <a href={`${chainId === 1 ? 'https://etherscan.io' : 'https://sepolia.etherscan.io'}/tx/${record.transactionHash}`} target="_blank" rel="noopener noreferrer" className="text-zinc-500 hover:text-zinc-300 underline">
+          block {record.blockNumber.toString()}
         </a>
       </div>
 
-      {/* Full-metadata modal */}
       <TokenMetadataModal
         open={metadataModalOpen}
         onClose={() => setMetadataModalOpen(false)}
         image={image}
-        name={name ?? event.tokenName}
-        symbol={symbol ?? event.tokenSymbol}
+        name={shownName}
+        symbol={shownSymbol}
         description={description}
         parsedMeta={parsedMeta}
         contractURI={contractURI}
         onRefresh={() => {
-          refetchStatic();
+          void refetchStatic();
+          void uriQuery.refetch();
         }}
       />
     </main>

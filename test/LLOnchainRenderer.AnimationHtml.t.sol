@@ -98,7 +98,7 @@ contract LiquidityLayerOnchainRendererAnimationHtmlTest is Test {
     bool internal _onFork;
 
     modifier onlyFork() {
-        if (!_onFork) return;
+        if (!_onFork) vm.skip(true);
         _;
     }
 
@@ -141,7 +141,7 @@ contract LiquidityLayerOnchainRendererAnimationHtmlTest is Test {
     ///         `data:text/javascript;base64,<PURE_BASE64>` URI — no raw text
     ///         leaking past the base64 portion. Asserts the captured base64
     ///         equals `Base64.encode(sketch.js)`.
-    function test_animationHtml_scriptSrcIsPureBase64() public view onlyFork {
+    function test_animationHtml_scriptSrcIsPureBase64() public onlyFork {
         string memory uri = renderer.contractURI(address(token));
 
         // Decode the outer JSON wrapper.
@@ -176,7 +176,7 @@ contract LiquidityLayerOnchainRendererAnimationHtmlTest is Test {
 
     /// @notice The image field is a clean data URI (mona). Sanity check that
     ///         the bug's "fix" didn't accidentally break the inline mona path.
-    function test_animationHtml_imageDataUriIsValid() public view onlyFork {
+    function test_animationHtml_imageDataUriIsValid() public onlyFork {
         string memory uri = renderer.contractURI(address(token));
         bytes memory json = _decodeDataUri(uri, "data:application/json;base64,");
         bytes memory image = _extractJsonStringField(json, '"image":"');

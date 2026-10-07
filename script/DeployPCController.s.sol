@@ -5,11 +5,15 @@ import {Script, console2} from "forge-std/Script.sol";
 
 import {IBurnRouter} from "../src/protocol-fee/IBurnRouter.sol";
 import {ProtocolFeeController} from "../src/protocol-fee/ProtocolFeeController.sol";
+import {Addresses} from "./Addresses.sol";
 
 /// @title  DeployPCController
 /// @notice Deploys a permanent-collection-dedicated `ProtocolFeeController`.
-///         Reuses the EXISTING LAYER `BurnRouter` (this controller does not
-///         own the router — it just forwards the burn share into it). Fixes
+///         Forwards the burn share into an EXISTING `BurnRouter` (this
+///         controller does not own the router). The live PC controller 0xd8C6…
+///         uses the current stack router 0x0EB22955E8904b8C5a4EC6f1D476f5b0C93854ca
+///         (`Addresses.CURRENT_BURN_ROUTER`, from deployments/mainnet.json); the
+///         LAYER router 0x2eDB… is the legacy one and is NOT what PC uses. Fixes
 ///         the PC-specific split to 80% PC-treasury / 20% LAYER-burn at
 ///         construction.
 ///
@@ -34,11 +38,13 @@ import {ProtocolFeeController} from "../src/protocol-fee/ProtocolFeeController.s
 ///   PC_TREASURY        Recipient of the 80% slice — the "creator fee" in
 ///                      PC's public-facing copy. Per HANDOFF.md and
 ///                      LAUNCH_PARAMS.md: 0xCB43078C32423F5348Cab5885911C3B5faE217F9.
-///   LAYER_BURN_ROUTER  Address of the already-deployed, initialized LAYER
-///                      `BurnRouter`. Receives the 20% slice as native ETH;
-///                      its `receive()` accepts ETH and wraps to WETH on the
-///                      next `processBurnWeth*` cycle. Mainnet:
-///                      0x2edbdf011768d8cd4ef537658b41440900c52000.
+///   LAYER_BURN_ROUTER  Address of the already-deployed, initialized
+///                      `BurnRouter` (env name kept for compatibility). Receives
+///                      the burn slice as native ETH; its `receive()` accepts ETH
+///                      and wraps to WETH on the next `processBurnWeth*` cycle.
+///                      Optional on mainnet: defaults to
+///                      `Addresses.CURRENT_BURN_ROUTER` (0x0EB2…). If set to a
+///                      different router the script logs a warning.
 ///
 /// Optional env vars:
 ///   EXPECTED_OWNER     If set, asserts `vm.addr(PRIVATE_KEY) == EXPECTED_OWNER`.
@@ -57,7 +63,10 @@ contract DeployPCController is Script {
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(pk);
         address treasury = vm.envAddress("PC_TREASURY");
-        address burnRouter = vm.envAddress("LAYER_BURN_ROUTER");
+        address burnRouter = vm.envOr(
+            "LAYER_BURN_ROUTER",
+            block.chainid == Addresses.CHAIN_ID ? Addresses.CURRENT_BURN_ROUTER : address(0)
+        );
         address expectedOwner = vm.envOr("EXPECTED_OWNER", address(0));
 
         if (expectedOwner != address(0)) {
@@ -76,6 +85,9 @@ contract DeployPCController is Script {
         console2.log("LAYER BurnRouter (20%):     ", burnRouter);
         console2.log("BurnRouter LAYER token:     ", routerLayer);
         console2.log("Split: 80 / 20  (PC treasury / LAYER burn)");
+        if (block.chainid == Addresses.CHAIN_ID && burnRouter != Addresses.CURRENT_BURN_ROUTER) {
+            console2.log("WARNING: burn router is not the registry current router (0x0EB2...)");
+        }
 
         vm.startBroadcast(pk);
 

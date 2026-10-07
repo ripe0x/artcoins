@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+// targets superseded stack legacy and open; current stack is 0x4959… (Addresses.CURRENT_FACTORY).
+// Mainnet runs are refused unless ALLOW_SUPERSEDED=1.
+
 import {Script, console2} from "forge-std/Script.sol";
 
 import {ArtCoinsFactory} from "../src/ArtCoinsFactory.sol";
@@ -9,6 +12,8 @@ import {BurnRouter} from "../src/protocol-fee/BurnRouter.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+
+import {Addresses} from "./Addresses.sol";
 
 /// @title  RedeployBurnRouter
 /// @notice Deploys a new BurnRouter (fixed price-impact sandwich cap, no EMA
@@ -36,7 +41,15 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 ///      wrong slot. Instead deploy + `initialize()` a fresh BurnRouter, then
 ///      call `controller.setBurnRouter(newRouter)` from the controller owner.
 contract RedeployBurnRouter is Script {
+    /// @dev Mainnet runs are refused unless ALLOW_SUPERSEDED=1 (superseded stack legacy and open).
+    function _requireSupersededAllowed() internal view {
+        if (block.chainid == Addresses.CHAIN_ID && vm.envOr("ALLOW_SUPERSEDED", uint256(0)) != 1) {
+            revert("targets a superseded stack; set ALLOW_SUPERSEDED=1 to run on mainnet");
+        }
+    }
+
     function run() public returns (address newBurnRouter) {
+        _requireSupersededAllowed();
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(pk);
 

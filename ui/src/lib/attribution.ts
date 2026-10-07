@@ -131,3 +131,34 @@ export function hasAnyAttribution(args: AttributionArgs): boolean {
   if (args.campaignId && args.campaignId !== ZERO_BYTES16) return true;
   return false;
 }
+
+export interface SwapHookDataArgs extends AttributionArgs {
+  /**
+   * Refund address for a price limited swap's unfilled skim (D58, residual V2H-03). Goes into
+   * `mevModuleSwapData = abi.encode(address)` (exactly 32 bytes), which `HookCalldata.refundTo` reads.
+   * Without it the refund is credited in the escrow to the PoolManager caller, and for a universal
+   * router swap that is the router: stranded. Every swap sent through a v2 hook must name one.
+   * Leave undefined for a v1 hook (it does not read it).
+   */
+  refundTo?: `0x${string}`;
+}
+
+/**
+ * hookData for a swap through the v2 hook: `abi.encode(PoolSwapData{mevModuleSwapData, poolExtensionSwapData})`.
+ * `mevModuleSwapData` carries the refund address, `poolExtensionSwapData` the attribution (empty when there is
+ * none). Returns '0x' when there is neither a refund address nor an attribution.
+ */
+export function encodeSwapHookData(args: SwapHookDataArgs): Hex {
+  const refund =
+    args.refundTo && isAddress(args.refundTo, { strict: false }) && getAddress(args.refundTo) !== ZERO_ADDRESS
+      ? getAddress(args.refundTo)
+      : null;
+  const attributed = hasAnyAttribution(args);
+  if (!refund && !attributed) return '0x';
+  return encodeAbiParameters(POOL_SWAP_DATA_ABI, [
+    {
+      mevModuleSwapData: refund ? encodeAbiParameters([{ type: 'address' }], [refund]) : '0x',
+      poolExtensionSwapData: attributed ? encodePCSwapData(args) : '0x',
+    },
+  ]);
+}

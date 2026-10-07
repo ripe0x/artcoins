@@ -24,7 +24,7 @@ function walletClientToEthersProvider(walletClient: WalletClient): BrowserProvid
     name: chain.name,
   };
   // viem's transport is an EIP-1193 compatible provider; ethers can wrap it.
-  return new BrowserProvider(transport as unknown as Parameters<typeof BrowserProvider>[0], network);
+  return new BrowserProvider(transport as unknown as ConstructorParameters<typeof BrowserProvider>[0], network);
 }
 
 export interface UploadResult {
@@ -63,7 +63,7 @@ export async function uploadImageToArweave(
 
   const tags = [{ name: 'Content-Type', value: contentType }];
 
-  const buffer = new Uint8Array(await file.arrayBuffer());
+  const buffer = Buffer.from(await file.arrayBuffer());
 
   // Use `uploader.upload(buffer, { tags })` for raw data. Note: the Irys SDK
   // also supports `uploadFile()` but that API is node-only.

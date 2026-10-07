@@ -1,9 +1,12 @@
 import type { Address } from 'viem';
+import { CURRENT, INFRA, STACKS } from './deployments.generated';
 
 export interface ContractAddresses {
   factory: Address;
   hook: Address;
   locker: Address;
+  /** Fee escrow (pull-based claims). Zero if the stack has none. */
+  escrow: Address;
   mevLinearFees: Address;
   mevDescFees: Address;
   mevTimeDelay: Address;
@@ -24,30 +27,41 @@ export interface ContractAddresses {
 }
 
 const ZERO: Address = '0x0000000000000000000000000000000000000000';
+const MAINNET_V4_QUOTER: Address = '0x52F0E24D1c21C8A0cB1e5a5dD6198556BD9E1203';
 
+// Mainnet: the current stack of deployments/mainnet.json (generated into deployments.generated.ts
+// by script-js/gen-addresses.mjs, do not hand edit). Slots with no current stack deployment stay
+// ZERO: vault, airdrop, devBuy, mevDescFees, mevTimeDelay only exist on the legacy factory.
 const MAINNET_ADDRESSES: ContractAddresses = {
-  factory: ZERO,
-  hook: ZERO,
-  locker: ZERO,
-  mevLinearFees: ZERO,
+  factory: CURRENT.factory,
+  hook: CURRENT.hook,
+  locker: CURRENT.locker,
+  escrow: CURRENT.escrow,
+  // the current stack ships the linear skim module (ArtCoinsMevLinearSkim) in this slot
+  mevLinearFees: CURRENT.mevLinearSkim,
   mevDescFees: ZERO,
   mevTimeDelay: ZERO,
   vault: ZERO,
   airdrop: ZERO,
   devBuy: ZERO,
-  weth: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
-  poolManager: '0x000000000004444c5dc75cB358380D2e3dE08A90',
-  stateView: ZERO,
-  quoter: ZERO,
-  universalRouter: '0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af',
-  permit2: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+  weth: INFRA.weth,
+  poolManager: INFRA.poolManager,
+  stateView: INFRA.stateView,
+  // Uniswap v4 Quoter (mainnet, code present, poolManager() = the v4 PoolManager, checked 2026-10-06).
+  // Not in the registry INFRA table, so it is typed here.
+  quoter: MAINNET_V4_QUOTER,
+  universalRouter: INFRA.universalRouter,
+  permit2: INFRA.permit2,
 };
 
 // Sepolia deployment (2026-04-15) — EIP-55 strict casing for viem ≥2.47.
+// NOT in deployments/mainnet.json and not checked by it. Stale: newer sepolia rehearsal stacks
+// exist (latest factory 0xe18d3bec526feef737a0fc05ec90a0c5a34c74b2, 2026-05-07).
 const SEPOLIA_ADDRESSES: ContractAddresses = {
   factory: '0x3c3aEfC8Fa374589D179D43cb03e29a6B350DF7A',
   hook: '0x36EF2eC4c1DF5e0A07567306D721F2Bb5d4E68cc',
   locker: '0x6e511f2321F82559E559ce1Da0EcFDBf0E4ace62',
+  escrow: ZERO,
   mevLinearFees: '0x7f0AC1a505614CF21a78ed276710864C8b256b4e',
   mevDescFees: '0xb42d19d3C4fCa696e59Ed2C6eEdD4a56752EDe12',
   mevTimeDelay: '0x562E8BEb37064b2A5A3f9D0Ab3AB9263ab1295ac',
@@ -67,8 +81,15 @@ const addressMap: Record<number, ContractAddresses> = {
   11155111: SEPOLIA_ADDRESSES,
 };
 
+export function isSupportedChain(chainId: number): boolean {
+  return chainId in addressMap;
+}
+
+/** Throws on an unsupported chain: never fall back to another chain's contracts. */
 export function getAddresses(chainId: number): ContractAddresses {
-  return addressMap[chainId] ?? SEPOLIA_ADDRESSES;
+  const addresses = addressMap[chainId];
+  if (!addresses) throw new Error(`Unsupported chain ${chainId}: no artcoins deployment`);
+  return addresses;
 }
 
 /**
@@ -76,12 +97,14 @@ export function getAddresses(chainId: number): ContractAddresses {
  * Used as the `fromBlock` for getLogs so we don't scan from genesis.
  */
 const factoryDeploymentBlocks: Record<number, bigint> = {
-  1: 0n,
+  1: STACKS.current.deployBlock, // current factory 0x4959…, from the registry
   11155111: 10_665_708n, // Sepolia deployment block (2026-04-15)
 };
 
 export function getFactoryDeploymentBlock(chainId: number): bigint {
-  return factoryDeploymentBlocks[chainId] ?? 0n;
+  const block = factoryDeploymentBlocks[chainId];
+  if (block === undefined) throw new Error(`Unsupported chain ${chainId}: no artcoins deployment`);
+  return block;
 }
 
 /**

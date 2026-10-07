@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+// targets superseded stack legacy and open; current stack is 0x4959… (Addresses.CURRENT_FACTORY).
+// Mainnet runs are refused unless ALLOW_SUPERSEDED=1.
+
 import {Script, console2} from "forge-std/Script.sol";
 
 import {
@@ -8,6 +11,8 @@ import {
 } from "../src/extensions/LiquidityLayerCounterPoolExtension.sol";
 import {LiquidityLayerSpriteRenderer} from "../src/extensions/LiquidityLayerSpriteRenderer.sol";
 import {ArtCoinsPoolExtensionAllowlist} from "../src/hooks/ArtCoinsPoolExtensionAllowlist.sol";
+
+import {Addresses} from "./Addresses.sol";
 
 /// @notice Deploys the LL counter pool extension + sprite renderer for a
 ///         freshly-deployed hook, and allowlists the counter on the
@@ -24,7 +29,15 @@ import {ArtCoinsPoolExtensionAllowlist} from "../src/hooks/ArtCoinsPoolExtension
 ///   forge script script/DeployLLExtension.s.sol --rpc-url <RPC> \
 ///       --broadcast --verify --etherscan-api-key $ETHERSCAN_API_KEY -vv
 contract DeployLLExtension is Script {
+    /// @dev Mainnet runs are refused unless ALLOW_SUPERSEDED=1 (superseded stack legacy and open).
+    function _requireSupersededAllowed() internal view {
+        if (block.chainid == Addresses.CHAIN_ID && vm.envOr("ALLOW_SUPERSEDED", uint256(0)) != 1) {
+            revert("targets a superseded stack; set ALLOW_SUPERSEDED=1 to run on mainnet");
+        }
+    }
+
     function run() public {
+        _requireSupersededAllowed();
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address hook = vm.envAddress("HOOK");
         address allowlist = vm.envAddress("POOL_EXT_ALLOWLIST");

@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+// targets superseded stack legacy (LAYER); current stack is 0x4959… (Addresses.CURRENT_FACTORY).
+// Mainnet runs are refused unless ALLOW_SUPERSEDED=1.
+
 import {Script, console2} from "forge-std/Script.sol";
 
 import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
 
 import {LiquidityLayerOnchainRenderer} from "../src/extensions/LiquidityLayerOnchainRenderer.sol";
 import {IScriptyStorageV2} from "../src/interfaces/IScripty.sol";
+
+import {Addresses} from "./Addresses.sol";
 
 /// @title FixLLSketchAsset
 /// @notice One-off ops script. ScriptyStorageV2 has no truncate/delete, and
@@ -29,7 +34,15 @@ import {IScriptyStorageV2} from "../src/interfaces/IScripty.sol";
 ///                       Timestamp suffix avoids collisions with stale slots
 ///                       from prior deploys (ScriptyStorage has no truncate).
 contract FixLLSketchAsset is Script {
+    /// @dev Mainnet runs are refused unless ALLOW_SUPERSEDED=1 (superseded stack legacy (LAYER)).
+    function _requireSupersededAllowed() internal view {
+        if (block.chainid == Addresses.CHAIN_ID && vm.envOr("ALLOW_SUPERSEDED", uint256(0)) != 1) {
+            revert("targets a superseded stack; set ALLOW_SUPERSEDED=1 to run on mainnet");
+        }
+    }
+
     function run() public {
+        _requireSupersededAllowed();
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address rendererAddr = vm.envAddress("LL_RENDERER");
         address storageAddr = vm.envAddress("SCRIPTY_STORAGE");

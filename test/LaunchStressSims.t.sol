@@ -126,7 +126,7 @@ contract LaunchStressSims is Test {
     receive() external payable {}
 
     modifier onlyFork() {
-        if (!_onFork) return;
+        if (!_onFork) vm.skip(true);
         _;
     }
 

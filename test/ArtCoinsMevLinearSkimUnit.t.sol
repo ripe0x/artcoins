@@ -134,12 +134,12 @@ contract ArtCoinsMevLinearSkimUnitTest is Test {
 
     function test_currentSkimBps_beforeInit() public {
         PoolId fresh = PoolKey({
-                currency0: Currency.wrap(address(0)),
-                currency1: Currency.wrap(makeAddr("fresh")),
-                fee: 0,
-                tickSpacing: 60,
-                hooks: IHooks(address(this))
-            }).toId();
+            currency0: Currency.wrap(address(0)),
+            currency1: Currency.wrap(makeAddr("fresh")),
+            fee: 0,
+            tickSpacing: 60,
+            hooks: IHooks(address(this))
+        }).toId();
         assertEq(module.currentSkimBps(fresh), 0);
         assertFalse(module.operational(fresh));
     }

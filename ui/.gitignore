@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# e2e (playwright): run output and the local v2 stack env
+e2e/artifacts/
+e2e/.local/

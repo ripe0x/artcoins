@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+// targets superseded stack legacy; current stack is 0x4959… (Addresses.CURRENT_FACTORY).
+// Mainnet runs are refused unless ALLOW_SUPERSEDED=1.
+
 import {Script, console2} from "forge-std/Script.sol";
 
 import {ArtCoinsToken} from "../src/ArtCoinsToken.sol";
@@ -14,6 +17,7 @@ import {IArtCoinsAirdrop} from "../src/extensions/interfaces/IArtCoinsAirdrop.so
 import {IArtCoinsFactory} from "../src/interfaces/IArtCoinsFactory.sol";
 import {IArtCoinsHook} from "../src/interfaces/IArtCoinsHook.sol";
 
+import {Addresses} from "./Addresses.sol";
 import {LaunchDefaults} from "./LaunchDefaults.sol";
 
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
@@ -39,7 +43,8 @@ interface IArtCoinsHookSniperView {
 ///         schedule, and the migrator merkle root are identical across chains
 ///         so a Sepolia dry-run is a true rehearsal of the mainnet path.
 ///
-/// Supported chains: ETH mainnet (1), Sepolia (11155111).
+/// Supported chains: ETH mainnet (1), Sepolia (11155111). On mainnet this targets
+/// the superseded legacy stack (ALLOW_SUPERSEDED=1 required, see top of file).
 ///
 /// Required env vars:
 ///   PRIVATE_KEY              Deployer key.
@@ -62,13 +67,13 @@ interface IArtCoinsHookSniperView {
 /// WETH / UNIVERSAL_ROUTER / PERMIT2 are chain-detected, not env vars.
 contract LaunchLayer is Script {
     // ─── Chain-aware infra ────────────────────────────────────────────
-    address constant MAINNET_WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-    address constant MAINNET_UNIVERSAL_ROUTER = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af;
+    address constant MAINNET_WETH = Addresses.WETH;
+    address constant MAINNET_UNIVERSAL_ROUTER = Addresses.UNIVERSAL_ROUTER;
 
     address constant SEPOLIA_WETH = 0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14;
     address constant SEPOLIA_UNIVERSAL_ROUTER = 0x3A9D48AB9751398BbFa63ad67599Bb04e4BdF98b;
 
-    address constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
+    address constant PERMIT2 = Addresses.PERMIT2;
 
     struct Network {
         address weth;
@@ -79,7 +84,7 @@ contract LaunchLayer is Script {
 
     /// @notice Canonical V4 PoolManager. Same address on mainnet + Sepolia
     ///         (deterministic V4 deploy).
-    address internal constant V4_POOL_MANAGER = 0x000000000004444c5dc75cB358380D2e3dE08A90;
+    address internal constant V4_POOL_MANAGER = Addresses.POOL_MANAGER;
 
     function _getNetwork() internal view returns (Network memory) {
         if (block.chainid == 1) {
@@ -263,7 +268,16 @@ contract LaunchLayer is Script {
         );
     }
 
+    /// @dev Drives the legacy factory ABI (stack `legacy`, LAYER). On mainnet it refuses
+    ///      to run unless ALLOW_SUPERSEDED=1.
+    function _requireSupersededAllowed() internal view {
+        if (block.chainid == Addresses.CHAIN_ID && vm.envOr("ALLOW_SUPERSEDED", uint256(0)) != 1) {
+            revert("targets superseded stack legacy; set ALLOW_SUPERSEDED=1 to run on mainnet");
+        }
+    }
+
     function run() public {
+        _requireSupersededAllowed();
         Network memory net = _getNetwork();
 
         uint256 pk = vm.envUint("PRIVATE_KEY");

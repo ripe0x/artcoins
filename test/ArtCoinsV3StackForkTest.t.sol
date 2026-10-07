@@ -132,7 +132,7 @@ contract ArtCoinsV3StackForkTest is Test {
     }
 
     modifier onlyFork() {
-        if (!_onFork) return;
+        if (!_onFork) vm.skip(true);
         _;
     }
 

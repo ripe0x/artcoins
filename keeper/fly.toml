@@ -1,0 +1,58 @@
+# fly.io config for the artcoins keeper runner (one machine, state on a 1 gb volume). deploy from the repo root:
+#   fly deploy . --config keeper/fly.toml --dockerfile keeper/Dockerfile --ignorefile keeper/.dockerignore --ha=false
+# secrets (never in this file): fly secrets set KEEPER_PRIVATE_KEY=... MAINNET_RPC_URL=... PRIVATE_RPC_URL=... STATUS_TOKEN=...
+# see keeper/README.md
+app = "artcoins-keeper"
+primary_region = "iad"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "Dockerfile"
+  ignorefile = ".dockerignore"
+
+[env]
+  # loop tick (settles and replaces a tx in flight). each keeper is read on its own runbook cadence
+  # (KEEPER_<ID>_CHECK_INTERVAL_SECONDS: 111 3600, LAYER 86400, v2 3600) and runs at most every
+  # KEEPER_<ID>_MIN_RUN_INTERVAL_SECONDS (111 21600, LAYER 86400, v2 21600)
+  INTERVAL_SECONDS = "600"
+  # funding need = largest enabled gas limit x MAX_GAS_GWEI. 111 and v2: 2,000,000 x 14 gwei = 0.028 eth
+  MAX_GAS_GWEI = "14"
+  MAX_PRIORITY_GWEI = "2"
+  STATE_PATH = "/data/state.json"
+  PORT = "8080"
+  # LAYER runs in the layer-keeper app of ripe0x/new-material (D64)
+  KEEPERS = "111,v2"
+  # every send through PRIVATE_RPC_URL. live 111 without the relay refuses to start unless ALLOW_PUBLIC_MEMPOOL = "1"
+  PRIVATE_RPC_KEEPERS = "111,v2"
+  # anything but "0", "false" or empty is a dry run
+  DRY_RUN = "0"
+
+[mounts]
+  source = "keeper_state"
+  destination = "/data"
+  initial_size = "1gb"
+
+# public: /healthz only says {ok, lastTickAgeSeconds}. /status and /metrics need `authorization: Bearer $STATUS_TOKEN`
+# and answer 404 without the secret
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "60s"
+    interval = "60s"
+    method = "GET"
+    path = "/healthz"
+    timeout = "5s"
+
+[[restart]]
+  policy = "always"
+  retries = 10
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

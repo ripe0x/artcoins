@@ -19,6 +19,8 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
+import {Addresses} from "./Addresses.sol";
+
 /// @notice Stub renderable token with `name()` / `symbol()` getters.
 contract MinimalRenderableToken {
     string public name;
@@ -41,7 +43,7 @@ contract MinimalRenderableToken {
 ///     forge script script/PreviewLLAnimation.s.sol:PreviewLLAnimation \
 ///         --fork-url "$MAINNET_RPC_URL" -vv
 contract PreviewLLAnimation is Script {
-    address constant SCRIPTY_BUILDER = 0xD7587F110E08F4D120A231bA97d3B577A81Df022;
+    address constant SCRIPTY_BUILDER = Addresses.SCRIPTY_BUILDER;
 
     string constant SKETCH_NAME = "ll/sketch.preview";
     string constant MONA_NAME = "ll/mona.preview";

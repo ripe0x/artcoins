@@ -2,35 +2,32 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   useAccount,
   useBalance,
-  useChainId,
   usePublicClient,
   useReadContract,
-  useReadContracts,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from 'wagmi';
 import { formatUnits, parseUnits, type Address, type Hex } from 'viem';
+import { useQuery } from '@tanstack/react-query';
 
-import { getAddresses } from '../lib/config';
-import {
-  erc20Abi,
-  permit2Abi,
-  quoterAbi,
-  universalRouterAbi,
-} from '../lib/abi';
-import type { PoolKey } from '../lib/pool';
+import { erc20Abi, permit2Abi, quoterAbi, stateViewAbi, universalRouterAbi } from '../lib/abi';
+import { computePoolId, priceFromSqrtX96, type PoolKey } from '../lib/pool';
 import {
   applySlippage,
   buildBuyCalldata,
   buildSellCalldata,
-  MAX_UINT160,
-  MAX_UINT256,
+  classifyPool,
+  coinIsCurrency0,
+  priceImpactPercent,
 } from '../lib/swap';
-import {
-  encodeAttributionHookData,
-  hasAnyAttribution,
-} from '../lib/attribution';
+import { encodeSwapHookData } from '../lib/attribution';
+import { getV2Stack } from '../lib/v2';
 import { useReferrer } from '../lib/useReferrer';
+import { latestChainTimestamp, permit2Expiration as permit2ExpirationFor, sellApprovalSteps } from '../lib/chainClock';
+import { useChainNow } from '../lib/useChainNow';
+import { useAddressesOrNull, useWalletGate } from '../lib/useChain';
+import { describeError } from '../lib/errors';
+import ReferrerNotice from './ReferrerNotice';
 
 type Direction = 'buy' | 'sell';
 
@@ -38,41 +35,71 @@ interface Props {
   tokenAddress: Address;
   tokenSymbol: string;
   poolKey: PoolKey;
-  newMaterialIsToken0: boolean;
-  /** Is the MEV module currently active? Warn user if yes. */
+  /** human readable fee line for this pool, e.g. "0.5% lp fee + 6% skim" */
+  feeSummary?: string;
+  /** anti sniper window currently open */
   mevActive?: boolean;
+  /** current anti sniper skim in percent of volume, when known */
+  mevSkimPercent?: number;
+  /** false for the legacy stack's hook: it reads no referral data, so none is sent (hookData stays empty) */
+  attribution?: boolean;
 }
 
 const SLIPPAGE_OPTIONS = [0.5, 1, 2, 5];
-const DEFAULT_DEADLINE_SECS = 60 * 10; // 10 minutes
+const DEADLINE_OPTIONS = [2, 5, 10, 30]; // minutes
+const QUOTE_REFRESH_MS = 12_000;
+/** a quote older than this cannot be used to send */
+const QUOTE_MAX_AGE_MS = 30_000;
+/** eth kept back by "max" so the swap can still pay gas */
+const GAS_RESERVE = parseUnits('0.005', 18);
+/** above this price impact (incl. fees) the user must tick a box */
+const HIGH_IMPACT_PERCENT = 10;
+const ZERO = '0x0000000000000000000000000000000000000000';
 
 const inputClass =
   'w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-base text-white placeholder-zinc-500 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500';
 
-export default function SwapWidget({
-  tokenAddress,
-  tokenSymbol,
-  poolKey,
-  newMaterialIsToken0,
-  mevActive,
-}: Props) {
-  const { address, isConnected } = useAccount();
-  const chainId = useChainId();
+const fmt = (v: bigint, max = 6) =>
+  Number(formatUnits(v, 18)).toLocaleString(undefined, { maximumFractionDigits: max });
+
+interface Quote {
+  amountOut: bigint;
+  fetchedAt: number;
+}
+
+export default function SwapWidget({ tokenAddress, tokenSymbol, poolKey, feeSummary, mevActive, mevSkimPercent, attribution = true }: Props) {
+  const { address } = useAccount();
+  const gate = useWalletGate();
   const client = usePublicClient();
-  const addresses = getAddresses(chainId);
+  const { chainId, addresses } = useAddressesOrNull();
+  const referrer = useReferrer();
 
   const [direction, setDirection] = useState<Direction>('buy');
   const [amountIn, setAmountIn] = useState('');
-  const [slippageBps, setSlippageBps] = useState(100); // 1%
-  const [quoting, setQuoting] = useState(false);
-  const [quote, setQuote] = useState<bigint | null>(null);
-  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [slippageBps, setSlippageBps] = useState(100);
+  const [deadlineMin, setDeadlineMin] = useState(5);
+  const [ackImpact, setAckImpact] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [preparing, setPreparing] = useState(false);
 
-  // ── User balances ─────────────────────────────────────────────────
-  const { data: ethBalance } = useBalance({
-    address,
-    query: { refetchInterval: 15_000, enabled: !!address },
-  });
+  const kind = addresses ? classifyPool(poolKey, tokenAddress, addresses.weth) : null;
+  const coinIs0 = coinIsCurrency0(poolKey, tokenAddress);
+  const poolId = useMemo(() => computePoolId(poolKey), [poolKey]);
+
+  // The same hookData goes to the quoter and the swap, so the quote prices what is sent.
+  // v2 pools: the hook refunds an over charged skim (price limited fill) to the address named in
+  // mevModuleSwapData (D58, V2H-03). Without it a universal router swap strands the refund in the escrow
+  // under the router, so every v2 swap names the connected wallet. v1 hooks do not read it.
+  const v2Hook = getV2Stack(chainId)?.hook;
+  const isV2Pool = !!v2Hook && poolKey.hooks.toLowerCase() === v2Hook.toLowerCase();
+  const refundTo = isV2Pool ? address : undefined;
+  const hookData: Hex = useMemo(
+    () => (attribution ? encodeSwapHookData({ referrer: referrer.referrer ?? undefined, refundTo }) : '0x'),
+    [attribution, referrer.referrer, refundTo]
+  );
+
+  // ── balances ────────────────────────────────────────────────────────
+  const { data: ethBalance } = useBalance({ address, query: { refetchInterval: 15_000, enabled: !!address } });
   const { data: tokenBalance, refetch: refetchTokenBalance } = useReadContract({
     address: tokenAddress,
     abi: erc20Abi,
@@ -80,291 +107,261 @@ export default function SwapWidget({
     args: address ? [address] : undefined,
     query: { enabled: !!address, refetchInterval: 15_000 },
   });
-
-  const balance = direction === 'buy' ? ethBalance?.value ?? 0n : (tokenBalance as bigint) ?? 0n;
+  const balance = direction === 'buy' ? (ethBalance?.value ?? 0n) : ((tokenBalance as bigint | undefined) ?? 0n);
   const balanceLabel = direction === 'buy' ? 'ETH' : tokenSymbol;
 
-  // ── Allowances (for sell direction) ───────────────────────────────
-  // Two approvals needed for sell:
-  //   1. token.approve(permit2, MAX_UINT256)
-  //   2. permit2.approve(token, universalRouter, MAX_UINT160, expiration)
-  const { data: erc20ToPermit2 } = useReadContract({
-    address: tokenAddress,
-    abi: erc20Abi,
-    functionName: 'allowance',
-    args: address ? [address, addresses.permit2] : undefined,
-    query: { enabled: !!address && direction === 'sell', refetchInterval: 15_000 },
-  });
-
-  const { data: permit2Allow } = useReadContracts({
-    contracts:
-      address && direction === 'sell'
-        ? [
-            {
-              address: addresses.permit2,
-              abi: permit2Abi,
-              functionName: 'allowance',
-              args: [address, tokenAddress, addresses.universalRouter],
-            } as const,
-          ]
-        : [],
-    allowFailure: true,
-    query: {
-      enabled: !!address && direction === 'sell',
-      refetchInterval: 15_000,
-    },
-  });
-
-  const permit2Info = permit2Allow?.[0]?.result as
-    | readonly [bigint, number, number]
-    | undefined;
-  const permit2Amount = permit2Info?.[0] ?? 0n;
-  const permit2Expiration = permit2Info?.[1] ?? 0;
-
-  // ── Parse input amount ────────────────────────────────────────────
   const amountInWei = useMemo(() => {
-    if (!amountIn || isNaN(Number(amountIn))) return 0n;
+    if (!/^\d*\.?\d+$|^\d+\.$/.test(amountIn)) return 0n;
     try {
       return parseUnits(amountIn, 18);
     } catch {
       return 0n;
     }
   }, [amountIn]);
-
   const overBalance = amountInWei > balance;
 
-  // ── Quote ──────────────────────────────────────────────────────────
-  // Uses Uniswap V4 Quoter. The quoter function is nonpayable (not view)
-  // because it uses a revert-to-return pattern internally. We use
-  // simulateContract which handles this cleanly.
-  useEffect(() => {
-    let cancelled = false;
-    if (!client || amountInWei === 0n) {
-      setQuote(null);
-      setQuoteError(null);
-      return;
-    }
-    if (addresses.quoter === '0x0000000000000000000000000000000000000000') {
-      setQuoteError('Quoter not configured on this chain');
-      setQuote(null);
-      return;
-    }
-
-    setQuoting(true);
-    setQuoteError(null);
-
-    const zeroForOne =
-      direction === 'buy' ? !newMaterialIsToken0 : newMaterialIsToken0;
-
-    (async () => {
-      try {
-        const { result } = await client.simulateContract({
-          address: addresses.quoter,
-          abi: quoterAbi,
-          functionName: 'quoteExactInputSingle',
-          args: [
-            {
-              poolKey: {
-                currency0: poolKey.currency0,
-                currency1: poolKey.currency1,
-                fee: poolKey.fee,
-                tickSpacing: poolKey.tickSpacing,
-                hooks: poolKey.hooks,
-              },
-              zeroForOne,
-              exactAmount: amountInWei,
-              hookData: '0x',
-            },
-          ],
-        });
-        if (cancelled) return;
-        const [amountOut] = result as readonly [bigint, bigint];
-        setQuote(amountOut);
-      } catch (e: unknown) {
-        if (cancelled) return;
-        const msg = e instanceof Error ? e.message : String(e);
-        setQuoteError(msg.split('\n')[0].slice(0, 120));
-        setQuote(null);
-      } finally {
-        if (!cancelled) setQuoting(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    client,
-    addresses.quoter,
-    amountInWei,
-    direction,
-    newMaterialIsToken0,
-    poolKey.currency0,
-    poolKey.currency1,
-    poolKey.fee,
-    poolKey.tickSpacing,
-    poolKey.hooks,
-  ]);
-
-  const minOut = useMemo(() => {
-    if (quote === null) return 0n;
-    return applySlippage(quote, slippageBps);
-  }, [quote, slippageBps]);
-
-  // ── Write functions ───────────────────────────────────────────────
-  const { writeContract, data: txHash, isPending, reset, error: writeError } =
-    useWriteContract();
-
-  const { data: receipt, isLoading: confirming } = useWaitForTransactionReceipt({
-    hash: txHash,
+  // ── allowances (sell): exact amounts, short expiry ──────────────────
+  const permit2 = addresses?.permit2;
+  const router = addresses?.universalRouter;
+  const sellOn = direction === 'sell' && !!address && !!permit2 && !!router;
+  const { data: erc20ToPermit2, refetch: refetchErc20Allowance } = useReadContract({
+    address: tokenAddress,
+    abi: erc20Abi,
+    functionName: 'allowance',
+    args: address && permit2 ? [address, permit2] : undefined,
+    query: { enabled: sellOn, refetchInterval: 15_000 },
   });
+  const { data: permit2Info, refetch: refetchPermit2 } = useReadContract({
+    address: permit2,
+    abi: permit2Abi,
+    functionName: 'allowance',
+    args: address && permit2 && router ? [address, tokenAddress, router] : undefined,
+    query: { enabled: sellOn, refetchInterval: 15_000 },
+  });
+  const permit2Amount = permit2Info?.[0] ?? 0n;
+  const permit2Expiration = permit2Info?.[1] ?? 0;
 
-  const [pendingAction, setPendingAction] = useState<
-    'approve-erc20' | 'approve-permit2' | 'swap' | null
-  >(null);
+  // ── spot price (mid) ────────────────────────────────────────────────
+  const { data: slot0 } = useReadContract({
+    address: addresses?.stateView,
+    abi: stateViewAbi,
+    functionName: 'getSlot0',
+    args: [poolId],
+    query: { enabled: !!addresses && addresses.stateView !== ZERO, refetchInterval: QUOTE_REFRESH_MS },
+  });
+  const midCoinPerEth = useMemo(() => {
+    if (!slot0) return null;
+    const p = priceFromSqrtX96(slot0[0]); // token1 per token0
+    if (!(p > 0)) return null;
+    return coinIs0 ? 1 / p : p; // coin per eth (or weth)
+  }, [slot0, coinIs0]);
 
-  // Reset state when tx is confirmed
+  // ── quote: refreshed on an interval and again right before sending ──
+  const zeroForOne = direction === 'buy' ? !coinIs0 : coinIs0;
+  const quoter = addresses?.quoter;
+  const quoteEnabled = !!client && !!quoter && quoter !== ZERO && amountInWei > 0n && kind !== null;
+  const quoteQuery = useQuery({
+    queryKey: ['quote', poolId, direction, amountInWei.toString(), hookData],
+    enabled: quoteEnabled,
+    refetchInterval: QUOTE_REFRESH_MS,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+    queryFn: async (): Promise<Quote> => {
+      const { result } = await client!.simulateContract({
+        address: quoter!,
+        abi: quoterAbi,
+        functionName: 'quoteExactInputSingle',
+        args: [{ poolKey, zeroForOne, exactAmount: amountInWei, hookData }],
+      });
+      return { amountOut: (result as readonly [bigint, bigint])[0], fetchedAt: Date.now() };
+    },
+  });
+  const quote = quoteQuery.data && quoteQuery.data.amountOut > 0n ? quoteQuery.data : null;
+  const quoteFresh = quote !== null && Date.now() - quote.fetchedAt < QUOTE_MAX_AGE_MS;
+  const quoteError = !quoter || quoter === ZERO
+    ? 'Quoter is not configured, swaps are disabled'
+    : quoteQuery.error
+      ? describeError(quoteQuery.error)
+      : quoteQuery.data && quoteQuery.data.amountOut === 0n
+        ? 'The pool returned a zero quote'
+        : null;
+
+  const minOut = quote ? applySlippage(quote.amountOut, slippageBps) : 0n;
+  const impact = quote && midCoinPerEth ? priceImpactPercent(direction, amountInWei, quote.amountOut, midCoinPerEth) : null;
+  const highImpact = impact !== null && impact > HIGH_IMPACT_PERCENT;
+  const impactUnknown = quote !== null && impact === null;
+
+  // reset the acknowledgement whenever the situation changes
+  useEffect(() => setAckImpact(false), [direction, amountIn, slippageBps]);
+
+  // ── writes ──────────────────────────────────────────────────────────
+  const { writeContractAsync, data: txHash, isPending, reset, error: writeError } = useWriteContract();
+  const { data: receipt, isLoading: confirming } = useWaitForTransactionReceipt({ hash: txHash });
+  const [pendingAction, setPendingAction] = useState<'approve-erc20' | 'approve-permit2' | 'swap' | null>(null);
+  const reverted = receipt?.status === 'reverted';
+
   useEffect(() => {
-    if (receipt && pendingAction === 'swap') {
-      setAmountIn('');
-      refetchTokenBalance();
+    if (!receipt) return;
+    if (receipt.status === 'success') {
+      if (pendingAction === 'swap') setAmountIn('');
+      void refetchTokenBalance();
+      void refetchErc20Allowance();
+      void refetchPermit2();
     }
-    if (receipt) {
-      setTimeout(() => {
+    const t = setTimeout(() => {
+      if (receipt.status === 'success') {
         setPendingAction(null);
         reset();
-      }, 2500);
-    }
-  }, [receipt, pendingAction, refetchTokenBalance, reset]);
+      }
+    }, 2500);
+    return () => clearTimeout(t);
+  }, [receipt, pendingAction, refetchTokenBalance, refetchErc20Allowance, refetchPermit2, reset]);
 
-  // ── Action handlers ───────────────────────────────────────────────
-  const handleApproveErc20 = () => {
+  // permit2 compares expirations with block.timestamp: use the chain clock (browser clock only as a fallback).
+  // The balance check comes first: above the balance the answer is "Insufficient", never an approval to sign.
+  const nowSec = useChainNow(QUOTE_REFRESH_MS);
+  const { needsErc20Approval, needsPermit2Approval } = sellApprovalSteps({
+    direction,
+    amountIn: amountInWei,
+    balance,
+    erc20ToPermit2: (erc20ToPermit2 as bigint | undefined) ?? 0n,
+    permit2Amount,
+    permit2Expiration: Number(permit2Expiration),
+    chainNow: nowSec,
+    deadlineMin,
+  });
+
+  const handleApproveErc20 = async () => {
+    if (!permit2) return;
+    setActionError(null);
     setPendingAction('approve-erc20');
-    writeContract({
-      address: tokenAddress,
-      abi: erc20Abi,
-      functionName: 'approve',
-      args: [addresses.permit2, MAX_UINT256],
-    });
-  };
-
-  const handleApprovePermit2 = () => {
-    setPendingAction('approve-permit2');
-    // expiration: now + ~30 days (max uint48 is ~8.9M years, any sane value works)
-    const expiration = Math.floor(Date.now() / 1000) + 30 * 86400;
-    writeContract({
-      address: addresses.permit2,
-      abi: permit2Abi,
-      functionName: 'approve',
-      args: [tokenAddress, addresses.universalRouter, MAX_UINT160, expiration],
-    });
-  };
-
-  const referrer = useReferrer();
-  const handleSwap = () => {
-    if (!address || amountInWei === 0n || quote === null) return;
-    setPendingAction('swap');
-    const deadline = BigInt(Math.floor(Date.now() / 1000) + DEFAULT_DEADLINE_SECS);
-
-    // Encode attribution as a 1-tuple PoolSwapData struct so the
-    // skim-fee hook decodes it correctly. See lib/attribution.ts.
-    const attrArgs = { referrer: referrer ?? undefined };
-    const hookData: Hex = hasAnyAttribution(attrArgs)
-      ? encodeAttributionHookData(attrArgs)
-      : ('0x' as Hex);
-
-    if (direction === 'buy') {
-      const { commands, inputs, value } = buildBuyCalldata({
-        poolKey,
-        newMaterialIsToken0,
-        weth: addresses.weth,
-        token: tokenAddress,
-        ethAmount: amountInWei,
-        minTokenOut: minOut,
-        hookData,
-      });
-      writeContract({
-        address: addresses.universalRouter,
-        abi: universalRouterAbi,
-        functionName: 'execute',
-        args: [commands, inputs, deadline],
-        value,
-      });
-    } else {
-      const { commands, inputs, value } = buildSellCalldata({
-        poolKey,
-        newMaterialIsToken0,
-        weth: addresses.weth,
-        token: tokenAddress,
-        tokenAmount: amountInWei,
-        minEthOut: minOut,
-        recipient: address,
-        hookData,
-      });
-      writeContract({
-        address: addresses.universalRouter,
-        abi: universalRouterAbi,
-        functionName: 'execute',
-        args: [commands, inputs, deadline],
-        value,
-      });
+    try {
+      // exactly the amount being sold, not an infinite allowance
+      await writeContractAsync({ address: tokenAddress, abi: erc20Abi, functionName: 'approve', args: [permit2, amountInWei] });
+    } catch (e) {
+      setActionError(describeError(e));
+      setPendingAction(null);
     }
   };
 
-  // ── UI state decisions ───────────────────────────────────────────
-  const needsErc20Approval =
-    direction === 'sell' &&
-    amountInWei > 0n &&
-    ((erc20ToPermit2 as bigint | undefined) ?? 0n) < amountInWei;
+  const handleApprovePermit2 = async () => {
+    if (!permit2 || !router) return;
+    setActionError(null);
+    setPendingAction('approve-permit2');
+    try {
+      // exact amount, expiry just past the swap deadline, counted from the latest block (not the browser clock)
+      const expiration = permit2ExpirationFor(client ? await latestChainTimestamp(client) : Math.floor(Date.now() / 1000), deadlineMin);
+      await writeContractAsync({
+        address: permit2,
+        abi: permit2Abi,
+        functionName: 'approve',
+        args: [tokenAddress, router, amountInWei, expiration],
+      });
+    } catch (e) {
+      setActionError(describeError(e));
+      setPendingAction(null);
+    }
+  };
 
-  const needsPermit2Approval =
-    direction === 'sell' &&
-    amountInWei > 0n &&
-    !needsErc20Approval &&
-    (permit2Amount < amountInWei || permit2Expiration < Math.floor(Date.now() / 1000));
+  const handleSwap = async () => {
+    if (!address || !client || !addresses || !quoter || kind === null || amountInWei === 0n) return;
+    setActionError(null);
+    setPreparing(true);
+    try {
+      // 1. fresh quote right before sending, the screen quote may be seconds old
+      const { result } = await client.simulateContract({
+        address: quoter,
+        abi: quoterAbi,
+        functionName: 'quoteExactInputSingle',
+        args: [{ poolKey, zeroForOne, exactAmount: amountInWei, hookData }],
+      });
+      const freshOut = (result as readonly [bigint, bigint])[0];
+      if (freshOut === 0n) throw new Error('The pool returned a zero quote, nothing was sent');
+      const floor = applySlippage(freshOut, slippageBps);
+      if (floor === 0n) throw new Error('Computed a zero minimum out, nothing was sent');
 
+      // 2. calldata with the floor, deadline from the chain clock
+      const block = await client.getBlock();
+      const deadline = block.timestamp + BigInt(deadlineMin * 60);
+      const built =
+        direction === 'buy'
+          ? buildBuyCalldata({ poolKey, token: tokenAddress, weth: addresses.weth, ethAmount: amountInWei, minTokenOut: floor, hookData })
+          : buildSellCalldata({ poolKey, token: tokenAddress, weth: addresses.weth, tokenAmount: amountInWei, minEthOut: floor, recipient: address, hookData });
+
+      // 3. simulate: a revert is shown with its reason and nothing is sent
+      const sim = await client.simulateContract({
+        account: address,
+        address: addresses.universalRouter,
+        abi: universalRouterAbi,
+        functionName: 'execute',
+        args: [built.commands, built.inputs, deadline],
+        value: built.value,
+      });
+
+      setPendingAction('swap');
+      await writeContractAsync(sim.request);
+    } catch (e) {
+      setActionError(describeError(e));
+      setPendingAction(null);
+    } finally {
+      setPreparing(false);
+    }
+  };
+
+  // ── button state ────────────────────────────────────────────────────
+  const busy = isPending || confirming || preparing;
   const canSwap =
-    isConnected &&
+    gate.ok &&
+    kind !== null &&
     amountInWei > 0n &&
-    quote !== null &&
     !overBalance &&
+    quoteFresh &&
+    minOut > 0n &&
+    !impactUnknown &&
+    (!highImpact || ackImpact) &&
     !needsErc20Approval &&
     !needsPermit2Approval;
 
-  const swapButtonLabel = () => {
-    if (!isConnected) return 'Connect wallet';
+  const swapLabel = () => {
+    if (gate.reason) return gate.reason;
+    if (kind === null) return 'Pool not supported';
     if (!amountInWei) return 'Enter amount';
     if (overBalance) return `Insufficient ${balanceLabel}`;
-    if (quoting) return 'Fetching quote…';
-    if (quote === null) return 'No quote available';
-    if (pendingAction === 'swap' && (isPending || confirming)) {
-      return isPending ? 'Confirm in wallet…' : 'Swapping…';
-    }
+    if (quoteQuery.isFetching && !quote) return 'Fetching quote…';
+    if (!quote) return 'No quote available';
+    if (!quoteFresh) return 'Refreshing quote…';
+    if (impactUnknown) return 'Price impact unknown, swap disabled';
+    if (highImpact && !ackImpact) return 'Acknowledge the price impact';
+    if (preparing) return 'Checking…';
+    if (pendingAction === 'swap' && (isPending || confirming)) return isPending ? 'Confirm in wallet…' : 'Swapping…';
     return direction === 'buy' ? `Buy ${tokenSymbol}` : `Sell ${tokenSymbol}`;
   };
 
-  // ── Render ────────────────────────────────────────────────────────
+  if (!addresses || kind === null) {
+    return (
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 text-sm text-zinc-400">
+        This pool is not a coin / native eth pool, the in app swap does not support it.
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden">
       <div className="flex items-center justify-between px-5 py-3 border-b border-zinc-800">
         <h3 className="text-sm font-semibold text-white">Swap</h3>
         <div className="flex items-center gap-1 bg-zinc-800 rounded-lg p-0.5">
-          {(['buy', 'sell'] as const).map(d => (
+          {(['buy', 'sell'] as const).map((d) => (
             <button
               key={d}
               type="button"
               onClick={() => {
                 setDirection(d);
                 setAmountIn('');
-                setQuote(null);
-                setQuoteError(null);
+                setActionError(null);
               }}
               className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                direction === d
-                  ? d === 'buy'
-                    ? 'bg-green-600 text-white'
-                    : 'bg-red-600 text-white'
-                  : 'text-zinc-400 hover:text-white'
+                direction === d ? (d === 'buy' ? 'bg-green-600 text-white' : 'bg-red-600 text-white') : 'text-zinc-400 hover:text-white'
               }`}
             >
               {d === 'buy' ? 'Buy' : 'Sell'}
@@ -376,27 +373,26 @@ export default function SwapWidget({
       <div className="p-5 space-y-3">
         {mevActive && (
           <div className="rounded-lg border border-violet-600/30 bg-violet-950/20 p-3 text-xs text-violet-200">
-            <strong>Anti-sniper fee active.</strong> Buy fees are currently very high. See the MEV
-            panel above for countdown.
+            <strong>Anti-sniper skim active.</strong>{' '}
+            {mevSkimPercent !== undefined ? `Currently ${mevSkimPercent.toFixed(2)}% of volume. ` : ''}
+            It decays to the baseline, the quote below already includes it.
           </div>
         )}
+        {feeSummary && <p className="text-xs text-zinc-500">Pool fees: {feeSummary}</p>}
 
-        {/* Amount in */}
         <div>
           <div className="flex items-center justify-between mb-1">
-            <label className="text-xs text-zinc-500">
-              You {direction === 'buy' ? 'pay' : 'sell'}
-            </label>
-            {isConnected && (
+            <label className="text-xs text-zinc-500">You {direction === 'buy' ? 'pay' : 'sell'}</label>
+            {gate.ok && (
               <button
                 type="button"
-                onClick={() => setAmountIn(formatUnits(balance, 18))}
+                onClick={() => {
+                  const max = direction === 'buy' ? (balance > GAS_RESERVE ? balance - GAS_RESERVE : 0n) : balance;
+                  setAmountIn(formatUnits(max, 18));
+                }}
                 className="text-xs text-zinc-500 hover:text-zinc-300"
               >
-                Balance: {Number(formatUnits(balance, 18)).toLocaleString(undefined, {
-                  maximumFractionDigits: 6,
-                })}{' '}
-                {balanceLabel}
+                Balance: {fmt(balance)} {balanceLabel}
               </button>
             )}
           </div>
@@ -406,130 +402,138 @@ export default function SwapWidget({
               inputMode="decimal"
               placeholder="0.0"
               value={amountIn}
-              onChange={e => {
+              onChange={(e) => {
                 const v = e.target.value.replace(',', '.');
                 if (/^\d*\.?\d*$/.test(v)) setAmountIn(v);
               }}
               className={`${inputClass} pr-20`}
             />
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-zinc-300">
-              {balanceLabel}
-            </span>
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-zinc-300">{balanceLabel}</span>
           </div>
+          {direction === 'buy' && <p className="text-xs text-zinc-600 mt-1">Max keeps 0.005 ETH back for gas.</p>}
         </div>
 
-        {/* Amount out (quote) */}
         <div>
-          <label className="text-xs text-zinc-500 mb-1 block">
-            You receive (estimated)
-          </label>
+          <label className="text-xs text-zinc-500 mb-1 block">You receive (estimated)</label>
           <div className={`${inputClass} flex items-center justify-between cursor-default`}>
-            <span className="text-zinc-300">
-              {quoting
-                ? '…'
-                : quote !== null
-                  ? Number(formatUnits(quote, 18)).toLocaleString(undefined, {
-                      maximumFractionDigits: 8,
-                    })
-                  : '0.0'}
-            </span>
-            <span className="text-sm font-medium text-zinc-400">
-              {direction === 'buy' ? tokenSymbol : 'ETH'}
-            </span>
+            <span className="text-zinc-300">{quote ? fmt(quote.amountOut, 8) : quoteQuery.isFetching && quoteEnabled ? '…' : '0.0'}</span>
+            <span className="text-sm font-medium text-zinc-400">{direction === 'buy' ? tokenSymbol : 'ETH'}</span>
           </div>
-          {quoteError && (
-            <p className="text-xs text-red-400 mt-1">Quote failed: {quoteError}</p>
-          )}
+          {amountInWei > 0n && quoteError && <p className="text-xs text-red-400 mt-1">Quote failed: {quoteError}</p>}
         </div>
 
-        {/* Slippage */}
+        {quote && (
+          <div className="rounded-lg bg-zinc-800/40 px-3 py-2 text-xs space-y-1">
+            <div className="flex justify-between text-zinc-500">
+              <span>Price impact vs mid (fees included)</span>
+              <span className={highImpact ? 'text-red-400 font-semibold' : impact !== null && impact > 3 ? 'text-amber-400' : 'text-zinc-300'}>
+                {impact === null ? 'unknown' : `${impact.toFixed(2)}%`}
+              </span>
+            </div>
+            <div className="flex justify-between text-zinc-500">
+              <span>Min received ({(slippageBps / 100).toFixed(2)}% slippage)</span>
+              <span className="text-zinc-300">
+                {fmt(minOut, 8)} {direction === 'buy' ? tokenSymbol : 'ETH'}
+              </span>
+            </div>
+            <div className="flex justify-between text-zinc-600">
+              <span>Quote age</span>
+              <span>{quoteFresh ? 'fresh, refreshes every 12s' : 'stale'}</span>
+            </div>
+          </div>
+        )}
+
+        {highImpact && (
+          <label className="flex items-start gap-2 text-xs text-red-300">
+            <input type="checkbox" checked={ackImpact} onChange={(e) => setAckImpact(e.target.checked)} className="mt-0.5" />
+            <span>I understand I am paying about {impact?.toFixed(1)}% over the pool mid price.</span>
+          </label>
+        )}
+
         <div className="flex items-center justify-between">
           <label className="text-xs text-zinc-500">Slippage</label>
           <div className="flex gap-1">
-            {SLIPPAGE_OPTIONS.map(pct => (
+            {SLIPPAGE_OPTIONS.map((pct) => (
               <button
                 key={pct}
                 type="button"
                 onClick={() => setSlippageBps(Math.round(pct * 100))}
-                className={`px-2 py-1 text-xs rounded ${
-                  slippageBps === Math.round(pct * 100)
-                    ? 'bg-violet-600 text-white'
-                    : 'bg-zinc-800 text-zinc-400 hover:text-white'
-                }`}
+                className={`px-2 py-1 text-xs rounded ${slippageBps === Math.round(pct * 100) ? 'bg-violet-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}
               >
                 {pct}%
               </button>
             ))}
           </div>
         </div>
-
-        {quote !== null && minOut > 0n && (
-          <div className="text-xs text-zinc-500 flex items-center justify-between">
-            <span>Min received</span>
-            <span>
-              {Number(formatUnits(minOut, 18)).toLocaleString(undefined, {
-                maximumFractionDigits: 6,
-              })}{' '}
-              {direction === 'buy' ? tokenSymbol : 'ETH'}
-            </span>
+        <div className="flex items-center justify-between">
+          <label className="text-xs text-zinc-500">Deadline</label>
+          <div className="flex gap-1">
+            {DEADLINE_OPTIONS.map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setDeadlineMin(m)}
+                className={`px-2 py-1 text-xs rounded ${deadlineMin === m ? 'bg-violet-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}
+              >
+                {m}m
+              </button>
+            ))}
           </div>
+        </div>
+
+        {attribution ? (
+          <ReferrerNotice state={referrer} />
+        ) : (
+          <p className="text-xs text-zinc-500">This pool is on the legacy stack. Its hook has no referral fees, so no referrer is attached.</p>
         )}
 
-        {/* Action button */}
-        {needsErc20Approval ? (
+        {gate.needsSwitch ? (
+          <button type="button" onClick={gate.switchToMainnet} className="w-full rounded-lg bg-violet-600 hover:bg-violet-500 py-3 text-sm font-semibold">
+            Switch to Ethereum mainnet
+          </button>
+        ) : needsErc20Approval ? (
           <button
             type="button"
-            onClick={handleApproveErc20}
-            disabled={isPending || confirming}
+            onClick={() => void handleApproveErc20()}
+            disabled={busy || !gate.ok || overBalance}
             className="w-full rounded-lg bg-violet-600 hover:bg-violet-500 disabled:bg-zinc-700 disabled:cursor-not-allowed py-3 text-sm font-semibold"
           >
-            {pendingAction === 'approve-erc20' && (isPending || confirming)
-              ? isPending
-                ? 'Confirm in wallet…'
-                : 'Approving…'
-              : `1. Approve ${tokenSymbol}`}
+            {pendingAction === 'approve-erc20' && busy ? (isPending ? 'Confirm in wallet…' : 'Approving…') : `1. Approve exactly ${amountIn} ${tokenSymbol} to Permit2`}
           </button>
         ) : needsPermit2Approval ? (
           <button
             type="button"
-            onClick={handleApprovePermit2}
-            disabled={isPending || confirming}
+            onClick={() => void handleApprovePermit2()}
+            disabled={busy || !gate.ok}
             className="w-full rounded-lg bg-violet-600 hover:bg-violet-500 disabled:bg-zinc-700 disabled:cursor-not-allowed py-3 text-sm font-semibold"
           >
-            {pendingAction === 'approve-permit2' && (isPending || confirming)
-              ? isPending
-                ? 'Confirm in wallet…'
-                : 'Approving…'
-              : '2. Approve Permit2'}
+            {pendingAction === 'approve-permit2' && busy ? (isPending ? 'Confirm in wallet…' : 'Approving…') : `2. Let the router spend it for ${deadlineMin + 5} minutes`}
           </button>
         ) : (
           <button
             type="button"
-            onClick={handleSwap}
-            disabled={!canSwap || isPending || confirming}
+            onClick={() => void handleSwap()}
+            disabled={!canSwap || busy}
             className={`w-full rounded-lg py-3 text-sm font-semibold transition-colors ${
-              canSwap && !isPending && !confirming
-                ? direction === 'buy'
-                  ? 'bg-green-600 hover:bg-green-500'
-                  : 'bg-red-600 hover:bg-red-500'
-                : 'bg-zinc-700 cursor-not-allowed text-zinc-400'
+              canSwap && !busy ? (direction === 'buy' ? 'bg-green-600 hover:bg-green-500' : 'bg-red-600 hover:bg-red-500') : 'bg-zinc-700 cursor-not-allowed text-zinc-400'
             }`}
           >
-            {swapButtonLabel()}
+            {swapLabel()}
           </button>
         )}
 
-        {/* Status / errors */}
-        {writeError && (
+        {(actionError || writeError) && (
           <div className="rounded-lg border border-red-900 bg-red-950/30 p-3 text-xs text-red-300 max-h-32 overflow-auto">
-            <p className="font-semibold mb-1">Swap failed</p>
-            <pre className="whitespace-pre-wrap break-all font-mono text-red-400/80">
-              {(writeError as Error).message.slice(0, 500)}
-            </pre>
+            <p className="font-semibold mb-1">{actionError ? 'Not sent' : 'Transaction failed'}</p>
+            <pre className="whitespace-pre-wrap break-all font-mono text-red-400/80">{actionError ?? describeError(writeError)}</pre>
           </div>
         )}
-
-        {receipt && pendingAction === 'swap' && (
+        {reverted && (
+          <div className="rounded-lg border border-red-900 bg-red-950/30 p-3 text-xs text-red-300">
+            The transaction was mined but reverted. Nothing was swapped.
+          </div>
+        )}
+        {receipt && receipt.status === 'success' && pendingAction === 'swap' && (
           <div className="rounded-lg border border-green-900 bg-green-950/30 p-3 text-xs text-green-300">
             Swap confirmed in block {receipt.blockNumber.toString()}.
           </div>

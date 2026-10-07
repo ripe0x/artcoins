@@ -1,0 +1,43 @@
+{
+  "example": true,
+  "about": "credits engine style coin: treasury contract as bounty recipient and only project reward slot. Not restricted (plain erc20 transfers). native eth pool, 69 minute linear anti sniper skim from 68.69% down to the 6% baseline. For a restricted coin set restriction.restricted true and list any extra allowlist entries in restriction.allowed; the factory seeds the stack escrow, this launch's locker, the launch extensions, permit2 and the universal router. Replace every treasury placeholder (0x7ea5...0001) with the real treasury contract and set example to false before a broadcast.",
+  "protocolBps": 2000,
+  "expectedToken": "0x0000000000000000000000000000000000000000",
+  "token": {
+    "tokenAdmin": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+    "name": "Credits Example",
+    "symbol": "CREDX",
+    "salt": "0x0000000000000000000000000000000000000000000000000000000000000001",
+    "image": "ipfs://example",
+    "metadata": "{\"description\":\"credits engine example coin\"}",
+    "context": "{\"interface\":\"script/v2/LaunchV2Coin.s.sol\"}",
+    "totalSupply": 0,
+    "renderer": "0x0000000000000000000000000000000000000000"
+  },
+  "pool": {
+    "tickIfToken0IsArtCoin": -200000,
+    "tickSpacing": 200
+  },
+  "fee": {
+    "lpFee": 5000,
+    "baselineSkimBps": 6000,
+    "bountyBps": 8333,
+    "maxReferralBpsOfVolume": 250,
+    "bountyRecipient": "0x7ea5000000000000000000000000000000000001"
+  },
+  "locker": {
+    "rewardRecipients": ["0x7ea5000000000000000000000000000000000001"],
+    "rewardBps": [8000],
+    "tickLower": [-200000, -160000, -120000],
+    "tickUpper": [-120000, -100000, -60000],
+    "positionBps": [5000, 3000, 2000]
+  },
+  "mev": {
+    "startingSkimBps": 68690,
+    "windowSeconds": 4140
+  },
+  "restriction": {
+    "restricted": false,
+    "allowed": []
+  }
+}

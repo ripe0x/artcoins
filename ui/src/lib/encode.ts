@@ -1,3 +1,6 @@
+// v1 encoders (the stale NewMaterial era factory abi, static fee hook pool data, linear / descending fee
+// mev modules, v1 vault and airdrop data). Kept only so old calldata can be reproduced and read.
+// Nothing in the deploy flow uses it: launches are built by encodeV2.ts.
 import { encodeAbiParameters, parseAbiParameters, type Address } from 'viem';
 
 export function generateSalt(): `0x${string}` {

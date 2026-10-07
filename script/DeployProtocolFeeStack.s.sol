@@ -1,11 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+// targets superseded stack legacy; current stack is 0x4959… (Addresses.CURRENT_FACTORY).
+// Mainnet runs are refused unless ALLOW_SUPERSEDED=1.
+
 import {Script, console2} from "forge-std/Script.sol";
 
 import {BurnRouter} from "../src/protocol-fee/BurnRouter.sol";
 import {LiquiditySupportReceiver} from "../src/protocol-fee/LiquiditySupportReceiver.sol";
 import {ProtocolFeeController} from "../src/protocol-fee/ProtocolFeeController.sol";
+
+import {Addresses} from "./Addresses.sol";
 
 /// @title DeployProtocolFeeStack
 /// @notice Deploys the ProtocolFeeController + BurnRouter, and OPTIONALLY
@@ -31,7 +36,15 @@ contract DeployProtocolFeeStack is Script {
     ///      is the remainder, `BPS - LAYER_TREASURY_BPS = 4000`.
     uint16 internal constant LAYER_TREASURY_BPS = 6000;
 
+    /// @dev Mainnet runs are refused unless ALLOW_SUPERSEDED=1 (superseded stack legacy).
+    function _requireSupersededAllowed() internal view {
+        if (block.chainid == Addresses.CHAIN_ID && vm.envOr("ALLOW_SUPERSEDED", uint256(0)) != 1) {
+            revert("targets a superseded stack; set ALLOW_SUPERSEDED=1 to run on mainnet");
+        }
+    }
+
     function run() public {
+        _requireSupersededAllowed();
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address admin = vm.envAddress("FEE_ADMIN");
         address treasury = vm.envAddress("PROTOCOL_TREASURY");
