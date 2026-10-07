@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { formatEther, parseEventLogs, type Address } from 'viem';
 import { factoryV2Abi } from '../lib/abi/v2/factory';
 import { buildLaunchConfigV2, percentToBps, percentToSkim, validateLaunch, type LaunchContext } from '../lib/encodeV2';
-import { maxReferralCapSkim } from '../lib/launchRules';
+import { maxReferralCapSkim, parseAllowedInput } from '../lib/launchRules';
 import type { LaunchForm } from '../lib/types';
 import type { V2Stack } from '../lib/v2';
 import type { FactoryState } from '../lib/factoryState';
@@ -130,7 +130,9 @@ export default function ReviewAndDeploy({ form, ctx, v2, state, pageBlock, suppl
   };
 
   const mev = form.mev;
-  const taxLabel = form.tax.mode === 0 ? 'None' : form.tax.mode === 1 ? `Venue tax, side pools taxed: ${form.tax.taxPercent}% (max ${form.tax.maxPercent}%) to ${form.tax.sink === 'dead' ? 'burn' : 'bounty recipient'}` : 'Hard mode, side pools blocked (a v2 pair listed later traps its lps)';
+  const restrictionLabel = form.restriction.restricted
+    ? `Restricted: no wallet to wallet transfers (${parseAllowedInput(form.restriction.allowed).length} extra allowlist entries)`
+    : 'None';
   const totalExt =
     (form.extensions.vault.enabled ? form.extensions.vault.allocationPercent : 0) + (form.extensions.airdrop.enabled ? form.extensions.airdrop.allocationPercent : 0);
   const sumRewards = form.rewards.recipients.reduce((s, r) => s + r.bps, 0);
@@ -160,7 +162,7 @@ export default function ReviewAndDeploy({ form, ctx, v2, state, pageBlock, suppl
           />
           <Row label="Protocol keeps at least" value={`${pct(ctx.minProtocolSkimShareBps / 100)} of the skim`} />
           <Row label="Anti sniper" value={mev.enabled ? `${pct(mev.startPercent)} decaying to ${pct(form.pool.baselineSkimPercent)} over ${mev.windowMin} min` : 'Off'} />
-          <Row label="Tax" value={taxLabel} />
+          <Row label="Transfer restriction" value={restrictionLabel} />
         </Section>
 
         <Section title="Rewards">
@@ -186,7 +188,7 @@ export default function ReviewAndDeploy({ form, ctx, v2, state, pageBlock, suppl
         </Section>
       </div>
 
-      <Issues issues={issues} prefix={['token', 'pool', 'mev', 'tax', 'rewards', 'positions', 'vault', 'airdrop', 'devBuy', 'extensions']} />
+      <Issues issues={issues} prefix={['token', 'pool', 'mev', 'restriction', 'rewards', 'positions', 'vault', 'airdrop', 'devBuy', 'extensions']} />
 
       {deployedToken ? (
         <div className="rounded-lg border border-green-800 bg-green-900/20 p-4 space-y-2">

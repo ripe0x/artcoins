@@ -7,7 +7,7 @@
 // v2 entries come from the frozen interfaces (the deployed contracts implement them exactly), except the
 // factory and the fee escrow: those come from the contract artifacts (ArtCoinsFactoryV2,
 // ArtCoinsFeeEscrowV2), a strict superset of the interface that also carries the additive surface the ui
-// reads (minLpFee, exemptAllowed, tokenDeployer, owner, the additive errors). a check below fails when a
+// reads (minLpFee, defaultAllowed, tokenDeployer, owner, the additive errors). a check below fails when a
 // contract abi ever loses an interface item.
 // v1 entries from the contracts of the current mainnet stack (factory 0x4959...).
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';

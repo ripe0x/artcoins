@@ -3,7 +3,7 @@
 //   lpFee                      pips, 1_000_000 = 100% (Constants.FEE_DENOMINATOR), max 100_000
 //   baselineSkimBps, start skim, maxReferralBpsOfVolume
 //                              Constants.SKIM_DENOMINATOR = 100_000 = 100% of volume
-//   bountyBps, rewardBps, positionBps, extensionBps, taxBps
+//   bountyBps, rewardBps, positionBps, extensionBps
 //                              Constants.BPS = 10_000
 //   ticks                      token0 frame (coin as currency0). The coin is always currency1 against
 //                              native eth, the contracts mirror them: pool tick = -tick
@@ -18,12 +18,12 @@ import {
 } from 'viem';
 import {
   BPS,
-  DEAD,
   EXTENSION_MAX_DURATION_DAYS,
   FEE_DENOMINATOR,
   MAX_BASELINE_SKIM_BPS,
   MAX_BOUNTY_BPS,
   MAX_EXTENSION_BPS,
+  MAX_ALLOWED,
   MAX_EXTENSIONS,
   MAX_LP_FEE,
   MAX_LP_POSITIONS,
@@ -32,28 +32,23 @@ import {
   MAX_REFERRAL_CAP_OF_VOLUME,
   MAX_REWARD_PARTICIPANTS,
   MAX_SKIM_BPS,
-  MAX_TAX_EXEMPT,
   MAX_TICK,
   MIN_MEV_WINDOW,
   MIN_TICK,
   MIN_TOKEN_SUPPLY,
   SECONDS_PER_DAY,
   SKIM_DENOMINATOR,
-  TAX_BPS_ABSOLUTE_MAX,
-  TAX_MODE_HARD,
-  TAX_MODE_NONE,
-  TAX_MODE_VENUE,
   VAULT_MIN_LOCKUP_DAYS,
   VAULT_MIN_VESTING_DAYS,
   ZERO_ADDRESS,
 } from './constants';
 import type { LaunchForm } from './types';
 import {
-  EXEMPT_NOT_ALLOWED,
   maxReferralCapSkim,
+  parseAllowedInput,
   referralCapWithinFloor,
+  seededAllowedCount,
   stringCapIssue,
-  type ExemptStatusMap,
 } from './launchRules';
 
 // ── config types, field for field the interface structs ─────────────────────────────────────────
@@ -96,21 +91,9 @@ export interface MevConfigV2 {
   startingSkimBps: number;
   windowSeconds: number;
 }
-export interface TaxVenueV2 {
-  kind: number;
-  factory: Address;
-  initCodeHash: Hex;
-  counterToken: Address;
-  v3Fee: number;
-}
-export interface TaxConfigV2 {
-  mode: number;
-  taxBps: number;
-  taxBpsMax: number;
-  taxSink: Address;
-  venueAdmin: Address;
-  exempt: Address[];
-  venues: TaxVenueV2[];
+export interface RestrictionConfigV2 {
+  restricted: boolean;
+  allowed: Address[];
 }
 export interface ExtensionConfigV2 {
   extension: Address;
@@ -124,7 +107,7 @@ export interface DeploymentConfigV2 {
   fee: FeeConfigV2;
   locker: LockerConfigV2;
   mev: MevConfigV2;
-  tax: TaxConfigV2;
+  restriction: RestrictionConfigV2;
   extensions: ExtensionConfigV2[];
 }
 
@@ -147,12 +130,8 @@ export interface LaunchContext {
   minProtocolSkimShareBps: number;
   /** factory.minLpFee() in pips (D53): the launch lp fee may not be lower */
   minLpFee: number;
-  /**
-   * factory allowlist answers for the tax exempt entries, keyed by lowercase address
-   * (`classifyExempt` over exemptAllowed, enabledEscrows, enabledExtensions). null only when no factory
-   * is configured (preview): launching is blocked then anyway.
-   */
-  exemptStatus: ExemptStatusMap | null;
+  /** factory.defaultAllowed().length: owner entries the factory seeds into every restricted launch */
+  defaultAllowedCount: number;
   /** factory.deployFee() */
   deployFee: bigint;
   salt: Hex;
@@ -250,7 +229,6 @@ export function encodeMevModuleConfig(startingSkimBps: number, windowSeconds: nu
 // ── validation ──────────────────────────────────────────────────────────────────────────────────
 
 const err = (field: string, message: string): Issue => ({ severity: 'error', field, message });
-const warn = (field: string, message: string): Issue => ({ severity: 'warning', field, message });
 
 const AMOUNT_RE = /^\d+(\.\d{1,18})?$/;
 
@@ -267,7 +245,7 @@ export function maxBountyBps(minProtocolSkimShareBps: number): number {
 /** Mirrors the factory, locker, hook and token checks so a bad config fails here with a readable reason. */
 export function validateLaunch(form: LaunchForm, ctx: LaunchContext): Issue[] {
   const out: Issue[] = [];
-  const { token, pool, mev, tax, rewards, extensions } = form;
+  const { token, pool, mev, restriction, rewards, extensions } = form;
 
   // token
   if (!token.name.trim()) out.push(err('token.name', 'name is required'));
@@ -339,34 +317,6 @@ export function validateLaunch(form: LaunchForm, ctx: LaunchContext): Issue[] {
     if (start < baseline) out.push(err('mev.start', 'starting skim must be at least the baseline skim'));
   }
 
-  // tax
-  if (tax.mode !== TAX_MODE_NONE) {
-    if (tax.mode === TAX_MODE_VENUE) {
-      const max = percentToBps(tax.maxPercent);
-      const cur = percentToBps(tax.taxPercent);
-      if (max <= 0 || max > TAX_BPS_ABSOLUTE_MAX) out.push(err('tax.max', `max tax must be above 0 and at most ${TAX_BPS_ABSOLUTE_MAX / 100}%`));
-      if (cur < 0 || cur > max) out.push(err('tax.rate', 'tax rate cannot exceed the max tax'));
-    }
-    const ex = tax.exempt.split(/[\s,]+/).filter(Boolean);
-    if (tax.mode === TAX_MODE_VENUE && ex.length > MAX_TAX_EXEMPT) out.push(err('tax.exempt', `at most ${MAX_TAX_EXEMPT} exempt addresses`));
-    for (const a of ex) if (!parseAddress(a) || isZeroAddr(a)) out.push(err('tax.exempt', `${a} is not a valid nonzero address`));
-    // VENUE only (HARD sends no exempt set): duplicates and the factory allowlist (D47)
-    if (tax.mode === TAX_MODE_VENUE) {
-      const seen = new Set<string>();
-      for (const a of ex) {
-        const k = a.toLowerCase();
-        if (seen.has(k)) out.push(err('tax.exempt.dup', `${a} is listed twice`));
-        seen.add(k);
-        if (!parseAddress(a) || isZeroAddr(a) || !ctx.exemptStatus) continue;
-        const st = ctx.exemptStatus[k] ?? 'unknown';
-        if (st === 'not-allowed') out.push(err('tax.exempt.allowlist', `${a}: ${EXEMPT_NOT_ALLOWED}`));
-        else if (st === 'unknown') out.push(err('tax.exempt.allowlist', `${a}: could not check the launcher allowlist yet`));
-      }
-    }
-    if (tax.venueAdmin.trim() && !parseAddress(tax.venueAdmin)) out.push(err('tax.venueAdmin', 'not a valid address (check the checksum)'));
-    if (tax.mode === TAX_MODE_HARD) out.push(warn('tax.mode', 'hard mode blocks side pools: every pool manager flow the canonical hook did not grant and every transfer touching a listed venue reverts. listing a v2 pair for this coin later also traps its lps (they cannot withdraw, their weth is stuck too)'));
-  }
-
   // rewards
   const target = projectSideBps(ctx.protocolBps);
   const slots = rewards.recipients.length + (ctx.protocolBps === 0 ? 0 : 1);
@@ -434,6 +384,24 @@ export function validateLaunch(form: LaunchForm, ctx: LaunchContext): Issue[] {
   if (extCount > MAX_EXTENSIONS) out.push(err('extensions', `at most ${MAX_EXTENSIONS} extensions`));
   if (extBps > MAX_EXTENSION_BPS) out.push(err('extensions', `extension allocations total ${extBps / 100}%, the maximum is ${MAX_EXTENSION_BPS / 100}%`));
 
+  // restriction (factory _validateRestriction and _restriction)
+  const allowed = parseAllowedInput(restriction.allowed);
+  if (!restriction.restricted) {
+    if (allowed.length > 0) out.push(err('restriction.allowed', 'an unrestricted coin has no allowlist. Clear the list or turn on restrict transfers'));
+  } else {
+    const seeded = seededAllowedCount(ctx.defaultAllowedCount, extCount);
+    if (seeded + allowed.length > MAX_ALLOWED) {
+      out.push(err('restriction.allowed', `the allowlist holds at most ${MAX_ALLOWED} entries including ${seeded} added by the launcher (stack contracts, extensions, owner defaults), so at most ${Math.max(0, MAX_ALLOWED - seeded)} of your own`));
+    }
+    const seen = new Set<string>();
+    for (const a of allowed) {
+      const k = a.toLowerCase();
+      if (!parseAddress(a) || isZeroAddr(a)) out.push(err('restriction.allowed', `${a} is not a valid nonzero address`));
+      else if (seen.has(k)) out.push(err('restriction.allowed', `${a} is listed twice`));
+      seen.add(k);
+    }
+  }
+
   return out;
 }
 
@@ -460,7 +428,7 @@ export function buildLaunchConfigV2(form: LaunchForm, ctx: LaunchContext): Built
   const issues = validateLaunch(form, ctx);
   if (issues.some((i) => i.severity === 'error')) throw new LaunchConfigError(issues);
 
-  const { token, pool, mev, tax, rewards, extensions } = form;
+  const { token, pool, mev, restriction, rewards, extensions } = form;
   const sender = ctx.sender;
   const admin = parseAddress(token.admin || sender)!;
   const bountyRecipient = parseAddress(pool.bountyRecipient || sender)!;
@@ -506,27 +474,9 @@ export function buildLaunchConfigV2(form: LaunchForm, ctx: LaunchContext): Built
     ? { module: ctx.mevModule, startingSkimBps: percentToSkim(mev.startPercent), windowSeconds: Math.round(mev.windowMin * 60) }
     : { module: ZERO_ADDRESS, startingSkimBps: 0, windowSeconds: 0 };
 
-  let taxConfig: TaxConfigV2;
-  if (tax.mode === TAX_MODE_NONE) {
-    taxConfig = { mode: 0, taxBps: 0, taxBpsMax: 0, taxSink: ZERO_ADDRESS, venueAdmin: ZERO_ADDRESS, exempt: [], venues: [] };
-  } else {
-    const sink = tax.sink === 'bounty' ? bountyRecipient : (DEAD as Address);
-    const venueAdmin = tax.venueAdmin.trim() ? parseAddress(tax.venueAdmin)! : ZERO_ADDRESS;
-    if (tax.mode === TAX_MODE_VENUE) {
-      taxConfig = {
-        mode: TAX_MODE_VENUE,
-        taxBps: percentToBps(tax.taxPercent),
-        taxBpsMax: percentToBps(tax.maxPercent),
-        taxSink: sink,
-        venueAdmin,
-        exempt: tax.exempt.split(/[\s,]+/).filter(Boolean).map((a) => parseAddress(a)!),
-        venues: [],
-      };
-    } else {
-      // hard mode: no rate, no exempt set, the sink is display only
-      taxConfig = { mode: TAX_MODE_HARD, taxBps: 0, taxBpsMax: 0, taxSink: sink, venueAdmin, exempt: [], venues: [] };
-    }
-  }
+  const restrictionConfig: RestrictionConfigV2 = restriction.restricted
+    ? { restricted: true, allowed: parseAllowedInput(restriction.allowed).map((a) => parseAddress(a)!) }
+    : { restricted: false, allowed: [] };
 
   const exts: ExtensionConfigV2[] = [];
   if (extensions.vault.enabled) {
@@ -577,7 +527,7 @@ export function buildLaunchConfigV2(form: LaunchForm, ctx: LaunchContext): Built
       fee,
       locker,
       mev: mevConfig,
-      tax: taxConfig,
+      restriction: restrictionConfig,
       extensions: exts,
     },
     value: ctx.deployFee + extensionValue,

@@ -41,19 +41,11 @@ export interface MevFormState {
   windowMin: number;
 }
 
-export type TaxMode = 0 | 1 | 2;
-
-export interface TaxFormState {
-  /** 0 none, 1 venue (tax on coin leaving a listed venue), 2 hard (canonical flows only) */
-  mode: TaxMode;
-  taxPercent: number;
-  maxPercent: number;
-  /** DEAD (burn) or the bounty recipient */
-  sink: 'dead' | 'bounty';
-  /** blank = token admin */
-  venueAdmin: string;
-  /** comma or space separated addresses, at most 16 */
-  exempt: string;
+export interface RestrictionFormState {
+  /** holders cannot send the coin wallet to wallet; the home pool still trades */
+  restricted: boolean;
+  /** comma or space separated extra allowlist addresses, empty unless restricted */
+  allowed: string;
 }
 
 export interface RewardRecipient {
@@ -117,7 +109,7 @@ export interface LaunchForm {
   token: TokenFormState;
   pool: PoolFormState;
   mev: MevFormState;
-  tax: TaxFormState;
+  restriction: RestrictionFormState;
   rewards: RewardsFormState;
   extensions: ExtensionsFormState;
 }

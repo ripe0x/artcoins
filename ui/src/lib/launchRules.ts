@@ -1,5 +1,5 @@
 // Launch rules that the v2 factory enforces (ArtCoinsFactoryV2._validateFee, _validateStrings,
-// _validateTax), as pure functions so the form, the validator and the tests share one formula.
+// _validateRestriction), as pure functions so the form, the validator and the tests share one formula.
 // Units: skim and referral cap are SKIM_DENOMINATOR (1e5 = 100% of volume), bounty and shares are BPS (1e4).
 import {
   BPS,
@@ -70,31 +70,27 @@ export function maxReferralCapSkim(baselineSkimBps: number, bountyBps: number, m
   return Math.min(byFloor, MAX_REFERRAL_CAP_OF_VOLUME);
 }
 
-// ── tax exempt allowlist ────────────────────────────────────────────────────────────────────────
+// ── restriction allowlist ───────────────────────────────────────────────────────────────────────
 
-/** per entry, keyed by lowercase address. 'unknown' = not read yet or the read failed */
-export type ExemptStatus = 'allowed' | 'not-allowed' | 'unknown';
-export type ExemptStatusMap = Record<string, ExemptStatus>;
-
-export interface ExemptReads {
-  /** factory.exemptAllowed(a), undefined when the read has not succeeded */
-  exemptAllowed: boolean | undefined;
-  /** factory.enabledEscrows(a) */
-  enabledEscrow: boolean | undefined;
-  /** factory.enabledExtensions(a) */
-  enabledExtension: boolean | undefined;
+/** Splits the allowlist input on commas and whitespace. */
+export function parseAllowedInput(input: string): string[] {
+  return input.split(/[\s,]+/).filter(Boolean);
 }
 
 /**
- * Mirrors the factory: an exempt entry passes when `exemptAllowed[a]`, or it is this launch's locker or
- * hook, an enabled escrow or an enabled extension (ExemptNotAllowed otherwise, D47).
+ * Entries the factory adds to every restricted launch before the user's: the owner `defaultAllowed` set, the
+ * stack escrow, this launch's locker, and one per extension (`_restriction`).
  */
-export function classifyExempt(reads: ExemptReads, a: string, locker: string, hook: string): ExemptStatus {
-  const l = a.toLowerCase();
-  if (l === locker.toLowerCase() || l === hook.toLowerCase()) return 'allowed';
-  if (reads.exemptAllowed || reads.enabledEscrow || reads.enabledExtension) return 'allowed';
-  if (reads.exemptAllowed === false && reads.enabledEscrow === false && reads.enabledExtension === false) return 'not-allowed';
-  return 'unknown';
+export function seededAllowedCount(defaultAllowedCount: number, extensionCount: number): number {
+  return defaultAllowedCount + 2 + extensionCount;
 }
 
-export const EXEMPT_NOT_ALLOWED = 'not allowed by the launcher owner';
+/** Folds token `AllowedSet` events, oldest first, into the current allowlist (lowercase addresses). */
+export function foldAllowed(events: { account: string; allowed: boolean }[]): string[] {
+  const set = new Set<string>();
+  for (const e of events) {
+    if (e.allowed) set.add(e.account.toLowerCase());
+    else set.delete(e.account.toLowerCase());
+  }
+  return [...set];
+}

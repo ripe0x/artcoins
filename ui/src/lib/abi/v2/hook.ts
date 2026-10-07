@@ -294,9 +294,9 @@ export const hookV2Abi = [
             "internalType": "uint16"
           },
           {
-            "name": "taxMode",
-            "type": "uint8",
-            "internalType": "uint8"
+            "name": "restricted",
+            "type": "bool",
+            "internalType": "bool"
           },
           {
             "name": "createdAt",
@@ -699,10 +699,10 @@ export const hookV2Abi = [
         "internalType": "uint16"
       },
       {
-        "name": "taxMode",
-        "type": "uint8",
+        "name": "restricted",
+        "type": "bool",
         "indexed": false,
-        "internalType": "uint8"
+        "internalType": "bool"
       }
     ],
     "anonymous": false

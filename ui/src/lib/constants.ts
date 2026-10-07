@@ -26,13 +26,8 @@ export const MAX_EXTENSION_BPS = 9_000;
 export const MAX_PROTOCOL_FEE_BPS = 3_000;
 export const MAX_DEPLOY_FEE = 10n ** 18n;
 
-export const TAX_MODE_NONE = 0;
-export const TAX_MODE_VENUE = 1;
-export const TAX_MODE_HARD = 2;
-export const TAX_BPS_ABSOLUTE_MAX = 2_000;
-export const MAX_TAX_VENUES = 32;
-export const MAX_TAX_EXEMPT = 16;
-export const DEAD = '0x000000000000000000000000000000000000dEaD' as const;
+/** Constants.MAX_ALLOWED: bound on the assembled token allowlist (seeded entries plus the launch's own) */
+export const MAX_ALLOWED = 64;
 
 /**
  * ArtCoinsTokenV2.MAX_*_BYTES (the factory checks the same caps before deploying). Utf8 BYTES, not

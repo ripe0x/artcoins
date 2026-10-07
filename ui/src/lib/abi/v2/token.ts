@@ -3,65 +3,6 @@
 export const tokenV2Abi = [
   {
     "type": "function",
-    "name": "addDerivedTaxVenue",
-    "inputs": [
-      {
-        "name": "venue",
-        "type": "tuple",
-        "internalType": "struct IArtCoinsFactoryV2.TaxVenue",
-        "components": [
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "uint8"
-          },
-          {
-            "name": "factory",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "initCodeHash",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "counterToken",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "v3Fee",
-            "type": "uint24",
-            "internalType": "uint24"
-          }
-        ]
-      }
-    ],
-    "outputs": [
-      {
-        "name": "pool",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "addTaxVenue",
-    "inputs": [
-      {
-        "name": "venue",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "admin",
     "inputs": [],
     "outputs": [
@@ -72,24 +13,6 @@ export const tokenV2Abi = [
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "attestCanonicalBudget",
-    "inputs": [
-      {
-        "name": "poolId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "outAmount",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -176,29 +99,6 @@ export const tokenV2Abi = [
   },
   {
     "type": "function",
-    "name": "grantCanonicalFlow",
-    "inputs": [
-      {
-        "name": "poolId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "outAmount",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "inAmount",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "imageUrl",
     "inputs": [],
     "outputs": [
@@ -212,26 +112,25 @@ export const tokenV2Abi = [
   },
   {
     "type": "function",
-    "name": "isTaxExempt",
+    "name": "increaseTransferAllowance",
     "inputs": [
       {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
+        "name": "poolId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
       {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
-    "stateMutability": "view"
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
-    "name": "isTaxVenue",
+    "name": "isAllowed",
     "inputs": [
       {
         "name": "account",
@@ -286,6 +185,26 @@ export const tokenV2Abi = [
       }
     ],
     "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "lock",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "locked",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -348,8 +267,32 @@ export const tokenV2Abi = [
   },
   {
     "type": "function",
-    "name": "renounceVenueAdmin",
+    "name": "restricted",
     "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "setAllowed",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "allowed",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
@@ -368,71 +311,6 @@ export const tokenV2Abi = [
   },
   {
     "type": "function",
-    "name": "setTaxBps",
-    "inputs": [
-      {
-        "name": "newBps",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "taxBps",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "taxBpsMax",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "taxMode",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint8",
-        "internalType": "uint8"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "taxSink",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "tokenURI",
     "inputs": [],
     "outputs": [
@@ -446,14 +324,21 @@ export const tokenV2Abi = [
   },
   {
     "type": "function",
-    "name": "transferVenueAdmin",
-    "inputs": [
+    "name": "transferAllowance",
+    "inputs": [],
+    "outputs": [
       {
-        "name": "newAdmin",
-        "type": "address",
-        "internalType": "address"
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "unrestrict",
+    "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
@@ -498,19 +383,6 @@ export const tokenV2Abi = [
   },
   {
     "type": "function",
-    "name": "venueAdmin",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "verify",
     "inputs": [],
     "outputs": [],
@@ -531,7 +403,32 @@ export const tokenV2Abi = [
   },
   {
     "type": "event",
+    "name": "AllowedSet",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "allowed",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "ContractURIUpdated",
+    "inputs": [],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Locked",
     "inputs": [],
     "anonymous": false
   },
@@ -550,114 +447,8 @@ export const tokenV2Abi = [
   },
   {
     "type": "event",
-    "name": "TaxApplied",
-    "inputs": [
-      {
-        "name": "from",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "to",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "gross",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "tax",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "net",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "TaxBpsUpdated",
-    "inputs": [
-      {
-        "name": "oldBps",
-        "type": "uint16",
-        "indexed": false,
-        "internalType": "uint16"
-      },
-      {
-        "name": "newBps",
-        "type": "uint16",
-        "indexed": false,
-        "internalType": "uint16"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "TaxEnabled",
-    "inputs": [
-      {
-        "name": "canonicalPoolId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "canonicalHook",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "mode",
-        "type": "uint8",
-        "indexed": false,
-        "internalType": "uint8"
-      },
-      {
-        "name": "taxBps",
-        "type": "uint16",
-        "indexed": false,
-        "internalType": "uint16"
-      },
-      {
-        "name": "taxBpsMax",
-        "type": "uint16",
-        "indexed": false,
-        "internalType": "uint16"
-      },
-      {
-        "name": "taxSink",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "TaxVenueAdded",
-    "inputs": [
-      {
-        "name": "venue",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
+    "name": "Unrestricted",
+    "inputs": [],
     "anonymous": false
   },
   {
@@ -707,31 +498,6 @@ export const tokenV2Abi = [
   },
   {
     "type": "event",
-    "name": "VenueAdminRenounced",
-    "inputs": [],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "VenueAdminTransferred",
-    "inputs": [
-      {
-        "name": "previousAdmin",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "newAdmin",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "Verified",
     "inputs": [
       {
@@ -751,45 +517,18 @@ export const tokenV2Abi = [
   },
   {
     "type": "error",
+    "name": "AlreadyLocked",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "AlreadyVerified",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "CanonicalFlowRequired",
-    "inputs": [
-      {
-        "name": "from",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "to",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "amount",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "InvalidRenderer",
     "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InvalidTaxVenue",
-    "inputs": [
-      {
-        "name": "venue",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
   },
   {
     "type": "error",
@@ -808,7 +547,12 @@ export const tokenV2Abi = [
   },
   {
     "type": "error",
-    "name": "NotVenueAdmin",
+    "name": "NotRestricted",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RestrictionConfigInvalid",
     "inputs": []
   },
   {
@@ -829,32 +573,22 @@ export const tokenV2Abi = [
   },
   {
     "type": "error",
-    "name": "TaxBpsTooHigh",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "TaxConfigInvalid",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "TaxNotEnabled",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "TooManyTaxVenues",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "VenueTransferBlocked",
+    "name": "TransferRestricted",
     "inputs": [
       {
-        "name": "venue",
+        "name": "from",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "to",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ]
   },

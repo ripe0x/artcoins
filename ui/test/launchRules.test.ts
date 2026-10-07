@@ -8,8 +8,9 @@ import * as C from '../src/lib/constants';
 import { buildLaunchConfigV2, percentToBps, percentToSkim, validateLaunch, type LaunchContext } from '../src/lib/encodeV2';
 import { escrowClaimBlock, escrowClaimCall } from '../src/lib/escrowClaim';
 import {
-  classifyExempt,
-  EXEMPT_NOT_ALLOWED,
+  foldAllowed,
+  parseAllowedInput,
+  seededAllowedCount,
   maxReferralCapSkim,
   referralCapWithinFloor,
   STRING_CAPS,
@@ -33,7 +34,7 @@ const ctx = (over: Partial<LaunchContext> = {}): LaunchContext => ({
   protocolBps: 2000,
   minProtocolSkimShareBps: 1000, // what the deploy script sets (D52)
   minLpFee: 3000, // DEFAULT_MIN_LP_FEE (D53)
-  exemptStatus: null,
+  defaultAllowedCount: 0,
   deployFee: 69_000_000_000_000_000n,
   salt: `0x${'ab'.repeat(32)}` as Hex,
   ...over,
@@ -225,52 +226,26 @@ test('validateLaunch: lp fee below the factory minimum is an error, at the minim
   assert.equal(errorsOf(f, ctx({ minLpFee: 0 }), 'pool.lpFee').length, 0);
 });
 
-// ── exempt allowlist ────────────────────────────────────────────────────────────────────────────
+// ── restriction allowlist ───────────────────────────────────────────────────────────────────────
 
-const EX1 = '0x00000000000000000000000000000000000000a1';
-const EX2 = '0x00000000000000000000000000000000000000a2';
-const venueForm = (exempt: string): LaunchForm => {
-  const f = form();
-  f.tax = { mode: 1, taxPercent: 5, maxPercent: 10, sink: 'dead', venueAdmin: '', exempt };
-  return f;
-};
-
-test('classifyExempt mirrors the factory: allowlist, enabled escrow or extension, this launch locker or hook', () => {
-  const none = { exemptAllowed: false, enabledEscrow: false, enabledExtension: false };
-  assert.equal(classifyExempt(none, EX1, LOCKER, HOOK), 'not-allowed');
-  assert.equal(classifyExempt({ ...none, exemptAllowed: true }, EX1, LOCKER, HOOK), 'allowed');
-  assert.equal(classifyExempt({ ...none, enabledEscrow: true }, EX1, LOCKER, HOOK), 'allowed');
-  assert.equal(classifyExempt({ ...none, enabledExtension: true }, EX1, LOCKER, HOOK), 'allowed');
-  assert.equal(classifyExempt(none, LOCKER.toUpperCase().replace('0X', '0x'), LOCKER, HOOK), 'allowed');
-  assert.equal(classifyExempt(none, HOOK, LOCKER, HOOK), 'allowed');
-  // a failed read is never reported as allowed or as refused
-  assert.equal(classifyExempt({ exemptAllowed: false, enabledEscrow: undefined, enabledExtension: false }, EX1, LOCKER, HOOK), 'unknown');
-  assert.equal(classifyExempt({ exemptAllowed: undefined, enabledEscrow: undefined, enabledExtension: undefined }, EX1, LOCKER, HOOK), 'unknown');
+test('allowlist helpers: parse, seeded count, fold events', () => {
+  assert.deepEqual(parseAllowedInput(' 0xa, 0xb\n0xc  '), ['0xa', '0xb', '0xc']);
+  assert.deepEqual(parseAllowedInput(''), []);
+  assert.equal(seededAllowedCount(3, 2), 7); // defaults + escrow + locker + extensions
+  assert.deepEqual(
+    foldAllowed([
+      { account: '0xAA', allowed: true },
+      { account: '0xBB', allowed: true },
+      { account: '0xaa', allowed: false },
+    ]),
+    ['0xbb']
+  );
 });
 
-test('validateLaunch: exempt entries must be allowlisted by the launcher owner', () => {
-  const f = venueForm(`${EX1}, ${EX2}`);
-  const c = ctx({ exemptStatus: { [EX1]: 'allowed', [EX2]: 'not-allowed' } });
-  const errs = errorsOf(f, c, 'tax.exempt');
-  assert.equal(errs.length, 1);
-  assert.ok(errs[0].message.includes(EX2));
-  assert.ok(errs[0].message.includes(EXEMPT_NOT_ALLOWED));
-  assert.equal(EXEMPT_NOT_ALLOWED, 'not allowed by the launcher owner');
-  assert.throws(() => buildLaunchConfigV2(f, c));
-  // all allowed: builds, entries go out in order
-  const ok = ctx({ exemptStatus: { [EX1]: 'allowed', [EX2]: 'allowed' } });
-  assert.deepEqual(buildLaunchConfigV2(f, ok).config.tax.exempt.map((a) => a.toLowerCase()), [EX1, EX2]);
-});
-
-test('validateLaunch: an unchecked exempt entry blocks, no factory means no check, duplicates fail', () => {
-  const f = venueForm(EX1);
-  assert.equal(errorsOf(f, ctx({ exemptStatus: {} }), 'tax.exempt').length, 1); // not read yet
-  assert.equal(errorsOf(f, ctx({ exemptStatus: { [EX1]: 'unknown' } }), 'tax.exempt').length, 1);
-  assert.equal(errorsOf(f, ctx({ exemptStatus: null }), 'tax.exempt').length, 0); // preview, nothing can be sent
-  const d = venueForm(`${EX1} ${EX1.toUpperCase().replace('0X', '0x')}`);
-  assert.ok(errorsOf(d, ctx({ exemptStatus: { [EX1]: 'allowed' } }), 'tax.exempt').some((e) => /twice/.test(e.message)));
-  // no tax mode: the allowlist is never consulted
-  assert.equal(errorsOf(form(), ctx({ exemptStatus: {} }), 'tax').length, 0);
+test('MAX_ALLOWED matches the contract constant', (t) => {
+  const src = new URL('../../src/Constants.sol', import.meta.url);
+  if (!existsSync(src)) return t.skip('Constants.sol not found');
+  assert.equal(C.MAX_ALLOWED, Number(/MAX_ALLOWED\s*=\s*(\d+)/.exec(readFileSync(src, 'utf8'))?.[1]));
 });
 
 // ── escrow claim (D57) ──────────────────────────────────────────────────────────────────────────
@@ -306,11 +281,10 @@ test('factory abi carries the additive reads and errors the form uses', () => {
   for (const name of [
     'minLpFee',
     'minProtocolSkimShareBps',
-    'exemptAllowed',
-    'enabledEscrows',
-    'enabledExtensions',
+    'defaultAllowed',
+    'setDefaultAllowed',
     'owner',
-    'ExemptNotAllowed',
+    'InvalidRestrictionConfig',
     'ReferralCapAboveProtocolFloor',
     'LpFeeBelowMinimum',
     'StringTooLong',

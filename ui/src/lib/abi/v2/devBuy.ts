@@ -199,71 +199,19 @@ export const devBuyV2Abi = [
             ]
           },
           {
-            "name": "tax",
+            "name": "restriction",
             "type": "tuple",
-            "internalType": "struct IArtCoinsFactoryV2.TaxConfigV2",
+            "internalType": "struct IArtCoinsFactoryV2.RestrictionConfigV2",
             "components": [
               {
-                "name": "mode",
-                "type": "uint8",
-                "internalType": "uint8"
+                "name": "restricted",
+                "type": "bool",
+                "internalType": "bool"
               },
               {
-                "name": "taxBps",
-                "type": "uint16",
-                "internalType": "uint16"
-              },
-              {
-                "name": "taxBpsMax",
-                "type": "uint16",
-                "internalType": "uint16"
-              },
-              {
-                "name": "taxSink",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "venueAdmin",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "exempt",
+                "name": "allowed",
                 "type": "address[]",
                 "internalType": "address[]"
-              },
-              {
-                "name": "venues",
-                "type": "tuple[]",
-                "internalType": "struct IArtCoinsFactoryV2.TaxVenue[]",
-                "components": [
-                  {
-                    "name": "kind",
-                    "type": "uint8",
-                    "internalType": "uint8"
-                  },
-                  {
-                    "name": "factory",
-                    "type": "address",
-                    "internalType": "address"
-                  },
-                  {
-                    "name": "initCodeHash",
-                    "type": "bytes32",
-                    "internalType": "bytes32"
-                  },
-                  {
-                    "name": "counterToken",
-                    "type": "address",
-                    "internalType": "address"
-                  },
-                  {
-                    "name": "v3Fee",
-                    "type": "uint24",
-                    "internalType": "uint24"
-                  }
-                ]
               }
             ]
           },
@@ -469,6 +417,11 @@ export const devBuyV2Abi = [
   {
     "type": "error",
     "name": "Unauthorized",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UnexpectedEth",
     "inputs": []
   },
   {

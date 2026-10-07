@@ -32,7 +32,7 @@ export function defaultLaunchForm(protocolBps = 2_000): LaunchForm {
       startPercent: FEE_DEFAULTS.mevStartPercent,
       windowMin: FEE_DEFAULTS.mevWindowMin,
     },
-    tax: { mode: 0, taxPercent: 0, maxPercent: 0, sink: 'dead', venueAdmin: '', exempt: '' },
+    restriction: { restricted: false, allowed: '' },
     rewards: {
       preset: 'recommended',
       // the factory appends the protocol slot, so the project side sums to 10_000 - protocolBps

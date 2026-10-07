@@ -1,7 +1,7 @@
 // 5b. deploy page against a v2 stack deployed on the fork (project "v2", needs E2E_V2_JSON):
 //   - a stranger's launch is blocked while the factory is deprecated
 //   - after setDeprecated(false) (owner tx) the form validates: byte caps, referral cap max, min lp fee,
-//     exempt allowlist; then a launch succeeds through the ui
+//     restriction allowlist; then a launch succeeds through the ui
 //   - the new v2 coin trades through the widget and its hookData names the wallet as the refund address
 //   - its referral page reads the fee escrow
 import { test, expect, connectWallet, isNoise, infoRow } from './fixtures';
@@ -109,19 +109,17 @@ test('after setDeprecated(false) the form validates and a launch succeeds', asyn
   await expect(page.getByText(/^Referral cap: 0\.4%/)).toBeVisible();
   await expect(page.getByText(/Referral cap max \(these fees\): 0\.4% of volume/)).toBeVisible();
 
-  // ── tax: an exempt address the launcher owner did not allow is refused ──
-  await step(page, /Token tax/).click();
-  await page.getByRole('button', { name: /Venue tax \(VENUE\)/ }).click();
-  await page.getByRole('spinbutton').nth(1).fill('5'); // maximum tax
-  await page.getByRole('spinbutton').nth(0).fill('1'); // starting tax
-  await page.getByPlaceholder('0x..., 0x...').fill('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2') // weth: a contract the owner never allowlisted;
-  await expect(page.getByText(/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2: not allowed by the launcher owner/i)).toBeVisible({ timeout: 30_000 });
+  // ── restriction: a zero address on the allowlist is refused ──
+  await step(page, /Transfer restriction/).click();
+  await page.getByRole('checkbox', { name: /Restrict transfers/ }).check();
+  await page.getByPlaceholder('0x..., 0x...').fill('0x0000000000000000000000000000000000000000');
+  await expect(page.getByText(/is not a valid nonzero address/i)).toBeVisible();
   await step(page, /Review and launch/).click();
   await expect(deployButton(page)).toBeDisabled();
   await expect(deployButton(page)).toContainText(/problem/);
-  await step(page, /Token tax/).click();
+  await step(page, /Transfer restriction/).click();
   await page.getByPlaceholder('0x..., 0x...').fill('');
-  await page.getByRole('button', { name: /^No tax/ }).click();
+  await page.getByRole('checkbox', { name: /Restrict transfers/ }).uncheck();
 
   // ── review and launch ──
   await step(page, /Review and launch/).click();

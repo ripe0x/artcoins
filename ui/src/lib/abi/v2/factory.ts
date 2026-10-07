@@ -219,71 +219,19 @@ export const factoryV2Abi = [
             ]
           },
           {
-            "name": "tax",
+            "name": "restriction",
             "type": "tuple",
-            "internalType": "struct IArtCoinsFactoryV2.TaxConfigV2",
+            "internalType": "struct IArtCoinsFactoryV2.RestrictionConfigV2",
             "components": [
               {
-                "name": "mode",
-                "type": "uint8",
-                "internalType": "uint8"
+                "name": "restricted",
+                "type": "bool",
+                "internalType": "bool"
               },
               {
-                "name": "taxBps",
-                "type": "uint16",
-                "internalType": "uint16"
-              },
-              {
-                "name": "taxBpsMax",
-                "type": "uint16",
-                "internalType": "uint16"
-              },
-              {
-                "name": "taxSink",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "venueAdmin",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "exempt",
+                "name": "allowed",
                 "type": "address[]",
                 "internalType": "address[]"
-              },
-              {
-                "name": "venues",
-                "type": "tuple[]",
-                "internalType": "struct IArtCoinsFactoryV2.TaxVenue[]",
-                "components": [
-                  {
-                    "name": "kind",
-                    "type": "uint8",
-                    "internalType": "uint8"
-                  },
-                  {
-                    "name": "factory",
-                    "type": "address",
-                    "internalType": "address"
-                  },
-                  {
-                    "name": "initCodeHash",
-                    "type": "bytes32",
-                    "internalType": "bytes32"
-                  },
-                  {
-                    "name": "counterToken",
-                    "type": "address",
-                    "internalType": "address"
-                  },
-                  {
-                    "name": "v3Fee",
-                    "type": "uint24",
-                    "internalType": "uint24"
-                  }
-                ]
               }
             ]
           },
@@ -338,6 +286,19 @@ export const factoryV2Abi = [
       }
     ],
     "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "defaultAllowed",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -550,71 +511,19 @@ export const factoryV2Abi = [
             ]
           },
           {
-            "name": "tax",
+            "name": "restriction",
             "type": "tuple",
-            "internalType": "struct IArtCoinsFactoryV2.TaxConfigV2",
+            "internalType": "struct IArtCoinsFactoryV2.RestrictionConfigV2",
             "components": [
               {
-                "name": "mode",
-                "type": "uint8",
-                "internalType": "uint8"
+                "name": "restricted",
+                "type": "bool",
+                "internalType": "bool"
               },
               {
-                "name": "taxBps",
-                "type": "uint16",
-                "internalType": "uint16"
-              },
-              {
-                "name": "taxBpsMax",
-                "type": "uint16",
-                "internalType": "uint16"
-              },
-              {
-                "name": "taxSink",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "venueAdmin",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "exempt",
+                "name": "allowed",
                 "type": "address[]",
                 "internalType": "address[]"
-              },
-              {
-                "name": "venues",
-                "type": "tuple[]",
-                "internalType": "struct IArtCoinsFactoryV2.TaxVenue[]",
-                "components": [
-                  {
-                    "name": "kind",
-                    "type": "uint8",
-                    "internalType": "uint8"
-                  },
-                  {
-                    "name": "factory",
-                    "type": "address",
-                    "internalType": "address"
-                  },
-                  {
-                    "name": "initCodeHash",
-                    "type": "bytes32",
-                    "internalType": "bytes32"
-                  },
-                  {
-                    "name": "counterToken",
-                    "type": "address",
-                    "internalType": "address"
-                  },
-                  {
-                    "name": "v3Fee",
-                    "type": "uint24",
-                    "internalType": "uint24"
-                  }
-                ]
               }
             ]
           },
@@ -842,71 +751,19 @@ export const factoryV2Abi = [
             ]
           },
           {
-            "name": "tax",
+            "name": "restriction",
             "type": "tuple",
-            "internalType": "struct IArtCoinsFactoryV2.TaxConfigV2",
+            "internalType": "struct IArtCoinsFactoryV2.RestrictionConfigV2",
             "components": [
               {
-                "name": "mode",
-                "type": "uint8",
-                "internalType": "uint8"
+                "name": "restricted",
+                "type": "bool",
+                "internalType": "bool"
               },
               {
-                "name": "taxBps",
-                "type": "uint16",
-                "internalType": "uint16"
-              },
-              {
-                "name": "taxBpsMax",
-                "type": "uint16",
-                "internalType": "uint16"
-              },
-              {
-                "name": "taxSink",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "venueAdmin",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "exempt",
+                "name": "allowed",
                 "type": "address[]",
                 "internalType": "address[]"
-              },
-              {
-                "name": "venues",
-                "type": "tuple[]",
-                "internalType": "struct IArtCoinsFactoryV2.TaxVenue[]",
-                "components": [
-                  {
-                    "name": "kind",
-                    "type": "uint8",
-                    "internalType": "uint8"
-                  },
-                  {
-                    "name": "factory",
-                    "type": "address",
-                    "internalType": "address"
-                  },
-                  {
-                    "name": "initCodeHash",
-                    "type": "bytes32",
-                    "internalType": "bytes32"
-                  },
-                  {
-                    "name": "counterToken",
-                    "type": "address",
-                    "internalType": "address"
-                  },
-                  {
-                    "name": "v3Fee",
-                    "type": "uint24",
-                    "internalType": "uint24"
-                  }
-                ]
               }
             ]
           },
@@ -1107,25 +964,6 @@ export const factoryV2Abi = [
   {
     "type": "function",
     "name": "enabledMevModules",
-    "inputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "exemptAllowed",
     "inputs": [
       {
         "name": "",
@@ -1416,71 +1254,19 @@ export const factoryV2Abi = [
             ]
           },
           {
-            "name": "tax",
+            "name": "restriction",
             "type": "tuple",
-            "internalType": "struct IArtCoinsFactoryV2.TaxConfigV2",
+            "internalType": "struct IArtCoinsFactoryV2.RestrictionConfigV2",
             "components": [
               {
-                "name": "mode",
-                "type": "uint8",
-                "internalType": "uint8"
+                "name": "restricted",
+                "type": "bool",
+                "internalType": "bool"
               },
               {
-                "name": "taxBps",
-                "type": "uint16",
-                "internalType": "uint16"
-              },
-              {
-                "name": "taxBpsMax",
-                "type": "uint16",
-                "internalType": "uint16"
-              },
-              {
-                "name": "taxSink",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "venueAdmin",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "exempt",
+                "name": "allowed",
                 "type": "address[]",
                 "internalType": "address[]"
-              },
-              {
-                "name": "venues",
-                "type": "tuple[]",
-                "internalType": "struct IArtCoinsFactoryV2.TaxVenue[]",
-                "components": [
-                  {
-                    "name": "kind",
-                    "type": "uint8",
-                    "internalType": "uint8"
-                  },
-                  {
-                    "name": "factory",
-                    "type": "address",
-                    "internalType": "address"
-                  },
-                  {
-                    "name": "initCodeHash",
-                    "type": "bytes32",
-                    "internalType": "bytes32"
-                  },
-                  {
-                    "name": "counterToken",
-                    "type": "address",
-                    "internalType": "address"
-                  },
-                  {
-                    "name": "v3Fee",
-                    "type": "uint24",
-                    "internalType": "uint24"
-                  }
-                ]
               }
             ]
           },
@@ -1581,6 +1367,19 @@ export const factoryV2Abi = [
   },
   {
     "type": "function",
+    "name": "setDefaultAllowed",
+    "inputs": [
+      {
+        "name": "accounts",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setDefaultProtocolFeeBps",
     "inputs": [
       {
@@ -1629,24 +1428,6 @@ export const factoryV2Abi = [
       },
       {
         "name": "enabled",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setExemptAllowed",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "allowed",
         "type": "bool",
         "internalType": "bool"
       }
@@ -1845,6 +1626,19 @@ export const factoryV2Abi = [
   },
   {
     "type": "event",
+    "name": "DefaultAllowedSet",
+    "inputs": [
+      {
+        "name": "accounts",
+        "type": "address[]",
+        "indexed": false,
+        "internalType": "address[]"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "DefaultProtocolFeeBpsSet",
     "inputs": [
       {
@@ -1925,25 +1719,6 @@ export const factoryV2Abi = [
       },
       {
         "name": "enabled",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "ExemptAllowedSet",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "allowed",
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
@@ -2462,71 +2237,19 @@ export const factoryV2Abi = [
             ]
           },
           {
-            "name": "tax",
+            "name": "restriction",
             "type": "tuple",
-            "internalType": "struct IArtCoinsFactoryV2.TaxConfigV2",
+            "internalType": "struct IArtCoinsFactoryV2.RestrictionConfigV2",
             "components": [
               {
-                "name": "mode",
-                "type": "uint8",
-                "internalType": "uint8"
+                "name": "restricted",
+                "type": "bool",
+                "internalType": "bool"
               },
               {
-                "name": "taxBps",
-                "type": "uint16",
-                "internalType": "uint16"
-              },
-              {
-                "name": "taxBpsMax",
-                "type": "uint16",
-                "internalType": "uint16"
-              },
-              {
-                "name": "taxSink",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "venueAdmin",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "exempt",
+                "name": "allowed",
                 "type": "address[]",
                 "internalType": "address[]"
-              },
-              {
-                "name": "venues",
-                "type": "tuple[]",
-                "internalType": "struct IArtCoinsFactoryV2.TaxVenue[]",
-                "components": [
-                  {
-                    "name": "kind",
-                    "type": "uint8",
-                    "internalType": "uint8"
-                  },
-                  {
-                    "name": "factory",
-                    "type": "address",
-                    "internalType": "address"
-                  },
-                  {
-                    "name": "initCodeHash",
-                    "type": "bytes32",
-                    "internalType": "bytes32"
-                  },
-                  {
-                    "name": "counterToken",
-                    "type": "address",
-                    "internalType": "address"
-                  },
-                  {
-                    "name": "v3Fee",
-                    "type": "uint24",
-                    "internalType": "uint24"
-                  }
-                ]
               }
             ]
           },
@@ -2635,17 +2358,6 @@ export const factoryV2Abi = [
   },
   {
     "type": "error",
-    "name": "ExemptNotAllowed",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "ExtensionNotEnabled",
     "inputs": []
   },
@@ -2698,12 +2410,12 @@ export const factoryV2Abi = [
   },
   {
     "type": "error",
-    "name": "InvalidRewardSlots",
+    "name": "InvalidRestrictionConfig",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "InvalidTaxConfig",
+    "name": "InvalidRewardSlots",
     "inputs": []
   },
   {
@@ -2807,6 +2519,17 @@ export const factoryV2Abi = [
   },
   {
     "type": "error",
+    "name": "RecipientCannotReceive",
+    "inputs": [
+      {
+        "name": "recipient",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "ReentrancyGuardReentrantCall",
     "inputs": []
   },
@@ -2853,17 +2576,6 @@ export const factoryV2Abi = [
     "inputs": [
       {
         "name": "puller",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "TaxSinkNotAllowed",
-    "inputs": [
-      {
-        "name": "sink",
         "type": "address",
         "internalType": "address"
       }

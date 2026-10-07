@@ -3,14 +3,14 @@ import { useAccount, useReadContract } from 'wagmi';
 import TokenConfigForm from '../components/TokenConfigForm';
 import PoolConfigForm from '../components/PoolConfigForm';
 import AntiSniperForm from '../components/AntiSniperForm';
-import TaxForm from '../components/TaxForm';
+import RestrictionForm from '../components/RestrictionForm';
 import RewardsForm from '../components/RewardsForm';
 import ExtensionsForm from '../components/ExtensionsForm';
 import ReviewAndDeploy from '../components/ReviewAndDeploy';
 import type { LaunchForm } from '../lib/types';
 import { CURRENT } from '../lib/deployments.generated';
 import { getV2Stack } from '../lib/v2';
-import { useExemptStatus, useFactoryStateV1, useFactoryStateV2, type FactoryState } from '../lib/factoryState';
+import { useFactoryStateV1, useFactoryStateV2, type FactoryState } from '../lib/factoryState';
 import { factoryV2Abi } from '../lib/abi/v2/factory';
 import { maxReferralCapSkim } from '../lib/launchRules';
 import { useAddressesOrNull } from '../lib/useChain';
@@ -86,6 +86,7 @@ export default function DeployPage() {
         defaultProtocolFeeBps: cur.defaultProtocolFeeBps,
         minProtocolSkimShareBps: 0,
         minLpFee: 0,
+        defaultAllowed: [],
         refetch: () => undefined,
       };
 
@@ -105,13 +106,6 @@ export default function DeployPage() {
       });
     }
   }
-
-  // D47: every exempt entry is checked against the factory's allowlist (VENUE mode only, HARD sends none)
-  const exemptEntries = useMemo(
-    () => (form.tax.mode === 1 ? form.tax.exempt.split(/[\s,]+/).filter(Boolean) : []),
-    [form.tax.mode, form.tax.exempt]
-  );
-  const exemptStatus = useExemptStatus(v2?.factory, exemptEntries, v2?.locker ?? ZERO_ADDRESS, v2?.hook ?? ZERO_ADDRESS);
 
   // the defaults (lp fee, bounty, referral cap) come from coin 111. once the factory answers, pull them inside the
   // factory's limits (min lp fee, bounty ceiling, referral cap maximum) so the untouched form is launchable.
@@ -147,11 +141,11 @@ export default function DeployPage() {
       protocolBps: state.defaultProtocolFeeBps,
       minProtocolSkimShareBps: state.minProtocolSkimShareBps,
       minLpFee: state.minLpFee,
-      exemptStatus,
+      defaultAllowedCount: state.defaultAllowed.length,
       deployFee: state.deployFee,
       salt,
     }),
-    [address, v2, state.defaultProtocolFeeBps, state.minProtocolSkimShareBps, state.minLpFee, exemptStatus, state.deployFee, salt]
+    [address, v2, state.defaultProtocolFeeBps, state.minProtocolSkimShareBps, state.minLpFee, state.defaultAllowed.length, state.deployFee, salt]
   );
   const issues = useMemo(() => validateLaunch(form, ctx), [form, ctx]);
 
@@ -209,8 +203,8 @@ export default function DeployPage() {
         <AntiSniperForm value={form.mev} onChange={patch('mev')} issues={issues} baselinePercent={form.pool.baselineSkimPercent} moduleConfigured={!!v2 && v2.mevModule !== ZERO_ADDRESS} />
       </StepCard>
 
-      <StepCard step={4} title="Token tax" subtitle="Optional, fixed at launch" isOpen={openStep === 4} onToggle={() => toggle(4)}>
-        <TaxForm value={form.tax} onChange={patch('tax')} issues={issues} exemptStatus={exemptStatus} factoryConfigured={!!v2} />
+      <StepCard step={4} title="Transfer restriction" subtitle="Optional, set at launch" isOpen={openStep === 4} onToggle={() => toggle(4)}>
+        <RestrictionForm value={form.restriction} onChange={patch('restriction')} issues={issues} />
       </StepCard>
 
       <StepCard step={5} title="LP rewards" subtitle="Who earns the fees, and the position ranges" isOpen={openStep === 5} onToggle={() => toggle(5)}>

@@ -16,7 +16,6 @@ import {
 } from '../src/lib/encodeV2';
 import { defaultLaunchForm } from '../src/lib/launchForm';
 import { presetPositions } from '../src/lib/launchDefaults';
-import { DEAD } from '../src/lib/constants';
 import type { LaunchForm } from '../src/lib/types';
 
 const SENDER: Address = '0x00000000000000000000000000000000000A11CE'.replace(/A11CE$/, 'a11ce') as Address;
@@ -31,7 +30,7 @@ const ctx = (over: Partial<LaunchContext> = {}): LaunchContext => ({
   protocolBps: 2000,
   minProtocolSkimShareBps: 1000, // the deploy script value (D52), 1667 would leave the default form no room for a referral cap
   minLpFee: 3000,
-  exemptStatus: null,
+  defaultAllowedCount: 0,
   deployFee: 69_000_000_000_000_000n,
   salt: `0x${'ab'.repeat(32)}` as Hex,
   ...over,
@@ -54,14 +53,14 @@ test('deployToken selector and tuple signature match the compiled interface arti
   const entry = Object.entries(ids).find(([sig]) => sig.startsWith('deployToken('));
   assert.ok(entry);
   assert.equal(selector, entry![1]);
-  assert.equal(selector, '73dd3f0f');
+  assert.equal(selector, 'c816d5b9');
 });
 
 test('default form builds a config that encodes and decodes through the factory abi', () => {
   const c = ctx();
   const built = buildLaunchConfigV2(form(), c);
   const data = encodeFunctionData({ abi: factoryV2Abi, functionName: 'deployToken', args: [built.config] });
-  assert.equal(data.slice(0, 10), '0x73dd3f0f');
+  assert.equal(data.slice(0, 10), '0xc816d5b9');
   const back = decodeFunctionData({ abi: factoryV2Abi, data });
   assert.equal(back.functionName, 'deployToken');
   const cfg = (back.args as readonly unknown[])[0] as typeof built.config;
@@ -155,19 +154,51 @@ test('mev on without a configured module is refused, not silently disabled', () 
   assert.ok(validateLaunch(form(), ctx({ mevModule: '0x0000000000000000000000000000000000000000' })).some((i) => i.field === 'mev'));
 });
 
-test('tax modes encode as the token and factory expect', () => {
+const A1 = '0x00000000000000000000000000000000000000a1';
+const A2 = '0x00000000000000000000000000000000000000a2';
+const restrictErrs = (f: ReturnType<typeof form>, c = ctx()) => validateLaunch(f, c).filter((i) => i.severity === 'error' && i.field === 'restriction.allowed');
+
+test('restriction encodes as the factory expects', () => {
   const f = form();
-  f.tax = { mode: 1, taxPercent: 2, maxPercent: 5, sink: 'dead', venueAdmin: '', exempt: '' };
-  let { config } = buildLaunchConfigV2(f, ctx());
-  assert.deepEqual([config.tax.mode, config.tax.taxBps, config.tax.taxBpsMax, config.tax.taxSink], [1, 200, 500, DEAD]);
-  f.tax.sink = 'bounty';
-  ({ config } = buildLaunchConfigV2(f, ctx()));
-  assert.equal(config.tax.taxSink, '0x1111111111111111111111111111111111111111'); // defaults to the sender
-  f.tax = { mode: 2, taxPercent: 3, maxPercent: 3, sink: 'dead', venueAdmin: '', exempt: '0x2222222222222222222222222222222222222222' };
-  ({ config } = buildLaunchConfigV2(f, ctx()));
-  assert.deepEqual([config.tax.mode, config.tax.taxBps, config.tax.taxBpsMax, config.tax.exempt.length], [2, 0, 0, 0]);
-  f.tax = { mode: 1, taxPercent: 2, maxPercent: 25, sink: 'dead', venueAdmin: '', exempt: '' };
-  assert.ok(validateLaunch(f, ctx()).some((i) => i.field === 'tax.max'));
+  assert.deepEqual(buildLaunchConfigV2(f, ctx()).config.restriction, { restricted: false, allowed: [] });
+  f.restriction = { restricted: true, allowed: '' };
+  assert.deepEqual(buildLaunchConfigV2(f, ctx()).config.restriction, { restricted: true, allowed: [] });
+  f.restriction = { restricted: true, allowed: `${A1}, ${A2}` };
+  assert.deepEqual(buildLaunchConfigV2(f, ctx()).config.restriction.allowed.map((a) => a.toLowerCase()), [A1, A2]);
+});
+
+test('restriction validators mirror the factory', () => {
+  const f = form();
+  // unrestricted must carry an empty allowlist
+  f.restriction = { restricted: false, allowed: A1 };
+  assert.equal(restrictErrs(f).length, 1);
+  assert.throws(() => buildLaunchConfigV2(f, ctx()));
+  // no zero addresses, no malformed entries, no duplicates
+  f.restriction = { restricted: true, allowed: '0x0000000000000000000000000000000000000000' };
+  assert.equal(restrictErrs(f).length, 1);
+  f.restriction = { restricted: true, allowed: 'nope' };
+  assert.equal(restrictErrs(f).length, 1);
+  f.restriction = { restricted: true, allowed: `${A1} ${A1.toUpperCase().replace('0X', '0x')}` };
+  assert.ok(restrictErrs(f).some((e) => /twice/.test(e.message)));
+});
+
+test('restriction allowlist is bounded by MAX_ALLOWED including seeded entries', () => {
+  const list = (n: number) => Array.from({ length: n }, (_, i) => `0x${(i + 1).toString(16).padStart(40, '0')}`).join(',');
+  const f = form(); // no extensions: seeded = defaultAllowed + locker + escrow
+  f.restriction = { restricted: true, allowed: list(62) };
+  assert.equal(restrictErrs(f).length, 0);
+  f.restriction = { restricted: true, allowed: list(63) };
+  assert.equal(restrictErrs(f).length, 1);
+  assert.equal(restrictErrs(f, ctx({ defaultAllowedCount: 2 })).length, 1); // 2 + 2 + 61 fits, 2 + 2 + 63 does not
+  f.restriction = { restricted: true, allowed: list(60) };
+  assert.equal(restrictErrs(f, ctx({ defaultAllowedCount: 2 })).length, 0);
+  // an enabled extension is seeded too
+  f.extensions.devBuy.enabled = true;
+  f.restriction = { restricted: true, allowed: list(62) };
+  assert.equal(restrictErrs(f).length, 1);
+  // the cap applies to a restricted coin only
+  f.restriction = { restricted: false, allowed: '' };
+  assert.equal(restrictErrs(f).length, 0);
 });
 
 test('ticks must be aligned and positions single sided', () => {

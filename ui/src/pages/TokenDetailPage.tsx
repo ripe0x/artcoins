@@ -10,10 +10,10 @@ import CopyableAddress from '../components/CopyableAddress';
 import SwapWidget from '../components/SwapWidget';
 import TokenMetadataModal from '../components/TokenMetadataModal';
 import OfficialBadge from '../components/OfficialBadge';
+import RestrictionPanel from '../components/RestrictionPanel';
 import { uniswapTokenUrl } from '../lib/config';
 import { stateViewAbi } from '../lib/abi';
 import { tokenV1Abi } from '../lib/abi/v1/token';
-import { tokenV2Abi } from '../lib/abi/v2/token';
 import { hookV1Abi } from '../lib/abi/v1/hook';
 import { hookV2Abi } from '../lib/abi/v2/hook';
 import { lockerV1Abi } from '../lib/abi/v1/locker';
@@ -130,26 +130,18 @@ export default function TokenDetailPage() {
   const contractURI = uriQuery.data;
   const uriState: 'loading' | 'ready' | 'failed' = uriQuery.isError ? 'failed' : uriQuery.data !== undefined ? 'ready' : 'loading';
 
-  // v2: independent confirmation from the factory, v2 token tax config
+  // v2: independent confirmation from the factory
   const { data: v2Data } = useReadContracts({
     contracts:
       record && record.version === 2
         ? ([
             { address: record.factory, abi: factoryV2Abi, functionName: 'isArtCoin', args: [record.token] },
-            { address: record.token, abi: tokenV2Abi, functionName: 'taxMode' },
-            { address: record.token, abi: tokenV2Abi, functionName: 'taxBps' },
-            { address: record.token, abi: tokenV2Abi, functionName: 'taxBpsMax' },
-            { address: record.token, abi: tokenV2Abi, functionName: 'taxSink' },
           ] as const)
         : [],
     allowFailure: true,
     query: { enabled: !!record && record.version === 2 },
   });
   const isArtCoin = v2Data?.[0]?.result as boolean | undefined;
-  const taxMode = v2Data?.[1]?.result as number | undefined;
-  const taxBps = v2Data?.[2]?.result as number | undefined;
-  const taxBpsMax = v2Data?.[3]?.result as number | undefined;
-  const taxSink = v2Data?.[4]?.result as Address | undefined;
 
   // ── 3. anti sniper state ──
   // the legacy stack's mev modules are older contracts with other abis: no anti sniper reads for them
@@ -370,19 +362,9 @@ export default function TokenDetailPage() {
             label="Creator flag"
             value={<span title="Set by the token's own admin. It is not a trust signal.">{creatorConfirmed ? 'admin set the verified flag' : 'not set'}</span>}
           />
-          {record.version === 2 && taxMode !== undefined && (
-            <InfoRow
-              label="Tax"
-              value={
-                taxMode === 0
-                  ? 'none'
-                  : taxMode === 1
-                    ? `venue tax ${((taxBps ?? 0) / 100).toFixed(2)}% (max ${((taxBpsMax ?? 0) / 100).toFixed(2)}%) to ${taxSink ? shortAddr(taxSink) : '?'}`
-                    : 'hard mode, canonical flows only'
-              }
-            />
-          )}
         </InfoCard>
+
+        {record.version === 2 && <RestrictionPanel token={record.token} admin={currentAdmin} fromBlock={record.blockNumber} />}
 
         <InfoCard title="Pool">
           <InfoRow label="Pair" value={pairLabel} />
