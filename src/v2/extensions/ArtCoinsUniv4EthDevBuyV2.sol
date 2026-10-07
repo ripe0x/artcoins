@@ -49,16 +49,23 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 ///         boundary, so it can fill partially only if the buy exhausts all
 ///         liquidity. Unspent eth is refunded to `refundRecipient` fixed in
 ///         `extensionData`. The hook credits any unused skim to the fee escrow
-///         under this contract (the PoolManager caller). The contract measures
-///         the credit its own swap added, claims the escrow balance to itself
-///         and forwards that amount with the unspent eth to `refundRecipient`.
-///         `receive` accepts the escrow payout. The contract has no owner and
-///         no rescue.
+///         under this contract (the PoolManager caller). The contract opts into
+///         `selfClaimOnly` on that escrow before the swap, claims its whole
+///         escrow balance to itself after it and forwards the claimed eth with
+///         the unspent eth to `refundRecipient`. `receive` accepts eth only from
+///         the escrow during that claim. Invariant: after each transaction the
+///         contract holds no eth and no escrow credit.
 contract ArtCoinsUniv4EthDevBuyV2 is ReentrancyGuard, IUnlockCallback, IArtCoinsUniv4EthDevBuyV2 {
     /// @notice The only caller of `receiveTokens`.
     address public immutable factory;
     /// @notice The Uniswap v4 PoolManager the pools live on.
     IPoolManager public immutable poolManager;
+
+    /// @dev Escrow whose claim payout `receive` currently accepts. Set only
+    ///      around the claim call.
+    address private _payer;
+    /// @dev Escrows this contract has opted into `selfClaimOnly` on.
+    mapping(address escrow => bool) private _optedIn;
 
     modifier onlyFactory() {
         if (msg.sender != factory) revert Unauthorized();
@@ -74,7 +81,9 @@ contract ArtCoinsUniv4EthDevBuyV2 is ReentrancyGuard, IUnlockCallback, IArtCoins
     }
 
     /// @dev Receives the escrow claim payout in `receiveTokens`.
-    receive() external payable {}
+    receive() external payable {
+        if (msg.sender != _payer) revert UnexpectedEth();
+    }
 
     /// @inheritdoc IArtCoinsExtensionV2
     function receiveTokens(
@@ -102,7 +111,10 @@ contract ArtCoinsUniv4EthDevBuyV2 is ReentrancyGuard, IUnlockCallback, IArtCoins
         ) revert InvalidPoolKey();
 
         address escrow = _escrowOf(poolKey);
-        uint256 creditBefore = _credit(escrow);
+        if (escrow != address(0) && !_optedIn[escrow]) {
+            _optedIn[escrow] = true;
+            IArtCoinsFeeEscrowV2(escrow).setSelfClaimOnly(true);
+        }
 
         (uint256 spent, uint256 out) = abi.decode(
             poolManager.unlock(abi.encode(poolKey, msg.value, recipient, minOut)),
@@ -110,14 +122,14 @@ contract ArtCoinsUniv4EthDevBuyV2 is ReentrancyGuard, IUnlockCallback, IArtCoins
         );
 
         uint256 refunded = msg.value - spent;
-        uint256 own = _credit(escrow) - creditBefore;
-        if (own != 0) {
+        if (escrow != address(0)) {
+            uint256 before = address(this).balance;
+            _payer = escrow;
             try IArtCoinsFeeEscrowV2(escrow).claimTo(address(this), address(0), payable(this)) {}
-            catch {
-                own = 0;
-            }
+                catch {}
+            _payer = address(0);
+            refunded += address(this).balance - before;
         }
-        refunded += own;
         if (refunded != 0) {
             (bool ok,) = refundRecipient.call{value: refunded}("");
             if (!ok) revert EthRefundFailed();
@@ -172,13 +184,5 @@ contract ArtCoinsUniv4EthDevBuyV2 is ReentrancyGuard, IUnlockCallback, IArtCoins
         try IArtCoinsHookV2(hook).globals() returns (IArtCoinsHookV2.HookGlobals memory g) {
             if (g.feeEscrow.code.length != 0) escrow = g.feeEscrow;
         } catch {}
-    }
-
-    /// @dev Native credit of this contract in `escrow`; zero when `escrow` is zero.
-    function _credit(address escrow) private view returns (uint256) {
-        return
-            escrow == address(0)
-                ? 0
-                : IArtCoinsFeeEscrowV2(escrow).balances(address(this), address(0));
     }
 }

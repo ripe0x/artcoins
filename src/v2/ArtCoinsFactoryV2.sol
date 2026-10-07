@@ -294,9 +294,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
             c.token, supply, c.tax, _canon(c), address(this), keccak256(abi.encode(msg.sender, h))
         );
 
-        for (uint256 i; i < c.locker.rewardRecipients.length; ++i) {
-            if (c.locker.rewardRecipients[i] == token) revert RecipientCannotReceive(token);
-        }
+        _checkRecipients(c, token);
 
         PoolKey memory poolKey = _initializePool(c, token);
         PoolId poolId = poolKey.toId();
@@ -424,9 +422,6 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         uint256 sum = protocolBps;
         for (uint256 i; i < n; ++i) {
             if (l.rewardRecipients[i] == address(0)) revert ZeroAddress();
-            if (l.rewardRecipients[i] == address(this)) {
-                revert RecipientCannotReceive(address(this));
-            }
             if (l.rewardBps[i] == 0) revert InvalidRewardSlots();
             sum += l.rewardBps[i];
         }
@@ -441,6 +436,33 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
             sum += l.positionBps[i];
         }
         if (sum != Constants.BPS) revert InvalidPositions();
+    }
+
+    /// @dev Project reward recipients must be able to receive eth or claim an
+    ///      escrow credit. The factory, the coin, the PoolManager, this launch's
+    ///      hook, locker, fee escrows and token deployer, and every extension in
+    ///      the config cannot do either.
+    function _checkRecipients(DeploymentConfigV2 calldata c, address token) internal view {
+        address[8] memory fixedSet = [
+            address(this),
+            token,
+            poolManager,
+            c.pool.hook,
+            c.locker.locker,
+            tokenDeployer,
+            IArtCoinsLpLockerV2(c.locker.locker).feeEscrow(),
+            IArtCoinsHookV2(c.pool.hook).globals().feeEscrow
+        ];
+        uint256 n = c.locker.rewardRecipients.length;
+        for (uint256 i; i < n; ++i) {
+            address r = c.locker.rewardRecipients[i];
+            for (uint256 j; j < 8; ++j) {
+                if (r == fixedSet[j]) revert RecipientCannotReceive(r);
+            }
+            for (uint256 j; j < c.extensions.length; ++j) {
+                if (r == c.extensions[j].extension) revert RecipientCannotReceive(r);
+            }
+        }
     }
 
     function _validateMev(MevConfigV2 calldata m, address hook, uint24 baseline) internal view {

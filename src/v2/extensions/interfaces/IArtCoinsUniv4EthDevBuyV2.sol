@@ -28,6 +28,8 @@ interface IArtCoinsUniv4EthDevBuyV2 is IArtCoinsExtensionV2 {
     error EthRefundFailed();
     error Unauthorized();
     error ZeroAddress();
+    /// @notice Eth sent to the contract outside an escrow claim.
+    error UnexpectedEth();
 
     /// @param token Bought coin.
     /// @param recipient Receiver of the coin.

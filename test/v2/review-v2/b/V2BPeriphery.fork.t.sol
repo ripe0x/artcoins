@@ -19,14 +19,16 @@ import {IArtCoinsFactoryV2} from "../../../../src/v2/interfaces/IArtCoinsFactory
 import {IBurnRouterV2} from "../../../../src/v2/interfaces/IBurnRouterV2.sol";
 import {BurnRouterV2} from "../../../../src/v2/protocol-fee/BurnRouterV2.sol";
 
+import {IArtCoinsFeeEscrowV2} from "../../../../src/v2/interfaces/IArtCoinsFeeEscrowV2.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 contract V2BSink {
     receive() external payable {}
 }
 
-/// @dev Accepts eth only from one sender, so an escrow `claimTo` to it fails.
-contract V2BOnlyFrom {
+/// @dev Rejects eth from every sender except `from`, so an escrow payout to it fails.
+contract V2BRejectsEthExceptFrom {
     address immutable from;
 
     constructor(address from_) {
@@ -315,28 +317,75 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
         assertLt(100 ether - refundTo.balance - poolIn, 3 ether, "only the fair skim kept");
     }
 
-    /// two launches through one dev buy contract. launch 1 refunds to a recipient
-    /// that rejects the escrow, launch 2 to a plain recipient. each launch pays
-    /// out only the credit its own swap created.
+    /// @dev One partial fill launch on a fresh coin and pool through `d`.
+    ///      Returns the eth the pool took, the refund the recipient received and
+    ///      the escrow credit `d` claimed.
+    function _partialFillLaunch(ArtCoinsUniv4EthDevBuyV2 d, address refundTo)
+        internal
+        returns (uint256 spent, uint256 refunded, uint256 claimed)
+    {
+        ArtCoinsTokenV2 tk = _newToken(Constants.TAX_MODE_NONE, bountyEoa, address(hook));
+        PoolKey memory k = hook.initializePool(_params(_defaults(bountyEoa), address(tk)));
+        _modify(k, -600, 0, int256(LIQ), 0); // coin only, about 30 eth deep
+        uint256 before = refundTo.balance;
+        vm.recordLogs();
+        _devBuyCall(d, k, address(tk), 100 ether, makeAddr("v2b08-buyer"), refundTo);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter == address(d)) {
+                (spent,, refunded,) = abi.decode(logs[i].data, (uint256, uint256, uint256, address));
+            } else if (
+                logs[i].emitter == address(escrow)
+                    && logs[i].topics[0] == IArtCoinsFeeEscrowV2.FeesClaimed.selector
+            ) {
+                claimed = abi.decode(logs[i].data, (uint256));
+            }
+        }
+        assertEq(refundTo.balance - before, refunded, "event matches payout");
+        assertEq(refunded, 100 ether - spent + claimed, "refund is unspent eth plus claimed credit");
+        assertEq(address(d).balance, 0, "dev buy holds no eth");
+        assertEq(escrow.balances(address(d), address(0)), 0, "dev buy holds no credit");
+    }
+
+    /// two launches through one dev buy contract. launch 1 refunds to a
+    /// recipient that rejects the escrow, launch 2 to a plain recipient. each
+    /// launch pays out exactly its own unspent eth and claimed credit.
     function test_V2B08_devBuy_refundCreditIsPerLaunch() public onlyFork {
         ArtCoinsUniv4EthDevBuyV2 d = new ArtCoinsUniv4EthDevBuyV2(address(this), POOL_MANAGER);
-        address refund1 = address(new V2BOnlyFrom(address(d)));
-        address refund2 = makeAddr("v2b08-refund2");
-        uint256 kept1;
-        uint256 kept2;
-        for (uint256 i; i < 2; ++i) {
-            ArtCoinsTokenV2 tk = _newToken(Constants.TAX_MODE_NONE, bountyEoa, address(hook));
-            PoolKey memory k = hook.initializePool(_params(_defaults(bountyEoa), address(tk)));
-            _modify(k, -600, 0, int256(LIQ), 0);
-            address refundTo = i == 0 ? refund1 : refund2;
-            uint256 pmEth0 = POOL_MANAGER.balance;
-            _devBuyCall(d, k, address(tk), 100 ether, makeAddr("v2b08-buyer"), refundTo);
-            uint256 kept = 100 ether - refundTo.balance - (POOL_MANAGER.balance - pmEth0);
-            if (i == 0) kept1 = kept;
-            else kept2 = kept;
-            assertEq(escrow.balances(address(d), address(0)), 0, "no credit left in escrow");
-            assertEq(address(d).balance, 0, "nothing retained");
-        }
-        assertApproxEqAbs(kept1, kept2, 0.01 ether, "same refund treatment per launch");
+        address refund1 = address(new V2BRejectsEthExceptFrom(address(d)));
+        (, uint256 refunded1, uint256 claimed1) = _partialFillLaunch(d, refund1);
+        (, uint256 refunded2, uint256 claimed2) = _partialFillLaunch(d, makeAddr("v2b08-refund2"));
+        assertGt(claimed1, 0, "partial fill credited the dev buy");
+        assertGt(claimed2, 0, "partial fill credited the dev buy");
+        assertGt(refunded1, 60 ether);
+        assertGt(refunded2, 60 ether);
+    }
+
+    /// a credit sitting in the escrow when a launch runs is claimed in full by
+    /// that launch and paid to its refund recipient, leaving nothing behind.
+    function test_V2B08_devBuy_seededCreditClaimedInFull() public onlyFork {
+        ArtCoinsUniv4EthDevBuyV2 d = new ArtCoinsUniv4EthDevBuyV2(address(this), POOL_MANAGER);
+        escrow.addDepositor(address(this), false);
+        escrow.storeFeesNative{value: 1 ether}(address(d));
+        (, uint256 refunded, uint256 claimed) = _partialFillLaunch(d, makeAddr("v2b08-refund3"));
+        assertGt(claimed, 1 ether, "seeded credit plus the launch's own");
+        assertGt(refunded, 60 ether);
+    }
+
+    function test_V2B08_devBuy_thirdPartyCannotClaim() public onlyFork {
+        ArtCoinsUniv4EthDevBuyV2 d = new ArtCoinsUniv4EthDevBuyV2(address(this), POOL_MANAGER);
+        _partialFillLaunch(d, makeAddr("v2b08-refund4")); // opts the dev buy into selfClaimOnly
+        assertTrue(escrow.selfClaimOnly(address(d)));
+        escrow.addDepositor(address(this), false);
+        escrow.storeFeesNative{value: 1 ether}(address(d));
+        vm.prank(griefer);
+        vm.expectRevert(IArtCoinsFeeEscrowV2.Unauthorized.selector);
+        escrow.claim(address(d), address(0));
+    }
+
+    function test_V2B08_devBuy_directEthReverts() public onlyFork {
+        ArtCoinsUniv4EthDevBuyV2 d = new ArtCoinsUniv4EthDevBuyV2(address(this), POOL_MANAGER);
+        (bool ok,) = address(d).call{value: 1 wei}("");
+        assertFalse(ok);
     }
 }

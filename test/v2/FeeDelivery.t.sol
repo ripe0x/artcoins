@@ -255,6 +255,11 @@ contract FeeDeliveryTest is Test {
         assertEq(t.balanceOf(address(harness)), 10e18);
     }
 
+    function test_delivery_erc20_noCodeToken_reverts() public {
+        vm.expectRevert();
+        harness.sendErc20(makeAddr("no-code-token"), makeAddr("to"), 3e18);
+    }
+
     function test_delivery_erc20_noReturn_pushed() public {
         NoReturnToken t = new NoReturnToken();
         t.mint(address(harness), 10e18);

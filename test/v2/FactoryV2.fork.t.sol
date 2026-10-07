@@ -1459,12 +1459,29 @@ contract FactoryV2ForkTest is ForkBase {
         revert("TokenCreatedV2 not found");
     }
 
-    function test_launch_rewardRecipientIsFactory_reverts() public onlyFork {
-        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        c.locker.rewardRecipients[0] = address(factory);
-        _expectRevertDeploy(
-            c, abi.encodeWithSelector(IArtCoinsFactoryV2.RecipientCannotReceive.selector, factory)
-        );
+    /// @dev Contracts with no claim path are rejected as reward recipients.
+    function test_launch_rewardRecipientCannotReceive_reverts() public onlyFork {
+        FV2Extension ext = _newExt();
+        address[8] memory bad = [
+            address(factory),
+            POOL_MANAGER,
+            address(hook),
+            locker,
+            factory.tokenDeployer(),
+            address(ext),
+            IArtCoinsLpLockerV2(locker).feeEscrow(),
+            IArtCoinsHookV2(address(hook)).globals().feeEscrow
+        ];
+        for (uint256 i; i < bad.length; ++i) {
+            IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
+            c.locker.rewardRecipients[0] = bad[i];
+            c.extensions = new IArtCoinsFactoryV2.ExtensionConfigV2[](1);
+            c.extensions[0] = _ext(address(ext), 0, 0);
+            _expectRevertDeploy(
+                c,
+                abi.encodeWithSelector(IArtCoinsFactoryV2.RecipientCannotReceive.selector, bad[i])
+            );
+        }
     }
 
     /// @dev The coin address depends on the config hash, so a recipient cannot

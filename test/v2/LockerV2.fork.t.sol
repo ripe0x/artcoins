@@ -614,8 +614,6 @@ contract LockerV2ForkTest is ForkBase {
         (address[] memory r, uint16[] memory b) = _one(address(p));
         PoolKey memory key = _launch(address(coin), r, b, 2);
         _trade(key);
-        vm.prank(owner);
-        locker.setKeeperRewardBps(0);
         locker.collectRewards(address(coin));
         assertApproxEqRel(p.received(), 0.02 ether, 0.01e18); // 1% of 2 eth
         assertGt(coin.balanceOf(address(p)), 0);
@@ -640,8 +638,6 @@ contract LockerV2ForkTest is ForkBase {
         ) = _three();
         PoolKey memory key = _launch(address(coin), r, b, 3);
         _trade(key);
-        vm.prank(owner);
-        locker.setKeeperRewardBps(0);
 
         vm.recordLogs();
         locker.collectRewards(address(coin));

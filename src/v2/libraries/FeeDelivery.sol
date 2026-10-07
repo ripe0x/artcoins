@@ -10,8 +10,9 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 ///         fee swapper and protocol fee controller (DESIGN d1).
 /// @dev    Invariant: once the calling contract is an escrow depositor (and,
 ///         for erc20, the token lets the escrow pull from the caller), every
-///         wei reaches `to` or `to`'s escrow balance. The one revert is an
-///         erc20 `transfer` that returns a value other than true.
+///         wei reaches `to` or `to`'s escrow balance. The exceptions are an
+///         erc20 `transfer` that returns false and a token without code, which
+///         revert the call.
 ///         Callers must reject `to == address(0)` before calling: a native
 ///         push to the zero address succeeds and burns the amount.
 library FeeDelivery {
@@ -36,10 +37,11 @@ library FeeDelivery {
     }
 
     /// @notice Transfers `amount` of `token` to `to`. Accepts tokens that
-    ///         return nothing or `true`. A revert or a token without code
-    ///         counts as failure: the exact amount is approved to `escrow` and
-    ///         `storeFees` pulls it. A returned value other than true reverts
-    ///         with `TransferReturnedFalse` and writes no credit.
+    ///         return nothing or `true`. When `transfer` reverts, the exact
+    ///         amount is approved to `escrow` and `storeFees` pulls it. When
+    ///         `transfer` returns false, the call reverts with
+    ///         `TransferReturnedFalse` and the amount stays with the caller.
+    ///         A token without code reverts in the approval (`ApproveFailed`).
     /// @return pushed True when `to` received the tokens directly (or `amount == 0`).
     function sendErc20(address escrow, address token, address to, uint256 amount)
         internal
