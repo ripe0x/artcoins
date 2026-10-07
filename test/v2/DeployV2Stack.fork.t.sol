@@ -76,7 +76,7 @@ contract DeployV2StackForkTest is ForkStack {
         DeployV2Lib.check(s, p, false);
 
         // the routine's own asserts, spelled out
-        assertEq(uint160(address(s.hook)) & 0x3FFF, 0x2DCC, "hook flags");
+        assertEq(uint160(address(s.hook)) & 0x3FFF, 0x28CC, "hook flags");
         assertTrue(s.escrow.isCoreDepositor(address(s.hook)), "hook core depositor");
         assertTrue(s.escrow.isCoreDepositor(address(s.locker)), "locker core depositor");
         assertTrue(s.escrow.isDepositor(address(s.controller)), "controller depositor");

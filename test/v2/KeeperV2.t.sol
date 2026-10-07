@@ -144,6 +144,21 @@ contract KeeperV2Test is Test {
         _assertKeeperEmpty();
     }
 
+    /// A restricted coin: the keeper is not on the coin allowlist, so it skips
+    /// the coin forward (emits CoinForwardSkipped) instead of reverting, and
+    /// still forwards eth. The keeper reward coin stays in the keeper.
+    function test_keeperV2_restrictedCoin_skipsCoinForward_notRevert() public {
+        Runner runner = new Runner();
+        coin.setRestricted(true);
+        locker.setRewards(0.3 ether, 7e18);
+        vm.expectEmit(true, false, false, true, address(keeper));
+        emit ArtCoinsKeeperV2.CoinForwardSkipped(address(coin), 7e18);
+        runner.run(keeper, address(coin), false, 0);
+        assertEq(address(runner).balance, 0.3 ether, "eth forwarded");
+        assertEq(coin.balanceOf(address(keeper)), 7e18, "coin kept by the keeper");
+        assertEq(coin.balanceOf(address(runner)), 0, "no coin forwarded");
+    }
+
     // ── not an art coin ───────────────────────────────────────────────────
 
     function test_keeperV2_nonArtCoin_reverts() public {

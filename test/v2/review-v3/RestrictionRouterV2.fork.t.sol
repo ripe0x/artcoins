@@ -205,6 +205,56 @@ contract RestrictionRouterV2ForkTest is IntegrationV2Base {
         v2.escrow.claimTo(address(this), coin, payable(address(0xB0B)));
     }
 
+    // ── the accepted residual: restriction is fee priced, not absolute ──────
+
+    function test_restricted_roundTrip_feePriced() public onlyFork {
+        (address coin, PoolKey memory key) = _restrictedLaunch();
+        // a holder's coin round trips through the home pool: buy X for `a` eth,
+        // sell X back for `b` eth. b < a is the round trip fee cost, which is
+        // what restriction charges to move coin out of the home pool.
+        uint256 a = 1 ether;
+        uint256 x = _buy(key, a);
+        uint256 b = _sell(key, x);
+        assertGt(b, 0, "value is mobile");
+        assertLt(b, a, "the round trip costs the home pool fees");
+
+        // a different wallet reaches the coin only through the pool, not a
+        // wallet to wallet send. B buys with its own eth and receives restricted
+        // coin (the undirected allowance delivers it); B still cannot forward it.
+        address bob = address(0xB0B);
+        vm.deal(bob, 2 ether);
+        vm.prank(bob);
+        ur.execute{value: 1 ether}(
+            abi.encodePacked(V4_SWAP, SWEEP), _urBuyInputsTo(key, 1 ether, bob), block.timestamp
+        );
+        uint256 bobCoin = IERC20(coin).balanceOf(bob);
+        assertGt(bobCoin, 0, "B received coin through the pool");
+        vm.prank(bob);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IArtCoinsTokenV2.TransferRestricted.selector, bob, address(0xC0C0), bobCoin
+            )
+        );
+        IERC20(coin).transfer(address(0xC0C0), bobCoin);
+    }
+
+    /// UR buy inputs whose SWEEP returns leftover eth to `to` (TAKE_ALL delivers
+    /// the coin to the UR caller = `to` under the prank).
+    function _urBuyInputsTo(PoolKey memory key, uint256 a, address to)
+        internal
+        view
+        returns (bytes[] memory inputs)
+    {
+        bytes memory actions = abi.encodePacked(SWAP_EXACT_IN_SINGLE, SETTLE_ALL, TAKE_ALL);
+        bytes[] memory params = new bytes[](3);
+        params[0] = abi.encode(URExactInSingle(key, true, uint128(a), uint128(0), _refundData(to)));
+        params[1] = abi.encode(key.currency0, a);
+        params[2] = abi.encode(key.currency1, uint256(0));
+        inputs = new bytes[](2);
+        inputs[0] = abi.encode(actions, params);
+        inputs[1] = abi.encode(address(0), to, uint256(0));
+    }
+
     function test_restricted_locker_paysOnlyFrozenRecipients() public onlyFork {
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c =
             _restrictedConfig(address(new I1EmptyTreasury()));

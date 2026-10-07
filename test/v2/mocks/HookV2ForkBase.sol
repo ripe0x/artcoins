@@ -43,9 +43,8 @@ abstract contract HookV2ForkBase is Test {
     /// @dev same pin as test/v2/harness/ForkBase.sol.
     uint256 internal constant FORK_BLOCK = 26_130_269;
     uint160 internal constant HOOK_FLAGS = uint160(
-        Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
-            | Hooks.AFTER_ADD_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG
-            | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
+        Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG
+            | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
             | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
     );
     int24 internal constant TS = 200;
@@ -168,6 +167,7 @@ abstract contract HookV2ForkBase is Test {
             t,
             1_000_000_000e18,
             r,
+            new address[](0),
             ArtCoinsTokenV2.CanonicalPool({
                 hook: hook_, poolManager: POOL_MANAGER, tickSpacing: TS
             }),

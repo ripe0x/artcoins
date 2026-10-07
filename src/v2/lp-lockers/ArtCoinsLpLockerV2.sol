@@ -123,7 +123,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         positionId =
             _mint(lockerConfig, poolConfig.tickIfToken0IsArtCoin, poolKey, poolSupply, token);
 
-        // rounding dust (and any shortfall from a taxed pull) never stays here
+        // send any coin left after placement (rounding dust) to the burn sink
         uint256 balAfter = SafeTransferLib.balanceOf(token, address(this));
         if (balAfter > balBefore) {
             SafeTransferLib.safeTransfer(token, Constants.DEAD, balAfter - balBefore);

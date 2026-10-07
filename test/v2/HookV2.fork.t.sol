@@ -855,7 +855,7 @@ contract HookV2ForkTest is HookV2ForkBase {
     // ─── owner and globals (no fork needed) ──────────────────────────────
 
     function test_hookAddress_flags() public view {
-        assertEq(uint160(address(hook)) & 0x3fff, 0x2dcc);
+        assertEq(uint160(address(hook)) & 0x3fff, 0x28cc);
         assertEq(hook.constantsHash(), Constants.hash());
     }
 

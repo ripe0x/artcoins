@@ -36,6 +36,12 @@ interface IArtCoinsTokenV2 {
     error ZeroAddress();
     error InvalidRenderer();
     error RestrictionConfigInvalid();
+    /// @notice The canonical pool inputs are invalid (tickSpacing must be positive).
+    error CanonicalPoolInvalid();
+    /// @notice An allowlist entry names the PoolManager or the canonical hook.
+    error AllowedForbidden(address account);
+    /// @notice `setAllowed` tried to remove a factory seeded (pinned) entry.
+    error AllowedPinned(address account);
     /// @notice The allowlist and the restriction switch are frozen.
     error AlreadyLocked();
     /// @notice Restriction is already off.
@@ -52,6 +58,8 @@ interface IArtCoinsTokenV2 {
     function restricted() external view returns (bool);
     function locked() external view returns (bool);
     function isAllowed(address account) external view returns (bool);
+    /// @notice A factory seeded entry the coin admin cannot remove.
+    function isPinned(address account) external view returns (bool);
     /// @notice Remaining PoolManager transfer allowance this transaction.
     function transferAllowance() external view returns (uint256);
     function canonicalHook() external view returns (address);

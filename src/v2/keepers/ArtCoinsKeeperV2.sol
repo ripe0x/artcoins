@@ -50,6 +50,9 @@ contract ArtCoinsKeeperV2 is IArtCoinsKeeperV2, ReentrancyGuardTransient {
     event ConvertSkipped(address indexed token, address indexed swapper, bytes reason);
     /// @notice A swapper's `flushPaired` reverted for a reason other than gas (usually `NothingToFlush`).
     event FlushSkipped(address indexed token, address indexed swapper, bytes reason);
+    /// @notice A restricted coin's keeper reward coin was not forwarded to the
+    ///         caller (the keeper is not on the coin allowlist); it stays here.
+    event CoinForwardSkipped(address indexed token, uint256 amount);
 
     constructor(address factory_) {
         if (factory_ == address(0)) revert ZeroAddress();
@@ -109,9 +112,29 @@ contract ArtCoinsKeeperV2 is IArtCoinsKeeperV2, ReentrancyGuardTransient {
             (bool ok,) = msg.sender.call{value: eth}("");
             if (!ok) revert EthTransferFailed();
         }
-        uint256 coin = _balanceOf(token);
-        if (coin > 0) _sendCoin(token, msg.sender, coin);
-        emit KeeperRun(msg.sender, token, eth, coin);
+        // A restricted coin forwards coin to the caller only through its own
+        // transfer rule. The keeper is not on the coin allowlist, so a coin push
+        // to the caller would revert; skip it and keep forwarding eth. The coin
+        // stays in the keeper for the owner to rescue; the locker keeper reward
+        // is 0 by default (D28), so a restricted coin leaves no coin here.
+        uint256 coinBal = _balanceOf(token);
+        uint256 coinFwd;
+        if (coinBal > 0) {
+            if (_isRestricted(token)) {
+                emit CoinForwardSkipped(token, coinBal);
+            } else {
+                _sendCoin(token, msg.sender, coinBal);
+                coinFwd = coinBal;
+            }
+        }
+        emit KeeperRun(msg.sender, token, eth, coinFwd);
+    }
+
+    /// @dev True when the coin reports `restricted() == true`. A token that does
+    ///      not answer the selector is treated as not restricted.
+    function _isRestricted(address token) internal view returns (bool r) {
+        (bool ok, bytes memory ret) = token.staticcall(abi.encodeWithSignature("restricted()"));
+        if (ok && ret.length == 32) r = abi.decode(ret, (bool));
     }
 
     /// @notice What a run could service for `token`: the swapper recipients and what they hold. Uncollected lp

@@ -44,6 +44,7 @@ contract ArtCoinsDeployerV2 is IConstantsBound {
     /// @param t           Token config.
     /// @param supply      Supply minted to `launcher`.
     /// @param restriction Restriction config (validated by the token constructor).
+    /// @param pinned      Factory seeded allowlist entries the coin admin cannot remove.
     /// @param canon       Canonical hook, PoolManager, tickSpacing.
     /// @param launcher    The factory; the token's `launcher` and mint recipient.
     /// @param salt        `keccak256(abi.encode(sender, configHash))`, computed by the factory.
@@ -51,13 +52,14 @@ contract ArtCoinsDeployerV2 is IConstantsBound {
         IArtCoinsFactoryV2.TokenConfigV2 memory t,
         uint256 supply,
         IArtCoinsFactoryV2.RestrictionConfigV2 memory restriction,
+        address[] memory pinned,
         ArtCoinsTokenV2.CanonicalPool memory canon,
         address launcher,
         bytes32 salt
     ) external returns (address token) {
         if (msg.sender != factory) revert NotFactory();
         if (launcher != factory) revert LauncherMismatch();
-        bytes memory initCode = _initCode(t, supply, restriction, canon, launcher);
+        bytes memory initCode = _initCode(t, supply, restriction, pinned, canon, launcher);
         assembly ("memory-safe") {
             token := create2(0, add(initCode, 0x20), mload(initCode), salt)
         }
@@ -70,11 +72,12 @@ contract ArtCoinsDeployerV2 is IConstantsBound {
         IArtCoinsFactoryV2.TokenConfigV2 memory t,
         uint256 supply,
         IArtCoinsFactoryV2.RestrictionConfigV2 memory restriction,
+        address[] memory pinned,
         ArtCoinsTokenV2.CanonicalPool memory canon,
         address launcher,
         bytes32 salt
     ) external view returns (address) {
-        bytes32 h = keccak256(_initCode(t, supply, restriction, canon, launcher));
+        bytes32 h = keccak256(_initCode(t, supply, restriction, pinned, canon, launcher));
         return address(
             uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, h))))
         );
@@ -89,11 +92,13 @@ contract ArtCoinsDeployerV2 is IConstantsBound {
         IArtCoinsFactoryV2.TokenConfigV2 memory t,
         uint256 supply,
         IArtCoinsFactoryV2.RestrictionConfigV2 memory restriction,
+        address[] memory pinned,
         ArtCoinsTokenV2.CanonicalPool memory canon,
         address launcher
     ) private pure returns (bytes memory) {
         return abi.encodePacked(
-            type(ArtCoinsTokenV2).creationCode, abi.encode(t, supply, restriction, canon, launcher)
+            type(ArtCoinsTokenV2).creationCode,
+            abi.encode(t, supply, restriction, pinned, canon, launcher)
         );
     }
 }

@@ -49,9 +49,8 @@ import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 
 contract FactoryV2ForkTest is ForkBase {
     uint160 internal constant HOOK_FLAGS = uint160(
-        Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
-            | Hooks.AFTER_ADD_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG
-            | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
+        Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG
+            | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
             | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
     );
     int24 internal constant START = -200_000;
@@ -1395,5 +1394,25 @@ contract FactoryV2ForkTest is ForkBase {
         _expectRevertDeploy(
             c, abi.encodeWithSelector(IArtCoinsFactoryV2.RecipientCannotReceive.selector, coin)
         );
+    }
+
+    /// A restricted launch whose hook has no fee escrow fails with a clear error
+    /// (the seeded allowlist cannot be assembled).
+    function test_restriction_hookEscrowZero_reverts() public onlyFork {
+        FV2ZeroEscrowHook zeroHook = new FV2ZeroEscrowHook();
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
+        c.pool.hook = address(zeroHook);
+        c.restriction.restricted = true;
+        vm.expectRevert(
+            abi.encodeWithSelector(ArtCoinsFactoryV2.HookEscrowNotSet.selector, address(zeroHook))
+        );
+        factory.predictToken(alice, c);
+    }
+}
+
+/// @dev A hook whose `globals().feeEscrow` is the zero address.
+contract FV2ZeroEscrowHook {
+    function globals() external pure returns (IArtCoinsHookV2.HookGlobals memory g) {
+        return g;
     }
 }

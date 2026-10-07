@@ -53,7 +53,7 @@ contract RunKeeper111 is Script {
 
     /// @notice minOut for `convert`: simulate the whole run at the current state (state reverted after) with
     ///         minOut 0, take the eth the swap would return, subtract `slippageBps`. A spot quote is not used:
-    ///         the live pool's dynamic fee, skim and coin tax put realized output several percent under spot.
+    ///         the live pool's dynamic fee and skim put realized output several percent under spot.
     ///         Returns 0 when the simulation converts nothing (min blocks not elapsed, no coin).
     function quoteMinOut(CollectFlushKeeperV1 keeper, uint256 slippageBps)
         public

@@ -272,10 +272,10 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     }
 
     /// @dev Anti sniper add lock: ends at createdAt + MAX_MEV_WINDOW whatever
-    ///      the module reports. A restricted coin keeps third party adds out by
-    ///      the token transfer rule (a position add moves coin to the
-    ///      PoolManager with no allowlisted side and no granted allowance), so
-    ///      the only lp actor on a restricted coin is the allowlisted locker.
+    ///      the module reports. On a restricted coin the token transfer rule
+    ///      governs the coin leg of an add: a leg that settles coin to the
+    ///      PoolManager needs an allowlisted side (the locker's placement) or it
+    ///      reverts; an add that settles only eth needs no coin and passes.
     function _beforeAddLiquidity(
         address,
         PoolKey calldata key,
@@ -292,28 +292,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
             }
         }
         return BaseHook.beforeAddLiquidity.selector;
-    }
-
-    function _afterAddLiquidity(
-        address,
-        PoolKey calldata,
-        IPoolManager.ModifyLiquidityParams calldata,
-        BalanceDelta,
-        BalanceDelta,
-        bytes calldata
-    ) internal override returns (bytes4, BalanceDelta) {
-        return (BaseHook.afterAddLiquidity.selector, BalanceDelta.wrap(0));
-    }
-
-    function _afterRemoveLiquidity(
-        address,
-        PoolKey calldata,
-        IPoolManager.ModifyLiquidityParams calldata,
-        BalanceDelta,
-        BalanceDelta,
-        bytes calldata
-    ) internal override returns (bytes4, BalanceDelta) {
-        return (BaseHook.afterRemoveLiquidity.selector, BalanceDelta.wrap(0));
     }
 
     function _beforeSwap(
@@ -709,15 +687,18 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     }
 
     /// @inheritdoc BaseHook
-    /// @dev DESIGN section 5, low 14 address bits 0x2DCC.
+    /// @dev DESIGN section 5, low 14 address bits 0x28CC. Liquidity needs only
+    ///      `beforeAddLiquidity` for the anti sniper window; the restriction
+    ///      allowance is granted in `afterSwap`, so the add and remove liquidity
+    ///      callbacks are not used.
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
             beforeInitialize: true,
             afterInitialize: false,
             beforeAddLiquidity: true,
-            afterAddLiquidity: true,
+            afterAddLiquidity: false,
             beforeRemoveLiquidity: false,
-            afterRemoveLiquidity: true,
+            afterRemoveLiquidity: false,
             beforeSwap: true,
             afterSwap: true,
             beforeDonate: false,

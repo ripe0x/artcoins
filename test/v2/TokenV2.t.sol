@@ -30,8 +30,10 @@ contract TV2Renderer {
 abstract contract TokenV2Base is Test {
     using PoolIdLibrary for PoolKey;
 
-    // the test contract is the canonical hook, the launcher and the admin.
+    // the test contract is the launcher and the admin; HOOK and PM are distinct
+    // (an allowlist entry for the hook or the PoolManager is rejected).
     address internal constant PM = address(0xBEEF);
+    address internal constant HOOK = address(0x400C);
     int24 internal constant TS = 60;
 
     ArtCoinsDeployerV2 internal deployer;
@@ -40,9 +42,8 @@ abstract contract TokenV2Base is Test {
         deployer = new ArtCoinsDeployerV2(address(this));
     }
 
-    function _canon() internal view returns (ArtCoinsTokenV2.CanonicalPool memory) {
-        return
-            ArtCoinsTokenV2.CanonicalPool({hook: address(this), poolManager: PM, tickSpacing: TS});
+    function _canon() internal pure returns (ArtCoinsTokenV2.CanonicalPool memory) {
+        return ArtCoinsTokenV2.CanonicalPool({hook: HOOK, poolManager: PM, tickSpacing: TS});
     }
 
     function _tokenConfig() internal view returns (IArtCoinsFactoryV2.TokenConfigV2 memory t) {
@@ -64,10 +65,18 @@ abstract contract TokenV2Base is Test {
         internal
         returns (ArtCoinsTokenV2 token)
     {
+        return _newToken(restricted, allowed, new address[](0));
+    }
+
+    function _newToken(bool restricted, address[] memory allowed, address[] memory pinned)
+        internal
+        returns (ArtCoinsTokenV2 token)
+    {
         token = new ArtCoinsTokenV2(
             _tokenConfig(),
             Constants.DEFAULT_TOKEN_SUPPLY,
             _restriction(restricted, allowed),
+            pinned,
             _canon(),
             address(this)
         );
@@ -87,20 +96,21 @@ abstract contract TokenV2Base is Test {
     }
 
     /// Canonical pool id the token computes from its own address.
-    function _pid(address token) internal view returns (bytes32) {
+    function _pid(address token) internal pure returns (bytes32) {
         return PoolId.unwrap(
             PoolKey({
                 currency0: Currency.wrap(address(0)),
                 currency1: Currency.wrap(token),
                 fee: LPFeeLibrary.DYNAMIC_FEE_FLAG,
                 tickSpacing: TS,
-                hooks: IHooks(address(this))
+                hooks: IHooks(HOOK)
             }).toId()
         );
     }
 
     /// Grant the transient PoolManager allowance as the canonical hook.
     function _grant(ArtCoinsTokenV2 token, uint256 amount) internal {
+        vm.prank(HOOK);
         token.increaseTransferAllowance(_pid(address(token)), amount);
     }
 }
@@ -207,8 +217,10 @@ contract TokenV2Test is TokenV2Base {
 
     function test_increaseAllowance_wrongPoolNoOp() public {
         ArtCoinsTokenV2 token = _restricted(new address[](0));
+        vm.prank(HOOK);
         token.increaseTransferAllowance(bytes32(uint256(1)), 100);
         assertEq(token.transferAllowance(), 0);
+        vm.prank(HOOK);
         token.increaseTransferAllowance(_pid(address(token)), 0);
         assertEq(token.transferAllowance(), 0);
     }
@@ -325,9 +337,51 @@ contract TokenV2Test is TokenV2Base {
             t,
             Constants.DEFAULT_TOKEN_SUPPLY,
             _restriction(false, new address[](0)),
+            new address[](0),
             _canon(),
             address(this)
         );
+    }
+
+    function test_constructor_rejectsPoolManagerAndHookInAllowed() public {
+        vm.expectRevert(abi.encodeWithSelector(IArtCoinsTokenV2.AllowedForbidden.selector, PM));
+        _newToken(true, _one(PM));
+        vm.expectRevert(abi.encodeWithSelector(IArtCoinsTokenV2.AllowedForbidden.selector, HOOK));
+        _newToken(true, _one(HOOK));
+    }
+
+    function test_constructor_badCanon_separateError() public {
+        IArtCoinsFactoryV2.TokenConfigV2 memory t = _tokenConfig();
+        ArtCoinsTokenV2.CanonicalPool memory bad =
+            ArtCoinsTokenV2.CanonicalPool({hook: HOOK, poolManager: PM, tickSpacing: 0});
+        vm.expectRevert(IArtCoinsTokenV2.CanonicalPoolInvalid.selector);
+        new ArtCoinsTokenV2(
+            t,
+            Constants.DEFAULT_TOKEN_SUPPLY,
+            _restriction(false, new address[](0)),
+            new address[](0),
+            bad,
+            address(this)
+        );
+    }
+
+    function test_pinned_cannotBeRemoved() public {
+        address keep = address(0xACE1);
+        address user = address(0xACE2);
+        address[] memory allowed = new address[](2);
+        allowed[0] = keep;
+        allowed[1] = user;
+        ArtCoinsTokenV2 token = _newToken(true, allowed, _one(keep)); // keep is pinned
+        assertTrue(token.isPinned(keep));
+        assertFalse(token.isPinned(user));
+        // a pinned entry cannot be removed
+        vm.expectRevert(abi.encodeWithSelector(IArtCoinsTokenV2.AllowedPinned.selector, keep));
+        token.setAllowed(keep, false);
+        // a non pinned entry can be removed, and re-adding a pinned is fine
+        token.setAllowed(user, false);
+        assertFalse(token.isAllowed(user));
+        token.setAllowed(keep, true);
+        assertTrue(token.isAllowed(keep));
     }
 
     // ── deployer ─────────────────────────────────────────────────────────
@@ -335,11 +389,14 @@ contract TokenV2Test is TokenV2Base {
     function test_deployer_predictMatchesDeploy() public {
         IArtCoinsFactoryV2.TokenConfigV2 memory t = _tokenConfig();
         IArtCoinsFactoryV2.RestrictionConfigV2 memory r = _restriction(false, new address[](0));
+        address[] memory pinned = new address[](0);
         bytes32 salt = keccak256("t1");
-        address predicted =
-            deployer.predict(t, Constants.DEFAULT_TOKEN_SUPPLY, r, _canon(), address(this), salt);
-        address token =
-            deployer.deploy(t, Constants.DEFAULT_TOKEN_SUPPLY, r, _canon(), address(this), salt);
+        address predicted = deployer.predict(
+            t, Constants.DEFAULT_TOKEN_SUPPLY, r, pinned, _canon(), address(this), salt
+        );
+        address token = deployer.deploy(
+            t, Constants.DEFAULT_TOKEN_SUPPLY, r, pinned, _canon(), address(this), salt
+        );
         assertEq(token, predicted);
     }
 
@@ -348,7 +405,15 @@ contract TokenV2Test is TokenV2Base {
         IArtCoinsFactoryV2.RestrictionConfigV2 memory r = _restriction(false, new address[](0));
         vm.prank(address(0xDEAD));
         vm.expectRevert(ArtCoinsDeployerV2.NotFactory.selector);
-        deployer.deploy(t, Constants.DEFAULT_TOKEN_SUPPLY, r, _canon(), address(this), bytes32(0));
+        deployer.deploy(
+            t,
+            Constants.DEFAULT_TOKEN_SUPPLY,
+            r,
+            new address[](0),
+            _canon(),
+            address(this),
+            bytes32(0)
+        );
     }
 
     function test_constantsHash_matches() public view {

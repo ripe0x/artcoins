@@ -432,9 +432,13 @@ how the numbers were taken: the fork group counts are the per suite results of o
 > modes, venue lists, the exemption budget and the per direction grant netting
 > are retired; a coin carries one launch flag `restricted`. Independent audit
 > ACV2-01 (a canonical buy earned an exemption a side pool take then spent
-> untaxed) is closed by that design change: there is no tax to evade, and on a
-> restricted coin the coins a same transaction round trip moves stay restricted
-> (a later wallet to wallet send reverts). The tax era findings below (V2A-01,
+> untaxed) is closed by that design change: there is no tax to evade. Restriction
+> is fee priced, not absolute: a canonical buy and sell of X in one transaction
+> grant 2X of the undirected transfer allowance and consume none, so a holder can
+> move X wallet to wallet through PoolManager balance operations (settle, mint or
+> transfer a claim, take, burn) or add X of coin liquidity, at the cost of the
+> home pool's round trip fees; the coins produced stay restricted. The tax era
+> findings below (V2A-01,
 > V2H-02, the D24/D34/D46 residuals, V2A-03, the t1-notes grant and budget rows)
 > describe code that no longer exists; they are kept as the record of why the
 > model changed.

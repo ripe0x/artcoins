@@ -30,7 +30,7 @@ import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 /// @dev    Order (DESIGN d7, DECISIONS D28, D33, D36, D38):
 ///          1 escrow                       owner = broadcaster (wired below)
 ///          2 extension allowlist          owner = OWNER (no deploy time owner call)
-///          3 hook, CREATE2 via 0x4e59     salt mined for flags 0x2DCC, owner = broadcaster
+///          3 hook, CREATE2 via 0x4e59     salt mined for flags 0x28CC, owner = broadcaster
 ///          4 locker                       owner = broadcaster
 ///          5 linear skim module           ctor takes the hook, ownerless
 ///          6 factory                      owner = broadcaster, ships deprecated
@@ -45,12 +45,11 @@ import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 library DeployV2Lib {
     // ── v2 hook address flags (DESIGN section 5) ────────────────────────────
     uint160 internal constant HOOK_FLAGS = uint160(
-        Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
-            | Hooks.AFTER_ADD_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG
-            | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
+        Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG
+            | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
             | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
     );
-    uint160 internal constant HOOK_LOW_BITS = 0x2DCC;
+    uint160 internal constant HOOK_LOW_BITS = 0x28CC;
     uint256 internal constant MAX_MINE = 400_000;
 
     // ── defaults ────────────────────────────────────────────────────────────
@@ -250,13 +249,8 @@ library DeployV2Lib {
         f.setDefaultProtocolFeeBps(p.protocolBps);
         f.setMinProtocolSkimShareBps(p.minProtocolSkimShareBps);
         f.setMinLpFee(p.minLpFee);
-        // defaultAllowed ships empty. A restricted coin trades through the
-        // standard routers without any router on the allowlist, because the
-        // only coin move is directly between the PoolManager and the user,
-        // covered by the per swap allowance the hook grants. A forwarding
-        // contract (router, aggregator, multicall) must never be allowlisted:
-        // the transfer rule checks from and to only, so an allowlisted
-        // forwarder lets a user move coin wallet to wallet through it.
+        // defaultAllowed ships empty; see the allowlist rule on
+        // ArtCoinsFactoryV2._defaultAllowed for what may be added.
         // deprecated stays true (constructor). opening is a separate owner tx.
     }
 
@@ -314,8 +308,8 @@ library DeployV2Lib {
         Hooks.validateHookPermissions(IHooks(h), perms);
         require(
             perms.beforeInitialize && !perms.afterInitialize && perms.beforeAddLiquidity
-                && perms.afterAddLiquidity && !perms.beforeRemoveLiquidity
-                && perms.afterRemoveLiquidity && perms.beforeSwap && perms.afterSwap
+                && !perms.afterAddLiquidity && !perms.beforeRemoveLiquidity
+                && !perms.afterRemoveLiquidity && perms.beforeSwap && perms.afterSwap
                 && !perms.beforeDonate && !perms.afterDonate && perms.beforeSwapReturnDelta
                 && perms.afterSwapReturnDelta && !perms.afterAddLiquidityReturnDelta
                 && !perms.afterRemoveLiquidityReturnDelta,

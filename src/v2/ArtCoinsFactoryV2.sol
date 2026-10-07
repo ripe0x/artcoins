@@ -40,7 +40,7 @@ interface IHookPoolManager {
 ///         4. token deployed by CREATE2 with the sender bound salt.
 ///         5. `hook.initializePool` with the skim config; protocolRecipient and
 ///            referralPayout are injected from factory storage. The token's
-///            canonical hook, pool id, PoolManager, tax mode and sink are
+///            canonical hook, pool id, PoolManager and `restricted` flag are
 ///            checked against the pool just created (FT-06).
 ///         6. launch record (`isArtCoin`, `deploymentInfo`) written.
 ///         7. pool supply approved to the locker, `placeLiquidity` with the
@@ -76,6 +76,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     error MinLpFeeTooHigh();
     /// @notice No token deployer set yet (D38).
     error DeployerNotSet();
+    /// @notice A restricted launch's hook has no fee escrow set, so the seeded
+    ///         allowlist cannot be assembled.
+    error HookEscrowNotSet(address hook);
     /// @notice The deployer has no code, is not bound to this factory, or was
     ///         built against other Constants.
     error InvalidDeployer(address deployer);
@@ -155,15 +158,19 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     mapping(address => bool) public enabledEscrows;
     /// @notice Owner set addresses seeded into every restricted coin's launch
     ///         allowlist, on top of the stack escrow, the launch locker and the
-    ///         launch extensions. Ships empty. Only a contract whose coin
-    ///         outflows are fixed by its own logic belongs here; a contract that
-    ///         sends coin where its caller directs (a router, aggregator,
-    ///         multicall or smart wallet) must never be added, because the
+    ///         launch extensions. Ships empty.
+    ///
+    ///         ALLOWLIST RULE (canonical, referenced elsewhere): allowlist only
+    ///         a contract whose coin outflows are fixed by its own logic (the
+    ///         locker pays frozen reward slots, the escrow pays the credited
+    ///         owner, an airdrop or vault pays its configured recipients). A
+    ///         contract that sends coin where its caller directs it (a router,
+    ///         aggregator, multicall or smart wallet) is a prohibited entry: the
     ///         transfer rule checks the two parties only, so an allowlisted
     ///         forwarder lets any user move coin wallet to wallet through it. A
-    ///         restricted coin trades through the standard routers with no
-    ///         router allowlisted: the only coin move is between the PoolManager
-    ///         and the user, covered by the per swap allowance.
+    ///         restricted coin reaches the standard routers through the per swap
+    ///         allowance alone, since the only coin move is between the
+    ///         PoolManager and the user.
     address[] private _defaultAllowed;
 
     // ── launch records ────────────────────────────────────────────────────
@@ -231,11 +238,13 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         view
         returns (address)
     {
+        (RestrictionConfigV2 memory r, address[] memory pinned) = _restriction(c);
         return _deployer()
             .predict(
                 c.token,
                 _supply(c.token.totalSupply),
-                _restriction(c),
+                r,
+                pinned,
                 _canon(c),
                 address(this),
                 _salt(sender, c)
@@ -264,18 +273,22 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     /// @dev Full restriction config passed to the token: the user `allowed` set
     ///      plus the stack escrow, this launch's locker and extensions, and the
-    ///      owner `defaultAllowed` set. Empty when not restricted. The assembled
-    ///      set is folded into the token initcode, so `predictToken` and the
-    ///      deploy share this function and agree on the address.
+    ///      owner `defaultAllowed` set. `pinned` is the subset the coin admin
+    ///      cannot remove (locker, escrow, extensions). Empty when not
+    ///      restricted. The assembled set is folded into the token initcode, so
+    ///      `predictToken` and the deploy share this function and agree on the
+    ///      address. The result depends on `defaultAllowed` and the hook escrow,
+    ///      which the owner can change between a `predictToken` read and launch.
     function _restriction(DeploymentConfigV2 calldata c)
         internal
         view
-        returns (RestrictionConfigV2 memory r)
+        returns (RestrictionConfigV2 memory r, address[] memory pinned)
     {
         r.restricted = c.restriction.restricted;
-        if (!r.restricted) return r;
+        if (!r.restricted) return (r, pinned);
 
         address escrow = IArtCoinsHookV2(c.pool.hook).globals().feeEscrow;
+        if (escrow == address(0)) revert HookEscrowNotSet(c.pool.hook);
         uint256 nDefault = _defaultAllowed.length;
         uint256 nUser = c.restriction.allowed.length;
         uint256 nExt = c.extensions.length;
@@ -283,14 +296,18 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         if (total > Constants.MAX_ALLOWED) revert InvalidRestrictionConfig();
 
         address[] memory a = new address[](total);
+        pinned = new address[](2 + nExt);
         uint256 k;
         for (uint256 i; i < nDefault; ++i) {
             a[k++] = _defaultAllowed[i];
         }
         a[k++] = c.locker.locker;
+        pinned[0] = c.locker.locker;
         a[k++] = escrow;
+        pinned[1] = escrow;
         for (uint256 i; i < nExt; ++i) {
             a[k++] = c.extensions[i].extension;
+            pinned[2 + i] = c.extensions[i].extension;
         }
         for (uint256 i; i < nUser; ++i) {
             a[k++] = c.restriction.allowed[i];
@@ -323,10 +340,12 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         if (msg.value < required) revert MsgValueMismatch(required, msg.value);
 
         bytes32 h = configHash(c);
+        (RestrictionConfigV2 memory r, address[] memory pinned) = _restriction(c);
         token = deployer.deploy(
             c.token,
             supply,
-            _restriction(c),
+            r,
+            pinned,
             _canon(c),
             address(this),
             keccak256(abi.encode(msg.sender, h))
@@ -393,7 +412,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         _validateFee(c.fee);
         _validateLocker(c.locker, protocolBps);
         _validateMev(c.mev, c.pool.hook, c.fee.baselineSkimBps);
-        _validateRestriction(c.restriction);
+        _validateRestriction(c.restriction, c.pool.hook);
         return _validateExtensions(c.extensions, supply);
     }
 
@@ -521,7 +540,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     ///      `allowed` set is bounded and holds no zero address; the stack
     ///      escrow, locker, extensions and `defaultAllowed` are added by
     ///      `_restriction`, which also bounds the assembled total.
-    function _validateRestriction(RestrictionConfigV2 calldata r) internal pure {
+    function _validateRestriction(RestrictionConfigV2 calldata r, address hook) internal view {
         if (!r.restricted) {
             if (r.allowed.length != 0) revert InvalidRestrictionConfig();
             return;
@@ -529,7 +548,13 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         uint256 n = r.allowed.length;
         if (n > Constants.MAX_ALLOWED) revert InvalidRestrictionConfig();
         for (uint256 i; i < n; ++i) {
-            if (r.allowed[i] == address(0)) revert InvalidRestrictionConfig();
+            address a = r.allowed[i];
+            if (a == address(0)) revert InvalidRestrictionConfig();
+            // the PoolManager and the canonical hook gate the swap path; the
+            // token rejects them too (defense in depth, clearer error here).
+            if (a == poolManager || a == hook) {
+                revert IArtCoinsTokenV2.AllowedForbidden(a);
+            }
         }
     }
 

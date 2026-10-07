@@ -261,8 +261,9 @@ contract FeeAutoSwapperV2 is
 
     /// @notice v4 unlock callback: exact input coin to eth swap with a price
     ///         limit, settle the coin actually consumed, take the eth.
-    /// @dev    The coin is transferred to the PoolManager AFTER the swap, so a
-    ///         HARD tax mode coin sees the hook's flow grant first.
+    /// @dev    The coin is settled to the PoolManager AFTER the swap, so on a
+    ///         restricted coin the hook's per swap transfer allowance is granted
+    ///         first and the settle consumes it.
     function unlockCallback(bytes calldata data) external returns (bytes memory) {
         if (msg.sender != address(poolManager)) revert NotPoolManager();
         (uint256 amountIn, uint160 spot) = abi.decode(data, (uint256, uint160));

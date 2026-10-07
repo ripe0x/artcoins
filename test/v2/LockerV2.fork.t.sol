@@ -537,7 +537,8 @@ contract LockerV2ForkTest is ForkBase {
         ArtCoinsTokenV2.CanonicalPool memory canon = ArtCoinsTokenV2.CanonicalPool({
             hook: hook, poolManager: POOL_MANAGER, tickSpacing: SPACING
         });
-        ArtCoinsTokenV2 coin = new ArtCoinsTokenV2(t, 2 * SUPPLY, restr, canon, launcher);
+        ArtCoinsTokenV2 coin =
+            new ArtCoinsTokenV2(t, 2 * SUPPLY, restr, new address[](0), canon, launcher);
         assertEq(coin.allowance(address(locker), PERMIT2), type(uint256).max);
         // the token rejects approvals to Permit2, which is what broke placement
         vm.prank(address(locker));
