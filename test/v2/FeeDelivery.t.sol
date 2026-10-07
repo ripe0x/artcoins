@@ -170,6 +170,8 @@ contract FeeDeliveryTest is Test {
     function setUp() public {
         escrow = new ArtCoinsFeeEscrowV2(owner);
         harness = new DeliveryHarness(address(escrow));
+        // The escrow address can hold ether on a mainnet fork.
+        vm.deal(address(escrow), 0);
         vm.prank(owner);
         escrow.addDepositor(address(harness), true);
         vm.deal(address(harness), 100 ether);
@@ -188,7 +190,9 @@ contract FeeDeliveryTest is Test {
     }
 
     function test_delivery_eoa_pushed() public {
-        address eoa = makeAddr("eoa");
+        address eoa = makeAddr("delivery.eoa");
+        vm.etch(eoa, "");
+        vm.deal(eoa, 0);
         assertTrue(harness.sendNative(eoa, 1 ether, Constants.PUSH_GAS_MIN));
         assertEq(eoa.balance, 1 ether);
     }

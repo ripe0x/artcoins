@@ -241,7 +241,8 @@ abstract contract TokenV2Base is Test {
 
     address internal admin = makeAddr("admin");
     address payable internal bounty = payable(makeAddr("bounty"));
-    address internal alice = makeAddr("alice");
+    // "alice" holds code on mainnet, so the label is unique to this suite.
+    address internal alice = makeAddr("tokenV2.alice");
     address internal bob = makeAddr("bob");
     uint256 internal saltNonce;
 

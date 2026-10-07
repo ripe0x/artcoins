@@ -23,15 +23,23 @@ contract StuckOwner {
 contract EscrowV2Test is Test {
     ArtCoinsFeeEscrowV2 escrow;
     MockToken token;
-    address owner = makeAddr("owner");
-    address core = makeAddr("core");
-    address plain = makeAddr("plain");
-    address alice = makeAddr("alice");
-    address griefer = makeAddr("griefer");
+    address owner = makeAddr("escrowV2.owner");
+    address core = makeAddr("escrowV2.core");
+    address plain = makeAddr("escrowV2.plain");
+    address alice = makeAddr("escrowV2.alice");
+    address griefer = makeAddr("escrowV2.griefer");
 
     function setUp() public {
         escrow = new ArtCoinsFeeEscrowV2(owner);
         token = new MockToken();
+        // Deterministic addresses can hold ether or code on a mainnet fork. Make every
+        // address whose balance a test reads empty, so balance assertions hold in both modes.
+        address[5] memory fresh = [owner, core, plain, alice, griefer];
+        for (uint256 i; i < fresh.length; ++i) {
+            vm.etch(fresh[i], "");
+            vm.deal(fresh[i], 0);
+        }
+        vm.deal(address(escrow), 0);
         vm.startPrank(owner);
         escrow.addDepositor(core, true);
         escrow.addDepositor(plain, false);
