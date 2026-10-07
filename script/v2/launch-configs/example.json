@@ -1,6 +1,6 @@
 {
   "example": true,
-  "about": "credits engine style coin: treasury contract as bounty recipient, tax sink and only project reward slot. VENUE tax mode at 0 bps (rate tunable by the token admin up to taxBpsMax). native eth pool, 69 minute linear anti sniper skim from 68.69% down to the 6% baseline. replace every treasury placeholder (0x7ea5...0001) with the real treasury contract and set example to false before a broadcast.",
+  "about": "credits engine style coin: treasury contract as bounty recipient and only project reward slot. Not restricted (plain erc20 transfers). native eth pool, 69 minute linear anti sniper skim from 68.69% down to the 6% baseline. For a restricted coin set restriction.restricted true and list any extra allowlist entries in restriction.allowed; the factory seeds the stack escrow, this launch's locker, the launch extensions, permit2 and the universal router. Replace every treasury placeholder (0x7ea5...0001) with the real treasury contract and set example to false before a broadcast.",
   "protocolBps": 2000,
   "expectedToken": "0x0000000000000000000000000000000000000000",
   "token": {
@@ -36,12 +36,8 @@
     "startingSkimBps": 68690,
     "windowSeconds": 4140
   },
-  "tax": {
-    "mode": 1,
-    "taxBps": 0,
-    "taxBpsMax": 1000,
-    "taxSink": "0x7ea5000000000000000000000000000000000001",
-    "venueAdmin": "0x0000000000000000000000000000000000000000",
-    "exempt": []
+  "restriction": {
+    "restricted": false,
+    "allowed": []
   }
 }

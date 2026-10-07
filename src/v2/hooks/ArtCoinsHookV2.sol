@@ -121,8 +121,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     /// @dev Additive: a fee recipient that can never receive eth (this hook,
     ///      the PoolManager) would strand every leg in the escrow (V2H-08).
     error RecipientCannotReceive(address recipient);
-    /// @dev Additive (D46): liquidity add on a taxed pool after arming.
-    error TaxedPoolLiquidityClosed();
 
     /// @dev Additive (D52): the pool's frozen protocol leg floor.
     event ProtocolFloorInitialized(PoolId indexed poolId, uint16 minProtocolShareBps);
@@ -193,14 +191,13 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         PoolId pid = key.toId();
 
         // the token must name this hook, this pool and this launcher; its
-        // tax mode is mirrored into the frozen pool record.
+        // restriction flag is mirrored into the frozen pool record.
         IArtCoinsTokenV2 t = IArtCoinsTokenV2(token);
         if (
             t.canonicalHook() != address(this) || t.canonicalPoolId() != PoolId.unwrap(pid)
                 || t.launcher() != msg.sender
         ) revert CanonicalHookMismatch();
-        uint8 mode = t.taxMode();
-        if (mode > Constants.TAX_MODE_HARD) revert CanonicalHookMismatch();
+        bool restricted = t.restricted();
 
         if (ext != address(0)) {
             address al = _globals.extensionAllowlist;
@@ -211,7 +208,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
 
         _info[pid] = PoolInfo({
             version: Constants.STACK_VERSION,
-            taxMode: mode,
+            restricted: restricted,
             createdAt: uint40(block.timestamp),
             launcher: msg.sender,
             token: token,
@@ -221,7 +218,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         });
         _skim[pid] = p.skim;
         _minProtocolShareBps[pid] = p.minProtocolShareBps;
-        emit PoolInitializedV2(pid, token, msg.sender, Constants.STACK_VERSION, mode);
+        emit PoolInitializedV2(pid, token, msg.sender, Constants.STACK_VERSION, restricted);
         emit SkimConfigInitialized(pid, p.skim);
         emit ProtocolFloorInitialized(pid, p.minProtocolShareBps);
 
@@ -274,8 +271,11 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         revert ForeignInitialize();
     }
 
-    /// @dev Anti sniper add lock (b7: ends at createdAt + MAX_MEV_WINDOW
-    ///      whatever the module reports) and the D46 taxed pool lp gate.
+    /// @dev Anti sniper add lock: ends at createdAt + MAX_MEV_WINDOW whatever
+    ///      the module reports. A restricted coin keeps third party adds out by
+    ///      the token transfer rule (a position add moves coin to the
+    ///      PoolManager with no allowlisted side and no granted allowance), so
+    ///      the only lp actor on a restricted coin is the allowlisted locker.
     function _beforeAddLiquidity(
         address,
         PoolKey calldata key,
@@ -291,59 +291,28 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
                 revert MevWindowActive();
             }
         }
-        // D46: on a taxed pool (VENUE, HARD) liquidity is added only before
-        // the pool is armed by `initializeMevModule`, which the launcher
-        // calls in the launch tx, and only in the creation block. After that
-        // nobody adds: not via the PositionManager, not via a direct
-        // PoolManager `modifyLiquidity`, not a launcher. `sender` cannot
-        // identify the locker (it is the PositionManager), so there is no
-        // sender exception at all. NONE pools stay open.
-        if (
-            info.taxMode != Constants.TAX_MODE_NONE
-                && (_started[pid] || block.timestamp != info.createdAt)
-        ) revert TaxedPoolLiquidityClosed();
         return BaseHook.beforeAddLiquidity.selector;
     }
 
-    /// @dev Inflow report for the art coin the position takes in. Under D46
-    ///      a taxed pool only sees adds in the launch phase (the locker's
-    ///      placement, which needs the HARD inflow grant) or from launchers.
     function _afterAddLiquidity(
         address,
-        PoolKey calldata key,
+        PoolKey calldata,
         IPoolManager.ModifyLiquidityParams calldata,
-        BalanceDelta delta,
+        BalanceDelta,
         BalanceDelta,
         bytes calldata
     ) internal override returns (bytes4, BalanceDelta) {
-        PoolId pid = key.toId();
-        uint8 mode = _info[pid].taxMode;
-        int256 a = delta.amount1();
-        if (a != 0 && mode != Constants.TAX_MODE_NONE) {
-            _tokenFlow(key, pid, mode, a);
-        }
         return (BaseHook.afterAddLiquidity.selector, BalanceDelta.wrap(0));
     }
 
-    /// @dev Coin a removal or fee collect (zero liquidity decrease) releases
-    ///      on a taxed pool: VENUE attest, HARD outflow grant, for any sender.
-    ///      INVARIANT: removal grants are safe only because adds are closed
-    ///      after arming (D46, `_beforeAddLiquidity`). Every position on a
-    ///      taxed pool was placed in the launch tx (the locker, or an owner
-    ///      enabled extension), so no one can round trip liquidity to mint
-    ///      budget or grants. Reopening adds on taxed pools reopens V2A-01.
     function _afterRemoveLiquidity(
         address,
-        PoolKey calldata key,
+        PoolKey calldata,
         IPoolManager.ModifyLiquidityParams calldata,
-        BalanceDelta delta,
+        BalanceDelta,
         BalanceDelta,
         bytes calldata
     ) internal override returns (bytes4, BalanceDelta) {
-        PoolId pid = key.toId();
-        uint8 mode = _info[pid].taxMode;
-        int256 a = delta.amount1();
-        if (a > 0 && mode != Constants.TAX_MODE_NONE) _tokenFlow(key, pid, mode, a);
         return (BaseHook.afterRemoveLiquidity.selector, BalanceDelta.wrap(0));
     }
 
@@ -421,12 +390,16 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
 
         if (charged != 0) poolManager.take(key.currency0, address(this), charged);
 
-        // tax mode hooks on the art coin side (the hook never changes it).
-        {
-            uint8 mode = _info[pid].taxMode;
+        // restriction: grant the coin side of this swap as a PoolManager
+        // transfer allowance so the trader's settle or take passes the token
+        // transfer rule. The hook moves no coin itself; the only coin move is
+        // the swap's own currency1 delta between the PoolManager and the trader.
+        if (_info[pid].restricted) {
             int256 a = delta.amount1();
-            if (a != 0 && mode != Constants.TAX_MODE_NONE) {
-                _tokenFlow(key, pid, mode, a);
+            uint256 amt = a < 0 ? uint256(-a) : uint256(a);
+            if (amt != 0) {
+                IArtCoinsTokenV2(Currency.unwrap(key.currency1))
+                    .increaseTransferAllowance(PoolId.unwrap(pid), amt);
             }
         }
 
@@ -561,21 +534,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
             if and(ok, gt(returndatasize(), 0x1f)) {
                 end := mload(m)
             }
-        }
-    }
-
-    /// @dev d2 hook half. `a > 0`: art coin leaving the canonical pool (VENUE
-    ///      attest, HARD out grant). `a < 0`: art coin entering it, a sell or
-    ///      an lp add (in grant in both modes: the token nets it against the
-    ///      unused out side, D34, so a same tx round trip leaves nothing).
-    function _tokenFlow(PoolKey calldata key, PoolId pid, uint8 mode, int256 a) private {
-        IArtCoinsTokenV2 t = IArtCoinsTokenV2(Currency.unwrap(key.currency1));
-        if (a > 0 && mode == Constants.TAX_MODE_VENUE) {
-            t.attestCanonicalBudget(PoolId.unwrap(pid), uint256(a));
-        } else if (a > 0) {
-            t.grantCanonicalFlow(PoolId.unwrap(pid), uint256(a), 0);
-        } else {
-            t.grantCanonicalFlow(PoolId.unwrap(pid), 0, uint256(-a));
         }
     }
 

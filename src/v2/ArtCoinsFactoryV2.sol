@@ -67,10 +67,6 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     /// @notice Parallel arrays of different lengths (FT-10).
     error ArrayLengthMismatch();
-    /// @notice D47: a tax exempt entry is not on the exempt allowlist and is
-    ///         not implicitly allowed (this launch's locker or hook, an enabled
-    ///         escrow, an enabled extension).
-    error ExemptNotAllowed(address account);
     /// @notice D52 / V2F-01: `maxReferralBpsOfVolume` could take the protocol
     ///         leg below `minProtocolSkimShareBps` of the baseline skim.
     error ReferralCapAboveProtocolFloor();
@@ -86,8 +82,6 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     // ── additive events (not in the frozen interface) ────────────────────
 
-    /// @notice D47: an address was added to or removed from the exempt allowlist.
-    event ExemptAllowedSet(address indexed account, bool allowed);
     /// @notice D53: the launch lp fee floor changed.
     event MinLpFeeSet(uint24 oldFee, uint24 newFee);
     /// @notice D38: the token deployer pointer changed.
@@ -159,12 +153,11 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     mapping(address => bool) public enabledExtensions;
     /// @inheritdoc IArtCoinsFactoryV2
     mapping(address => bool) public enabledEscrows;
-    /// @notice D47: contracts a launch may list in `TaxConfigV2.exempt`, on top
-    ///         of the implicit set (this launch's locker and hook, enabled
-    ///         escrows, enabled extensions). Never a contract with a public
-    ///         sweep (v4 PositionManager, universal router): that would make the
-    ///         tax optional for everyone.
-    mapping(address => bool) public exemptAllowed;
+    /// @notice Owner set addresses seeded into every restricted coin's launch
+    ///         allowlist, on top of the stack escrow, the launch locker and the
+    ///         launch extensions. Holds permit2 and the universal router so a
+    ///         restricted coin trades through the standard routers.
+    address[] private _defaultAllowed;
 
     // ── launch records ────────────────────────────────────────────────────
 
@@ -235,7 +228,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
             .predict(
                 c.token,
                 _supply(c.token.totalSupply),
-                c.tax,
+                _restriction(c),
                 _canon(c),
                 address(this),
                 _salt(sender, c)
@@ -260,9 +253,44 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         return ArtCoinsTokenV2.CanonicalPool({
             hook: c.pool.hook,
             poolManager: poolManager,
-            tickSpacing: c.pool.tickSpacing,
-            bountyRecipient: c.fee.bountyRecipient
+            tickSpacing: c.pool.tickSpacing
         });
+    }
+
+    /// @dev Full restriction config passed to the token: the user `allowed` set
+    ///      plus the stack escrow, this launch's locker and extensions, and the
+    ///      owner `defaultAllowed` set. Empty when not restricted. The assembled
+    ///      set is folded into the token initcode, so `predictToken` and the
+    ///      deploy share this function and agree on the address.
+    function _restriction(DeploymentConfigV2 calldata c)
+        internal
+        view
+        returns (RestrictionConfigV2 memory r)
+    {
+        r.restricted = c.restriction.restricted;
+        if (!r.restricted) return r;
+
+        address escrow = IArtCoinsHookV2(c.pool.hook).globals().feeEscrow;
+        uint256 nDefault = _defaultAllowed.length;
+        uint256 nUser = c.restriction.allowed.length;
+        uint256 nExt = c.extensions.length;
+        uint256 total = nDefault + 2 + nExt + nUser;
+        if (total > Constants.MAX_ALLOWED) revert InvalidRestrictionConfig();
+
+        address[] memory a = new address[](total);
+        uint256 k;
+        for (uint256 i; i < nDefault; ++i) {
+            a[k++] = _defaultAllowed[i];
+        }
+        a[k++] = c.locker.locker;
+        a[k++] = escrow;
+        for (uint256 i; i < nExt; ++i) {
+            a[k++] = c.extensions[i].extension;
+        }
+        for (uint256 i; i < nUser; ++i) {
+            a[k++] = c.restriction.allowed[i];
+        }
+        r.allowed = a;
     }
 
     function _salt(address sender, DeploymentConfigV2 calldata c) internal pure returns (bytes32) {
@@ -291,7 +319,12 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
         bytes32 h = configHash(c);
         token = deployer.deploy(
-            c.token, supply, c.tax, _canon(c), address(this), keccak256(abi.encode(msg.sender, h))
+            c.token,
+            supply,
+            _restriction(c),
+            _canon(c),
+            address(this),
+            keccak256(abi.encode(msg.sender, h))
         );
 
         _checkRecipients(c, token);
@@ -355,7 +388,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         _validateFee(c.fee);
         _validateLocker(c.locker, protocolBps);
         _validateMev(c.mev, c.pool.hook, c.fee.baselineSkimBps);
-        _validateTax(c.tax, c.fee.bountyRecipient, c.locker.locker, c.pool.hook);
+        _validateRestriction(c.restriction);
         return _validateExtensions(c.extensions, supply);
     }
 
@@ -479,84 +512,19 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         ) revert InvalidMevConfig();
     }
 
-    /// @dev d4 / D10: a sink is DEAD or the bounty recipient. Mirrors the token's
-    ///      constructor rules so a bad config fails here with a factory error:
-    ///      NONE carries no tax data (the launch event never shows a tax that does
-    ///      not exist); VENUE needs 0 < taxBpsMax <= TAX_BPS_ABSOLUTE_MAX and
-    ///      taxBps <= taxBpsMax; HARD has no rate and no exempt set, its sink is
-    ///      display only and may be 0.
-    function _validateTax(
-        TaxConfigV2 calldata t,
-        address bountyRecipient,
-        address locker,
-        address hook
-    ) internal view {
-        uint8 mode = t.mode;
-        if (mode == Constants.TAX_MODE_NONE) {
-            if (
-                t.taxBps != 0 || t.taxBpsMax != 0 || t.taxSink != address(0)
-                    || t.venueAdmin != address(0) || t.exempt.length != 0 || t.venues.length != 0
-            ) revert InvalidTaxConfig();
+    /// @dev An unrestricted coin carries no allowlist. A restricted coin's user
+    ///      `allowed` set is bounded and holds no zero address; the stack
+    ///      escrow, locker, extensions and `defaultAllowed` are added by
+    ///      `_restriction`, which also bounds the assembled total.
+    function _validateRestriction(RestrictionConfigV2 calldata r) internal pure {
+        if (!r.restricted) {
+            if (r.allowed.length != 0) revert InvalidRestrictionConfig();
             return;
         }
-        if (mode == Constants.TAX_MODE_VENUE) {
-            if (
-                t.taxBpsMax == 0 || t.taxBpsMax > Constants.TAX_BPS_ABSOLUTE_MAX
-                    || t.taxBps > t.taxBpsMax
-            ) revert InvalidTaxConfig();
-            if (t.taxSink != Constants.DEAD && t.taxSink != bountyRecipient) {
-                revert TaxSinkNotAllowed(t.taxSink);
-            }
-        } else if (mode == Constants.TAX_MODE_HARD) {
-            if (t.taxBps != 0 || t.taxBpsMax != 0 || t.exempt.length != 0) {
-                revert InvalidTaxConfig();
-            }
-            if (
-                t.taxSink != address(0) && t.taxSink != Constants.DEAD
-                    && t.taxSink != bountyRecipient
-            ) revert TaxSinkNotAllowed(t.taxSink);
-        } else {
-            revert InvalidTaxConfig();
-        }
-        if (
-            t.exempt.length > Constants.MAX_TAX_EXEMPT || t.venues.length > Constants.MAX_TAX_VENUES
-        ) {
-            revert InvalidTaxConfig();
-        }
-        // D47 / V2A-02: every exempt entry must be on the owner managed
-        // allowlist, or be this launch's locker or hook, an enabled escrow or an
-        // enabled extension. a deployer cannot exempt its own forwarder.
-        // then, mirroring the token (FT-07): a contract that exists at launch
-        // (so never the token itself), listed once.
-        uint256 n = t.exempt.length;
+        uint256 n = r.allowed.length;
+        if (n > Constants.MAX_ALLOWED) revert InvalidRestrictionConfig();
         for (uint256 i; i < n; ++i) {
-            address a = t.exempt[i];
-            if (
-                !exemptAllowed[a] && a != locker && a != hook && !enabledEscrows[a]
-                    && !enabledExtensions[a]
-            ) revert ExemptNotAllowed(a);
-            if (a.code.length == 0) revert InvalidTaxConfig();
-            for (uint256 j; j < i; ++j) {
-                if (t.exempt[j] == a) revert InvalidTaxConfig();
-            }
-        }
-        // mirrors `TaxVenues.derive` and the token's duplicate check: a known
-        // kind, a nonzero pair factory, and no two entries deriving the same
-        // pool (kind 1 ignores v3Fee). Bounded: n <= MAX_TAX_VENUES.
-        n = t.venues.length;
-        bytes32[] memory keys = new bytes32[](n);
-        for (uint256 i; i < n; ++i) {
-            TaxVenue calldata v = t.venues[i];
-            if ((v.kind != 1 && v.kind != 2) || v.factory == address(0)) revert InvalidTaxConfig();
-            bytes32 k = keccak256(
-                abi.encode(
-                    v.kind, v.factory, v.initCodeHash, v.counterToken, v.kind == 2 ? v.v3Fee : 0
-                )
-            );
-            for (uint256 j; j < i; ++j) {
-                if (keys[j] == k) revert InvalidTaxConfig();
-            }
-            keys[i] = k;
+            if (r.allowed[i] == address(0)) revert InvalidRestrictionConfig();
         }
     }
 
@@ -618,9 +586,8 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         IArtCoinsTokenV2 t = IArtCoinsTokenV2(token);
         if (
             t.canonicalHook() != c.pool.hook || t.canonicalPoolId() != PoolId.unwrap(poolId)
-                || t.poolManager() != poolManager || t.taxMode() != c.tax.mode
-                || t.taxSink() != c.tax.taxSink
-        ) revert InvalidTaxConfig();
+                || t.poolManager() != poolManager || t.restricted() != c.restriction.restricted
+        ) revert InvalidRestrictionConfig();
     }
 
     function _record(DeploymentConfigV2 calldata c, address token, PoolId poolId) internal {
@@ -791,11 +758,21 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         emit EscrowSet(escrow, enabled);
     }
 
-    /// @notice D47: adds or removes a tax exempt candidate. Affects new launches only.
-    function setExemptAllowed(address account, bool allowed) external onlyOwner {
-        if (account == address(0)) revert ZeroAddress();
-        exemptAllowed[account] = allowed;
-        emit ExemptAllowedSet(account, allowed);
+    /// @inheritdoc IArtCoinsFactoryV2
+    function defaultAllowed() external view returns (address[] memory) {
+        return _defaultAllowed;
+    }
+
+    /// @inheritdoc IArtCoinsFactoryV2
+    /// @dev Replaces the whole set. Entries are nonzero. Affects new launches only.
+    function setDefaultAllowed(address[] calldata accounts) external onlyOwner {
+        uint256 n = accounts.length;
+        if (n > Constants.MAX_ALLOWED) revert InvalidRestrictionConfig();
+        for (uint256 i; i < n; ++i) {
+            if (accounts[i] == address(0)) revert ZeroAddress();
+        }
+        _defaultAllowed = accounts;
+        emit DefaultAllowedSet(accounts);
     }
 
     /// @notice D38: points the factory at a token deployer bound to it.

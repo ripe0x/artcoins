@@ -41,23 +41,23 @@ contract ArtCoinsDeployerV2 is IConstantsBound {
     }
 
     /// @notice Deploys the token. Factory only; `launcher` must be the factory.
-    /// @param t        Token config.
-    /// @param supply   Supply minted to `launcher`.
-    /// @param tax      Tax config (validated by the token constructor).
-    /// @param canon    Canonical hook, PoolManager, tickSpacing, bounty recipient.
-    /// @param launcher The factory; the token's `launcher` and mint recipient.
-    /// @param salt     `keccak256(abi.encode(sender, configHash))`, computed by the factory.
+    /// @param t           Token config.
+    /// @param supply      Supply minted to `launcher`.
+    /// @param restriction Restriction config (validated by the token constructor).
+    /// @param canon       Canonical hook, PoolManager, tickSpacing.
+    /// @param launcher    The factory; the token's `launcher` and mint recipient.
+    /// @param salt        `keccak256(abi.encode(sender, configHash))`, computed by the factory.
     function deploy(
         IArtCoinsFactoryV2.TokenConfigV2 memory t,
         uint256 supply,
-        IArtCoinsFactoryV2.TaxConfigV2 memory tax,
+        IArtCoinsFactoryV2.RestrictionConfigV2 memory restriction,
         ArtCoinsTokenV2.CanonicalPool memory canon,
         address launcher,
         bytes32 salt
     ) external returns (address token) {
         if (msg.sender != factory) revert NotFactory();
         if (launcher != factory) revert LauncherMismatch();
-        bytes memory initCode = _initCode(t, supply, tax, canon, launcher);
+        bytes memory initCode = _initCode(t, supply, restriction, canon, launcher);
         assembly ("memory-safe") {
             token := create2(0, add(initCode, 0x20), mload(initCode), salt)
         }
@@ -69,12 +69,12 @@ contract ArtCoinsDeployerV2 is IConstantsBound {
     function predict(
         IArtCoinsFactoryV2.TokenConfigV2 memory t,
         uint256 supply,
-        IArtCoinsFactoryV2.TaxConfigV2 memory tax,
+        IArtCoinsFactoryV2.RestrictionConfigV2 memory restriction,
         ArtCoinsTokenV2.CanonicalPool memory canon,
         address launcher,
         bytes32 salt
     ) external view returns (address) {
-        bytes32 h = keccak256(_initCode(t, supply, tax, canon, launcher));
+        bytes32 h = keccak256(_initCode(t, supply, restriction, canon, launcher));
         return address(
             uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, h))))
         );
@@ -88,12 +88,13 @@ contract ArtCoinsDeployerV2 is IConstantsBound {
     function _initCode(
         IArtCoinsFactoryV2.TokenConfigV2 memory t,
         uint256 supply,
-        IArtCoinsFactoryV2.TaxConfigV2 memory tax,
+        IArtCoinsFactoryV2.RestrictionConfigV2 memory restriction,
         ArtCoinsTokenV2.CanonicalPool memory canon,
         address launcher
     ) private pure returns (bytes memory) {
         return abi.encodePacked(
-            type(ArtCoinsTokenV2).creationCode, abi.encode(t, supply, tax, canon, launcher)
+            type(ArtCoinsTokenV2).creationCode,
+            abi.encode(t, supply, restriction, canon, launcher)
         );
     }
 }

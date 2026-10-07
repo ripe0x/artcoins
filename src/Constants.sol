@@ -74,16 +74,11 @@ library Constants {
     /// @notice Max flat deploy fee.
     uint256 internal constant MAX_DEPLOY_FEE = 1 ether;
 
-    // ── token tax ─────────────────────────────────────────────────────────
-    /// @notice Tax modes, immutable per token and mirrored into the hook pool record.
-    uint8 internal constant TAX_MODE_NONE = 0;
-    uint8 internal constant TAX_MODE_VENUE = 1;
-    uint8 internal constant TAX_MODE_HARD = 2;
-    /// @notice Hard ceiling for any token's `taxBpsMax`.
-    uint16 internal constant TAX_BPS_ABSOLUTE_MAX = 2000;
-    uint256 internal constant MAX_TAX_VENUES = 32;
-    uint256 internal constant MAX_TAX_EXEMPT = 16;
-    /// @notice Burn sink. A tax sink must be DEAD or the pool's bounty recipient.
+    // ── token restriction ────────────────────────────────────────────────
+    /// @notice Max entries in a restricted coin's launch allowlist, bounding the
+    ///         construction loop and the factory assembled set.
+    uint256 internal constant MAX_ALLOWED = 64;
+    /// @notice Burn sink.
     address internal constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
     // ── keepers, swapper, burn router ─────────────────────────────────────
@@ -180,12 +175,7 @@ library Constants {
                 MAX_EXTENSIONS,
                 MAX_EXTENSION_BPS,
                 MAX_PROTOCOL_FEE_BPS,
-                TAX_MODE_NONE,
-                TAX_MODE_VENUE,
-                TAX_MODE_HARD,
-                TAX_BPS_ABSOLUTE_MAX,
-                MAX_TAX_VENUES,
-                MAX_TAX_EXEMPT,
+                MAX_ALLOWED,
                 DEAD
             )
         );

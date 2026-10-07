@@ -15,9 +15,11 @@ interface IArtCoinsHookV2 is IConstantsBound {
     // ── types ─────────────────────────────────────────────────────────────
 
     /// @notice Frozen per pool record. `launcher != 0` marks an official pool.
+    ///         `restricted` mirrors the coin's launch flag; the hook grants a
+    ///         PoolManager transfer allowance on each swap when it is set.
     struct PoolInfo {
         uint16 version;
-        uint8 taxMode;
+        bool restricted;
         uint40 createdAt;
         address launcher;
         address token;
@@ -69,7 +71,7 @@ interface IArtCoinsHookV2 is IConstantsBound {
         address indexed token,
         address indexed launcher,
         uint16 version,
-        uint8 taxMode
+        bool restricted
     );
     event SkimConfigInitialized(PoolId indexed poolId, SkimConfig config);
     event MevModuleInitialized(PoolId indexed poolId, address indexed module);

@@ -81,13 +81,11 @@ library LaunchV2Lib {
         c.mev.startingSkimBps = _u24(vm.parseJsonUint(j, ".mev.startingSkimBps"));
         c.mev.windowSeconds = _u32(vm.parseJsonUint(j, ".mev.windowSeconds"));
 
-        c.tax.mode = _u8(vm.parseJsonUint(j, ".tax.mode"));
-        c.tax.taxBps = _u16(vm.parseJsonUint(j, ".tax.taxBps"));
-        c.tax.taxBpsMax = _u16(vm.parseJsonUint(j, ".tax.taxBpsMax"));
-        c.tax.taxSink = vm.parseJsonAddress(j, ".tax.taxSink");
-        c.tax.venueAdmin = vm.parseJsonAddress(j, ".tax.venueAdmin");
-        c.tax.exempt = _addrs(j, ".tax.exempt");
-        // venues: none at launch (add only later by the venue admin)
+        c.restriction.restricted = vm.parseJsonBool(j, ".restriction.restricted");
+        if (c.restriction.restricted) {
+            c.restriction.allowed = _addrs(j, ".restriction.allowed");
+        }
+        // the factory seeds the escrow, locker, extensions and defaultAllowed set.
     }
 
     // ── preflight ─────────────────────────────────────────────────────────
@@ -179,7 +177,7 @@ library LaunchV2Lib {
         require(info.version == Constants.STACK_VERSION, "launch: info version");
         IArtCoinsHookV2.PoolInfo memory pi = IArtCoinsHookV2(t.hook).poolInfo(poolId);
         require(pi.version == Constants.STACK_VERSION && pi.token == token, "launch: hook poolInfo");
-        require(pi.taxMode == l.cfg.tax.mode, "launch: tax mode");
+        require(pi.restricted == l.cfg.restriction.restricted, "launch: restricted");
         IArtCoinsTokenV2 c = IArtCoinsTokenV2(token);
         require(c.launcherVersion() == Constants.STACK_VERSION, "launch: token version");
         require(c.canonicalPoolId() == PoolId.unwrap(poolId), "launch: canonical pool");

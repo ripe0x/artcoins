@@ -1,33 +1,23 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {IArtCoinsFactoryV2} from "./IArtCoinsFactoryV2.sol";
-
 /// @title  IArtCoinsTokenV2
-/// @notice v2 art coin surface beyond erc20. Tax mode, cap, sink, canonical
-///         pool and launcher are immutable. Mode VENUE taxes coin leaving a
-///         venue to a non exempt recipient; mode HARD blocks PoolManager
-///         flows not granted by the canonical hook in the same tx and any
-///         transfer touching a listed venue.
+/// @notice v2 art coin surface beyond erc20. The canonical pool, hook and
+///         launcher are immutable. `restricted` is set at launch. While
+///         restricted, a transfer passes if it is a mint or burn, if either
+///         side is on the allowlist, or if one side is the PoolManager and the
+///         amount fits the transient allowance the canonical hook granted this
+///         transaction. The coin admin manages the allowlist, may turn
+///         restriction off once, and may lock both permanently.
 interface IArtCoinsTokenV2 {
     // ── events ────────────────────────────────────────────────────────────
 
-    event TaxEnabled(
-        bytes32 indexed canonicalPoolId,
-        address indexed canonicalHook,
-        uint8 mode,
-        uint16 taxBps,
-        uint16 taxBpsMax,
-        address taxSink
-    );
-    event TaxApplied(
-        address indexed from, address indexed to, uint256 gross, uint256 tax, uint256 net
-    );
-    event TaxBpsUpdated(uint16 oldBps, uint16 newBps);
-    event TaxVenueAdded(address indexed venue);
-    event VenueAdminRenounced();
-    /// @notice D48, additive: venue admin handed over.
-    event VenueAdminTransferred(address indexed previousAdmin, address indexed newAdmin);
+    /// @notice An allowlist entry changed. Emitted once per seed at construction.
+    event AllowedSet(address indexed account, bool allowed);
+    /// @notice Restriction turned off. Transfers pass without the allowlist after this.
+    event Unrestricted();
+    /// @notice Allowlist and the restriction switch frozen.
+    event Locked();
 
     event Verified(address indexed admin, address indexed token);
     event UpdateImage(string image);
@@ -41,40 +31,32 @@ interface IArtCoinsTokenV2 {
 
     error NotAdmin();
     error NotOriginalAdmin();
-    error NotVenueAdmin();
     error NotCanonicalHook();
     error AlreadyVerified();
     error ZeroAddress();
     error InvalidRenderer();
-    error TaxNotEnabled();
-    error TaxBpsTooHigh();
-    error TaxConfigInvalid();
-    error TooManyTaxVenues();
-    error InvalidTaxVenue(address venue);
-    /// @notice HARD mode: PoolManager flow not covered by a same tx canonical grant.
-    error CanonicalFlowRequired(address from, address to, uint256 amount);
-    /// @notice HARD mode: transfer touching a listed venue.
-    error VenueTransferBlocked(address venue);
-    /// @notice D30: a string field exceeds its byte cap. `field`: 0 name, 1 symbol,
+    error RestrictionConfigInvalid();
+    /// @notice The allowlist and the restriction switch are frozen.
+    error AlreadyLocked();
+    /// @notice Restriction is already off.
+    error NotRestricted();
+    /// @notice Restricted transfer with no allowlisted side and no sufficient
+    ///         PoolManager allowance.
+    error TransferRestricted(address from, address to, uint256 amount);
+    /// @notice A string field exceeds its byte cap. `field`: 0 name, 1 symbol,
     ///         2 image, 3 metadata, 4 context. Caps 64, 16, 2048, 4096, 4096 bytes.
     error StringTooLong(uint8 field, uint256 len);
 
-    // ── tax reads ─────────────────────────────────────────────────────────
+    // ── restriction reads ─────────────────────────────────────────────────
 
-    /// @notice Constants.TAX_MODE_NONE, _VENUE or _HARD.
-    function taxMode() external view returns (uint8);
-    /// @notice Current rate in BPS, within [0, taxBpsMax]. VENUE mode only.
-    function taxBps() external view returns (uint16);
-    function taxBpsMax() external view returns (uint16);
-    /// @notice Constants.DEAD or the pool's bounty recipient.
-    function taxSink() external view returns (address);
+    function restricted() external view returns (bool);
+    function locked() external view returns (bool);
+    function isAllowed(address account) external view returns (bool);
+    /// @notice Remaining PoolManager transfer allowance this transaction.
+    function transferAllowance() external view returns (uint256);
     function canonicalHook() external view returns (address);
     function canonicalPoolId() external view returns (bytes32);
     function poolManager() external view returns (address);
-    /// @notice May add venues; 0 once renounced.
-    function venueAdmin() external view returns (address);
-    function isTaxVenue(address account) external view returns (bool);
-    function isTaxExempt(address account) external view returns (bool);
 
     // ── version tag ───────────────────────────────────────────────────────
 
@@ -83,29 +65,20 @@ interface IArtCoinsTokenV2 {
     /// @notice Constants.STACK_VERSION.
     function launcherVersion() external pure returns (uint16);
 
-    // ── tax admin ─────────────────────────────────────────────────────────
+    // ── restriction admin (coin admin only) ───────────────────────────────
 
-    /// @notice Token admin. `newBps <= taxBpsMax`.
-    function setTaxBps(uint16 newBps) external;
-    /// @notice Venue admin. Add only, no removal path.
-    function addTaxVenue(address venue) external;
-    /// @notice Venue admin. Derives the v2/v3 pool address from this token and adds it.
-    function addDerivedTaxVenue(IArtCoinsFactoryV2.TaxVenue calldata venue)
-        external
-        returns (address pool);
-    /// @notice Venue admin. Freezes the venue list.
-    /// @notice D48, additive. Venue admin only, nonzero. Not moved by `updateAdmin`.
-    function transferVenueAdmin(address newAdmin) external;
-    function renounceVenueAdmin() external;
+    /// @notice Add or remove an allowlist entry. Reverts once locked.
+    function setAllowed(address account, bool allowed) external;
+    /// @notice Turn restriction off permanently. Reverts once locked.
+    function unrestrict() external;
+    /// @notice Freeze the allowlist and the restriction switch permanently.
+    function lock() external;
 
     // ── canonical hook only ───────────────────────────────────────────────
 
-    /// @notice VENUE mode: realized coin leaving the PoolManager from the
-    ///         canonical pool this tx; exempts that much of PoolManager outflow.
-    function attestCanonicalBudget(bytes32 poolId, uint256 outAmount) external;
-    /// @notice HARD mode: per direction allowance for PoolManager transfers
-    ///         this tx, cumulative, consumed exactly.
-    function grantCanonicalFlow(bytes32 poolId, uint256 outAmount, uint256 inAmount) external;
+    /// @notice Increase the transient PoolManager transfer allowance for a
+    ///         canonical swap this transaction. No op for another pool.
+    function increaseTransferAllowance(bytes32 poolId, uint256 amount) external;
 
     // ── metadata (as v1) ──────────────────────────────────────────────────
 

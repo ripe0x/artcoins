@@ -42,6 +42,7 @@ contract DeployV2Stack is Script {
             Addresses.POOL_MANAGER,
             Addresses.POSITION_MANAGER,
             Addresses.PERMIT2,
+            Addresses.UNIVERSAL_ROUTER,
             Addresses.CREATE2_DEPLOYER
         );
         p.treasury = vm.envOr("TREASURY", owner);

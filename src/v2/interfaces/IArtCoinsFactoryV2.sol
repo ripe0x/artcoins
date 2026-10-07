@@ -58,24 +58,13 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
         uint32 windowSeconds; // <= Constants.MAX_MEV_WINDOW
     }
 
-    /// @notice A v2 or v3 style pool whose address the token derives from its
-    ///         own address at construction.
-    struct TaxVenue {
-        uint8 kind; // 1 = v2 style CREATE2 pair, 2 = v3 style CREATE2 pool
-        address factory; // pair or pool factory
-        bytes32 initCodeHash; // factory init code hash
-        address counterToken; // the other token of the pair
-        uint24 v3Fee; // v3 fee tier, kind 2 only
-    }
-
-    struct TaxConfigV2 {
-        uint8 mode; // Constants.TAX_MODE_NONE, _VENUE or _HARD
-        uint16 taxBps;
-        uint16 taxBpsMax; // <= Constants.TAX_BPS_ABSOLUTE_MAX
-        address taxSink; // Constants.DEAD or the bounty recipient
-        address venueAdmin; // 0 = token admin
-        address[] exempt; // <= Constants.MAX_TAX_EXEMPT
-        TaxVenue[] venues; // <= Constants.MAX_TAX_VENUES
+    /// @notice Launch restriction. `allowed` holds extra allowlist entries; the
+    ///         factory seeds the stack's escrow, this launch's locker, the
+    ///         launch extensions and the owner `defaultAllowed` set on top.
+    ///         Must be empty when `restricted` is false.
+    struct RestrictionConfigV2 {
+        bool restricted;
+        address[] allowed; // <= Constants.MAX_ALLOWED
     }
 
     /// @notice Launch extension: receives a share of supply and optional eth.
@@ -92,7 +81,7 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
         FeeConfigV2 fee;
         LockerConfigV2 locker;
         MevConfigV2 mev;
-        TaxConfigV2 tax;
+        RestrictionConfigV2 restriction;
         ExtensionConfigV2[] extensions;
     }
 
@@ -140,6 +129,9 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     event ProtocolRecipientSet(address indexed oldRecipient, address indexed newRecipient);
     event ReferralPayoutSet(address indexed oldPayout, address indexed newPayout);
     event TeamFeeRecipientSet(address indexed oldRecipient, address indexed newRecipient);
+    /// @notice The owner `defaultAllowed` set was replaced. Seeded into every
+    ///         restricted coin's launch allowlist.
+    event DefaultAllowedSet(address[] accounts);
     event Rescued(address indexed token, address indexed to, uint256 amount);
 
     // ── errors ────────────────────────────────────────────────────────────
@@ -162,8 +154,7 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     error TotalSupplyTooLow();
     error MaxExtensionsExceeded();
     error MaxExtensionBpsExceeded();
-    error InvalidTaxConfig();
-    error TaxSinkNotAllowed(address sink);
+    error InvalidRestrictionConfig();
     error TeamFeeRecipientNotSet();
     error EthTransferFailed();
     /// @notice A project reward recipient is a contract with no way to receive
@@ -209,6 +200,8 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     function enabledMevModules(address module) external view returns (bool);
     function enabledExtensions(address extension) external view returns (bool);
     function enabledEscrows(address escrow) external view returns (bool);
+    /// @notice Owner set addresses seeded into every restricted coin's allowlist.
+    function defaultAllowed() external view returns (address[] memory);
 
     // ── owner ─────────────────────────────────────────────────────────────
 
@@ -228,6 +221,8 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     function setProtocolRecipient(address payable recipient) external;
     function setReferralPayout(address payable payout) external;
     function setTeamFeeRecipient(address recipient) external;
+    /// @notice Replace the `defaultAllowed` set. Affects new launches only.
+    function setDefaultAllowed(address[] calldata accounts) external;
     /// @notice Sends stray eth (`token == address(0)`) or erc20 held by the factory.
     function rescue(address token, address to, uint256 amount) external;
 }
