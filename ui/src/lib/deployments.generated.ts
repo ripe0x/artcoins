@@ -6,11 +6,10 @@ export const REGISTRY_CHAIN_ID = 1;
 export const REGISTRY_OWNER: Address = '0xCB43078C32423F5348Cab5885911C3B5faE217F9';
 
 export type StackId = 'legacy' | 'open' | 'current';
-export const CURRENT_STACK_ID: StackId = 'current';
 
 export interface RegistryStack {
   label: string;
-  status: 'current' | 'superseded' | 'legacy';
+  status: 'current' | 'deployed' | 'superseded' | 'legacy';
   factory: Address;
   deployedAt: string;
   /** block of the factory deployment, the fromBlock for TokenCreated scans */
@@ -41,7 +40,7 @@ export const STACKS: Record<StackId, RegistryStack> = {
   },
 };
 
-/** addresses of the current stack */
+/** addresses of the stack with id current */
 export const CURRENT = {
   factory: '0x49596c375c139E79bb937bcf826068a8F78D4e0e',
   hook: '0x636c050296B5Cc528D8785169Bf8923716FCa9cc',
@@ -59,6 +58,7 @@ export const CURRENT = {
   payout: '0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4',
   poolExtensionAllowlist: '0xd6D5fb5CfE386d0eB73a09cba5d190beb802e6E8',
 } as const satisfies Record<string, Address>;
+
 
 /** external infra (not in the registry) */
 export const INFRA = {

@@ -6,8 +6,9 @@ pragma solidity ^0.8.26;
 
 /// @title Addresses
 /// @notice Ethereum mainnet addresses of the artcoins stacks, copied from the registry.
-///         CURRENT_* is the live stack. OPEN_* and LEGACY_* are superseded: scripts that target
-///         them must say so and be gated behind ALLOW_SUPERSEDED=1.
+///         Constants are prefixed with the stack id. CURRENT_* is the 0x4959 stack (v1 abi), V2_* is the v2
+///         stack, OPEN_* and LEGACY_* are older stacks. Scripts that target a superseded stack must say
+///         so and be gated behind ALLOW_SUPERSEDED=1.
 library Addresses {
     uint256 internal constant CHAIN_ID = 1;
 

@@ -58,8 +58,9 @@ function shape(r) {
   need(r.chainId === 1, 'chainId must be 1'); need(addr(r.owner), 'owner address'); need(/^[0-9a-f]{40}$/.test(r.repoCommit), 'repoCommit sha');
   const planned = (id) => r.stacks?.[id]?.status === 'planned';
   for (const [id, s] of Object.entries(r.stacks || {})) {
-    keys(s, ['label', 'status', 'factory', 'deployedAt', 'notes'], `stack ${id}`);
-    need(['current', 'superseded', 'legacy', 'planned'].includes(s.status) && addr(s.factory, planned(id)) && date(s.deployedAt), `stack ${id} values`);
+    keys(s, ['label', 'status', 'factory', 'deployedAt', 'notes', ...('replaces' in (s || {}) ? ['replaces'] : [])], `stack ${id}`);
+    need(!('replaces' in (s || {})) || (r.stacks[s.replaces] && s.replaces !== id), `stack ${id} replaces an existing other stack`);
+    need(['current', 'deployed', 'superseded', 'legacy', 'planned'].includes(s.status) && addr(s.factory, planned(id)) && date(s.deployedAt), `stack ${id} values`);
   }
   const seen = new Set();
   for (const c of r.contracts || []) {
@@ -71,7 +72,7 @@ function shape(r) {
     need(r.stacks?.[c.stack] && ROLES.includes(c.role), w + ' stack/role');
     need(int(c.deployBlock) && hash(c.deployTxHash) && date(c.deployedAt) && addr(c.deployer, true) && addr(c.owner, true), w + ' deploy fields');
     need(['yes', 'no', 'unknown'].includes(c.etherscanVerified) && ['enabled', 'deprecated', 'unknown'].includes(c.state), w + ' enums');
-    need(['current', 'superseded', 'legacy', 'planned'].includes(c.status) && ['chain', 'broadcast', 'brief', 'planned'].includes(c.provenance) && typeof c.chainVerified === 'boolean', w + ' enums2');
+    need(['current', 'deployed', 'superseded', 'legacy', 'planned'].includes(c.status) && ['chain', 'broadcast', 'brief', 'planned'].includes(c.provenance) && typeof c.chainVerified === 'boolean', w + ' enums2');
     need(['verified', 'unverified', 'mismatch'].includes(c.source?.bytecodeMatch) && (c.source?.repoPath === null || /^src\//.test(c.source.repoPath)), w + ' source');
     const sp = c.source?.profile ?? null; const sm = c.source?.metadata ?? null;
     need((sp === null || ['default', 'ci'].includes(sp)) && (sm === null || ['none', 'ipfs'].includes(sm)) && (sp === null) === (sm === null), w + ' source.profile/metadata: default|ci with none|ipfs, both or neither');
@@ -325,7 +326,7 @@ if (flag('--fill-source')) { // source fields only, nothing else in the registry
 
 // ---------- report ----------
 const pad = (s, n) => String(s).padEnd(n).slice(0, n);
-console.log(`registry ${FILE} @ ${reg.repoCommit.slice(0, 8)}  rpc ${URL.replace(/\/\/.*@/, '//')}  head ${head}  artifacts ${[...indexes.keys()].join(',') || 'none loaded'}${missingDirs.length ? ' (missing: ' + [...new Set(missingDirs)].join(',') + ')' : ''}${DISCOVER ? ' [discover]' : ''}`);
+console.log(`registry ${FILE} @ ${reg.repoCommit.slice(0, 8)}  rpc ${URL.replace(/^(\w+:\/\/)(?:[^/@]*@)?([^/?#]*).*$/, '$1$2')}  head ${head}  artifacts ${[...indexes.keys()].join(',') || 'none loaded'}${missingDirs.length ? ' (missing: ' + [...new Set(missingDirs)].join(',') + ')' : ''}${DISCOVER ? ' [discover]' : ''}`);
 console.log([pad('contract', 34), pad('address', 11), pad('stack', 8), pad('role', 10), pad('code', 5), pad('owner', 7), pad('state', 11), pad('bytecode', 11), pad('profile', 13), pad('wiring', 6)].join(' '));
 for (const r of rows) console.log([pad(r.c.name, 34), pad(r.c.address.slice(0, 10), 11), pad(r.c.stack, 8), pad(r.c.role, 10), pad(r.code, 5), pad(r.owner, 7), pad(r.state, 11), pad(r.bc, 11), pad(r.prof ?? '-', 13), pad(r.wiring, 6)].join(' '));
 console.log('\n' + [pad('coin', 8), pad('address', 11), pad('stack', 8), pad('name/symbol/pool', 17), 'launched on chain by stack factory'].join(' '));

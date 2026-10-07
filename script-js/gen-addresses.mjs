@@ -31,12 +31,14 @@ function contract(stack, name, nth = 0) {
   return hits[nth];
 }
 const coin = (symbol) => reg.coins.find((c) => c.symbol === symbol) ?? die('registry has no coin ' + symbol);
-const stackId = (status) => {
-  const ids = Object.entries(reg.stacks).filter(([, s]) => s.status === status).map(([id]) => id);
-  return ids.length === 1 ? ids[0] : die(`expected exactly one stack with status ${status}, got ${ids}`);
-};
-const CURRENT_ID = stackId('current');
-if (CURRENT_ID !== 'current') die('script constants are named CURRENT_*, registry current stack id is ' + CURRENT_ID);
+// Stack ids are stable and name the constants (CURRENT_*, OPEN_*, LEGACY_*, V2_*); status is a field.
+// A planned stack (null factory) is skipped: no constants until it is deployed.
+const deployed = (id) => reg.stacks[id] && reg.stacks[id].status !== 'planned' && reg.stacks[id].factory !== null;
+(() => { // exactly one stack carries status current
+  const ids = Object.entries(reg.stacks).filter(([, s]) => s.status === 'current').map(([id]) => id);
+  if (ids.length !== 1) die(`expected exactly one stack with status current, got ${ids}`);
+})();
+const factoryOf = (id) => reg.contracts.find((c) => c.stack === id && c.role === 'factory' && c.address?.toLowerCase() === reg.stacks[id].factory.toLowerCase()) ?? die('registry has no factory entry in stack ' + id);
 
 // ---- constant table: [constName, contract, note] ----
 // nth picks among same named contracts of a stack in registry order (e.g. two LL renderers, two open routers).
@@ -69,6 +71,18 @@ const STACK_CONSTS = [
     ['BURN_ROUTER', C('open', 'BurnRouter', 1)],
     ['BURN_ROUTER_V0', C('open', 'BurnRouter', 0)],
   ]],
+  ...(deployed('v2') ? [['V2', [
+    ['FACTORY', C('v2', 'ArtCoinsFactoryV2')],
+    ['HOOK', C('v2', 'ArtCoinsHookV2')],
+    ['LOCKER', C('v2', 'ArtCoinsLpLockerV2')],
+    ['ESCROW', C('v2', 'ArtCoinsFeeEscrowV2')],
+    ['ALLOWLIST', C('v2', 'ArtCoinsPoolExtensionAllowlist')],
+    ['MEV_MODULE', C('v2', 'ArtCoinsMevLinearSkimV2')],
+    ['DEPLOYER', C('v2', 'ArtCoinsDeployerV2')],
+    ['BURN_ROUTER', C('v2', 'BurnRouterV2')],
+    ['PROTOCOL_FEE_CONTROLLER', C('v2', 'ProtocolFeeControllerV2')],
+    ['KEEPER', C('v2', 'ArtCoinsKeeperV2')],
+  ]]] : []),
   ['LEGACY', [
     ['FACTORY', C('legacy', 'ArtCoinsFactory')],
     ['HOOK', C('legacy', 'ArtCoinsHookStaticFeeV2')],
@@ -107,6 +121,11 @@ const INFRA = [
   ['SCRIPTY_STORAGE', '0xbD11994aABB55Da86DC246EBB17C1Be0af5b7699'],
 ].map(([n, a]) => [n, cs(a)]);
 
+for (const id of Object.keys(reg.stacks)) {
+  if (!deployed(id)) console.log(`skip  stack ${id} (${reg.stacks[id].status}, no deployed factory): no constants generated`);
+  else if (!STACK_CONSTS.some(([n]) => n.toLowerCase() === id)) die(`stack ${id} is deployed but has no constant table in STACK_CONSTS`);
+}
+
 const COIN_CONSTS = reg.coins.map((k) => ['COIN_' + k.symbol.toUpperCase().replace(/[^A-Z0-9]/g, '_'), cs(k.address), k]);
 
 // ---- solidity ----
@@ -125,8 +144,9 @@ function solidity() {
   L.push('');
   L.push('/// @title Addresses');
   L.push('/// @notice Ethereum mainnet addresses of the artcoins stacks, copied from the registry.');
-  L.push('///         CURRENT_* is the live stack. OPEN_* and LEGACY_* are superseded: scripts that target');
-  L.push('///         them must say so and be gated behind ALLOW_SUPERSEDED=1.');
+  L.push('///         Constants are prefixed with the stack id. CURRENT_* is the 0x4959 stack (v1 abi), V2_* is the v2');
+  L.push('///         stack, OPEN_* and LEGACY_* are older stacks. Scripts that target a superseded stack must say');
+  L.push('///         so and be gated behind ALLOW_SUPERSEDED=1.');
   L.push('library Addresses {');
   L.push(`    uint256 internal constant CHAIN_ID = ${reg.chainId};`);
   L.push('');
@@ -138,7 +158,7 @@ function solidity() {
     const st = reg.stacks[sid];
     L.push(`    // ${id} stack (${st.status}): ${st.label}, factory deployed ${st.deployedAt}`);
     for (const [n, c] of entries) L.push(decl(`${id}_${n}`, cs(c.address)));
-    L.push(`    uint256 internal constant ${id}_FACTORY_DEPLOY_BLOCK = ${String(contract(sid, 'ArtCoinsFactory').deployBlock).replace(/\B(?=(\d{3})+(?!\d))/g, '_')};`);
+    L.push(`    uint256 internal constant ${id}_FACTORY_DEPLOY_BLOCK = ${String(factoryOf(sid).deployBlock).replace(/\B(?=(\d{3})+(?!\d))/g, '_')};`);
     L.push('');
   }
   L.push('    // coins');
@@ -164,12 +184,12 @@ function typescript() {
   L.push(`export const REGISTRY_CHAIN_ID = ${reg.chainId};`);
   L.push(`export const REGISTRY_OWNER: Address = ${q(cs(reg.owner))};`);
   L.push('');
-  L.push("export type StackId = " + Object.keys(reg.stacks).map(q).join(' | ') + ';');
-  L.push(`export const CURRENT_STACK_ID: StackId = ${q(CURRENT_ID)};`);
+  const ids = Object.keys(reg.stacks).filter(deployed);
+  L.push("export type StackId = " + ids.map(q).join(' | ') + ';');
   L.push('');
   L.push('export interface RegistryStack {');
   L.push('  label: string;');
-  L.push("  status: 'current' | 'superseded' | 'legacy';");
+  L.push("  status: 'current' | 'deployed' | 'superseded' | 'legacy';");
   L.push('  factory: Address;');
   L.push('  deployedAt: string;');
   L.push('  /** block of the factory deployment, the fromBlock for TokenCreated scans */');
@@ -177,21 +197,30 @@ function typescript() {
   L.push('}');
   L.push('');
   L.push('export const STACKS: Record<StackId, RegistryStack> = {');
-  for (const [id, s] of Object.entries(reg.stacks)) {
+  for (const id of ids) {
+    const s = reg.stacks[id];
     L.push(`  ${id}: {`);
     L.push(`    label: ${JSON.stringify(s.label).replace(/"/g, "'")},`);
     L.push(`    status: ${q(s.status)},`);
     L.push(`    factory: ${q(cs(s.factory))},`);
     L.push(`    deployedAt: ${q(s.deployedAt)},`);
-    L.push(`    deployBlock: ${contract(id, 'ArtCoinsFactory').deployBlock}n,`);
+    L.push(`    deployBlock: ${factoryOf(id).deployBlock}n,`);
     L.push('  },');
   }
   L.push('};');
   L.push('');
-  L.push('/** addresses of the current stack */');
-  L.push('export const CURRENT = {');
-  for (const [n, c] of STACK_CONSTS[0][1]) L.push(`  ${n.toLowerCase().replace(/_([a-z])/g, (_, x) => x.toUpperCase())}: ${q(cs(c.address))},`);
-  L.push('} as const satisfies Record<string, Address>;');
+  const camel = (n) => n.toLowerCase().replace(/_([a-z])/g, (_, x) => x.toUpperCase());
+  const stackObj = (name, id, entries, doc, withBlock) => {
+    L.push(`/** ${doc} */`);
+    L.push(`export const ${name} = {`);
+    for (const [n, c] of entries) L.push(`  ${camel(n)}: ${q(cs(c.address))},`);
+    if (withBlock) L.push(`  deployBlock: ${factoryOf(id).deployBlock}n,`);
+    L.push(withBlock ? '} as const;' : '} as const satisfies Record<string, Address>;');
+    L.push('');
+  };
+  stackObj('CURRENT', 'current', STACK_CONSTS.find(([n]) => n === 'CURRENT')[1], 'addresses of the stack with id current', false);
+  const v2 = STACK_CONSTS.find(([n]) => n === 'V2');
+  if (v2) stackObj('V2', 'v2', v2[1], 'addresses of the stack with id v2', true);
   L.push('');
   L.push('/** external infra (not in the registry) */');
   L.push('export const INFRA = {');
@@ -227,13 +256,13 @@ const link = (a) => `[${a.slice(0, 6)}…${a.slice(-4)}](https://etherscan.io/ad
 function readmeBlock() {
   const rows = ['| stack | status | factory | hook | locker | escrow | module | coins |', '|---|---|---|---|---|---|---|---|'];
   // oldest first, by factory deploy date
-  const ids = Object.keys(reg.stacks).sort((a, b) => reg.stacks[a].deployedAt.localeCompare(reg.stacks[b].deployedAt));
+  const ids = Object.keys(reg.stacks).filter(deployed).sort((a, b) => reg.stacks[a].deployedAt.localeCompare(reg.stacks[b].deployedAt));
   for (const id of ids) {
     const st = reg.stacks[id];
     const inStack = reg.contracts.filter((c) => c.stack === id);
     const role = (r) => inStack.filter((c) => c.role === r);
     const one = (r) => { const h = role(r); return h.length ? link(cs(h[h.length - 1].address)) : 'none'; };
-    const fac = contract(id, 'ArtCoinsFactory');
+    const fac = factoryOf(id);
     const mods = role('mevModule');
     const mod = mods.length > 1 ? `${mods.length} modules, see registry` : one('mevModule');
     const coins = reg.coins.filter((k) => k.stack === id).map((k) => `\`${k.symbol}\``).join(', ') || 'none';
