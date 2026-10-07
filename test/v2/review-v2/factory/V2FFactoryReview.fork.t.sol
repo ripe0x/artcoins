@@ -404,18 +404,19 @@ contract V2FFactoryReviewTest is ForkBase {
         }
     }
 
-    /// V2F-03, accepted by D54 (not fixed): the proof still holds on purpose.
-    /// every cap at its maximum: strings at D30 caps, 7 reward slots, 14
-    /// positions, VENUE with 16 exempt and 32 venues, 10 extensions (9 vaults
-    /// plus a dev buy). the factory accepts it; no mainnet tx can carry it.
-    /// only the launcher is affected; the ui keeps configs far below the caps.
-    function test_V2F03_maxConfigLaunch_overTxGasCap() public onlyFork {
+    /// V2F-03 / D54 under D73: every cap at its maximum (strings at D30 caps, 7
+    /// reward slots, 14 positions, a restricted coin with 20 allowlist entries,
+    /// 10 extensions: 9 vaults plus a dev buy). Retiring the tax config made the
+    /// heaviest launch cheaper than the old VENUE 16 exempt + 32 venues config,
+    /// so it now fits under the EIP-7825 per tx gas cap; the D54 residual is
+    /// resolved for the shapes the config can express.
+    function test_V2F03_maxConfigLaunch_underTxGasCap() public onlyFork {
         (IArtCoinsFactoryV2.DeploymentConfigV2 memory c, uint256 v) =
             _maxCfg(true, true, true, true);
         console2.log("token creationCode bytes", type(ArtCoinsTokenV2).creationCode.length);
         (address token, uint256 total) = _measure(c, v, "max: every cap at its limit");
         assertTrue(factory.isArtCoin(token));
-        assertGt(total, TX_GAS_CAP, "accepted config exceeds the EIP-7825 cap");
+        assertLt(total, TX_GAS_CAP, "the heaviest launch fits under the EIP-7825 cap");
     }
 
     function test_gas_breakdown() public onlyFork {

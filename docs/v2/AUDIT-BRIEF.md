@@ -63,7 +63,7 @@ a token launcher: the factory deploys an erc20 (solady) via a CREATE2 deployer, 
 | h1-notes | a stipend recipient can read state and call `PoolManager.sync`, nothing else; the hook resets sync after the pushes; an erc20 prepay style router that syncs before the swap must be tested before being declared supported |
 | h1-notes | owner enabled extensions run between liquidity placement and arming and could add liquidity in that window (trusted) |
 | V2A-09 | the PoolManager transfer allowance is per transaction, so an erc4337 bundle shares it across user ops on a restricted coin |
-| D54 | a config at every cap exceeds the per tx gas cap (launcher only) |
+| D54 | resolved under D73: the heaviest launch config now fits under the per tx gas cap (retiring the tax config removed the venue and exempt processing) |
 | D55 | `setTokenDeployer` is an owner trust surface by design |
 | D44 | self referral through a router is accepted and bounded by the frozen cap and the protocol floor |
 | D70 | a token whose `transfer` returns false or 1 to 31 bytes reverts `FeeDelivery.sendErc20` (`InvalidTransferReturn`); a blocklist style token therefore reverts `ProtocolFeeControllerV2.processFees(token)` for that token |
