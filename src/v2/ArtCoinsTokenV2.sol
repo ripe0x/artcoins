@@ -272,6 +272,7 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
         if (msg.sender != _admin) revert NotAdmin();
         if (locked) revert AlreadyLocked();
         if (account == address(0)) revert ZeroAddress();
+        if (account == poolManager || account == canonicalHook) revert AllowedForbidden(account);
         // a factory seeded entry stays on the list for the life of the coin.
         if (_pinned[account] && !allowed) revert AllowedPinned(account);
         _allowed[account] = allowed;

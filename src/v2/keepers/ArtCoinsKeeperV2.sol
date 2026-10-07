@@ -115,8 +115,9 @@ contract ArtCoinsKeeperV2 is IArtCoinsKeeperV2, ReentrancyGuardTransient {
         // A restricted coin forwards coin to the caller only through its own
         // transfer rule. The keeper is not on the coin allowlist, so a coin push
         // to the caller would revert; skip it and keep forwarding eth. The coin
-        // stays in the keeper for the owner to rescue; the locker keeper reward
-        // is 0 by default (D28), so a restricted coin leaves no coin here.
+        // stays in the keeper, which has no owner and no recovery path. coin
+        // reaches the keeper only when a launch names it as a reward recipient
+        // or someone buys to it; the locker keeper reward is paid in eth.
         uint256 coinBal = _balanceOf(token);
         uint256 coinFwd;
         if (coinBal > 0) {

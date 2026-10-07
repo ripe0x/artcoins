@@ -343,6 +343,16 @@ contract TokenV2Test is TokenV2Base {
         );
     }
 
+    function test_setAllowed_rejectsPoolManagerAndHook() public {
+        ArtCoinsTokenV2 token = _restricted(new address[](0));
+        vm.expectRevert(abi.encodeWithSelector(IArtCoinsTokenV2.AllowedForbidden.selector, PM));
+        token.setAllowed(PM, true);
+        vm.expectRevert(abi.encodeWithSelector(IArtCoinsTokenV2.AllowedForbidden.selector, HOOK));
+        token.setAllowed(HOOK, true);
+        vm.expectRevert(abi.encodeWithSelector(IArtCoinsTokenV2.AllowedForbidden.selector, PM));
+        token.setAllowed(PM, false);
+    }
+
     function test_constructor_rejectsPoolManagerAndHookInAllowed() public {
         vm.expectRevert(abi.encodeWithSelector(IArtCoinsTokenV2.AllowedForbidden.selector, PM));
         _newToken(true, _one(PM));
