@@ -4,10 +4,10 @@
 
 | item | value |
 |---|---|
-| repo | https://github.com/ripe0x/artcoins |
+| repo | https://github.com/ripe0x/new-material-coin-launcher (private; request read access from the owner) |
 | branch | `v2` |
-| commit | `9fed001e0d0ac7ef95ea161a71d4524c66a12833` (tag this as `v2-audit-1` before you start; audit the hash, not the branch) |
-| pull request | https://github.com/ripe0x/artcoins/pull/34 |
+| commit | `f756b1e9d2ba3c349687a5447575f4cd31124d52`, tag `v2-audit-3`. audit the hash, not the branch. earlier targets: `v2-audit-1` = 9fed001, `v2-audit-2` = d8575db |
+| pull request | https://github.com/ripe0x/new-material-coin-launcher/pull/35 (draft) |
 | toolchain | forge 1.7.1, solc 0.8.26, via ir, `FOUNDRY_PROFILE=ci` (optimizer_runs 200) is what ships; `foundry.toml` |
 | chain | ethereum mainnet only, uniswap v4 (PoolManager 0x000000000004444c5dc75cB358380D2e3dE08A90), native eth pairs only |
 | status | not deployed. nothing in `src/v2` is on chain. the live stacks under `src/` (v1) are out of scope except as context |
@@ -68,6 +68,7 @@ a token launcher: the factory deploys an erc20 (solady) via a CREATE2 deployer, 
 | D54 | a config at every cap exceeds the per tx gas cap (launcher only) |
 | D55 | `setTokenDeployer` is an owner trust surface by design |
 | D44 | self referral through a router is accepted and bounded by the frozen cap and the protocol floor |
+| D70 | a token whose `transfer` returns false or 1 to 31 bytes reverts `FeeDelivery.sendErc20` (`InvalidTransferReturn`); a blocklist style token therefore reverts `ProtocolFeeControllerV2.processFees(token)` for that token |
 
 ## what already exists (use it, do not redo it)
 
@@ -82,13 +83,13 @@ a token launcher: the factory deploys an erc20 (solady) via a CREATE2 deployer, 
 ## how to build and run
 
 ```
-git clone https://github.com/ripe0x/artcoins && cd artcoins && git checkout 9fed001e0d0ac7ef95ea161a71d4524c66a12833
+git clone https://github.com/ripe0x/new-material-coin-launcher && cd new-material-coin-launcher && git checkout v2-audit-3
 git submodule update --init --recursive
 export MAINNET_RPC_URL=<keyed mainnet rpc>   # the tenderly public gateway works but rate limits
 FOUNDRY_PROFILE=ci forge build --sizes --skip "test/**" --skip script
 FOUNDRY_PROFILE=ci forge test --match-path "test/v2/**" --fork-url $MAINNET_RPC_URL --fork-block-number 26130269 --fork-retries 8 --fork-retry-backoff 2000
 ```
-expected: 354 pass on the fork plus 235 unit tests without a fork (`forge test --match-path "test/v2/**" --match-contract "^(EscrowV2Test|FeeDeliveryTest|TokenV2Test|ConstantsV2Test|MevLinearSkimV2Test|KeeperV2Test|ProtocolFeeControllerV2Test|RendererV2Test|AirdropV2Test|VaultV2Test)$"`). a cold compile of the whole tree needs about 14 gb; the commands above skip the v1 test tree.
+expected at `v2-audit-3`: 364 pass on the fork plus 238 unit tests without a fork (`forge test --match-path "test/v2/**" --match-contract "^(EscrowV2Test|FeeDeliveryTest|TokenV2Test|ConstantsV2Test|MevLinearSkimV2Test|KeeperV2Test|ProtocolFeeControllerV2Test|RendererV2Test|AirdropV2Test|VaultV2Test)$"`). a cold compile of the whole tree needs about 14 gb; the commands above skip the v1 test tree.
 
 ## deliverable we want
 
@@ -105,5 +106,5 @@ expected: 354 pass on the fork plus 235 unit tests without a fork (`forge test -
 | item | value |
 |---|---|
 | owner | the repo owner (single eoa, 0xCB43078C32423F5348Cab5885911C3B5faE217F9, will be the contract owner) |
-| fixes | we will fix on `v2`, tag `v2-audit-2`, and ask for a re check of changed files only |
-| disclosure | the v1 findings about live contracts are already public on this branch; v2 is not deployed, so there is nothing to coordinate before publication |
+| fixes | we fix on `v2`, tag the next target `v2-audit-4`, and ask for a re check of changed files only |
+| disclosure | keep findings private to the owner. v2 is not deployed; findings on the live v1 contracts go to the owner first |
