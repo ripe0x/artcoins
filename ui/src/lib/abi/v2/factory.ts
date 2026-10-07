@@ -2306,6 +2306,17 @@ export const factoryV2Abi = [
   },
   {
     "type": "error",
+    "name": "AllowedForbidden",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "ArrayLengthMismatch",
     "inputs": []
   },
@@ -2365,6 +2376,17 @@ export const factoryV2Abi = [
     "type": "error",
     "name": "FeeConfigOutOfBounds",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "HookEscrowNotSet",
+    "inputs": [
+      {
+        "name": "hook",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   },
   {
     "type": "error",

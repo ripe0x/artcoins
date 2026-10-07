@@ -149,6 +149,25 @@ export const tokenV2Abi = [
   },
   {
     "type": "function",
+    "name": "isPinned",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "isVerified",
     "inputs": [],
     "outputs": [
@@ -517,12 +536,39 @@ export const tokenV2Abi = [
   },
   {
     "type": "error",
+    "name": "AllowedForbidden",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "AllowedPinned",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "AlreadyLocked",
     "inputs": []
   },
   {
     "type": "error",
     "name": "AlreadyVerified",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "CanonicalPoolInvalid",
     "inputs": []
   },
   {
