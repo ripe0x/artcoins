@@ -16,19 +16,17 @@ kill_timeout = "30s"
   # (KEEPER_<ID>_CHECK_INTERVAL_SECONDS: 111 3600, LAYER 86400, v2 3600) and runs at most every
   # KEEPER_<ID>_MIN_RUN_INTERVAL_SECONDS (111 21600, LAYER 86400, v2 21600)
   INTERVAL_SECONDS = "600"
-  # funding need = 3,500,000 (LAYER gas limit) x MAX_GAS_GWEI: 14 gwei -> 0.049 eth, under the 0.05 eth hot key limit
+  # funding need = largest enabled gas limit x MAX_GAS_GWEI. 111 and v2: 2,000,000 x 14 gwei = 0.028 eth
   MAX_GAS_GWEI = "14"
   MAX_PRIORITY_GWEI = "2"
   STATE_PATH = "/data/state.json"
   PORT = "8080"
-  KEEPERS = "111,layer,v2"
+  # LAYER runs in the layer-keeper app of ripe0x/new-material (D64)
+  KEEPERS = "111,v2"
   # every send through PRIVATE_RPC_URL. live 111 without the relay refuses to start unless ALLOW_PUBLIC_MEMPOOL = "1"
-  PRIVATE_RPC_KEEPERS = "111,layer,v2"
+  PRIVATE_RPC_KEEPERS = "111,v2"
   # anything but "0", "false" or empty is a dry run
   DRY_RUN = "0"
-  # until the keepers are recorded in deployments/mainnet.json (then remove these and redeploy):
-  # KEEPER_111 = "0x..."
-  # KEEPER_LAYER = "0x..."
 
 [mounts]
   source = "keeper_state"
