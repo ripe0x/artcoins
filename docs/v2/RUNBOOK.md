@@ -33,13 +33,20 @@ rules for every send: (1) simulate first by swapping `cast send` for `cast call 
 | 6 | decide the LAYER freezes (scripty, renderer, extension) | irreversible, owner choice, do last | see 6 |
 | 7, 9, 10 | keep 0x4959 deprecated, stranding limits, leave alone list | context | none |
 
-done on chain (read at block 26136123):
+done on chain (part 1 actions 1 to 5 and 8 complete; read at block 26137826):
 
 | action | tx | block |
 |---|---|---|
 | 1 collect 111 | owner nonce 3766, `collectRewards(0x61C9…)` on 0x866e, https://evm.now/tx/0xd02578644e6e7af831da59a111618c5620f874c66945ee44e86b64aaca80c723?chainId=1 | 26135717 |
 | 5 floor 0x2eDB | owner nonce 3767, `setMinLayerOutPerWeth(15402461028354640333126378)`, https://evm.now/tx/0xbb83afee249adb2ac03db77bc1a8c66d2b345752655dc18dce10d2f6728f02b2?chainId=1 | 26135720 |
 | 5 floor 0xE600 | owner nonce 3768, same floor, https://evm.now/tx/0x084c43596046634ffa282e13a4f7af654ef0f809450b6e0202a27773ddab1b46?chainId=1 | 26135723 |
+| 4 deprecate 0xf051 | nonce 3769, `setDeprecated(true)`, https://evm.now/tx/0x2aaa56ff62a6cbdea060c21883645bb928d6e42b98232a38db7ece7ded69ef87?chainId=1 | 26137418 |
+| 2 collect LAYER | nonce 3770, `collectRewards(LAYER)` on 0x75BE, https://evm.now/tx/0xd4f1c19067128080626a638c8008bdc88f4e78c318bd6c3b2551edaea41a751d?chainId=1 | 26137423 |
+| 8 claim owner LAYER | nonce 3771, `claim(owner, LAYER)` on 0x1143, 3,315,375.59 LAYER, https://evm.now/tx/0xe8b4b438ae93992afc77f6ffaa72cf1f6386efecec45acd71293aa2211aac35f?chainId=1 | 26137426 |
+| 4 deprecate 0xf051 (repeat, no state change) | nonce 3772, https://evm.now/tx/0x09127b1ee0b31353eba8eaca6623a2480ed69954c536f245aebca04d5d56d999?chainId=1 | 26137798 |
+| 2 collect LAYER (repeat) | nonce 3773, https://evm.now/tx/0x20b6781dd138f701ea036ee0e52888d9b4e1b51e09e772863d5147003b319fa3?chainId=1 | 26137800 |
+| 8 claim owner weth | nonce 3774, `claim(owner, WETH)` on 0x1143, 0.4796 weth, https://evm.now/tx/0xcc6a42bb0733587383a26831cf47bedc30f3494fdb27cee2e0c3c5a2b667ee06?chainId=1 | 26137802 |
+| 3 deploy 111 helper | nonce 3775, `CollectFlushKeeperV1` at 0xa8fd2c8DB6A8EDfBa9eC2993b37F534e34D0B50E, runtime matches the repo (registry `verified`, default profile), https://evm.now/tx/0x1abd9c123b902276c25f881b6802fa7fd5690f0bfef06c43af00d2d2cc56c159?chainId=1 | 26137826 |
 
 ## part 1: today, without redeploying
 

@@ -35,7 +35,8 @@ after D65 to D70 (merged head, same commands):
 
 | open item (HANDOFF) | state |
 |---|---|
-| 1 runbook part 1 | owner ran action 1 (block 26135717) and action 5 (26135720, 26135723) before this session. open: action 2 collect LAYER, action 4 deprecate 0xf051, action 3 deploy 111 helper, action 8 claim owner LAYER fees. all simulated at block 26136123 |
+| 1 runbook part 1 | done. actions 1, 2, 3, 4, 5 and 8 are on chain (RUNBOOK done table). the 111 helper is `CollectFlushKeeperV1` at 0xa8fd2c8DB6A8EDfBa9eC2993b37F534e34D0B50E (block 26137826) |
+| 4 keeper in the registry | done. role `keeper`, stack `current`, bytecode `verified` (default profile); `verify-registry.mjs --build --require-artifacts`: 57 contracts, 2 coins, 0 drift, 0 warnings |
 | 2 audit tags | done. `v2-audit-1` = 9fed001, `v2-audit-2` = d8575db pushed to origin; the mirror job skipped both (not on master), public repo has none |
 | D65 to D68 | accepted (D69), implemented, reviewed, merged; tag `v2-audit-3` is the reviewer's recheck target. D70 records the FeeDelivery revert |
 | ui finding (item 12) | the ui loads coin images from one public gateway (`IPFS_GATEWAY = https://ipfs.io/ipfs/` in ui/src/lib/security.ts). ipfs.io answered 429 during the e2e run, so visitors see broken images whenever it throttles. fix before the site deploy: a gateway fallback list or a dedicated gateway |
