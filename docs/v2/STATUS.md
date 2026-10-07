@@ -33,6 +33,8 @@ after D65 to D70 (merged head, same commands):
 | ui e2e on that record | 18 pass, 1 timeout in the wallet dialog (`05-deploy-closed`, element detached during the connect click); the spec passes 3 of 3 on rerun |
 | `DRY_RUN=1 script/v2/deploy.sh mainnet` | refuses: TREASURY unset (owner to set TREASURY, TREASURY_BPS, DEPLOY_FEE, PROTOCOL_BPS in script/v2/env/mainnet.env) |
 
+**deploy blocked (2026-10-07):** the independent audit of `v2-audit-3` found ACV2-01 (high): a canonical grant consumed by a side pool take survives an offsetting canonical swap, so VENUE side buys skip tax and HARD side pool coin exits as erc20. reproduced on the fork (`test/v2/review-v3/ACV2_01.fork.t.sol`). fix per D71 in progress on branch `acv2-01`; then the full table, an independent re review, tag `v2-audit-4`.
+
 | open item (HANDOFF) | state |
 |---|---|
 | 1 runbook part 1 | done. actions 1, 2, 3, 4, 5 and 8 are on chain (RUNBOOK done table). the 111 helper is `CollectFlushKeeperV1` at 0xa8fd2c8DB6A8EDfBa9eC2993b37F534e34D0B50E (block 26137826) |
