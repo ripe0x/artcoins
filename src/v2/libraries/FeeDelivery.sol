@@ -11,13 +11,13 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 /// @dev    Invariant: once the calling contract is an escrow depositor (and,
 ///         for erc20, the token lets the escrow pull from the caller), every
 ///         wei reaches `to` or `to`'s escrow balance. The exceptions are an
-///         erc20 `transfer` that returns false and a token without code, which
-///         revert the call.
+///         erc20 `transfer` that returns data other than a true word (false or
+///         a short return) and a token without code, which revert the call.
 ///         Callers must reject `to == address(0)` before calling: a native
 ///         push to the zero address succeeds and burns the amount.
 library FeeDelivery {
-    /// @notice An erc20 `transfer` returned a value other than true.
-    error TransferReturnedFalse();
+    /// @notice An erc20 `transfer` returned data that is not empty or a true word.
+    error InvalidTransferReturn();
 
     /// @notice Sends `amount` wei to `to` forwarding at most `gasCap` gas.
     ///         Returndata is never copied (no returndata bomb). On failure the
@@ -39,8 +39,9 @@ library FeeDelivery {
     /// @notice Transfers `amount` of `token` to `to`. Accepts tokens that
     ///         return nothing or `true`. When `transfer` reverts, the exact
     ///         amount is approved to `escrow` and `storeFees` pulls it. When
-    ///         `transfer` returns false, the call reverts with
-    ///         `TransferReturnedFalse` and the amount stays with the caller.
+    ///         `transfer` returns false or returndata shorter than 32 bytes, the
+    ///         call reverts with `InvalidTransferReturn` and the amount stays
+    ///         with the caller.
     ///         A token without code reverts in the approval (`ApproveFailed`).
     /// @return pushed True when `to` received the tokens directly (or `amount == 0`).
     function sendErc20(address escrow, address token, address to, uint256 amount)
@@ -65,10 +66,16 @@ library FeeDelivery {
                     and(iszero(returndatasize()), gt(extcodesize(token), 0))
                 )
             )
-            // a call that succeeded with a returned word other than 1
-            returnedFalse := and(ok, and(gt(returndatasize(), 0x1f), iszero(eq(mload(0x00), 1))))
+            // a call that succeeded with returndata that is not a true word
+            returnedFalse := and(
+                ok,
+                and(
+                    iszero(iszero(returndatasize())),
+                    iszero(and(gt(returndatasize(), 0x1f), eq(mload(0x00), 1)))
+                )
+            )
         }
-        if (returnedFalse) revert TransferReturnedFalse();
+        if (returnedFalse) revert InvalidTransferReturn();
         if (!pushed) {
             SafeTransferLib.safeApproveWithRetry(token, escrow, amount);
             IArtCoinsFeeEscrowV2(escrow).storeFees(to, token, amount);

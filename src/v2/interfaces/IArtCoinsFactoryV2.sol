@@ -168,8 +168,8 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     error EthTransferFailed();
     /// @notice A project reward recipient is a contract with no way to receive
     ///         eth or claim an escrow credit: the factory, the coin, the
-    ///         PoolManager, the launch's hook, locker, fee escrows or token
-    ///         deployer, or an extension in the config.
+    ///         PoolManager, the launch's hook, locker, fee escrows, token
+    ///         deployer, mev module, or an extension in the config.
     error RecipientCannotReceive(address recipient);
 
     // ── launch ────────────────────────────────────────────────────────────

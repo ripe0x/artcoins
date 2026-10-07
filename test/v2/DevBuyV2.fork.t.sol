@@ -249,8 +249,8 @@ contract DevBuyV2ForkTest is Test {
         assertGe(got, minOut, "min out honored");
         assertLt(got, 1000e18, "price moved against the buyer");
         assertEq(balBefore - address(this).balance, 1 ether, "full 1 eth spent");
-        assertEq(refund.balance, 0, "full fill: no refund");
-        assertEq(address(devBuy).balance, dust, "no eth stranded");
+        assertEq(refund.balance, dust, "full fill: refund is the eth already held");
+        assertEq(address(devBuy).balance, 0, "no eth stranded");
         assertEq(address(stub).balance, stubDust, "factory kept nothing");
         assertEq(coin.balanceOf(address(devBuy)), 0, "no coin stranded");
     }
@@ -274,7 +274,7 @@ contract DevBuyV2ForkTest is Test {
         assertGt(got, 1e18, "tokens delivered");
         assertGt(refunded, 20 ether, "most of the eth could not be taken");
         assertLt(refunded, sent, "something was spent");
-        assertEq(address(devBuy).balance, dust, "no eth stranded");
+        assertEq(address(devBuy).balance, 0, "no eth stranded");
         assertEq(coin.balanceOf(address(devBuy)), 0);
         assertGt(sent - refunded, 5 ether, "the pool took the depth it had");
     }

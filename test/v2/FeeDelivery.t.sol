@@ -8,6 +8,7 @@ import {ArtCoinsFeeEscrowV2} from "../../src/v2/ArtCoinsFeeEscrowV2.sol";
 import {IArtCoinsFeeEscrowV2} from "../../src/v2/interfaces/IArtCoinsFeeEscrowV2.sol";
 import {FeeDelivery} from "../../src/v2/libraries/FeeDelivery.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
 // ── shared mocks (also imported by the locker and escrow tests) ─────────────
 
@@ -83,6 +84,35 @@ contract FalseTransferToken is ERC20 {
 
     function transfer(address, uint256) public pure override returns (bool) {
         return false;
+    }
+}
+
+/// @dev `transfer` succeeds and returns `len` bytes of returndata.
+contract ShortReturnToken {
+    uint256 immutable len;
+
+    constructor(uint256 len_) {
+        len = len_;
+    }
+
+    function transfer(address, uint256) external view returns (bool) {
+        uint256 n = len;
+        assembly {
+            mstore(0x00, not(0))
+            return(0x00, n)
+        }
+    }
+
+    function approve(address, uint256) external pure returns (bool) {
+        return true;
+    }
+
+    function transferFrom(address, address, uint256) external pure returns (bool) {
+        return true;
+    }
+
+    function balanceOf(address) external pure returns (uint256) {
+        return 0;
     }
 }
 
@@ -248,15 +278,26 @@ contract FeeDeliveryTest is Test {
         FalseTransferToken t = new FalseTransferToken();
         t.mint(address(harness), 10e18);
         address to = makeAddr("to");
-        vm.expectRevert(FeeDelivery.TransferReturnedFalse.selector);
+        vm.expectRevert(FeeDelivery.InvalidTransferReturn.selector);
         harness.sendErc20(address(t), to, 3e18);
         assertEq(escrow.balances(to, address(t)), 0);
         assertEq(escrow.totalOwed(address(t)), 0);
         assertEq(t.balanceOf(address(harness)), 10e18);
     }
 
+    function test_delivery_erc20_shortReturn_reverts() public {
+        uint256[2] memory lens = [uint256(1), 31];
+        for (uint256 i; i < 2; ++i) {
+            ShortReturnToken t = new ShortReturnToken(lens[i]);
+            address to = makeAddr("to");
+            vm.expectRevert(FeeDelivery.InvalidTransferReturn.selector);
+            harness.sendErc20(address(t), to, 3e18);
+            assertEq(escrow.balances(to, address(t)), 0);
+        }
+    }
+
     function test_delivery_erc20_noCodeToken_reverts() public {
-        vm.expectRevert();
+        vm.expectRevert(SafeTransferLib.ApproveFailed.selector);
         harness.sendErc20(makeAddr("no-code-token"), makeAddr("to"), 3e18);
     }
 
