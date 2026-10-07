@@ -263,7 +263,7 @@ contract ProtocolFeeControllerV2Test is Test {
     function test_pfcV2_processFees_falseReturningToken_reverts_noCredit() public {
         FalseTransferToken t = new FalseTransferToken();
         t.mint(address(pfc), 10e18);
-        vm.expectRevert(FeeDelivery.TransferReturnedFalse.selector);
+        vm.expectRevert(FeeDelivery.InvalidTransferReturn.selector);
         pfc.processFees(address(t));
         assertEq(escrow.balances(address(treasury), address(t)), 0);
         assertEq(escrow.totalOwed(address(t)), 0);

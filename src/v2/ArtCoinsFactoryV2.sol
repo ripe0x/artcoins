@@ -440,10 +440,10 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     /// @dev Project reward recipients must be able to receive eth or claim an
     ///      escrow credit. The factory, the coin, the PoolManager, this launch's
-    ///      hook, locker, fee escrows and token deployer, and every extension in
-    ///      the config cannot do either.
+    ///      hook, locker, fee escrows, token deployer and mev module, and every
+    ///      extension in the config cannot do either.
     function _checkRecipients(DeploymentConfigV2 calldata c, address token) internal view {
-        address[8] memory fixedSet = [
+        address[9] memory fixedSet = [
             address(this),
             token,
             poolManager,
@@ -451,12 +451,13 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
             c.locker.locker,
             tokenDeployer,
             IArtCoinsLpLockerV2(c.locker.locker).feeEscrow(),
-            IArtCoinsHookV2(c.pool.hook).globals().feeEscrow
+            IArtCoinsHookV2(c.pool.hook).globals().feeEscrow,
+            c.mev.module
         ];
         uint256 n = c.locker.rewardRecipients.length;
         for (uint256 i; i < n; ++i) {
             address r = c.locker.rewardRecipients[i];
-            for (uint256 j; j < 8; ++j) {
+            for (uint256 j; j < 9; ++j) {
                 if (r == fixedSet[j]) revert RecipientCannotReceive(r);
             }
             for (uint256 j; j < c.extensions.length; ++j) {

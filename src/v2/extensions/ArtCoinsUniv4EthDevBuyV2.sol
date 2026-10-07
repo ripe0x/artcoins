@@ -50,20 +50,23 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 ///         liquidity. Unspent eth is refunded to `refundRecipient` fixed in
 ///         `extensionData`. The hook credits any unused skim to the fee escrow
 ///         under this contract (the PoolManager caller). The contract opts into
-///         `selfClaimOnly` on that escrow before the swap, claims its whole
-///         escrow balance to itself after it and forwards the claimed eth with
-///         the unspent eth to `refundRecipient`. `receive` accepts eth only from
-///         the escrow during that claim. Invariant: after each transaction the
-///         contract holds no eth and no escrow credit.
+///         `selfClaimOnly` on that escrow before the swap. After the swap it
+///         reads its credit and, when nonzero, claims it to itself; a failed
+///         claim reverts the launch. The refund is the contract's whole eth
+///         balance after the claim. `receive` accepts eth from the escrow
+///         during the claim. After each launch the contract holds zero eth and
+///         its credit in the current escrow is zero. Credit stored under this
+///         contract in a previous escrow stays in that escrow; the hook owner
+///         sets the escrow with `setFeeEscrow` (owner trust).
 contract ArtCoinsUniv4EthDevBuyV2 is ReentrancyGuard, IUnlockCallback, IArtCoinsUniv4EthDevBuyV2 {
     /// @notice The only caller of `receiveTokens`.
     address public immutable factory;
     /// @notice The Uniswap v4 PoolManager the pools live on.
     IPoolManager public immutable poolManager;
 
-    /// @dev Escrow whose claim payout `receive` currently accepts. Set only
-    ///      around the claim call.
-    address private _payer;
+    /// @dev Transient slot holding the escrow whose claim payout `receive`
+    ///      accepts. Set around the claim call.
+    uint256 private constant _PAYER_SLOT = uint256(keccak256("ArtCoinsUniv4EthDevBuyV2.payer"));
     /// @dev Escrows this contract has opted into `selfClaimOnly` on.
     mapping(address escrow => bool) private _optedIn;
 
@@ -82,7 +85,12 @@ contract ArtCoinsUniv4EthDevBuyV2 is ReentrancyGuard, IUnlockCallback, IArtCoins
 
     /// @dev Receives the escrow claim payout in `receiveTokens`.
     receive() external payable {
-        if (msg.sender != _payer) revert UnexpectedEth();
+        uint256 payer;
+        uint256 slot = _PAYER_SLOT;
+        assembly ("memory-safe") {
+            payer := tload(slot)
+        }
+        if (payer == 0 || msg.sender != address(uint160(payer))) revert UnexpectedEth();
     }
 
     /// @inheritdoc IArtCoinsExtensionV2
@@ -121,15 +129,17 @@ contract ArtCoinsUniv4EthDevBuyV2 is ReentrancyGuard, IUnlockCallback, IArtCoins
             (uint256, uint256)
         );
 
-        uint256 refunded = msg.value - spent;
-        if (escrow != address(0)) {
-            uint256 before = address(this).balance;
-            _payer = escrow;
-            try IArtCoinsFeeEscrowV2(escrow).claimTo(address(this), address(0), payable(this)) {}
-                catch {}
-            _payer = address(0);
-            refunded += address(this).balance - before;
+        if (escrow != address(0) && _credit(escrow) != 0) {
+            uint256 slot = _PAYER_SLOT;
+            assembly ("memory-safe") {
+                tstore(slot, escrow)
+            }
+            IArtCoinsFeeEscrowV2(escrow).claimTo(address(this), address(0), payable(this));
+            assembly ("memory-safe") {
+                tstore(slot, 0)
+            }
         }
+        uint256 refunded = address(this).balance;
         if (refunded != 0) {
             (bool ok,) = refundRecipient.call{value: refunded}("");
             if (!ok) revert EthRefundFailed();
@@ -184,5 +194,10 @@ contract ArtCoinsUniv4EthDevBuyV2 is ReentrancyGuard, IUnlockCallback, IArtCoins
         try IArtCoinsHookV2(hook).globals() returns (IArtCoinsHookV2.HookGlobals memory g) {
             if (g.feeEscrow.code.length != 0) escrow = g.feeEscrow;
         } catch {}
+    }
+
+    /// @dev Native credit of this contract in `escrow`.
+    function _credit(address escrow) private view returns (uint256) {
+        return IArtCoinsFeeEscrowV2(escrow).balances(address(this), address(0));
     }
 }
