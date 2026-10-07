@@ -109,7 +109,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         internal
         returns (PoolKey memory key, ArtCoinsTokenV2 token)
     {
-        token = _newToken(l.taxMode, l.bounty, address(hook));
+        token = _newToken(l.restricted, l.bounty, address(hook));
         IArtCoinsHookV2.PoolInitParams memory p = _params(l, address(token));
         p.skim.protocolRecipient = payable(protocol);
         key = hook.initializePool(p);
@@ -251,21 +251,6 @@ contract HookV2ForkTest is HookV2ForkBase {
     /// V2H-01 regression: a VENUE bounty recipient that tries to spend the
     /// buyer's exemption (take coin from the PoolManager inside `receive`)
     /// fails; the buyer's take stays fully exempt (expected tax 0).
-    function test_swap_hostileRecipient_cannotSpendBuyerExemption() public onlyFork {
-        HV2HostileRecipient r = new HV2HostileRecipient(pm, 1);
-        Launch memory l = _defaults(address(r));
-        l.taxMode = Constants.TAX_MODE_VENUE;
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(l);
-        r.setCoin(address(token));
-        uint256 bal0 = token.balanceOf(address(this));
-        uint256 dead0 = token.balanceOf(Constants.DEAD);
-        BalanceDelta d = _swap(key, true, -1 ether, 0, "");
-        assertEq(token.balanceOf(address(this)) - bal0, uint256(int256(d.amount1())), "untaxed");
-        assertEq(token.balanceOf(Constants.DEAD), dead0, "no tax");
-        assertEq(token.balanceOf(address(r)), 0);
-        assertGt(_escrowed(address(r)), 0);
-    }
-
     // ─── b3 / H4 H5: skim on the realized fill, unfilled share refunded ───
 
     function test_skim_fullFill_noRefund() public onlyFork {
@@ -352,7 +337,7 @@ contract HookV2ForkTest is HookV2ForkBase {
     /// credited to the user, nothing is stranded under UR.
     function test_skim_universalRouterPartialFill_nothingInEscrow() public onlyFork {
         address ur = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af;
-        ArtCoinsTokenV2 token = _newToken(0, bountyEoa, address(hook));
+        ArtCoinsTokenV2 token = _newToken(false, bountyEoa, address(hook));
         PoolKey memory key = hook.initializePool(_params(_defaults(bountyEoa), address(token)));
         _modify(key, -2000, 2000, int256(LIQ), 0); // narrow: ~105 eth exhausts it
         hook.initializeMevModule(key, "");
@@ -455,7 +440,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         ArtCoinsMevLinearSkimV2 m = new ArtCoinsMevLinearSkimV2(address(hook));
         Launch memory l = _defaults(bountyEoa);
         l.module = address(m);
-        ArtCoinsTokenV2 token = _newToken(0, bountyEoa, address(hook));
+        ArtCoinsTokenV2 token = _newToken(false, bountyEoa, address(hook));
         PoolKey memory key = hook.initializePool(_params(l, address(token)));
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -516,7 +501,7 @@ contract HookV2ForkTest is HookV2ForkBase {
     }
 
     function test_hookV2_directPoolManagerInit_reverts() public onlyFork {
-        ArtCoinsTokenV2 token = _newToken(0, bountyEoa, address(hook));
+        ArtCoinsTokenV2 token = _newToken(false, bountyEoa, address(hook));
         PoolKey memory key = PoolKey({
             currency0: Currency.wrap(address(0)),
             currency1: Currency.wrap(address(token)),
@@ -538,7 +523,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         allowlist.setPoolExtension(address(ext), true);
         ArtCoinsMevLinearSkimV2 m = new ArtCoinsMevLinearSkimV2(address(hook));
         Launch memory l = _defaults(bountyEoa);
-        l.taxMode = Constants.TAX_MODE_VENUE;
+        l.restricted = true;
         l.module = address(m);
         l.extension = address(ext);
         (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(l);
@@ -546,7 +531,7 @@ contract HookV2ForkTest is HookV2ForkBase {
 
         IArtCoinsHookV2.PoolInfo memory info = hook.poolInfo(pid);
         assertEq(info.version, Constants.STACK_VERSION);
-        assertEq(info.taxMode, Constants.TAX_MODE_VENUE);
+        assertTrue(info.restricted);
         assertEq(info.createdAt, block.timestamp);
         assertEq(info.launcher, address(this));
         assertEq(info.token, address(token));
@@ -581,12 +566,12 @@ contract HookV2ForkTest is HookV2ForkBase {
     }
 
     function test_hookV2_tokenMustNameThisHook() public onlyFork {
-        ArtCoinsTokenV2 token = _newToken(0, bountyEoa, makeAddr("otherHook"));
+        ArtCoinsTokenV2 token = _newToken(false, bountyEoa, makeAddr("otherHook"));
         IArtCoinsHookV2.PoolInitParams memory p = _params(_defaults(bountyEoa), address(token));
         vm.expectRevert(IArtCoinsHookV2.CanonicalHookMismatch.selector);
         hook.initializePool(p);
         // tick spacing must match the token's pinned pool id
-        token = _newToken(0, bountyEoa, address(hook));
+        token = _newToken(false, bountyEoa, address(hook));
         p = _params(_defaults(bountyEoa), address(token));
         p.tickSpacing = 60;
         vm.expectRevert(IArtCoinsHookV2.CanonicalHookMismatch.selector);
@@ -595,7 +580,7 @@ contract HookV2ForkTest is HookV2ForkBase {
 
     function test_hookV2_extensionMustBeAllowlisted() public onlyFork {
         HV2Extension ext = new HV2Extension(address(hook));
-        ArtCoinsTokenV2 token = _newToken(0, bountyEoa, address(hook));
+        ArtCoinsTokenV2 token = _newToken(false, bountyEoa, address(hook));
         Launch memory l = _defaults(bountyEoa);
         l.extension = address(ext);
         IArtCoinsHookV2.PoolInitParams memory p = _params(l, address(token));
@@ -720,7 +705,7 @@ contract HookV2ForkTest is HookV2ForkBase {
     /// the protocol leg never drops below `minProtocolShareBps` of the
     /// baseline skim; the referral only takes what is above it.
     function test_referral_neverBelowProtocolFloor() public onlyFork {
-        ArtCoinsTokenV2 t = _newToken(0, bountyEoa, address(hook));
+        ArtCoinsTokenV2 t = _newToken(false, bountyEoa, address(hook));
         Launch memory l = _defaults(bountyEoa);
         l.baseline = 1000; // 1% of volume
         l.bountyBps = 7000;
@@ -742,7 +727,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         assertEq(ref.balance, protocolLeg - floor, "referral only above the floor");
 
         // bounty plus floor above the baseline is refused at init
-        p = _params(l, address(_newToken(0, bountyEoa, address(hook))));
+        p = _params(l, address(_newToken(false, bountyEoa, address(hook))));
         p.minProtocolShareBps = 3001;
         vm.expectRevert(IArtCoinsHookV2.BadLegBps.selector);
         hook.initializePool(p);
@@ -800,141 +785,33 @@ contract HookV2ForkTest is HookV2ForkBase {
         );
     }
 
-    // ─── b1 / H14 / d2: tax attestations and flow grants ─────────────────
+    // ─── restriction: PoolManager transfer allowance granted on each swap ─
 
-    /// D46: after arming, nobody adds liquidity on a taxed canonical pool
-    /// through a direct PoolManager `modifyLiquidity` (the PositionManager
-    /// path is covered by HookV2RealLockerTest); NONE pools stay open.
-    function test_tax_thirdPartyAdd_reverts() public onlyFork {
-        uint8[2] memory modes = [Constants.TAX_MODE_VENUE, Constants.TAX_MODE_HARD];
-        for (uint256 m; m < 2; ++m) {
-            Launch memory l = _defaults(bountyEoa);
-            l.taxMode = modes[m];
-            (PoolKey memory k, ArtCoinsTokenV2 t) = _launch(l);
-            HV2AddRemoveRouter r = _fundedRouter(t);
-            vm.expectRevert(_closedErr());
-            r.run(k, -2000, 2000, 50e18, bytes32(uint256(7)), 2);
-            vm.expectRevert(_closedErr());
-            r.run(k, -2000, 2000, 50e18, bytes32(uint256(7)), 0); // add then remove
-            vm.expectRevert(_closedErr());
-            _modify(k, FULL_LO, FULL_HI, 1e18, bytes32(uint256(8)));
-        }
-        (PoolKey memory kn, ArtCoinsTokenV2 tn) = _launch(_defaults(bountyEoa));
-        HV2AddRemoveRouter rn = _fundedRouter(tn);
-        rn.run(kn, -2000, 2000, 50e18, bytes32(uint256(7)), 2);
-    }
-
-    function _closedErr() internal view returns (bytes memory) {
-        return abi.encodeWithSelector(
-            CustomRevert.WrappedError.selector,
-            address(hook),
-            IHooks.beforeAddLiquidity.selector,
-            abi.encodeWithSelector(ArtCoinsHookV2.TaxedPoolLiquidityClosed.selector),
-            abi.encodeWithSelector(Hooks.HookCallFailed.selector)
-        );
-    }
-
-    /// D46: before arming (and only in the creation block) any PoolManager
-    /// caller can place, as the locker does through the PositionManager;
-    /// after arming nobody can, launchers included. a pool left unarmed is
-    /// closed from the next block on.
-    function test_tax_addOnlyBeforeArming_andInCreationBlock() public onlyFork {
+    /// A restricted coin: a direct PoolManager `modifyLiquidity` add from a non
+    /// allowlisted router moves coin to the PoolManager with no granted
+    /// allowance, so the token transfer rule reverts the whole unlock.
+    function test_restricted_thirdPartyLpAdd_reverts() public onlyFork {
         Launch memory l = _defaults(bountyEoa);
-        l.taxMode = Constants.TAX_MODE_HARD;
-        ArtCoinsTokenV2 t = _newToken(l.taxMode, l.bounty, address(hook));
-        PoolKey memory k = hook.initializePool(_params(l, address(t)));
-        HV2AddRemoveRouter r = _fundedRouter(t);
-        r.run(k, -2000, 2000, 50e18, bytes32(uint256(7)), 2); // pre arm placement passes
-        (, uint256 o, uint256 i) = t.pendingCanonical();
-        assertEq(o + i, 0, "placement grant consumed exactly");
-        hook.initializeMevModule(k, "");
-        hook.setLauncher(address(r), true); // a launcher gets no exception
-        vm.expectRevert(_closedErr());
-        r.run(k, -2000, 2000, 1e18, bytes32(uint256(7)), 2);
-
-        // unarmed pool: open in its creation block only
-        ArtCoinsTokenV2 t2 = _newToken(l.taxMode, l.bounty, address(hook));
-        PoolKey memory k2 = hook.initializePool(_params(l, address(t2)));
-        HV2AddRemoveRouter r2 = _fundedRouter(t2);
-        vm.warp(block.timestamp + 12);
-        vm.expectRevert(_closedErr());
-        r2.run(k2, -2000, 2000, 1e18, bytes32(uint256(7)), 2);
+        l.restricted = true;
+        (PoolKey memory k, ArtCoinsTokenV2 t) = _launch(l);
+        HV2AddRemoveRouter r = new HV2AddRemoveRouter(pm);
+        vm.deal(address(r), 200 ether);
+        t.transfer(address(r), 200e18); // launcher is allowlisted, funding passes
+        vm.expectRevert();
+        r.run(k, -2000, 2000, 50e18, bytes32(uint256(7)), 2);
     }
 
-    /// D34: a canonical buy sold back in the same unlock leaves no budget, so
-    /// a side pool buy in that unlock is taxed in full (v1 and early v2: the
-    /// buy's attestation exempted it).
-    function test_venue_roundTripThenSidePoolBuy_taxedInFull() public onlyFork {
+    /// A restricted coin trades through the allowlisted router both ways.
+    function test_restricted_canonicalBuyAndSell_pass() public onlyFork {
         Launch memory l = _defaults(bountyEoa);
-        l.taxMode = Constants.TAX_MODE_VENUE;
+        l.restricted = true;
         (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(l);
-
-        // a hookless side pool for the same coin
-        PoolKey memory side = PoolKey({
-            currency0: Currency.wrap(address(0)),
-            currency1: Currency.wrap(address(token)),
-            fee: 3000,
-            tickSpacing: 60,
-            hooks: IHooks(address(0))
-        });
-        pm.initialize(side, TickMath.getSqrtPriceAtTick(0));
-        _modify(side, -887_220, 887_220, int256(LIQ), 0);
-
-        HV2SwapSeqRouter router = new HV2SwapSeqRouter(pm);
-        vm.deal(address(router), 10 ether);
-        HV2SwapSeqRouter.Step[] memory steps = new HV2SwapSeqRouter.Step[](3);
-        steps[0] = HV2SwapSeqRouter.Step(key, true, -1 ether, 0, ""); // canonical buy
-        steps[1] = HV2SwapSeqRouter.Step(key, false, 0, 0, ""); // sell it all back
-        steps[2] = HV2SwapSeqRouter.Step(side, true, -0.5 ether, 0, ""); // side pool buy
-
-        uint256 bal0 = token.balanceOf(address(this));
-        uint256 dead0 = token.balanceOf(Constants.DEAD);
-        router.run(steps);
-        uint256 out = router.lastTake1();
-        assertGt(out, 0);
-        uint256 tax = (out * token.taxBps()) / Constants.BPS;
-        assertEq(token.balanceOf(Constants.DEAD) - dead0, tax, "taxed in full");
-        assertEq(token.balanceOf(address(this)) - bal0, out - tax);
-        (uint256 b,,) = token.pendingCanonical();
-        assertEq(b, 0, "no budget left");
-    }
-
-    function test_venue_canonicalBuy_untaxed() public onlyFork {
-        Launch memory l = _defaults(bountyEoa);
-        l.taxMode = Constants.TAX_MODE_VENUE;
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(l);
-        uint256 dead0 = token.balanceOf(Constants.DEAD);
-        uint256 bal0 = token.balanceOf(address(this));
-        BalanceDelta d = _swap(key, true, -1 ether, 0, "");
-        assertEq(token.balanceOf(address(this)) - bal0, uint256(int256(d.amount1())), "buy untaxed");
-        assertEq(token.balanceOf(Constants.DEAD), dead0);
-    }
-
-    function test_hard_launchLiquidityPlacement_pass() public onlyFork {
-        Launch memory l = _defaults(bountyEoa);
-        l.taxMode = Constants.TAX_MODE_HARD;
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(l);
-        assertEq(hook.poolInfo(key.toId()).taxMode, Constants.TAX_MODE_HARD);
+        assertTrue(hook.poolInfo(key.toId()).restricted);
         assertGt(token.balanceOf(address(pm)), 0, "launch liquidity placed");
-    }
-
-    function test_hard_canonicalBuyAndSell_pass() public onlyFork {
-        Launch memory l = _defaults(bountyEoa);
-        l.taxMode = Constants.TAX_MODE_HARD;
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(l);
         _swap(key, true, -1 ether, 0, "");
         _swap(key, false, -1 ether, 0, "");
         _swap(key, true, 1 ether, 0, "");
         _swap(key, false, 0.5 ether, 0, "");
-        (, uint256 o, uint256 i) = token.pendingCanonical();
-        assertEq(o, 0, "outflow grants consumed exactly");
-        assertEq(i, 0, "inflow grants consumed exactly");
-    }
-
-    function _fundedRouter(ArtCoinsTokenV2 token) internal returns (HV2AddRemoveRouter router) {
-        router = new HV2AddRemoveRouter(pm);
-        vm.deal(address(router), 200 ether);
-        token.transfer(address(router), 200e18);
     }
 
     // ─── invariants ──────────────────────────────────────────────────────
@@ -1142,147 +1019,16 @@ contract HookV2ForkTest is HookV2ForkBase {
     }
 }
 
-/// tests that need a position created in an earlier tx (setUp is its own
-/// tx). the extra position is placed by a non launcher router in the launch
-/// phase, the way the locker places through the PositionManager (D46).
-abstract contract HookV2PriorTxBase is HookV2ForkBase {
-    PoolKey internal key;
-    ArtCoinsTokenV2 internal token;
-    HV2AddRemoveRouter internal router;
-    HV2AddRemoveRouter internal other;
-    bytes32 internal constant SALT = bytes32(uint256(9));
-    uint256 internal constant POS_LIQ = 20e18;
-
-    function _mode() internal pure virtual returns (uint8);
-
-    function setUp() public virtual override {
-        super.setUp();
-        if (!onFork) return;
-        Launch memory l = _defaults(bountyEoa);
-        l.taxMode = _mode();
-        token = _newToken(l.taxMode, l.bounty, address(hook));
-        router = new HV2AddRemoveRouter(pm); // the pool's locker
-        other = new HV2AddRemoveRouter(pm); // a non locker lp from the launch phase
-        IArtCoinsHookV2.PoolInitParams memory p = _params(l, address(token));
-        p.locker = address(router);
-        key = hook.initializePool(p);
-        _modify(key, FULL_LO, FULL_HI, int256(LIQ), 0);
-        vm.deal(address(router), 200 ether);
-        vm.deal(address(other), 200 ether);
-        token.transfer(address(router), 200e18);
-        token.transfer(address(other), 200e18);
-        router.run(key, -2000, 2000, POS_LIQ, SALT, 2); // launch phase placement
-        other.run(key, -2000, 2000, POS_LIQ, SALT, 2);
-        hook.initializeMevModule(key, "");
-        // a sell accrues coin side fees to the position
-        _swap(key, false, -20 ether, 0, "");
-    }
-}
-
-contract HookV2PriorTxVenueTest is HookV2PriorTxBase {
-    function _mode() internal pure override returns (uint8) {
-        return Constants.TAX_MODE_VENUE;
-    }
-
-    /// a launch position's removal is attested and leaves untaxed (safe
-    /// only because adds are closed after arming, D46).
-    function test_tax_priorTxLpExit_isExempt() public onlyFork {
-        uint256 bal0 = token.balanceOf(address(this));
-        uint256 dead0 = token.balanceOf(Constants.DEAD);
-        router.run(key, -2000, 2000, POS_LIQ, SALT, 3);
-        uint256 taken = router.lastTake1();
-        assertGt(taken, 0);
-        assertEq(token.balanceOf(address(this)) - bal0, taken, "lp exit untaxed");
-        assertEq(token.balanceOf(Constants.DEAD), dead0);
-        (uint256 b,,) = token.pendingCanonical();
-        assertEq(b, 0, "budget drawn exactly");
-    }
-
-    function test_tax_lockerCollect_isExempt() public onlyFork {
-        uint256 bal0 = token.balanceOf(address(this));
-        uint256 dead0 = token.balanceOf(Constants.DEAD);
-        router.run(key, -2000, 2000, 0, SALT, 3); // zero liquidity: fee collect
-        uint256 taken = router.lastTake1();
-        assertGt(taken, 0, "coin fees accrued");
-        assertEq(token.balanceOf(address(this)) - bal0, taken, "fee collect untaxed");
-        assertEq(token.balanceOf(Constants.DEAD), dead0);
-        (uint256 b,,) = token.pendingCanonical();
-        assertEq(b, 0, "collect budget drawn exactly");
-    }
-
-    /// any launch position's collect is reported, whoever the caller is
-    /// (the PoolManager only sees the PositionManager as sender).
-    function test_tax_anyLaunchPositionCollect_untaxed() public onlyFork {
-        uint256 dead0 = token.balanceOf(Constants.DEAD);
-        other.run(key, -2000, 2000, 0, SALT, 3);
-        assertGt(other.lastTake1(), 0);
-        assertEq(token.balanceOf(Constants.DEAD), dead0);
-    }
-
-    /// V2A-01 flipped: remove a prior position and re add it in one unlock.
-    /// the re add is refused (D46), the whole unlock reverts.
-    function test_V2A01_venue_removeThenReadd_reverts() public onlyFork {
-        vm.expectRevert();
-        router.run(key, -2000, 2000, POS_LIQ, SALT, 1);
-    }
-
-    /// V2A-01 flipped: a removal's budget is drawn by its own take, nothing
-    /// is left for a side pool take later in the unlock or tx.
-    function test_V2A01_venue_removalLeavesNoBudget() public onlyFork {
-        router.run(key, -2000, 2000, POS_LIQ / 2, SALT, 3);
-        (uint256 b,,) = token.pendingCanonical();
-        assertEq(b, 0, "no leftover budget");
-    }
-}
-
-contract HookV2PriorTxHardTest is HookV2PriorTxBase {
-    function _mode() internal pure override returns (uint8) {
-        return Constants.TAX_MODE_HARD;
-    }
-
-    function test_hard_priorTxLpExit_pass() public onlyFork {
-        uint256 bal0 = token.balanceOf(address(this));
-        router.run(key, -2000, 2000, POS_LIQ, SALT, 3);
-        assertEq(token.balanceOf(address(this)) - bal0, router.lastTake1());
-        (, uint256 o, uint256 i) = token.pendingCanonical();
-        assertEq(o + i, 0, "grant consumed exactly");
-    }
-
-    /// V2A-01 / V2H-02 flipped: increase then decrease a prior position in one
-    /// unlock is refused at the add.
-    function test_V2A01_hard_increaseThenDecrease_reverts() public onlyFork {
-        vm.expectRevert();
-        router.run(key, -2000, 2000, POS_LIQ, SALT, 0);
-    }
-
-    function test_hard_anyLaunchPositionCollect_pass() public onlyFork {
-        other.run(key, -2000, 2000, 0, SALT, 3);
-        assertGt(other.lastTake1(), 0);
-        (, uint256 o,) = token.pendingCanonical();
-        assertEq(o, 0);
-    }
-
-    function test_hard_lockerCollect_pass() public onlyFork {
-        router.run(key, -2000, 2000, 0, SALT, 3);
-        assertGt(router.lastTake1(), 0);
-        (, uint256 o, uint256 i) = token.pendingCanonical();
-        assertEq(o, 0, "collect grant consumed exactly");
-        assertEq(i, 0);
-    }
-}
-
-/// D46 end to end with the real v2 locker, the live v4 PositionManager and
-/// Permit2: launch phase placement through the PositionManager passes, and the
-/// locker's fee collect (PositionManager is the PoolManager caller, the locker
-/// its `msgSender()`) is reported, so HARD collect passes and VENUE collect is
-/// untaxed. a later third party add still reverts.
+/// End to end with the real v2 locker, the live v4 PositionManager and
+/// Permit2. A restricted coin: the allowlisted locker places and collects, and
+/// a non allowlisted third party add reverts. An unrestricted coin keeps lp open.
 contract HookV2RealLockerTest is HookV2ForkBase {
     address internal constant POSM = 0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e;
     address internal constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     int24 internal constant START = -200_000;
     address internal project = makeAddr("project");
 
-    function _realLaunch(uint8 mode)
+    function _realLaunch(bool restricted)
         internal
         returns (PoolKey memory k, ArtCoinsTokenV2 t, ArtCoinsLpLockerV2 rl)
     {
@@ -1290,8 +1036,11 @@ contract HookV2RealLockerTest is HookV2ForkBase {
         escrow.addDepositor(address(rl), true);
         rl.setLauncher(address(this), true);
         Launch memory l = _defaults(bountyEoa);
-        l.taxMode = mode;
-        t = _newToken(mode, bountyEoa, address(hook));
+        l.restricted = restricted;
+        t = _newToken(restricted, bountyEoa, address(hook));
+        // the real locker places and collects coin; allowlist it (the factory
+        // seeds the stack locker the same way at launch).
+        if (restricted) t.setAllowed(address(rl), true);
         IArtCoinsHookV2.PoolInitParams memory p = _params(l, address(t));
         p.locker = address(rl);
         p.tickIfToken0IsArtCoin = START;
@@ -1325,69 +1074,25 @@ contract HookV2RealLockerTest is HookV2ForkBase {
         _swap(k, false, -int256(bought / 2), 0, "");
     }
 
-    function test_realLocker_hard_placeAndCollect_pass() public onlyFork {
-        (PoolKey memory k, ArtCoinsTokenV2 t, ArtCoinsLpLockerV2 rl) =
-            _realLaunch(Constants.TAX_MODE_HARD);
+    /// The allowlisted real locker places and collects coin on a restricted
+    /// coin (the launch path). The non allowlisted third party add is proven to
+    /// revert in `HookV2ForkTest.test_restricted_thirdPartyLpAdd_reverts`, which
+    /// launches with no prior swap, so no leftover same tx allowance covers it.
+    function test_realLocker_restricted_placeAndCollect_pass() public onlyFork {
+        (, ArtCoinsTokenV2 t, ArtCoinsLpLockerV2 rl) = _realLaunch(true);
         rl.collectRewards(address(t));
         assertGt(t.balanceOf(project) + escrow.balances(project, address(t)), 0, "coin fees out");
-        (, uint256 o, uint256 i) = t.pendingCanonical();
-        assertEq(o + i, 0, "collect grant consumed exactly");
-        // third party add after arming: refused via a direct PoolManager modify
+    }
+
+    function test_realLocker_unrestricted_lpOpen() public onlyFork {
+        (PoolKey memory k, ArtCoinsTokenV2 t, ArtCoinsLpLockerV2 rl) = _realLaunch(false);
+        rl.collectRewards(address(t));
+        assertGt(t.balanceOf(project) + escrow.balances(project, address(t)), 0, "coin fees out");
+        // an unrestricted coin keeps lp open: a third party add passes.
         HV2AddRemoveRouter r = new HV2AddRemoveRouter(pm);
         vm.deal(address(r), 10 ether);
         t.transfer(address(r), 10e18);
-        vm.expectRevert(_closed());
         r.run(k, 200_000, 202_000, 1e18, bytes32(uint256(1)), 2);
-        // and via the live PositionManager
-        _posmMintReverts(k);
-    }
-
-    function _posmMintReverts(PoolKey memory k) internal {
-        address mallory = makeAddr("mallory");
-        vm.deal(mallory, 10 ether);
-        bytes memory actions = abi.encodePacked(uint8(0x02), uint8(0x0d));
-        bytes[] memory params = new bytes[](2);
-        params[0] = abi.encode(
-            k,
-            int24(200_000),
-            int24(202_000),
-            uint256(1e18),
-            type(uint128).max,
-            type(uint128).max,
-            mallory,
-            bytes("")
-        );
-        params[1] = abi.encode(k.currency0, k.currency1);
-        vm.prank(mallory);
-        vm.expectRevert(_closed());
-        IPosmLike(POSM).modifyLiquidities{value: 1 ether}(
-            abi.encode(actions, params), block.timestamp
-        );
-    }
-
-    function _closed() internal view returns (bytes memory) {
-        return abi.encodeWithSelector(
-            CustomRevert.WrappedError.selector,
-            address(hook),
-            IHooks.beforeAddLiquidity.selector,
-            abi.encodeWithSelector(ArtCoinsHookV2.TaxedPoolLiquidityClosed.selector),
-            abi.encodeWithSelector(Hooks.HookCallFailed.selector)
-        );
-    }
-
-    function test_realLocker_venue_collectUntaxed() public onlyFork {
-        (, ArtCoinsTokenV2 t, ArtCoinsLpLockerV2 rl) = _realLaunch(Constants.TAX_MODE_VENUE);
-        uint256 dead0 = t.balanceOf(Constants.DEAD);
-        rl.collectRewards(address(t));
-        assertGt(t.balanceOf(project) + escrow.balances(project, address(t)), 0, "coin fees out");
-        assertEq(t.balanceOf(Constants.DEAD), dead0, "collect untaxed");
-        (uint256 b,,) = t.pendingCanonical();
-        assertEq(b, 0);
-    }
-
-    function test_realLocker_venue_posmAddAfterArming_reverts() public onlyFork {
-        (PoolKey memory k,,) = _realLaunch(Constants.TAX_MODE_VENUE);
-        _posmMintReverts(k);
     }
 }
 

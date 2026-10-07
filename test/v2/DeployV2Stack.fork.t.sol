@@ -43,9 +43,8 @@ contract DeployV2StackForkTest is ForkStack {
         '"bountyBps":8333,"maxReferralBpsOfVolume":250,"bountyRecipient":"0x7ea5000000000000000000000000000000000001"},'
         '"locker":{"rewardRecipients":["0x7ea5000000000000000000000000000000000001"],"rewardBps":[8000],'
         '"tickLower":[-200000,-160000,-120000],"tickUpper":[-120000,-100000,-60000],"positionBps":[5000,'
-        '3000,2000]},"mev":{"startingSkimBps":68690,"windowSeconds":4140},"tax":{"mode":1,"taxBps":0,'
-        '"taxBpsMax":1000,"taxSink":"0x7ea5000000000000000000000000000000000001","venueAdmin":"0x0000000000000000000000000000000000000000",'
-        '"exempt":[]}}';
+        '3000,2000]},"mev":{"startingSkimBps":68690,"windowSeconds":4140},'
+        '"restriction":{"restricted":false,"allowed":[]}}';
 
     DeployV2Lib.Stack internal s;
     DeployV2Lib.Params internal p;
@@ -202,8 +201,7 @@ contract DeployV2StackForkTest is ForkStack {
         LaunchV2Lib.Target memory t = _target();
         LaunchV2Lib.Launch memory l = _launch(address(treasury));
         assertTrue(l.example, "example flag");
-        assertEq(l.cfg.tax.mode, Constants.TAX_MODE_VENUE, "VENUE mode");
-        assertEq(l.cfg.tax.taxBps, 0, "tax 0");
+        assertFalse(l.cfg.restriction.restricted, "example coin not restricted");
         assertEq(l.cfg.mev.windowSeconds, 69 minutes, "69 minute skim");
 
         (address predicted, uint256 value) = LaunchV2Lib.preflight(t, l, LIVE_OWNER);
@@ -380,10 +378,9 @@ contract DeployV2StackForkTest is ForkStack {
     function _launch(address treasury_) internal view returns (LaunchV2Lib.Launch memory l) {
         l = LaunchV2Lib.parse(_exampleJson(), _target());
         address placeholder = l.cfg.fee.bountyRecipient;
-        assertEq(l.cfg.tax.taxSink, placeholder, "sink is the bounty recipient");
         assertEq(l.cfg.locker.rewardRecipients[0], placeholder, "slot is the treasury");
+        assertFalse(l.cfg.restriction.restricted, "example coin is not restricted");
         l.cfg.fee.bountyRecipient = payable(treasury_);
-        l.cfg.tax.taxSink = treasury_;
         l.cfg.locker.rewardRecipients[0] = treasury_;
     }
 

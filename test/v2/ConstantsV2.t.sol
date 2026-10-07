@@ -23,7 +23,7 @@ import {IReferralPayoutForHook} from "../../src/v2/interfaces/IReferralPayoutFor
 contract ConstantsV2Test is Test {
     /// @dev Update only together with an intended change to a hashed constant.
     bytes32 internal constant GOLDEN_HASH =
-        0x0043610e634c3c3433ed1d5f6eaa5a90af502ba9d9bfa503deda2b1064d35684;
+        0xef1800c3c8b4bd0df00d2e072bedeb37c8922403e9b5c6ea7efbf5feedcac458;
 
     function _literalHash() internal pure returns (bytes32) {
         bytes32 pool = keccak256(
@@ -64,12 +64,7 @@ contract ConstantsV2Test is Test {
                 uint256(10), // MAX_EXTENSIONS
                 uint16(9000), // MAX_EXTENSION_BPS
                 uint16(3000), // MAX_PROTOCOL_FEE_BPS
-                uint8(0), // TAX_MODE_NONE
-                uint8(1), // TAX_MODE_VENUE
-                uint8(2), // TAX_MODE_HARD
-                uint16(2000), // TAX_BPS_ABSOLUTE_MAX
-                uint256(32), // MAX_TAX_VENUES
-                uint256(16), // MAX_TAX_EXEMPT
+                uint256(64), // MAX_ALLOWED
                 address(0x000000000000000000000000000000000000dEaD) // DEAD
             )
         );
@@ -128,12 +123,7 @@ contract ConstantsV2Test is Test {
         assertEq(Constants.MAX_EXTENSION_BPS, 9000);
         assertEq(Constants.MAX_PROTOCOL_FEE_BPS, 3000);
         assertEq(Constants.MAX_DEPLOY_FEE, 1 ether);
-        assertEq(Constants.TAX_MODE_NONE, 0);
-        assertEq(Constants.TAX_MODE_VENUE, 1);
-        assertEq(Constants.TAX_MODE_HARD, 2);
-        assertEq(Constants.TAX_BPS_ABSOLUTE_MAX, 2000);
-        assertEq(Constants.MAX_TAX_VENUES, 32);
-        assertEq(Constants.MAX_TAX_EXEMPT, 16);
+        assertEq(Constants.MAX_ALLOWED, 64);
         assertEq(Constants.DEAD, 0x000000000000000000000000000000000000dEaD);
         assertEq(Constants.KEEPER_REWARD_BPS, 50);
         assertEq(Constants.KEEPER_REWARD_CAP, 0.01 ether);
@@ -187,7 +177,6 @@ contract ConstantsV2Test is Test {
         // shares and caps within 100%
         assertLt(Constants.MAX_PROTOCOL_FEE_BPS, Constants.BPS);
         assertLt(Constants.MAX_EXTENSION_BPS, Constants.BPS);
-        assertLt(Constants.TAX_BPS_ABSOLUTE_MAX, Constants.BPS);
         assertLe(Constants.LOCKER_KEEPER_BPS_MAX, Constants.BPS);
         assertLe(Constants.KEEPER_REWARD_BPS, Constants.BPS);
         assertLe(Constants.SPOT_FLOOR_BPS, Constants.BPS);
@@ -195,9 +184,6 @@ contract ConstantsV2Test is Test {
             uint256(Constants.PFC_MIN_TREASURY_BPS) + Constants.PFC_MIN_BURN_BPS, Constants.BPS
         );
         assertLt(Constants.BURN_IMPACT_MAX, Constants.BPS);
-        // tax modes distinct and ordered
-        assertLt(Constants.TAX_MODE_NONE, Constants.TAX_MODE_VENUE);
-        assertLt(Constants.TAX_MODE_VENUE, Constants.TAX_MODE_HARD);
         // ci gate fits under EIP-170
         assertLt(Constants.HOOK_SIZE_HEADROOM_MIN, 24_576);
     }

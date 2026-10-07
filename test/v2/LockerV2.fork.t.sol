@@ -533,11 +533,11 @@ contract LockerV2ForkTest is ForkBase {
         t.tokenAdmin = makeAddr("tokenAdmin");
         t.name = "Locker Test";
         t.symbol = "LKT";
-        IArtCoinsFactoryV2.TaxConfigV2 memory tax; // mode NONE, nothing set
+        IArtCoinsFactoryV2.RestrictionConfigV2 memory restr; // not restricted
         ArtCoinsTokenV2.CanonicalPool memory canon = ArtCoinsTokenV2.CanonicalPool({
-            hook: hook, poolManager: POOL_MANAGER, tickSpacing: SPACING, bountyRecipient: address(0)
+            hook: hook, poolManager: POOL_MANAGER, tickSpacing: SPACING
         });
-        ArtCoinsTokenV2 coin = new ArtCoinsTokenV2(t, 2 * SUPPLY, tax, canon, launcher);
+        ArtCoinsTokenV2 coin = new ArtCoinsTokenV2(t, 2 * SUPPLY, restr, canon, launcher);
         assertEq(coin.allowance(address(locker), PERMIT2), type(uint256).max);
         // the token rejects approvals to Permit2, which is what broke placement
         vm.prank(address(locker));

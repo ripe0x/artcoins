@@ -77,7 +77,7 @@ abstract contract HookV2ForkBase is Test {
     uint256 internal tokenNonce;
 
     struct Launch {
-        uint8 taxMode;
+        bool restricted;
         address bounty;
         uint24 baseline;
         uint16 bountyBps;
@@ -143,7 +143,7 @@ abstract contract HookV2ForkBase is Test {
         l.referralPayout = address(payout);
     }
 
-    function _newToken(uint8 mode, address bounty, address hook_)
+    function _newToken(bool restricted, address, address hook_)
         internal
         returns (ArtCoinsTokenV2 token)
     {
@@ -152,19 +152,24 @@ abstract contract HookV2ForkBase is Test {
         t.name = "Hook V2 Test";
         t.symbol = "HV2T";
         t.salt = bytes32(++tokenNonce);
-        IArtCoinsFactoryV2.TaxConfigV2 memory tax;
-        tax.mode = mode;
-        if (mode == Constants.TAX_MODE_VENUE) {
-            tax.taxBps = 1500;
-            tax.taxBpsMax = 2000;
-            tax.taxSink = Constants.DEAD;
+        IArtCoinsFactoryV2.RestrictionConfigV2 memory r;
+        r.restricted = restricted;
+        if (restricted) {
+            // the test contract and its routers move coin directly; allowlist
+            // them so the restriction tests the hook granted allowance only
+            // where a swap actually routes coin through the PoolManager.
+            r.allowed = new address[](4);
+            r.allowed[0] = address(this);
+            r.allowed[1] = address(swapRouter);
+            r.allowed[2] = address(liqRouter);
+            r.allowed[3] = address(seq);
         }
         token = new ArtCoinsTokenV2(
             t,
             1_000_000_000e18,
-            tax,
+            r,
             ArtCoinsTokenV2.CanonicalPool({
-                hook: hook_, poolManager: POOL_MANAGER, tickSpacing: TS, bountyRecipient: bounty
+                hook: hook_, poolManager: POOL_MANAGER, tickSpacing: TS
             }),
             address(this)
         );
@@ -197,7 +202,7 @@ abstract contract HookV2ForkBase is Test {
 
     /// launcher flow: init pool, place full range liquidity (salt 0), start the window.
     function _launch(Launch memory l) internal returns (PoolKey memory key, ArtCoinsTokenV2 token) {
-        token = _newToken(l.taxMode, l.bounty, address(hook));
+        token = _newToken(l.restricted, l.bounty, address(hook));
         key = hook.initializePool(_params(l, address(token)));
         _modify(key, FULL_LO, FULL_HI, int256(LIQ), 0);
         hook.initializeMevModule(key, l.mevConfig);

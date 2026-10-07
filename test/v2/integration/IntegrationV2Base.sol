@@ -142,19 +142,12 @@ abstract contract IntegrationV2Base is ForkStack {
         c.mev = IArtCoinsFactoryV2.MevConfigV2({
             module: address(v2.mev), startingSkimBps: START_SKIM, windowSeconds: WINDOW
         });
-        c.tax = IArtCoinsFactoryV2.TaxConfigV2({
-            mode: Constants.TAX_MODE_VENUE,
-            taxBps: 0,
-            taxBpsMax: 1000,
-            taxSink: treasury,
-            venueAdmin: address(0),
-            exempt: new address[](0),
-            venues: new IArtCoinsFactoryV2.TaxVenue[](0)
-        });
+        c.restriction =
+            IArtCoinsFactoryV2.RestrictionConfigV2({restricted: false, allowed: new address[](0)});
         c.extensions = new IArtCoinsFactoryV2.ExtensionConfigV2[](0);
     }
 
-    /// Same coin with no tax mode (open lp, plain erc20).
+    /// Same coin, plain erc20 (not restricted).
     function _noneConfig(address bounty)
         internal
         view
@@ -162,22 +155,17 @@ abstract contract IntegrationV2Base is ForkStack {
     {
         c = _creditsConfig(bounty);
         c.token.symbol = "NONE";
-        c.tax.mode = Constants.TAX_MODE_NONE;
-        c.tax.taxBpsMax = 0;
-        c.tax.taxSink = address(0);
     }
 
-    /// HARD mode: no rate, no exempt set, sink DEAD (display only).
-    function _hardConfig(address bounty)
+    /// Restricted coin: wallet to wallet transfers revert unless allowlisted.
+    function _restrictedConfig(address bounty)
         internal
         view
         returns (IArtCoinsFactoryV2.DeploymentConfigV2 memory c)
     {
         c = _creditsConfig(bounty);
-        c.token.symbol = "HARD";
-        c.tax.mode = Constants.TAX_MODE_HARD;
-        c.tax.taxBpsMax = 0;
-        c.tax.taxSink = Constants.DEAD;
+        c.token.symbol = "REST";
+        c.restriction.restricted = true;
     }
 
     /// One narrow position holding the whole pool supply: about 2.2 eth buys
@@ -192,12 +180,6 @@ abstract contract IntegrationV2Base is ForkStack {
         c.locker.tickLower = lo;
         c.locker.tickUpper = hi;
         c.locker.positionBps = pos;
-    }
-
-    function _v3Venue() internal pure returns (IArtCoinsFactoryV2.TaxVenue memory) {
-        return IArtCoinsFactoryV2.TaxVenue({
-            kind: 2, factory: V3_FACTORY, initCodeHash: V3_INIT, counterToken: WETH, v3Fee: 3000
-        });
     }
 
     /// A fee swapper for a launch slot (D33: escrow depositor, endRecipient = treasury).

@@ -93,8 +93,7 @@ contract ArtCoinsDeployerV2 is IConstantsBound {
         address launcher
     ) private pure returns (bytes memory) {
         return abi.encodePacked(
-            type(ArtCoinsTokenV2).creationCode,
-            abi.encode(t, supply, restriction, canon, launcher)
+            type(ArtCoinsTokenV2).creationCode, abi.encode(t, supply, restriction, canon, launcher)
         );
     }
 }

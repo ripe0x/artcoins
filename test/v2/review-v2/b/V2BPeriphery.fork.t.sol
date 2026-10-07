@@ -71,12 +71,12 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
 
     // ── helpers ───────────────────────────────────────────────────────────
 
-    function _launchWith(uint8 mode, uint24 baseline)
+    function _launchWith(bool restricted, uint24 baseline)
         internal
         returns (PoolKey memory key, ArtCoinsTokenV2 token)
     {
         Launch memory l = _defaults(bountyEoa);
-        l.taxMode = mode;
+        l.restricted = restricted;
         l.baseline = baseline;
         (key, token) = _launch(l);
     }
@@ -138,7 +138,7 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
     /// at `maxBurnPerCall`, so a 50 eth balance drains over blocks and a
     /// donation cannot brick the router. eth stays unrescuable (by design).
     function test_V2B01_burnRouter_bigBudgetNeverBurns_defaultSettings() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(Constants.TAX_MODE_NONE, BASELINE);
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(false, BASELINE);
 
         BurnRouterV2 small = _router(key, address(token));
         _fund(address(small), 10 ether);
@@ -191,7 +191,7 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
     /// 50%) did not save a 300 eth balance on the same 1000 eth pool, it never
     /// burned. now it burns at the default settings and at the owner limits.
     function test_V2B01_burnRouter_bricked_evenAtOwnerLimits() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(Constants.TAX_MODE_NONE, BASELINE);
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(false, BASELINE);
         BurnRouterV2 r = _router(key, address(token));
         _fund(address(r), 300 ether);
         (bool ok,) = _burnSelector(r);
@@ -219,7 +219,7 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
     /// sells the coin that fits within the cap of the moved spot. the attacker's
     /// gain is bounded by the cap plus fees and is negative at the default cap.
     function test_V2B02_swapper_sandwich_profitable_lowFeePool() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(Constants.TAX_MODE_NONE, 0);
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(false, 0);
         V2BSink end = new V2BSink();
         FeeAutoSwapperV2 s = _swapper(key, address(token), address(end), 20e18);
         token.transfer(address(s), 20e18);
@@ -252,24 +252,25 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
         assertLe(profit, 0, "not profitable at the default cap");
     }
 
-    // ── claims that hold: HARD mode flows through the real hook ───────────
+    // ── claims that hold: restricted coin flows through the real hook ─────
 
-    function test_holds_hardMode_swapperConvert() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(Constants.TAX_MODE_HARD, BASELINE);
+    function test_holds_restricted_swapperConvert() public onlyFork {
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(true, BASELINE);
         V2BSink end = new V2BSink();
         FeeAutoSwapperV2 s = _swapper(key, address(token), address(end), 1e18);
+        // the launcher (allowlisted) funds the swapper; its canonical sell is
+        // covered by the swap's granted allowance.
         token.transfer(address(s), 1e18);
         vm.prank(keeper);
         uint256 out = s.convert(0);
         assertGt(out, 0);
         assertEq(token.balanceOf(address(s)), 0);
         assertEq(address(s).balance, 0);
-        (, uint256 fOut, uint256 fIn) = token.pendingCanonical();
-        assertEq(fOut + fIn, 0, "grant fully consumed");
+        assertEq(token.transferAllowance(), 0, "allowance fully consumed");
     }
 
-    function test_holds_hardMode_burnRouter() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(Constants.TAX_MODE_HARD, BASELINE);
+    function test_holds_restricted_burnRouter() public onlyFork {
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(true, BASELINE);
         BurnRouterV2 r = _router(key, address(token));
         _fund(address(r), 1 ether);
         uint256 supply0 = token.totalSupply();
@@ -277,17 +278,6 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
         (, uint256 burned) = r.processBurn(0);
         assertGt(burned, 0);
         assertEq(token.totalSupply(), supply0 - burned);
-    }
-
-    function test_holds_venueMode_burnRouter_untaxed() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) =
-            _launchWith(Constants.TAX_MODE_VENUE, BASELINE);
-        BurnRouterV2 r = _router(key, address(token));
-        _fund(address(r), 1 ether);
-        uint256 dead0 = token.balanceOf(Constants.DEAD);
-        vm.prank(keeper);
-        r.processBurn(0);
-        assertEq(token.balanceOf(Constants.DEAD), dead0, "no tax on the canonical take");
     }
 
     function _devBuyCall(
@@ -310,10 +300,10 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
         d.receiveTokens{value: value}(c, key, token, 0, 0);
     }
 
-    /// dev buy before `initializeMevModule` (factory order) on a HARD coin:
-    /// the take to the recipient is covered by the hook's out grant.
-    function test_holds_hardMode_devBuy() public onlyFork {
-        ArtCoinsTokenV2 token = _newToken(Constants.TAX_MODE_HARD, bountyEoa, address(hook));
+    /// dev buy before `initializeMevModule` (factory order): the take to the
+    /// recipient lands coin at the buyer.
+    function test_holds_devBuy() public onlyFork {
+        ArtCoinsTokenV2 token = _newToken(false, bountyEoa, address(hook));
         PoolKey memory key = hook.initializePool(_params(_defaults(bountyEoa), address(token)));
         _modify(key, FULL_LO, FULL_HI, int256(LIQ), 0);
         ArtCoinsUniv4EthDevBuyV2 d = new ArtCoinsUniv4EthDevBuyV2(address(this), POOL_MANAGER);
@@ -326,7 +316,7 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
     /// escrow under the dev buy contract and is pulled to the refund recipient
     /// in the same call. refund == value - pool input - fair skim.
     function test_holds_devBuy_partialFill_skimRefundReachesRecipient() public onlyFork {
-        ArtCoinsTokenV2 token = _newToken(Constants.TAX_MODE_NONE, bountyEoa, address(hook));
+        ArtCoinsTokenV2 token = _newToken(false, bountyEoa, address(hook));
         PoolKey memory key = hook.initializePool(_params(_defaults(bountyEoa), address(token)));
         _modify(key, -600, 0, int256(LIQ), 0); // coin only, about 30 eth deep
         ArtCoinsUniv4EthDevBuyV2 d = new ArtCoinsUniv4EthDevBuyV2(address(this), POOL_MANAGER);
@@ -353,7 +343,7 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
         int24 hi,
         uint256 value
     ) internal returns (uint256 spent, uint256 refunded, uint256 claimed, uint256 claims) {
-        ArtCoinsTokenV2 tk = _newToken(Constants.TAX_MODE_NONE, bountyEoa, address(hook));
+        ArtCoinsTokenV2 tk = _newToken(false, bountyEoa, address(hook));
         PoolKey memory k = hook.initializePool(_params(_defaults(bountyEoa), address(tk)));
         _modify(k, lo, hi, int256(LIQ), 0);
         uint256 before = refundTo.balance;
@@ -427,7 +417,7 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
         vm.mockCallRevert(
             address(escrow), abi.encodeWithSelector(IArtCoinsFeeEscrowV2.claimTo.selector), "claim"
         );
-        ArtCoinsTokenV2 tk = _newToken(Constants.TAX_MODE_NONE, bountyEoa, address(hook));
+        ArtCoinsTokenV2 tk = _newToken(false, bountyEoa, address(hook));
         PoolKey memory k = hook.initializePool(_params(_defaults(bountyEoa), address(tk)));
         _modify(k, -600, 0, int256(LIQ), 0);
         vm.expectRevert();
@@ -445,7 +435,7 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
         vm.mockCall(
             address(hook), abi.encodeWithSelector(IArtCoinsHookV2.globals.selector), abi.encode(g)
         );
-        ArtCoinsTokenV2 tk = _newToken(Constants.TAX_MODE_NONE, bountyEoa, address(hook));
+        ArtCoinsTokenV2 tk = _newToken(false, bountyEoa, address(hook));
         PoolKey memory k = hook.initializePool(_params(_defaults(bountyEoa), address(tk)));
         _modify(k, -600, 0, int256(LIQ), 0);
         vm.expectRevert(IArtCoinsUniv4EthDevBuyV2.UnexpectedEth.selector);

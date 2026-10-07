@@ -251,9 +251,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         returns (ArtCoinsTokenV2.CanonicalPool memory)
     {
         return ArtCoinsTokenV2.CanonicalPool({
-            hook: c.pool.hook,
-            poolManager: poolManager,
-            tickSpacing: c.pool.tickSpacing
+            hook: c.pool.hook, poolManager: poolManager, tickSpacing: c.pool.tickSpacing
         });
     }
 

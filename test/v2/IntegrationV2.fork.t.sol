@@ -72,8 +72,7 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         assertEq(sc.bountyRecipient, address(treasury), "bounty = treasury");
         assertEq(sc.protocolRecipient, address(v2.controller), "protocol injected");
         assertEq(sc.referralPayout, address(v2.escrow), "referral payout = escrow (D57)");
-        assertEq(_token(coin1).taxSink(), address(treasury), "sink = treasury");
-        assertEq(_token(coin1).taxMode(), Constants.TAX_MODE_VENUE, "VENUE");
+        assertFalse(_token(coin1).restricted(), "credits coin is not restricted");
         address[] memory rr = v2.locker.rewardRecipients(coin1);
         assertEq(rr.length, 2, "project slot + protocol slot");
         assertEq(rr[0], address(treasury));
@@ -144,7 +143,7 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         assertEq(info.token, coin);
         assertEq(info.locker, address(v2.locker));
         assertEq(info.mevModule, address(v2.mev));
-        assertEq(info.taxMode, Constants.TAX_MODE_VENUE);
+        assertFalse(info.restricted);
         assertEq(info.createdAt, uint40(vm.getBlockTimestamp()));
         assertTrue(v2.hook.isOfficialPool(pid), "official pool");
         assertTrue(v2.factory.isArtCoin(coin), "factory.isArtCoin");
@@ -210,7 +209,7 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
             assertEq(poolSupply, Constants.DEFAULT_TOKEN_SUPPLY);
             assertEq(extensionsSupply, 0);
             assertEq(cfg.fee.bountyRecipient, address(treasury));
-            assertEq(cfg.tax.taxSink, address(treasury));
+            assertFalse(cfg.restriction.restricted);
         }
         assertEq(found, 1, "one TokenCreatedV2");
     }
@@ -234,17 +233,12 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
             lpFee
         );
         bytes memory b = abi.encode(
-            t.taxMode(),
-            t.taxBps(),
-            t.taxBpsMax(),
-            t.taxSink(),
+            t.restricted(),
+            t.locked(),
             t.canonicalHook(),
             t.canonicalPoolId(),
             t.poolManager(),
-            t.venueAdmin(),
             t.launcher(),
-            t.taxExemptList(),
-            t.taxVenues(),
             t.admin()
         );
         bytes memory c = abi.encode(
@@ -289,7 +283,9 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         v2.factory.setProtocolRecipient(payable(other));
         v2.factory.setReferralPayout(payable(address(otherContract)));
         v2.factory.setTeamFeeRecipient(other);
-        v2.factory.setExemptAllowed(address(otherContract), true);
+        address[] memory da = new address[](1);
+        da[0] = address(otherContract);
+        v2.factory.setDefaultAllowed(da);
         v2.factory.setTokenDeployer(address(deployer2));
         v2.factory.setHook(address(v2.hook), false);
         v2.factory.setLocker(address(v2.locker), false);

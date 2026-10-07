@@ -428,6 +428,17 @@ how the numbers were taken: the fork group counts are the per suite results of o
 
 ## 9. v2 second pass
 
+> D73 supersedes the tax model this section reviews. The VENUE and HARD tax
+> modes, venue lists, the exemption budget and the per direction grant netting
+> are retired; a coin carries one launch flag `restricted`. Independent audit
+> ACV2-01 (a canonical buy earned an exemption a side pool take then spent
+> untaxed) is closed by that design change: there is no tax to evade, and on a
+> restricted coin the coins a same transaction round trip moves stay restricted
+> (a later wallet to wallet send reverts). The tax era findings below (V2A-01,
+> V2H-02, the D24/D34/D46 residuals, V2A-03, the t1-notes grant and budget rows)
+> describe code that no longer exists; they are kept as the record of why the
+> model changed.
+
 four independent reviews of the finished v2 packages, by reviewers who did not write the code: `v2-review-a.md` (token, deployer, locker, escrow, delivery, mev module, keepers), `v2-review-b.md` (swapper, burn router, controller, extensions, renderers), `v2-review-hook.md` (hook and its token, locker, escrow interplay), `v2-review-factory.md` (factory, deployer, launch flow). fixes came from the package authors afterwards (h1, p1, t1, f1, k1) under D41 to D59. the reviewers' proof files are in `test/v2/review-v2/{a,b,hook,factory}`; they passed while the bugs existed, the director has flipped them to regressions, and h1-notes records which ones now revert in `setUp` (`TaxedPoolLiquidityClosed` for a and hook, `LpFeeBelowMinimum` for the factory test). this document did not re run them. the second pass itself is one pass: the fixes were not re reviewed by anyone but their authors.
 
 ### 9.1 counts by severity

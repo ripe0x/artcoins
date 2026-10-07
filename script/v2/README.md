@@ -7,7 +7,7 @@ sign on the command line with `--ledger`, `--account <keystore>` or `--private-k
 | `DeployV2Lib.sol` | the deploy routine, the post deploy asserts, constructor args. used by the script and by the fork harness (`test/v2/harness/ForkStack.sol` `deployV2Stack`), so tests run the exact broadcast |
 | `DeployV2Stack.s.sol` | one broadcast: deploy, wire, hand over, assert, print the registry json, write `tmp/v2-deploy-<chainid>.json` |
 | `LaunchV2Coin.s.sol` | `deployTokenAsOwner` from a json config: preflight (wiring, `predictToken`), snapshot dry run, then the tx |
-| `launch-configs/example.json` | credits engine style coin: treasury as bounty recipient, tax sink and project slot, VENUE tax at 0, native eth, 69 minute linear skim |
+| `launch-configs/example.json` | credits engine style coin: treasury as bounty recipient and project slot, not restricted (plain erc20), native eth, 69 minute linear skim |
 | `deploy.sh` | the deploy wrapper, `deploy.sh <local\|mainnet>`: guards, warm ci build, dry run, broadcast, readback, record, verify. values in `env/<env>.env` |
 | `env/local.env`, `env/mainnet.env` | values only: chain id, rpc default, profile, wallet mode, owner, treasury, fee parameters, verify mode. secrets come from the shell |
 | `verify-v2.sh` | `forge verify-contract` for every contract, then the chain check (runtime vs local ci build, owners, wiring) |
@@ -141,6 +141,6 @@ forge script script/v2/LaunchV2Coin.s.sol --sig "run(string)" "$(cat my-coin.jso
 
 the script prints the predicted token, msg.value (the deploy fee), configHash, the dry run pool id, then the token and pool id. a config with `"example": true` is refused for broadcast (override: `ALLOW_EXAMPLE=true`). `forge script ... LaunchV2Coin.s.sol` with no `--sig` reads `LAUNCH_CONFIG_JSON` (the json text) or the file at `LAUNCH_CONFIG`; reading a file under script/v2 needs `{ access = "read", path = "script/v2/launch-configs" }` in foundry.toml fs_permissions.
 
-config fields map 1:1 to `IArtCoinsFactoryV2.DeploymentConfigV2`; hook, locker and mev module come from the target. not supported by the json: launch extensions, pool extension, tax venues (venues are added later by the venue admin). `protocolBps` is the protocol slot passed to `deployTokenAsOwner`; project `rewardBps` must sum to `10000 - protocolBps`.
+config fields map 1:1 to `IArtCoinsFactoryV2.DeploymentConfigV2`; hook, locker and mev module come from the target. `restriction.restricted` is a bool; when true, list extra allowlist entries in `restriction.allowed` (the factory seeds the stack escrow, this launch's locker, the launch extensions, permit2 and the universal router on top). not supported by the json: launch extensions, pool extension. `protocolBps` is the protocol slot passed to `deployTokenAsOwner`; project `rewardBps` must sum to `10000 - protocolBps`.
 
 after the launch: `BurnRouterV2.initialize(token, key)` if the coin uses the burn leg, add the coin's fee swapper as an escrow depositor (D33), run `ArtCoinsKeeperV2.collectAndForward(token, true, minOut)` once, then `setDeprecated(false)` last (RUNBOOK 2b, 2c).

@@ -294,74 +294,60 @@ contract FactoryV2ForkTest is ForkBase {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // d4: tax sink, d5: constants, d6: version tag
+    // d4: restriction config, d5: constants, d6: version tag
     // ══════════════════════════════════════════════════════════════════════
 
-    function test_factoryV2_taxSinkOutsideAllowedSet_reverts() public onlyFork {
-        address outsider = makeAddr("fv2.outsider");
-        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        c.tax.mode = Constants.TAX_MODE_VENUE;
-        c.tax.taxBps = 1000;
-        c.tax.taxBpsMax = 2000;
-        c.tax.taxSink = outsider;
-        _expectRevertDeploy(
-            c, abi.encodeWithSelector(IArtCoinsFactoryV2.TaxSinkNotAllowed.selector, outsider)
-        );
-        c.tax.taxSink = address(0);
-        _expectRevertDeploy(
-            c, abi.encodeWithSelector(IArtCoinsFactoryV2.TaxSinkNotAllowed.selector, address(0))
-        );
-
-        // hard mode: sink is display only but still limited
-        IArtCoinsFactoryV2.DeploymentConfigV2 memory hd = _cfg();
-        hd.tax.mode = Constants.TAX_MODE_HARD;
-        hd.tax.taxSink = outsider;
-        _expectRevertDeploy(
-            hd, abi.encodeWithSelector(IArtCoinsFactoryV2.TaxSinkNotAllowed.selector, outsider)
-        );
-
-        // none mode carries no tax data at all
+    function test_factoryV2_restrictionConfig() public onlyFork {
+        // an unrestricted coin carries no allowlist.
         IArtCoinsFactoryV2.DeploymentConfigV2 memory n = _cfg();
-        n.tax.taxSink = Constants.DEAD;
-        _expectRevertDeploy(n, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidTaxConfig.selector));
+        n.restriction.allowed = new address[](1);
+        n.restriction.allowed[0] = makeAddr("fv2.extra");
+        _expectRevertDeploy(
+            n, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidRestrictionConfig.selector)
+        );
 
-        // caps
-        c.tax.taxSink = Constants.DEAD;
-        c.tax.taxBpsMax = Constants.TAX_BPS_ABSOLUTE_MAX + 1;
-        _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidTaxConfig.selector));
-        c.tax.taxBpsMax = 2000;
-        c.tax.exempt = new address[](Constants.MAX_TAX_EXEMPT + 1);
-        for (uint256 i; i < c.tax.exempt.length; ++i) {
-            c.tax.exempt[i] = address(uint160(0x1000 + i));
+        // a restricted coin rejects a zero allowlist entry and an over length set.
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
+        c.restriction.restricted = true;
+        c.restriction.allowed = new address[](1);
+        c.restriction.allowed[0] = address(0);
+        _expectRevertDeploy(
+            c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidRestrictionConfig.selector)
+        );
+        c.restriction.allowed = new address[](Constants.MAX_ALLOWED + 1);
+        for (uint256 i; i < c.restriction.allowed.length; ++i) {
+            c.restriction.allowed[i] = address(uint160(0x1000 + i));
         }
-        _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidTaxConfig.selector));
-        // FT-07: an eoa cannot be exempted, even if the owner lists it (defense in depth)
-        c.tax.exempt = new address[](1);
-        c.tax.exempt[0] = makeAddr("fv2.exemptEoa");
-        factory.setExemptAllowed(c.tax.exempt[0], true);
-        _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidTaxConfig.selector));
-        c.tax.exempt = new address[](0);
-        c.tax.venues = new IArtCoinsFactoryV2.TaxVenue[](Constants.MAX_TAX_VENUES + 1);
-        _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidTaxConfig.selector));
-        c.tax.venues = new IArtCoinsFactoryV2.TaxVenue[](0);
+        _expectRevertDeploy(
+            c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidRestrictionConfig.selector)
+        );
 
-        // allowed: DEAD, and the pool's bounty recipient
+        // a restricted coin seeds the escrow, locker, extensions, defaultAllowed
+        // and the extra entries, and mirrors `restricted` onto the hook record.
+        c.restriction.allowed = new address[](1);
+        address extra = makeAddr("fv2.extra");
+        c.restriction.allowed[0] = extra;
         address t1 = _deploy(alice, c);
-        assertEq(ArtCoinsTokenV2(t1).taxSink(), Constants.DEAD);
-        assertEq(ArtCoinsTokenV2(t1).taxMode(), Constants.TAX_MODE_VENUE);
-        c.tax.taxSink = bounty;
-        address t2 = _deploy(alice, c);
-        assertEq(ArtCoinsTokenV2(t2).taxSink(), bounty);
+        assertTrue(ArtCoinsTokenV2(t1).restricted());
+        assertTrue(ArtCoinsTokenV2(t1).isAllowed(extra), "extra seeded");
+        assertTrue(ArtCoinsTokenV2(t1).isAllowed(locker), "locker seeded");
+        assertTrue(ArtCoinsTokenV2(t1).isAllowed(address(escrow)), "escrow seeded");
+        // the owner defaultAllowed set (permit2, universal router) is seeded by
+        // DeployV2Lib; this test builds the factory bespoke, so it is empty here.
+        assertTrue(
+            hook.poolInfo(factory.deploymentInfo(t1).poolId).restricted, "hook record restricted"
+        );
+
+        // an unrestricted coin: plain erc20, no allowlist.
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory u = _cfg();
+        address t2 = _deploy(alice, u);
+        assertFalse(ArtCoinsTokenV2(t2).restricted());
+        assertFalse(ArtCoinsTokenV2(t2).isAllowed(locker));
         // FT-06: the token's canonical pool is the pool the factory created
         assertEq(
             ArtCoinsTokenV2(t2).canonicalPoolId(), PoolId.unwrap(factory.deploymentInfo(t2).poolId)
         );
         assertEq(ArtCoinsTokenV2(t2).canonicalHook(), address(hook));
-        assertEq(hook.poolInfo(factory.deploymentInfo(t2).poolId).taxMode, Constants.TAX_MODE_VENUE);
-
-        hd.tax.taxSink = address(0);
-        address t3 = _deploy(alice, hd);
-        assertEq(ArtCoinsTokenV2(t3).taxMode(), Constants.TAX_MODE_HARD);
     }
 
     /// needs no fork: the wiring setters run before any pool exists.
@@ -806,55 +792,13 @@ contract FactoryV2ForkTest is ForkBase {
         c.token.renderer = makeAddr("fv2.noCode");
         _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsTokenV2.InvalidRenderer.selector));
 
+        // an unrestricted coin with a non empty allowlist fails up front.
         c = _cfg();
-        c.tax.mode = Constants.TAX_MODE_VENUE;
-        c.tax.taxBps = 1000;
-        c.tax.taxBpsMax = 2000;
-        c.tax.taxSink = Constants.DEAD;
-        // duplicate exempt
-        c.tax.exempt = new address[](2);
-        c.tax.exempt[0] = locker;
-        c.tax.exempt[1] = locker;
-        _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidTaxConfig.selector));
-        c.tax.exempt = new address[](0);
-
-        // venue: unknown kind, zero factory, duplicate derivation
-        c.tax.venues = new IArtCoinsFactoryV2.TaxVenue[](1);
-        c.tax.venues[0] = IArtCoinsFactoryV2.TaxVenue({
-            kind: 3,
-            factory: address(0x5C69),
-            initCodeHash: bytes32(uint256(1)),
-            counterToken: WETH,
-            v3Fee: 0
-        });
-        _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidTaxConfig.selector));
-        c.tax.venues[0].kind = 1;
-        c.tax.venues[0].factory = address(0);
-        _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidTaxConfig.selector));
-        c.tax.venues = new IArtCoinsFactoryV2.TaxVenue[](2);
-        c.tax.venues[0] = IArtCoinsFactoryV2.TaxVenue({
-            kind: 1,
-            factory: address(0x5C69),
-            initCodeHash: bytes32(uint256(1)),
-            counterToken: WETH,
-            v3Fee: 0
-        });
-        // v3Fee is ignored by a v2 style derivation: same pool
-        c.tax.venues[1] = IArtCoinsFactoryV2.TaxVenue({
-            kind: 1,
-            factory: address(0x5C69),
-            initCodeHash: bytes32(uint256(1)),
-            counterToken: WETH,
-            v3Fee: 3000
-        });
-        _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidTaxConfig.selector));
-
-        // distinct venues launch, and the token lists them
-        c.tax.venues[1].kind = 2;
-        c.tax.exempt = new address[](1);
-        c.tax.exempt[0] = locker;
-        address t = _deploy(alice, c);
-        assertTrue(ArtCoinsTokenV2(t).isTaxExempt(locker));
+        c.restriction.allowed = new address[](1);
+        c.restriction.allowed[0] = locker;
+        _expectRevertDeploy(
+            c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidRestrictionConfig.selector)
+        );
     }
 
     /// cross package (D37): the real v2 locker places liquidity for the real v2
@@ -917,81 +861,36 @@ contract FactoryV2ForkTest is ForkBase {
         assertEq(_deploy(alice, c), afterSwap);
     }
 
-    /// D47 / V2A-02: exempt entries come from the owner allowlist or the implicit set.
-    function test_exemptAllowlist() public onlyFork {
-        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        c.tax.mode = Constants.TAX_MODE_VENUE;
-        c.tax.taxBps = 1000;
-        c.tax.taxBpsMax = 2000;
-        c.tax.taxSink = Constants.DEAD;
-        c.tax.exempt = new address[](1);
-
-        // a deployer's own forwarder (any contract) is refused
-        address forwarder = address(new FV2Payout());
-        c.tax.exempt[0] = forwarder;
-        _expectRevertDeploy(
-            c, abi.encodeWithSelector(ArtCoinsFactoryV2.ExemptNotAllowed.selector, forwarder)
-        );
-        // so are sweepable periphery contracts unless the owner lists them (it must not)
-        c.tax.exempt[0] = POSITION_MANAGER;
-        _expectRevertDeploy(
-            c, abi.encodeWithSelector(ArtCoinsFactoryV2.ExemptNotAllowed.selector, POSITION_MANAGER)
-        );
-
-        // owner listing: owner only, nonzero, evented
+    /// The owner `defaultAllowed` set seeds every restricted coin's allowlist.
+    function test_defaultAllowed_ownerOnly_andSeeded() public onlyFork {
+        address[] memory want = new address[](2);
+        want[0] = makeAddr("fv2.default0");
+        want[1] = makeAddr("fv2.default1");
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
-        factory.setExemptAllowed(forwarder, true);
-        vm.expectRevert(IArtCoinsFactoryV2.ZeroAddress.selector);
-        factory.setExemptAllowed(address(0), true);
-        vm.expectEmit(true, false, false, true, address(factory));
-        emit ArtCoinsFactoryV2.ExemptAllowedSet(forwarder, true);
-        factory.setExemptAllowed(forwarder, true);
-        assertTrue(factory.exemptAllowed(forwarder));
+        factory.setDefaultAllowed(want);
+        vm.expectEmit(false, false, false, true, address(factory));
+        emit IArtCoinsFactoryV2.DefaultAllowedSet(want);
+        factory.setDefaultAllowed(want);
+        assertEq(factory.defaultAllowed().length, 2);
 
-        c.tax.exempt[0] = forwarder;
-        address t1 = _deploy(alice, c);
-        assertTrue(ArtCoinsTokenV2(t1).isTaxExempt(forwarder), "listed passes");
-
-        // delisting affects new launches
-        factory.setExemptAllowed(forwarder, false);
-        c.token.salt = bytes32(uint256(31));
-        _expectRevertDeploy(
-            c, abi.encodeWithSelector(ArtCoinsFactoryV2.ExemptNotAllowed.selector, forwarder)
-        );
-
-        // implicit: this launch's locker and hook, enabled escrows, enabled extensions
-        FV2Extension e = _newExt();
-        c.tax.exempt = new address[](4);
-        c.tax.exempt[0] = locker;
-        c.tax.exempt[1] = address(hook);
-        c.tax.exempt[2] = address(escrow);
-        c.tax.exempt[3] = address(e);
-        address t2 = _deploy(alice, c);
-        assertTrue(ArtCoinsTokenV2(t2).isTaxExempt(locker), "locker passes without listing");
-        assertTrue(ArtCoinsTokenV2(t2).isTaxExempt(address(hook)));
-        assertTrue(ArtCoinsTokenV2(t2).isTaxExempt(address(escrow)));
-        assertTrue(ArtCoinsTokenV2(t2).isTaxExempt(address(e)));
-        assertFalse(factory.exemptAllowed(locker));
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
+        c.restriction.restricted = true;
+        address t = _deploy(alice, c);
+        assertTrue(ArtCoinsTokenV2(t).isAllowed(want[0]), "default0 seeded");
+        assertTrue(ArtCoinsTokenV2(t).isAllowed(want[1]), "default1 seeded");
     }
 
-    /// D46: a taxed launch still places its liquidity (locker is a hook
-    /// launcher) and the pool trades both ways.
-    function test_taxedLaunch_hard_placesAndTrades() public onlyFork {
+    /// A restricted launch places its liquidity (the locker is allowlisted) and
+    /// the pool trades both ways; an unrestricted launch is a plain erc20.
+    function test_restrictedLaunch_placesAndTrades() public onlyFork {
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        c.tax.mode = Constants.TAX_MODE_HARD;
+        c.restriction.restricted = true;
         _launchAndTrade(c);
     }
 
-    function test_taxedLaunch_venue_placesAndTrades() public onlyFork {
-        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        c.tax.mode = Constants.TAX_MODE_VENUE;
-        c.tax.taxBps = 1000;
-        c.tax.taxBpsMax = 2000;
-        c.tax.taxSink = Constants.DEAD;
-        c.tax.exempt = new address[](1);
-        c.tax.exempt[0] = locker;
-        _launchAndTrade(c);
+    function test_unrestrictedLaunch_placesAndTrades() public onlyFork {
+        _launchAndTrade(_cfg());
     }
 
     function _launchAndTrade(IArtCoinsFactoryV2.DeploymentConfigV2 memory c) internal {
@@ -1174,12 +1073,9 @@ contract FactoryV2ForkTest is ForkBase {
     function test_event_fullConfig() public onlyFork {
         FV2Extension e = _newExt();
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        c.tax.mode = Constants.TAX_MODE_VENUE;
-        c.tax.taxBps = 500;
-        c.tax.taxBpsMax = 1500;
-        c.tax.taxSink = bounty;
-        c.tax.exempt = new address[](1);
-        c.tax.exempt[0] = locker;
+        c.restriction.restricted = true;
+        c.restriction.allowed = new address[](1);
+        c.restriction.allowed[0] = makeAddr("fv2.eventExtra");
         c.extensions = new IArtCoinsFactoryV2.ExtensionConfigV2[](1);
         c.extensions[0] = _ext(address(e), 0.5 ether, 700);
         c.token.renderer = address(0);
@@ -1209,8 +1105,8 @@ contract FactoryV2ForkTest is ForkBase {
         assertEq(poolSupply, Constants.DEFAULT_TOKEN_SUPPLY - share);
         // the whole config round trips byte for byte
         assertEq(keccak256(abi.encode(got)), keccak256(abi.encode(c)), "full config");
-        assertEq(got.tax.taxSink, bounty);
-        assertEq(got.tax.exempt[0], locker);
+        assertTrue(got.restriction.restricted);
+        assertEq(got.restriction.allowed[0], makeAddr("fv2.eventExtra"));
         assertEq(got.extensions[0].msgValue, 0.5 ether);
         assertEq(got.locker.rewardRecipients[0], project);
 

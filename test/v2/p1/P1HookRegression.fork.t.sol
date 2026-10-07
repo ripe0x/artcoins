@@ -33,12 +33,12 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
 
     address internal keeper = makeAddr("p1-keeper");
 
-    function _launchWith(uint8 mode, uint24 baseline)
+    function _launchWith(bool restricted, uint24 baseline)
         internal
         returns (PoolKey memory key, ArtCoinsTokenV2 token)
     {
         Launch memory l = _defaults(bountyEoa);
-        l.taxMode = mode;
+        l.restricted = restricted;
         l.baseline = baseline;
         (key, token) = _launch(l);
     }
@@ -82,7 +82,7 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
     ///         forever), at most `maxBurnPerCall` per burn, `ethIn` and the
     ///         keeper reward exclude the skim the hook refunds.
     function test_burnV2_skimPool_50eth_burnsEveryBlock_drains() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(Constants.TAX_MODE_NONE, BASELINE);
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(false, BASELINE);
         BurnRouterV2 r = _router(key, address(token));
         _fund(address(r), 50 ether);
 
@@ -124,7 +124,7 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
     ///         The router settles only what it owes (no `CurrencyNotSettled`),
     ///         and `ethIn` and the reward exclude the refund.
     function test_burnV2_skimPool_partialFill_netOfRefund() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(Constants.TAX_MODE_NONE, BASELINE);
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(false, BASELINE);
         BurnRouterV2 r = _router(key, address(token));
         r.setMaxBurnPerCall(50 ether);
         _fund(address(r), 50 ether);
@@ -147,7 +147,7 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
     /// @notice The reviewer's 300 eth case (owner limits) and the default
     ///         settings both burn now.
     function test_burnV2_skimPool_300eth_burns() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(Constants.TAX_MODE_NONE, BASELINE);
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(false, BASELINE);
         BurnRouterV2 r = _router(key, address(token));
         _fund(address(r), 300 ether);
         (uint256 ethIn, uint256 burned) = r.processBurn(0);
@@ -171,7 +171,7 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
     ///         attacker's gain is bounded by the cap plus fees on the consumed
     ///         value; before D39 it netted +4.13 eth on a 20 coin step.
     function test_swapperV2_sandwich_boundedByImpactCap() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(Constants.TAX_MODE_NONE, 0);
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(false, 0);
         P1HookSink end = new P1HookSink();
         FeeAutoSwapperV2 s = _swapper(key, address(token), address(end), 20e18);
         token.transfer(address(s), 20e18);
@@ -216,7 +216,7 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
     ///         coin, 6% baseline skim, 0.5% lp fee): converts at the default
     ///         95% floor, because the floor nets out the pool's known fees.
     function test_swapperV2_feeAwareFloor_6pctSkimPool_convertsAtDefault() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(Constants.TAX_MODE_HARD, BASELINE);
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(true, BASELINE);
         P1HookSink end = new P1HookSink();
         FeeAutoSwapperV2 s = _swapper(key, address(token), address(end), 1e18);
         assertEq(s.poolBaselineSkimBps(), BASELINE, "skim read from the hook");
@@ -259,7 +259,7 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
     ///         no spot floor catches it; the D39 impact cap bounds it instead
     ///         (`test_swapperV2_sandwich_boundedByImpactCap`).
     function test_swapperV2_feeAwareFloor_chargesBeyondKnownFees() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(Constants.TAX_MODE_NONE, 9000);
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(false, 9000);
         assertEq(hook.skimConfig(key.toId()).baselineSkimBps, 9000);
         FeeAutoSwapperV2 three = _swapperBelieving(key, token, 6000);
         FeeAutoSwapperV2 six = _swapperBelieving(key, token, 3000);
@@ -277,7 +277,7 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
 
     /// @notice Router side: fees stored at initialize, floor view nets them out.
     function test_burnV2_feeAwareFloor_storedAndUsed() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(Constants.TAX_MODE_NONE, BASELINE);
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(false, BASELINE);
         BurnRouterV2 r = _router(key, address(token));
         assertEq(r.poolBaselineSkimBps(), BASELINE);
         assertEq(r.poolLpFee(), LP_FEE);

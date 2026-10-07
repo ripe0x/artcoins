@@ -16,7 +16,7 @@
 
 | tier | files | why |
 |---|---|---|
-| 1, highest | `src/v2/hooks/ArtCoinsHookV2.sol`, `src/v2/hooks/libraries/HookCalldata.sol`, `src/v2/ArtCoinsTokenV2.sol`, `src/v2/libraries/TaxVenues.sol`, `src/v2/lp-lockers/ArtCoinsLpLockerV2.sol`, `src/v2/ArtCoinsFeeEscrowV2.sol`, `src/v2/libraries/FeeDelivery.sol` | money on the swap path, transient storage, the tax modes, the locked liquidity |
+| 1, highest | `src/v2/hooks/ArtCoinsHookV2.sol`, `src/v2/hooks/libraries/HookCalldata.sol`, `src/v2/ArtCoinsTokenV2.sol`, `src/v2/lp-lockers/ArtCoinsLpLockerV2.sol`, `src/v2/ArtCoinsFeeEscrowV2.sol`, `src/v2/libraries/FeeDelivery.sol` | money on the swap path, transient storage, the restriction allowance, the locked liquidity |
 | 2 | `src/v2/ArtCoinsFactoryV2.sol`, `src/v2/utils/ArtCoinsDeployerV2.sol`, `src/v2/mev-modules/ArtCoinsMevLinearSkimV2.sol`, `src/Constants.sol` | launch flow, value accounting, validators, caps |
 | 3 | `src/v2/FeeAutoSwapperV2.sol`, `src/v2/protocol-fee/BurnRouterV2.sol`, `src/v2/protocol-fee/ProtocolFeeControllerV2.sol`, `src/v2/extensions/*.sol`, `src/v2/keepers/*.sol` | periphery that holds or moves fees |
 | 4, lowest | `src/v2/renderer/*.sol`, `src/v2/interfaces/*.sol` | metadata, no funds |
@@ -24,7 +24,7 @@
 
 ## what the system is
 
-a token launcher: the factory deploys an erc20 (solady) via a CREATE2 deployer, seeds a uniswap v4 pool paired with native eth, places the pool supply as locked liquidity in the locker, and installs a shared hook that skims a share of every swap and splits it three ways (bounty recipient, protocol, referrer), with an anti sniper skim that decays over a window. per coin config (fees, recipients, lock, tax caps) is written once at launch and has no writer afterwards. the factory side (allowlists, escrow, modules, periphery) is owner changeable by a single eoa (no multisig, no timelock, by design). two optional fee dodge modes at launch: VENUE (transfers out of listed side venues pay a tax to a fixed sink; canonical pool buys earn a same tx exemption budget) and HARD (transfers to or from the PoolManager revert unless covered by a same tx per direction allowance granted by the canonical hook; listed venues are blocked). docs/v2/DESIGN.md has the component map and docs/v2/DECISIONS.md (D1 to D59) every deliberate choice.
+a token launcher: the factory deploys an erc20 (solady) via a CREATE2 deployer, seeds a uniswap v4 pool paired with native eth, places the pool supply as locked liquidity in the locker, and installs a shared hook that skims a share of every swap and splits it three ways (bounty recipient, protocol, referrer), with an anti sniper skim that decays over a window. per coin config (fees, recipients, lock) is written once at launch and has no writer afterwards. the factory side (allowlists, escrow, modules, periphery) is owner changeable by a single eoa (no multisig, no timelock, by design). one optional launch flag, `restricted` (D73): while set, holder to holder transfers revert unless a side is on the coin allowlist, and coin moves to or from the PoolManager only within the transient allowance the canonical hook grants for a canonical swap in the same transaction. the coin admin manages the allowlist, may turn restriction off once, and may lock the allowlist and the switch permanently. docs/v2/DESIGN.md has the component map and docs/v2/DECISIONS.md (D1 to D73) every deliberate choice.
 
 ## invariants to attack (the claims we make)
 
@@ -33,9 +33,9 @@ a token launcher: the factory deploys an erc20 (solady) via a CREATE2 deployer, 
 | i1 | fee legs are pushed with a zero gas call, so the recipient runs only on the evm's 2,300 gas stipend; it can read state and call `PoolManager.sync`, nothing else; the hook resets sync after the pushes; revert, gas burn and returndata are contained by the escrow fallback; an erc20 prepay style router that syncs before the swap must be tested before being declared supported. no recipient behavior can revert or reorder a swap or spend another user's exemption (amended by D60) |
 | i2 | the hook holds no eth and no erc6909 claims after every swap; the skim on price limited partial fills is charged on the realized amount, the over charge is credited in the escrow to the refund address in hookData (else the PoolManager caller); returned BalanceDelta equals the transient delta for every router |
 | i3 | the referral leg never takes the protocol leg below `minProtocolShareBps` of the baseline skim; every wei of a skim is accounted to exactly one of bounty, protocol, referral, refund |
-| i4 | on a taxed pool (VENUE or HARD), liquidity can only be added in the launch tx before arming; after arming nobody can add through the PositionManager or a direct `modifyLiquidity`; therefore removal grants and attestations for any sender are safe (this invariant is load bearing: break it and the tax bypass class returns) |
-| i5 | HARD mode: coin cannot leave the PoolManager as erc20 except by a canonical swap or a locker collect in the same tx; inflows net against unused outflow grants (D34); known residual: erc6909 claims minted inside the PoolManager on a side pool |
-| i6 | VENUE mode: exemption budget is minted by coin leaving the PoolManager through a canonical swap OR a canonical liquidity removal on a taxed pool (only the launch's positions exist there, so this is the locker's collect and trusted extensions); consumed only when `from == poolManager`; never by venue outflows |
+| i4 | restriction (D73): while a coin is `restricted`, a transfer passes only if it is a mint or burn, if either side is on the coin allowlist, or if one side is the PoolManager and the amount fits the transient allowance the canonical hook grants for a canonical swap this transaction, which the transfer consumes; else it reverts `TransferRestricted`. When not restricted every transfer passes. `restricted` never turns back on; the coin admin may `unrestrict` once and `lock` the allowlist and the switch permanently |
+| i5 | a restricted coin's allowance is granted only by the canonical hook, equal to the coin side of each swap, so the only coin that leaves the PoolManager to a non allowlisted holder is a canonical swap fill; the allowlisted locker and periphery (escrow, fee swapper, burn router, launch extensions) move coin freely |
+| i6 | accepted residual (D73): a canonical round trip in one transaction opens allowance a side pool take can consume; the coins it moves stay restricted (a later wallet to wallet send of them reverts) and the round trip pays the home pool fees |
 | i7 | the locker's `collectRewards` cannot be executed inside a foreign unlock, measures fees from its own balance deltas, and recipients and bps are frozen per coin |
 | i8 | the escrow never pays out more than `totalOwed`, the owner's rescue cannot reach owed balances, core depositors cannot be removed, `selfClaimOnly` is honoured |
 | i9 | the token address binds `(factory, sender, full config hash)`; a front runner cannot block or capture a launch; the factory refunds exactly the excess and holds no coin after a launch |
@@ -47,9 +47,8 @@ a token launcher: the factory deploys an erc20 (solady) via a CREATE2 deployer, 
 
 | class | what | who can change it |
 |---|---|---|
-| immutable per coin | name, symbol, supply, `taxMode`, `taxBpsMax`, `taxSink`, canonical pool binding, exempt set, pool skim config and recipients, locker slots and bps, mev schedule | nobody, written once in the launch tx, no setter |
-| mutable within bounds, token admin | `taxBps` (<= `taxBpsMax`), metadata, image, renderer, admin | the coin's token admin |
-| mutable, venue admin | append venues, transfer admin, renounce | the venue admin |
+| immutable per coin | name, symbol, supply, canonical pool binding, the launch value of `restricted`, pool skim config and recipients, locker slots and bps, mev schedule | nobody, written once in the launch tx, no setter |
+| mutable, token admin | `restricted` (off once, via `unrestrict`), the allowlist (`setAllowed`), `locked` (on once, via `lock`), metadata, image, renderer, admin | the coin's token admin; `unrestrict`, `setAllowed` and `lock` revert once locked |
 | mutable, owner on periphery | every setter on the factory, hook, locker, escrow, swapper, burn router and fee controller | the owner, every setter bounded by `Constants` (D61: the burn router per call cap bounds moved there). one exception: `FeeAutoSwapperV2.setMaxStepIn` is bounded by the contract local `MAX_STEP_IN_CEILING` (`type(int128).max`, the v4 amount type limit) |
 
 
@@ -57,14 +56,13 @@ a token launcher: the factory deploys an erc20 (solady) via a CREATE2 deployer, 
 
 | id | residual |
 |---|---|
-| D24 / V2A-01 | erc6909 claims of the coin can circulate inside the PoolManager on side pools in HARD mode; they cannot exit as erc20 |
+| D73 | on a restricted coin, a canonical round trip in one transaction opens a transient allowance a side pool take can consume; the coins it moves stay restricted (a later wallet to wallet send reverts) and the round trip pays the home pool fees |
 | V2H-06 | an exact out seller's eth delta can be negative until the escrow refund is claimed (positive net of it) |
 | V2H-03 | universal router swaps that omit a refund address in hookData leave the partial fill refund credited to the router in the escrow (the ui sets it) |
 | V2H-07 | the hook constructor cannot verify it is a core escrow depositor; the deploy script asserts it |
 | h1-notes | a stipend recipient can read state and call `PoolManager.sync`, nothing else; the hook resets sync after the pushes; an erc20 prepay style router that syncs before the swap must be tested before being declared supported |
 | h1-notes | owner enabled extensions run between liquidity placement and arming and could add liquidity in that window (trusted) |
-| V2A-03 | listing a v2 pair as a venue in HARD mode also traps its LPs' weth |
-| V2A-09 | transient grants are per tx, so an erc4337 bundle shares them across user ops |
+| V2A-09 | the PoolManager transfer allowance is per transaction, so an erc4337 bundle shares it across user ops on a restricted coin |
 | D54 | a config at every cap exceeds the per tx gas cap (launcher only) |
 | D55 | `setTokenDeployer` is an owner trust surface by design |
 | D44 | self referral through a router is accepted and bounded by the frozen cap and the protocol floor |

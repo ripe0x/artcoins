@@ -369,7 +369,13 @@ abstract contract ForkStack is ForkBase {
         returns (DeployV2Lib.Params memory p)
     {
         p = DeployV2Lib.defaults(
-            owner, broadcaster, POOL_MANAGER, POSITION_MANAGER, PERMIT2, CREATE2_DEPLOYER
+            owner,
+            broadcaster,
+            POOL_MANAGER,
+            POSITION_MANAGER,
+            PERMIT2,
+            UNIVERSAL_ROUTER,
+            CREATE2_DEPLOYER
         );
         p.checkSizes =
             keccak256(bytes(vm.envOr("FOUNDRY_PROFILE", string("default")))) == keccak256("ci");

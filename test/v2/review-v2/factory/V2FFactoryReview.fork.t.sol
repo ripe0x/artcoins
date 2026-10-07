@@ -374,25 +374,12 @@ contract V2FFactoryReviewTest is ForkBase {
             }
         }
         if (tax) {
-            c.tax.mode = Constants.TAX_MODE_VENUE;
-            c.tax.taxBps = 500;
-            c.tax.taxBpsMax = 1000;
-            c.tax.taxSink = Constants.DEAD;
-            c.tax.exempt = new address[](Constants.MAX_TAX_EXEMPT);
-            for (uint256 i; i < c.tax.exempt.length; ++i) {
-                c.tax.exempt[i] = address(new V2FDummy());
-                // D47 (in flight): exempt entries must be owner allowlisted
-                factory.setExemptAllowed(c.tax.exempt[i], true);
-            }
-            c.tax.venues = new IArtCoinsFactoryV2.TaxVenue[](Constants.MAX_TAX_VENUES);
-            for (uint256 i; i < c.tax.venues.length; ++i) {
-                c.tax.venues[i] = IArtCoinsFactoryV2.TaxVenue({
-                    kind: 2,
-                    factory: address(0x1F98431c8aD98523631AE4a59f267346ea31F984),
-                    initCodeHash: 0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54,
-                    counterToken: address(uint160(0xc0ffee00 + i)),
-                    v3Fee: 3000
-                });
+            // a restricted coin with a large allowlist (the assembled set the
+            // factory seeds on top stays under Constants.MAX_ALLOWED).
+            c.restriction.restricted = true;
+            c.restriction.allowed = new address[](20);
+            for (uint256 i; i < c.restriction.allowed.length; ++i) {
+                c.restriction.allowed[i] = address(uint160(0xc0ffee00 + i));
             }
         }
         if (ext) {
@@ -442,7 +429,7 @@ contract V2FFactoryReviewTest is ForkBase {
         _measure(c, v, "7 slots + 14 positions only");
         (c, v) = _maxCfg(false, false, true, false);
         c.token.salt = bytes32(uint256(103));
-        _measure(c, v, "VENUE 16 exempt + 32 venues only");
+        _measure(c, v, "restricted + 20 allowlist entries only");
         (c, v) = _maxCfg(false, false, false, true);
         c.token.salt = bytes32(uint256(104));
         _measure(c, v, "10 extensions (9 vaults + dev buy) only");
@@ -455,12 +442,12 @@ contract V2FFactoryReviewTest is ForkBase {
     // claims that hold
     // ══════════════════════════════════════════════════════════════════════
 
-    /// HARD coin with a dev buy in the launch tx, then a public buy and sell
-    /// through the canonical pool. a direct transfer to the PoolManager (no
-    /// grant) still reverts, so the mode is live.
-    function test_holds_hardCoinLaunchesWithDevBuyAndTrades() public onlyFork {
+    /// Restricted coin with a dev buy in the launch tx, then a public buy and
+    /// sell through the canonical pool. A direct transfer to the PoolManager
+    /// with no granted allowance still reverts, so restriction is live.
+    function test_holds_restrictedCoinLaunchesWithDevBuyAndTrades() public onlyFork {
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        c.tax.mode = Constants.TAX_MODE_HARD;
+        c.restriction.restricted = true;
         c.extensions = new IArtCoinsFactoryV2.ExtensionConfigV2[](1);
         c.extensions[0] = IArtCoinsFactoryV2.ExtensionConfigV2({
             extension: address(devBuy),
@@ -471,7 +458,7 @@ contract V2FFactoryReviewTest is ForkBase {
         vm.prank(alice);
         address token = factory.deployToken{value: FEE + 0.5 ether}(c);
         IERC20 coin = IERC20(token);
-        assertEq(IArtCoinsTokenV2(token).taxMode(), Constants.TAX_MODE_HARD);
+        assertTrue(IArtCoinsTokenV2(token).restricted());
         uint256 devOut = coin.balanceOf(alice);
         assertGt(devOut, 0, "dev buy delivered");
         assertEq(coin.balanceOf(address(factory)), 0);
