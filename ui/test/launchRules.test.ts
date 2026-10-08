@@ -217,6 +217,10 @@ test('validateLaunch: lp fee 0 is valid, above the max is an error', () => {
   const f = form();
   f.pool.lpFeePercent = 0;
   assert.equal(errorsOf(f, ctx(), 'pool.lpFee').length, 0);
+  f.pool.baselineSkimPercent = 0;
+  assert.equal(errorsOf(f, ctx(), 'pool.baselineSkim').length, 1); // lp fee 0 and baseline skim 0 (ZeroFeeLaunch)
+  f.pool.lpFeePercent = 0.3;
+  assert.equal(errorsOf(f, ctx(), 'pool.baselineSkim').length, 0);
   f.pool.lpFeePercent = 10.5;
   assert.equal(errorsOf(f, ctx(), 'pool.lpFee').length, 1);
 });

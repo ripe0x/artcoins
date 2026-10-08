@@ -284,6 +284,7 @@ export function validateLaunch(form: LaunchForm, ctx: LaunchContext): Issue[] {
   const bounty = percentToBps(pool.bountyPercent);
   const refCap = percentToSkim(pool.referralCapPercent);
   if (lpFee < 0 || lpFee > MAX_LP_FEE) out.push(err('pool.lpFee', `lp fee must be 0 to ${MAX_LP_FEE / 10_000}%`));
+  if (lpFee === 0 && baseline === 0) out.push(err('pool.baselineSkim', 'set an lp fee or a baseline skim above 0, a pool with neither earns nothing'));
   if (baseline < 0 || baseline > MAX_BASELINE_SKIM_BPS) out.push(err('pool.baselineSkim', `baseline skim must be 0 to ${MAX_BASELINE_SKIM_BPS / 1_000}% of volume`));
   if (refCap < 0 || refCap > MAX_REFERRAL_CAP_OF_VOLUME) out.push(err('pool.referralCap', `referral cap must be 0 to ${MAX_REFERRAL_CAP_OF_VOLUME / 1_000}% of volume`));
   const maxBounty = maxBountyBps(ctx.minProtocolSkimShareBps);

@@ -23,16 +23,16 @@ test('validateRecipient: a zero escrow in the context does not reject the zero-a
   assert.equal(r.ok, true);
 });
 
-test('deriveRewardRows: marks the last row as protocol slot when it pays the protocol recipient', () => {
-  const rows = deriveRewardRows([8000, 2000], [A(10), A(11)], A(11));
+test('deriveRewardRows: marks the row named by protocolSlotIndex', () => {
+  const rows = deriveRewardRows([8000, 2000], [A(10), A(11)], { exists: true, index: 1n });
   assert.deepEqual(rows.map((r) => r.protocolSlot), [false, true]);
   assert.equal(rows[0].bps, 8000);
 });
 
-test('deriveRewardRows: no protocol slot when the last row pays someone else or none is known', () => {
-  assert.equal(deriveRewardRows([10000], [A(10)], A(11))[0].protocolSlot, false);
+test('deriveRewardRows: no protocol slot when the locker reports none', () => {
+  assert.equal(deriveRewardRows([10000], [A(10)], { exists: false, index: 0n })[0].protocolSlot, false);
   assert.equal(deriveRewardRows([10000], [A(10)], undefined)[0].protocolSlot, false);
-  assert.deepEqual(deriveRewardRows([], [], A(11)), []);
+  assert.deepEqual(deriveRewardRows([], [], { exists: true, index: 0n }), []);
 });
 
 test('recipientEditState', () => {

@@ -33,6 +33,7 @@ export default function RecipientsPanel({ token, hook, locker, escrow, poolManag
       { address: token, abi: tokenV2Abi, functionName: 'recipientsLocked' },
       { address: hook, abi: hookV2Abi, functionName: 'skimConfig', args: [poolId] },
       { address: locker, abi: lockerV2Abi, functionName: 'tokenRewards', args: [token] },
+      { address: locker, abi: lockerV2Abi, functionName: 'protocolSlotIndex', args: [token] },
     ],
     allowFailure: true,
     query: { staleTime: 15_000 },
@@ -40,9 +41,10 @@ export default function RecipientsPanel({ token, hook, locker, escrow, poolManag
   const locked = data?.[0]?.status === 'success' ? (data[0].result as boolean) : undefined;
   const skim = data?.[1]?.status === 'success' ? (data[1].result as { bountyRecipient: Address; protocolRecipient: Address }) : undefined;
   const rewards = data?.[2]?.status === 'success' ? (data[2].result as { rewardBps: readonly number[]; rewardRecipients: readonly Address[] }) : undefined;
+  const slot = data?.[3]?.status === 'success' ? (data[3].result as readonly [boolean, bigint]) : undefined;
   const rows = useMemo(
-    () => (rewards ? deriveRewardRows(rewards.rewardBps, rewards.rewardRecipients, skim?.protocolRecipient) : []),
-    [rewards, skim?.protocolRecipient]
+    () => (rewards && slot ? deriveRewardRows(rewards.rewardBps, rewards.rewardRecipients, { exists: slot[0], index: slot[1] }) : []),
+    [rewards, slot]
   );
 
   const { writeContractAsync, data: txHash, isPending, reset } = useWriteContract();

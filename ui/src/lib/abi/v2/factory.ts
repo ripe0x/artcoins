@@ -2549,5 +2549,10 @@ export const factoryV2Abi = [
     "type": "error",
     "name": "ZeroAddress",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroFeeLaunch",
+    "inputs": []
   }
 ] as const;

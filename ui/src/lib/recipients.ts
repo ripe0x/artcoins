@@ -40,14 +40,13 @@ export interface RewardRow {
   protocolSlot: boolean;
 }
 
-/**
- * Reward rows for display. The launcher appends the protocol slot last, so it is the last row when
- * that row pays the hook's protocol recipient. The contract enforces the freeze; this only marks it.
- */
-export function deriveRewardRows(bps: readonly number[], recipients: readonly Address[], protocolRecipient: Address | undefined): RewardRow[] {
-  const last = recipients.length - 1;
-  const protocolIndex =
-    last >= 0 && protocolRecipient && recipients[last].toLowerCase() === protocolRecipient.toLowerCase() ? last : -1;
+/** Reward rows for display. `protocolSlotIndex` is the locker's `protocolSlotIndex(token)` result. */
+export function deriveRewardRows(
+  bps: readonly number[],
+  recipients: readonly Address[],
+  protocolSlot: { exists: boolean; index: bigint } | undefined
+): RewardRow[] {
+  const protocolIndex = protocolSlot?.exists ? Number(protocolSlot.index) : -1;
   return recipients.map((recipient, index) => ({ index, recipient, bps: Number(bps[index] ?? 0), protocolSlot: index === protocolIndex }));
 }
 
