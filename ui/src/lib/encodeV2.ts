@@ -128,8 +128,6 @@ export interface LaunchContext {
   protocolBps: number;
   /** factory.minProtocolSkimShareBps(), caps the bounty share */
   minProtocolSkimShareBps: number;
-  /** factory.minLpFee() in pips (D53): the launch lp fee may not be lower */
-  minLpFee: number;
   /** factory.defaultAllowed().length: owner entries the factory seeds into every restricted launch */
   defaultAllowedCount: number;
   /** factory.deployFee() */
@@ -286,7 +284,6 @@ export function validateLaunch(form: LaunchForm, ctx: LaunchContext): Issue[] {
   const bounty = percentToBps(pool.bountyPercent);
   const refCap = percentToSkim(pool.referralCapPercent);
   if (lpFee < 0 || lpFee > MAX_LP_FEE) out.push(err('pool.lpFee', `lp fee must be 0 to ${MAX_LP_FEE / 10_000}%`));
-  else if (lpFee < ctx.minLpFee) out.push(err('pool.lpFee', `lp fee must be at least ${ctx.minLpFee / 10_000}% (the launcher's minimum, so the protocol's lp slot is never worthless)`));
   if (baseline < 0 || baseline > MAX_BASELINE_SKIM_BPS) out.push(err('pool.baselineSkim', `baseline skim must be 0 to ${MAX_BASELINE_SKIM_BPS / 1_000}% of volume`));
   if (refCap < 0 || refCap > MAX_REFERRAL_CAP_OF_VOLUME) out.push(err('pool.referralCap', `referral cap must be 0 to ${MAX_REFERRAL_CAP_OF_VOLUME / 1_000}% of volume`));
   const maxBounty = maxBountyBps(ctx.minProtocolSkimShareBps);

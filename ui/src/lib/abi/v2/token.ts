@@ -214,6 +214,13 @@ export const tokenV2Abi = [
   },
   {
     "type": "function",
+    "name": "lockRecipients",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "locked",
     "inputs": [],
     "outputs": [
@@ -273,6 +280,19 @@ export const tokenV2Abi = [
         "name": "",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "recipientsLocked",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -462,6 +482,12 @@ export const tokenV2Abi = [
         "internalType": "address"
       }
     ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "RecipientsLocked",
+    "inputs": [],
     "anonymous": false
   },
   {

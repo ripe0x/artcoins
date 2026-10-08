@@ -15,8 +15,6 @@ export interface FactoryState {
   defaultProtocolFeeBps: number;
   /** minimum protocol share of the skim, v2 only, caps the bounty share */
   minProtocolSkimShareBps: number;
-  /** lowest lp fee a launch may use, pips (D53), v2 only */
-  minLpFee: number;
   /** factory.defaultAllowed(): owner set seeded into every restricted launch, v2 only */
   defaultAllowed: Address[];
   owner?: Address;
@@ -32,7 +30,6 @@ export function useFactoryStateV2(factory: Address | undefined): FactoryState {
       { ...base, functionName: 'deployFee' },
       { ...base, functionName: 'defaultProtocolFeeBps' },
       { ...base, functionName: 'minProtocolSkimShareBps' },
-      { ...base, functionName: 'minLpFee' },
       { ...base, functionName: 'defaultAllowed' },
     ],
     allowFailure: true,
@@ -45,8 +42,7 @@ export function useFactoryStateV2(factory: Address | undefined): FactoryState {
     deployFee: (data?.[1]?.result as bigint | undefined) ?? 0n,
     defaultProtocolFeeBps: Number((data?.[2]?.result as number | bigint | undefined) ?? 0),
     minProtocolSkimShareBps: Number((data?.[3]?.result as number | bigint | undefined) ?? 0),
-    minLpFee: Number((data?.[4]?.result as number | bigint | undefined) ?? 0),
-    defaultAllowed: [...((data?.[5]?.result as readonly Address[] | undefined) ?? [])],
+    defaultAllowed: [...((data?.[4]?.result as readonly Address[] | undefined) ?? [])],
     refetch: () => void refetch(),
   };
 }

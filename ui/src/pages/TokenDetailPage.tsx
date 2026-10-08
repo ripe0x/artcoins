@@ -11,6 +11,7 @@ import SwapWidget from '../components/SwapWidget';
 import TokenMetadataModal from '../components/TokenMetadataModal';
 import OfficialBadge from '../components/OfficialBadge';
 import RestrictionPanel from '../components/RestrictionPanel';
+import RecipientsPanel from '../components/RecipientsPanel';
 import { uniswapTokenUrl } from '../lib/config';
 import { stateViewAbi } from '../lib/abi';
 import { tokenV1Abi } from '../lib/abi/v1/token';
@@ -365,6 +366,17 @@ export default function TokenDetailPage() {
         </InfoCard>
 
         {record.version === 2 && <RestrictionPanel token={record.token} admin={currentAdmin} fromBlock={record.blockNumber} />}
+        {record.version === 2 && poolMatches && poolId && addresses && (
+          <RecipientsPanel
+            token={record.token}
+            hook={record.hook}
+            locker={record.locker}
+            escrow={v2?.escrow ?? ZERO}
+            poolManager={addresses.poolManager}
+            poolId={poolId}
+            admin={currentAdmin}
+          />
+        )}
 
         <InfoCard title="Pool">
           <InfoRow label="Pair" value={pairLabel} />

@@ -3,19 +3,6 @@
 export const factoryV2Abi = [
   {
     "type": "function",
-    "name": "DEFAULT_MIN_LP_FEE",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint24",
-        "internalType": "uint24"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "STACK_VERSION",
     "inputs": [],
     "outputs": [
@@ -1001,19 +988,6 @@ export const factoryV2Abi = [
   },
   {
     "type": "function",
-    "name": "minLpFee",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint24",
-        "internalType": "uint24"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "minProtocolSkimShareBps",
     "inputs": [],
     "outputs": [
@@ -1509,19 +1483,6 @@ export const factoryV2Abi = [
   },
   {
     "type": "function",
-    "name": "setMinLpFee",
-    "inputs": [
-      {
-        "name": "fee",
-        "type": "uint24",
-        "internalType": "uint24"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "setMinProtocolSkimShareBps",
     "inputs": [
       {
@@ -1829,25 +1790,6 @@ export const factoryV2Abi = [
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "MinLpFeeSet",
-    "inputs": [
-      {
-        "name": "oldFee",
-        "type": "uint24",
-        "indexed": false,
-        "internalType": "uint24"
-      },
-      {
-        "name": "newFee",
-        "type": "uint24",
-        "indexed": false,
-        "internalType": "uint24"
       }
     ],
     "anonymous": false
@@ -2447,11 +2389,6 @@ export const factoryV2Abi = [
   },
   {
     "type": "error",
-    "name": "LpFeeBelowMinimum",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "MaxExtensionBpsExceeded",
     "inputs": []
   },
@@ -2463,11 +2400,6 @@ export const factoryV2Abi = [
   {
     "type": "error",
     "name": "MevModuleNotEnabled",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "MinLpFeeTooHigh",
     "inputs": []
   },
   {

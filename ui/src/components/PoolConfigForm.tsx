@@ -14,8 +14,6 @@ interface Props {
   issues: Issue[];
   supplyWhole: number;
   minProtocolSkimShareBps: number;
-  /** factory.minLpFee(), pips */
-  minLpFee: number;
   connectedAddress: string | undefined;
 }
 
@@ -53,12 +51,11 @@ function Slider({
   );
 }
 
-export default function PoolConfigForm({ value, onChange, issues, supplyWhole, minProtocolSkimShareBps, minLpFee, connectedAddress }: Props) {
+export default function PoolConfigForm({ value, onChange, issues, supplyWhole, minProtocolSkimShareBps, connectedAddress }: Props) {
   const set = <K extends keyof PoolFormState>(field: K, val: PoolFormState[K]) => onChange({ ...value, [field]: val });
   const price = startPriceEthPerCoin(value.startingTick);
   const fdv = impliedFdvEth(value.startingTick, supplyWhole);
   const maxBounty = maxBountyBps(minProtocolSkimShareBps) / 100;
-  const minLpFeePercent = minLpFee / 10_000;
   // D52: the same formula the factory runs, floor(baseline * (BPS - bounty - protocol floor) / BPS)
   const capMaxSkim = maxReferralCapSkim(percentToSkim(value.baselineSkimPercent), percentToBps(value.bountyPercent), minProtocolSkimShareBps);
   const capMax = capMaxSkim / 1_000;
@@ -87,7 +84,7 @@ export default function PoolConfigForm({ value, onChange, issues, supplyWhole, m
         <span>Launch fdv {Number.isFinite(fdv) ? fdv.toLocaleString(undefined, { maximumFractionDigits: 3 }) : '-'} ETH at {supplyWhole.toLocaleString()} coins</span>
       </div>
 
-      <Slider label="LP fee" value={value.lpFeePercent} min={minLpFeePercent} max={MAX_LP_FEE / 10_000} step={0.05} unit="%" onChange={(v) => set('lpFeePercent', v)} hint={`Charged on every swap, paid to the LP reward recipients and the protocol's lp slot. The launcher owner sets a minimum of ${minLpFeePercent}% (read from the factory), a launch below it is rejected.`} />
+      <Slider label="LP fee" value={value.lpFeePercent} min={0} max={MAX_LP_FEE / 10_000} step={0.05} unit="%" onChange={(v) => set('lpFeePercent', v)} hint="Charged on every swap, paid to the LP reward recipients and the protocol's lp slot. At 0% the pool earns from the skim only." />
       <Slider label="Baseline skim" value={value.baselineSkimPercent} min={0} max={MAX_BASELINE_SKIM_BPS / 1_000} step={0.1} unit="%" onChange={(v) => set('baselineSkimPercent', v)} hint="Taken from the ETH side of every swap, split between the bounty recipient and the protocol." />
       <Slider label="Bounty share of the skim" value={value.bountyPercent} min={0} max={maxBounty} step={0.01} unit="%" onChange={(v) => set('bountyPercent', v)} hint={`The protocol keeps at least ${protocolFloorPct}% of the skim on every swap, referred or not (read from the factory), so the bounty share is capped at ${maxBounty}%.`} />
       <Slider label="Referral cap" value={value.referralCapPercent} min={0} max={capMax} step={0.001} unit="%" onChange={(v) => set('referralCapPercent', v)} hint={`Most of the volume a swap referrer can earn. It is paid out of the protocol's share, not by the trader, and the protocol still keeps at least ${protocolFloorPct}% of the skim. Maximum for these fees: ${capMax}% of volume = baseline skim x (100% - bounty share - ${protocolFloorPct}%). Referrers are paid in ETH during each swap.`} />
