@@ -71,14 +71,53 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
         v2.locker.setRewardRecipient(coin, 0, makeAddr("rc.x"));
     }
 
-    function test_locker_setRewardRecipient_unpayableSelfReverts() public onlyFork {
-        (address coin,) = _launchCredits();
-        vm.prank(admin);
-        vm.expectRevert(IArtCoinsLpLockerV2.ZeroAddress.selector);
-        v2.locker.setRewardRecipient(coin, 0, address(v2.locker));
+    function test_locker_setRewardRecipient_rejectedAddressesRevert() public onlyFork {
+        (address coin, PoolKey memory key) = _launchCredits();
+        // parity with the factory launch checks the locker can know: coin, this
+        // locker, its fee escrow, the pool's hook, the PoolManager.
+        address[5] memory bad =
+            [coin, address(v2.locker), v2.locker.feeEscrow(), address(key.hooks), POOL_MANAGER];
+        for (uint256 i; i < bad.length; ++i) {
+            vm.prank(admin);
+            vm.expectRevert(
+                abi.encodeWithSelector(ArtCoinsLpLockerV2.RecipientCannotReceive.selector, bad[i])
+            );
+            v2.locker.setRewardRecipient(coin, 0, bad[i]);
+        }
         vm.prank(admin);
         vm.expectRevert(IArtCoinsLpLockerV2.ZeroAddress.selector);
         v2.locker.setRewardRecipient(coin, 0, address(0));
+    }
+
+    /// a project slot whose recipient equals the protocol recipient is still
+    /// editable; only the recorded protocol slot index is frozen.
+    function test_locker_setRewardRecipient_projectSlotEqualProtocolRecipientEditable()
+        public
+        onlyFork
+    {
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _creditsConfig(treasury);
+        address[] memory rr = new address[](1);
+        rr[0] = address(v2.controller); // a project recipient equal to the protocol recipient
+        uint16[] memory bps = new uint16[](1);
+        bps[0] = 8000;
+        c.locker.rewardRecipients = rr;
+        c.locker.rewardBps = bps;
+        address coin = _ownerLaunch(c);
+
+        address[] memory got = v2.locker.rewardRecipients(coin);
+        assertEq(got[0], address(v2.controller), "project slot is the controller");
+        assertEq(got[1], address(v2.controller), "protocol slot is the controller");
+
+        // the recorded protocol slot (index 1) is frozen
+        vm.prank(admin);
+        vm.expectRevert(ArtCoinsLpLockerV2.ProtocolSlotFrozen.selector);
+        v2.locker.setRewardRecipient(coin, 1, makeAddr("rc.x"));
+
+        // the project slot (index 0) is editable despite equalling the protocol recipient
+        address newR = makeAddr("rc.newProject");
+        vm.prank(admin);
+        v2.locker.setRewardRecipient(coin, 0, newR);
+        assertEq(v2.locker.rewardRecipients(coin)[0], newR, "project slot editable");
     }
 
     function test_locker_setRewardRecipient_outOfRangeReverts() public onlyFork {

@@ -120,7 +120,7 @@ all commands assume `source .env` with `MAINNET_RPC_URL` (tenderly public gatewa
 | v1 suites, no fork (ci `check`) | see .github/workflows/test.yml | 565 pass, 143 skipped (fork gated) |
 | v1 + v2 fork suites (ci `fork-tests`) | see test.yml | 391 pass, 4 known v1 failures (burn router floor at the pinned block) |
 | review proofs (v1 bugs + flipped v2 proofs) | `forge test --match-path "test/v2/{review,review-v2}/**" --fork-url ...` | 94 pass |
-| sizes | `FOUNDRY_PROFILE=ci forge build --sizes --skip "test/**" --skip script` | hook 15,650 bytes, headroom 8,926; factory 19,333; locker 14,463; token 9,552; deployer 15,551; every v2 contract under 24,576 |
+| sizes | `FOUNDRY_PROFILE=ci forge build --sizes --skip "test/**" --skip script` | hook 15,755 bytes, headroom 8,821; factory 19,356; locker 14,442; token 9,552; deployer 15,551; every v2 contract under 24,576 |
 | ui | `cd ui && npm ci && npm test && npm run build && npm run lint` | 51 pass, build and lint green |
 | registry | `node script-js/verify-registry.mjs` | 56 contracts, 2 coins, 0 drift (bytecode compare needs artifacts built at the stack's profile) |
 
@@ -130,8 +130,8 @@ note: a cold full tree compile of the stale v1 test set can reach ~14 gb of solc
 
 coin admin recipient changes, min lp fee rule removed, dead hook delivery tunables deleted.
 
-- hook: `setBountyRecipient(poolId, recipient)`, coin admin only, new recipient passes the launch receiver checks, event `BountyRecipientSet`.
-- locker: `setRewardRecipient(token, index, recipient)`, coin admin only, bps fixed, the protocol slot stays frozen, event `RewardRecipientSet`.
+- hook: `setBountyRecipient(poolId, recipient)`, coin admin only, event `BountyRecipientSet`. the new recipient must pass the factory launch checks the hook can know (reject the coin, the hook, the PoolManager, the fee escrow; `RecipientCannotReceive`).
+- locker: `setRewardRecipient(token, index, recipient)`, coin admin only, bps fixed, event `RewardRecipientSet`. the new recipient must pass the factory launch checks the locker can know (reject the coin, the locker, its fee escrow, the pool's hook, the PoolManager; `RecipientCannotReceive`). the protocol slot is recorded at placement (`placeLiquidity` gained a `protocolSlotIndex` arg, `type(uint256).max` = none) and frozen against this setter; a project slot whose recipient happens to equal the protocol recipient stays editable.
 - token: `lockRecipients()` plus `recipientsLocked` freeze both setters one way; renouncing the coin admin freezes them too.
 - removed: `factory.minLpFee`/`setMinLpFee`/`LpFeeBelowMinimum` and `MIN_LP_FEE` from the deploy inputs; a launch accepts lp fee 0 (pure skim), the D52 protocol skim floor still secures the protocol leg.
 - removed: hook `setDeliveryParams`, `DeliveryParamsSet`, `HookGlobals.pushGas/preSwapStreamGas/preSwapStreamMin`, and `Constants.PUSH_GAS_MIN/PUSH_GAS_DEFAULT` and the stream constants. `Constants.hash()` changed from `0xef1800c3c8b4bd0df00d2e072bedeb37c8922403e9b5c6ea7efbf5feedcac458` to `0x8c029d0c45f69829f04e7020a96e6c57953f2308ed768ab002a1e4be0f372ed1`.
@@ -142,7 +142,7 @@ coin admin recipient changes, min lp fee rule removed, dead hook delivery tunabl
 | v2 fork, reviews excluded | `--match-path "test/v2/**" --no-match-path "test/v2/{review,review-v2,review-v3}/**"` minus the unit regex | 248 pass, 8 skipped |
 | deploy rehearsal | `DeployV2Stack.fork.t.sol` | 6 pass |
 | review proofs | `test/v2/{review,review-v2,review-v3}/**` | 94 pass, 1 pre-existing fail (`ForkRenderersReview` forks at latest block via a single-arg `createSelectFork`, keyless gateway) |
-| sizes (ci) | hook 15,650 (headroom 8,926), factory 19,333, locker 14,463, token 9,552, deployer 15,551 |
+| sizes (ci) | hook 15,755 (headroom 8,821), factory 19,356, locker 14,442, token 9,552, deployer 15,551 |
 | keeper runner | `cd keeper && npm test` | 70 pass, 1 skip |
 
 anti sniper window split (0.1 eth in-window buy, `RecipientChangesV2.test_antiSniperWindow_extraSkimAllToBounty`): total skim 0.06869 eth, baseline portion 0.006 eth, bounty leg 0.0676898 eth, protocol leg 0.0010002 eth. the skim above the baseline (0.06269 eth) is entirely the bounty leg; protocol and referral share the baseline portion only.

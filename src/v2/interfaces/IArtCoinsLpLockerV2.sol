@@ -81,13 +81,17 @@ interface IArtCoinsLpLockerV2 is IConstantsBound {
     /// @notice Mints the launch positions and freezes the reward split.
     ///         Allowlisted launchers only; checks the pool hook's `constantsHash()`.
     /// @param  lockerConfig Split and positions, protocol slot already appended.
+    /// @param  protocolSlotIndex Reward slot the launcher appended for the
+    ///         protocol, frozen against `setRewardRecipient`; `type(uint256).max`
+    ///         means no protocol slot.
     /// @return positionId First position id.
     function placeLiquidity(
         IArtCoinsFactoryV2.LockerConfigV2 calldata lockerConfig,
         IArtCoinsFactoryV2.PoolConfigV2 calldata poolConfig,
         PoolKey calldata poolKey,
         uint256 poolSupply,
-        address token
+        address token,
+        uint256 protocolSlotIndex
     ) external returns (uint256 positionId);
 
     // ── permissionless ────────────────────────────────────────────────────

@@ -630,8 +630,9 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     /// @dev The coin is the pool's currency1. The caller must be its current
     ///      admin (`IArtCoinsTokenV2(coin).admin()`). The call reverts once the
     ///      coin locks its recipients or renounces its admin (admin becomes 0,
-    ///      which no caller matches). `newRecipient` passes the launch receiver
-    ///      checks: nonzero and able to receive eth or an escrow credit.
+    ///      which no caller matches). `newRecipient` must pass the factory launch
+    ///      checks for a fee recipient: nonzero, and not the coin, this hook, the
+    ///      PoolManager or the fee escrow.
     function setBountyRecipient(PoolId poolId, address payable newRecipient) external {
         address coin = _info[poolId].token;
         if (coin == address(0)) revert UnknownPool();
@@ -639,7 +640,10 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         if (msg.sender != t.admin()) revert NotCoinAdmin();
         if (t.recipientsLocked()) revert RecipientsLocked();
         if (newRecipient == address(0)) revert BountyRecipientZero();
-        _checkReceiver(newRecipient);
+        if (
+            newRecipient == coin || newRecipient == address(this)
+                || newRecipient == address(poolManager) || newRecipient == _globals.feeEscrow
+        ) revert RecipientCannotReceive(newRecipient);
         address old = _skim[poolId].bountyRecipient;
         _skim[poolId].bountyRecipient = newRecipient;
         emit BountyRecipientSet(poolId, old, newRecipient);

@@ -628,8 +628,11 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         uint16 protocolBps
     ) internal {
         LockerConfigV2 memory l = c.locker;
+        // the protocol slot is appended last; its index is the project count.
+        uint256 protocolSlotIndex = type(uint256).max;
         if (protocolBps != 0) {
             uint256 n = l.rewardRecipients.length;
+            protocolSlotIndex = n;
             address[] memory recipients = new address[](n + 1);
             uint16[] memory bps = new uint16[](n + 1);
             for (uint256 i; i < n; ++i) {
@@ -645,7 +648,8 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         IERC20 coin = IERC20(token);
         uint256 before = coin.balanceOf(address(this));
         coin.forceApprove(l.locker, poolSupply);
-        IArtCoinsLpLockerV2(l.locker).placeLiquidity(l, c.pool, poolKey, poolSupply, token);
+        IArtCoinsLpLockerV2(l.locker)
+            .placeLiquidity(l, c.pool, poolKey, poolSupply, token, protocolSlotIndex);
         if (coin.allowance(address(this), l.locker) != 0) coin.forceApprove(l.locker, 0);
         if (before - coin.balanceOf(address(this)) != poolSupply) revert SupplyNotPulled(l.locker);
     }

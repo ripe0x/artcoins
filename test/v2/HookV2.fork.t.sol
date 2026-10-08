@@ -897,14 +897,20 @@ contract HookV2ForkTest is HookV2ForkBase {
         hook.setBountyRecipient(key.toId(), payable(makeAddr("x")));
     }
 
-    function test_setBountyRecipient_unpayableReverts() public onlyFork {
-        (PoolKey memory key,) = _launch(_defaults(bountyEoa));
-        vm.expectRevert(
-            abi.encodeWithSelector(ArtCoinsHookV2.RecipientCannotReceive.selector, address(hook))
-        );
-        hook.setBountyRecipient(key.toId(), payable(address(hook)));
+    function test_setBountyRecipient_rejectedAddressesRevert() public onlyFork {
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(_defaults(bountyEoa));
+        PoolId pid = key.toId();
+        // parity with the factory launch checks the hook can know: coin, hook,
+        // PoolManager, fee escrow.
+        address[4] memory bad = [address(token), address(hook), POOL_MANAGER, address(escrow)];
+        for (uint256 i; i < bad.length; ++i) {
+            vm.expectRevert(
+                abi.encodeWithSelector(ArtCoinsHookV2.RecipientCannotReceive.selector, bad[i])
+            );
+            hook.setBountyRecipient(pid, payable(bad[i]));
+        }
         vm.expectRevert(IArtCoinsHookV2.BountyRecipientZero.selector);
-        hook.setBountyRecipient(key.toId(), payable(address(0)));
+        hook.setBountyRecipient(pid, payable(address(0)));
     }
 
     function test_setBountyRecipient_unknownPoolReverts() public {
@@ -1089,7 +1095,7 @@ contract HookV2RealLockerTest is HookV2ForkBase {
         pc.tickSpacing = TS;
         uint256 supply = 500_000_000e18;
         t.approve(address(rl), supply);
-        rl.placeLiquidity(lc, pc, k, supply, address(t)); // through the PositionManager
+        rl.placeLiquidity(lc, pc, k, supply, address(t), type(uint256).max); // through the PositionManager
         hook.initializeMevModule(k, "");
 
         // trade both ways so the position earns eth and coin fees

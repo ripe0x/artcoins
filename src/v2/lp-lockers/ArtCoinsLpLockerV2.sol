@@ -3,7 +3,6 @@ pragma solidity ^0.8.26;
 
 import {Constants} from "../../Constants.sol";
 import {IArtCoinsFactoryV2} from "../interfaces/IArtCoinsFactoryV2.sol";
-import {IArtCoinsHookV2} from "../interfaces/IArtCoinsHookV2.sol";
 import {IArtCoinsLpLockerV2} from "../interfaces/IArtCoinsLpLockerV2.sol";
 import {IArtCoinsTokenV2} from "../interfaces/IArtCoinsTokenV2.sol";
 import {IConstantsBound} from "../interfaces/IConstantsBound.sol";
@@ -18,7 +17,6 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
-import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {IPositionManager} from "@uniswap/v4-periphery/src/interfaces/IPositionManager.sol";
 import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
@@ -39,7 +37,6 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 ///         balance deltas.
 contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuardTransient {
     using TransientStateLibrary for IPoolManager;
-    using PoolIdLibrary for PoolKey;
 
     // ── additive errors (not in the frozen interface) ─────────────────────
 
@@ -63,6 +60,10 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     /// @notice The protocol reward slot is frozen; the coin admin changes the
     ///         project slots.
     error ProtocolSlotFrozen();
+    /// @notice A reward recipient the factory launch checks reject for this role
+    ///         (the coin, this locker, its escrow, the pool's hook or the
+    ///         PoolManager).
+    error RecipientCannotReceive(address recipient);
 
     /// @notice Gas forwarded on each native reward push. A recipient that
     ///         needs more is credited in the escrow instead.
@@ -82,6 +83,10 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     mapping(address launcher => bool) public isLauncher;
 
     mapping(address token => TokenRewardInfoV2) internal _tokenRewards;
+    /// @dev Reward slot index of the frozen protocol slot, plus one; 0 means the
+    ///      launch appended no protocol slot. Written once at placement from the
+    ///      launch data. `setRewardRecipient` refuses this slot.
+    mapping(address token => uint256) internal _protocolSlotPlusOne;
 
     constructor(address owner_, address positionManager_, address permit2_, address feeEscrow_)
         Ownable(owner_)
@@ -109,16 +114,24 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     /// @dev Pulls `poolSupply` of `token` from the launcher (prior approval),
     ///         mints coin only positions below the starting price and freezes
     ///         the split. Rounding dust of the coin is sent to `Constants.DEAD`.
+    ///         `protocolSlotIndex` is the reward slot the launcher appended for
+    ///         the protocol (frozen against `setRewardRecipient`);
+    ///         `type(uint256).max` means no protocol slot.
     function placeLiquidity(
         IArtCoinsFactoryV2.LockerConfigV2 calldata lockerConfig,
         IArtCoinsFactoryV2.PoolConfigV2 calldata poolConfig,
         PoolKey calldata poolKey,
         uint256 poolSupply,
-        address token
+        address token,
+        uint256 protocolSlotIndex
     ) external nonReentrant returns (uint256 positionId) {
         if (!isLauncher[msg.sender]) revert NotLauncher();
         if (token == address(0)) revert ZeroAddress();
         if (_tokenRewards[token].numPositions != 0) revert TokenAlreadyHasRewards();
+        if (
+            protocolSlotIndex != type(uint256).max
+                && protocolSlotIndex >= lockerConfig.rewardRecipients.length
+        ) revert RewardIndexOutOfRange();
 
         address hook = address(poolKey.hooks);
         if (
@@ -150,6 +163,9 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         info.numPositions = numPositions;
         info.rewardBps = lockerConfig.rewardBps;
         info.rewardRecipients = lockerConfig.rewardRecipients;
+        if (protocolSlotIndex != type(uint256).max) {
+            _protocolSlotPlusOne[token] = protocolSlotIndex + 1;
+        }
 
         emit TokenRewardAdded({
             token: token,
@@ -380,9 +396,10 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     /// @inheritdoc IArtCoinsLpLockerV2
     /// @dev Caller must be the coin's current admin. Reverts once the coin locks
     ///      its recipients or renounces its admin (admin becomes 0, which no
-    ///      caller matches). bps stay fixed. `newRecipient` is nonzero and not
-    ///      this locker (the launch reward rule, LF-05). The protocol slot, whose
-    ///      recipient is the pool's protocol recipient, stays frozen.
+    ///      caller matches). bps stay fixed. The protocol slot, recorded at
+    ///      placement, stays frozen. `newRecipient` must pass the factory launch
+    ///      checks for a reward recipient: nonzero, and not the coin, this
+    ///      locker, its fee escrow, the pool's hook or the PoolManager.
     function setRewardRecipient(address token, uint256 index, address newRecipient) external {
         TokenRewardInfoV2 storage info = _tokenRewards[token];
         if (info.numPositions == 0) revert TokenNotFound();
@@ -390,12 +407,15 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         if (msg.sender != t.admin()) revert NotCoinAdmin();
         if (t.recipientsLocked()) revert RecipientsLocked();
         if (index >= info.rewardRecipients.length) revert RewardIndexOutOfRange();
-        if (newRecipient == address(0) || newRecipient == address(this)) revert ZeroAddress();
+        uint256 frozen = _protocolSlotPlusOne[token];
+        if (frozen != 0 && index == frozen - 1) revert ProtocolSlotFrozen();
+        if (newRecipient == address(0)) revert ZeroAddress();
+        if (
+            newRecipient == token || newRecipient == address(this) || newRecipient == feeEscrow
+                || newRecipient == address(info.poolKey.hooks)
+                || newRecipient == address(poolManager)
+        ) revert RecipientCannotReceive(newRecipient);
         address old = info.rewardRecipients[index];
-        PoolKey memory key = info.poolKey;
-        if (old == IArtCoinsHookV2(address(key.hooks)).skimConfig(key.toId()).protocolRecipient) {
-            revert ProtocolSlotFrozen();
-        }
         info.rewardRecipients[index] = newRecipient;
         emit RewardRecipientSet(token, index, old, newRecipient);
     }
