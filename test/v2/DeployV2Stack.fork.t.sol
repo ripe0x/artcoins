@@ -89,7 +89,6 @@ contract DeployV2StackForkTest is ForkStack {
         assertEq(s.factory.deployFee(), 0.069 ether, "deploy fee");
         assertEq(s.factory.defaultProtocolFeeBps(), 2000, "protocol bps");
         assertEq(s.factory.minProtocolSkimShareBps(), 1000, "D52 protocol skim floor");
-        assertEq(s.factory.minLpFee(), 3000, "D53 min lp fee");
         assertEq(s.factory.protocolRecipient(), address(s.controller), "protocol recipient");
         assertEq(s.factory.referralPayout(), address(s.escrow), "referral payout = escrow");
         assertEq(s.factory.teamFeeRecipient(), LIVE_OWNER, "team fee recipient");

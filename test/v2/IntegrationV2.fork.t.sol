@@ -278,7 +278,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         v2.factory.setDeprecated(false);
         v2.factory.setDeployFee(Constants.MAX_DEPLOY_FEE);
         v2.factory.setDefaultProtocolFeeBps(Constants.MAX_PROTOCOL_FEE_BPS);
-        v2.factory.setMinLpFee(uint24(Constants.MAX_LP_FEE));
         v2.factory.setMinProtocolSkimShareBps(uint16(Constants.BPS));
         v2.factory.setProtocolRecipient(payable(other));
         v2.factory.setReferralPayout(payable(address(otherContract)));
@@ -294,10 +293,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         // hook: globals only
         escrow2.addDepositor(address(v2.hook), true);
         escrow2.addDepositor(address(v2.locker), true);
-        v2.hook
-            .setDeliveryParams(
-                Constants.PUSH_GAS_MAX, Constants.STREAM_GAS_MAX, Constants.STREAM_MIN_BALANCE_MAX
-            );
         v2.hook.setExtensionAllowlist(address(0));
         v2.hook.setLauncher(address(v2.factory), false);
         v2.hook.setLauncher(other, true);

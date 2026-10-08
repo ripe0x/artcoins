@@ -18,6 +18,8 @@ interface IArtCoinsTokenV2 {
     event Unrestricted();
     /// @notice Allowlist and the restriction switch frozen.
     event Locked();
+    /// @notice Bounty and reward recipient changes frozen.
+    event RecipientsLocked();
 
     event Verified(address indexed admin, address indexed token);
     event UpdateImage(string image);
@@ -57,6 +59,9 @@ interface IArtCoinsTokenV2 {
 
     function restricted() external view returns (bool);
     function locked() external view returns (bool);
+    /// @notice The bounty and reward recipient setters on the hook and locker
+    ///         are frozen once this is set.
+    function recipientsLocked() external view returns (bool);
     function isAllowed(address account) external view returns (bool);
     /// @notice A factory seeded entry the coin admin cannot remove.
     function isPinned(address account) external view returns (bool);
@@ -81,6 +86,9 @@ interface IArtCoinsTokenV2 {
     function unrestrict() external;
     /// @notice Freeze the allowlist and the restriction switch permanently.
     function lock() external;
+    /// @notice Freeze the bounty and reward recipient setters on the hook and
+    ///         locker permanently. One way.
+    function lockRecipients() external;
 
     // ── canonical hook only ───────────────────────────────────────────────
 

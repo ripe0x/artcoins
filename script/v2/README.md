@@ -32,7 +32,6 @@ export FOUNDRY_PROFILE=ci
 | DEPLOY_FEE | 0.069 ether | factory deploy fee (wei) |
 | PROTOCOL_BPS | 2000 | factory default protocol slot |
 | MIN_PROTOCOL_SKIM_SHARE_BPS | 1000 | D52: protocol floor of every skim. caps launch `bountyBps` at `10000 - this` and the referral cap above the floor |
-| MIN_LP_FEE | 3000 | D53: launch lp fee floor in pips |
 
 ### the wrapper
 
@@ -142,6 +141,12 @@ forge script script/v2/LaunchV2Coin.s.sol --sig "run(string)" "$(cat my-coin.jso
 the script prints the predicted token, msg.value (the deploy fee), configHash, the dry run pool id, then the token and pool id. a config with `"example": true` is refused for broadcast (override: `ALLOW_EXAMPLE=true`). `forge script ... LaunchV2Coin.s.sol` with no `--sig` reads `LAUNCH_CONFIG_JSON` (the json text) or the file at `LAUNCH_CONFIG`; reading a file under script/v2 needs `{ access = "read", path = "script/v2/launch-configs" }` in foundry.toml fs_permissions.
 
 config fields map 1:1 to `IArtCoinsFactoryV2.DeploymentConfigV2`; hook, locker and mev module come from the target. `restriction.restricted` is a bool; when true, list extra allowlist entries in `restriction.allowed` (the factory seeds the stack escrow, this launch's locker and the launch extensions on top). not supported by the json: launch extensions, pool extension. `protocolBps` is the protocol slot passed to `deployTokenAsOwner`; project `rewardBps` must sum to `10000 - protocolBps`.
+
+`fee.lpFee` ranges from 0 to `MAX_LP_FEE` (100,000 pips); 0 is a pure skim pool with no lp fee. The protocol skim share floor (D52) secures the protocol leg regardless.
+
+anti sniper window split: while the mev module is active (the first `windowSeconds`, capped at 180 minutes), the hook charges `startingSkimBps` decaying to `baselineSkimBps`. The baseline portion of the skim splits bounty / protocol / referral as configured; the skim ABOVE the baseline goes entirely to the bounty recipient. Measured for a 0.1 eth in-window buy on the example config (start 68,690, baseline 6,000, bounty 8,333 bps): total skim 0.06869 eth, baseline portion 0.006 eth, bounty leg 0.0676898 eth, protocol leg 0.0010002 eth. The 0.06269 eth above the baseline is all bounty. The coin admin may repoint the bounty recipient after launch with `hook.setBountyRecipient` until `lockRecipients` or admin renounce.
+
+recipient changes after launch (D76): `hook.setBountyRecipient(poolId, recipient)` and `locker.setRewardRecipient(token, index, recipient)` are coin admin only; new recipients pass the launch receiver checks (nonzero, able to receive eth or an escrow credit), bps stay fixed, the protocol reward slot stays frozen. `token.lockRecipients()` freezes both setters one way, and renouncing the coin admin freezes them.
 
 allowlist rule (restricted coins): the transfer rule checks the sender and the recipient only. the factory seeds the allowlist with the owner `defaultAllowed` set (empty by default), this launch's locker, the stack fee escrow and the launch extensions, and pins those three so the coin admin cannot remove them. the fee swapper and burn router are not seeded: they move coin through the canonical pool under the per-swap allowance. allowlist a contract ONLY when its coin outflows are fixed by its own logic (the locker pays frozen reward slots; the escrow pays the credited owner; an airdrop or vault pays its configured recipients). never allowlist a contract that sends coin where its caller directs it: a router, aggregator, multicall or smart wallet. an allowlisted forwarder lets any user move coin wallet to wallet through it, which opens restriction for everyone. a restricted coin already trades through the universal router and permit2 with neither allowlisted, because the only coin move is between the PoolManager and the user. the factory `defaultAllowed` set ships empty for the same reason.
 

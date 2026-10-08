@@ -93,9 +93,9 @@ contract ProtocolFeeControllerV2Test is Test {
 
     /// @notice The hook and locker push with a small gas cap; the push must succeed.
     function test_pfcV2_receive_lowGas_holds_neverReverts() public {
-        (bool ok,) = address(pfc).call{value: 1 ether, gas: Constants.PUSH_GAS_MIN}("");
+        (bool ok,) = address(pfc).call{value: 1 ether, gas: 10_000}("");
         assertTrue(ok, "push with 10k gas succeeds");
-        (ok,) = address(pfc).call{value: 1 ether, gas: Constants.PUSH_GAS_DEFAULT}("");
+        (ok,) = address(pfc).call{value: 1 ether, gas: 50_000}("");
         assertTrue(ok, "push with 50k gas succeeds");
         assertEq(address(pfc).balance, 2 ether, "held");
         pfc.processFees(address(0));

@@ -23,7 +23,7 @@ import {IReferralPayoutForHook} from "../../src/v2/interfaces/IReferralPayoutFor
 contract ConstantsV2Test is Test {
     /// @dev Update only together with an intended change to a hashed constant.
     bytes32 internal constant GOLDEN_HASH =
-        0xef1800c3c8b4bd0df00d2e072bedeb37c8922403e9b5c6ea7efbf5feedcac458;
+        0x8c029d0c45f69829f04e7020a96e6c57953f2308ed768ab002a1e4be0f372ed1;
 
     function _literalHash() internal pure returns (bytes32) {
         bytes32 pool = keccak256(
@@ -45,14 +45,7 @@ contract ConstantsV2Test is Test {
         );
         bytes32 delivery = keccak256(
             abi.encode(
-                uint32(10_000), // PUSH_GAS_MIN
-                uint32(50_000), // PUSH_GAS_DEFAULT
-                uint32(150_000), // PUSH_GAS_MAX
-                uint32(30_000), // STREAM_GAS_MIN
-                uint32(150_000), // STREAM_GAS_DEFAULT
-                uint32(500_000), // STREAM_GAS_MAX
-                uint96(1e16), // STREAM_MIN_BALANCE_DEFAULT
-                uint96(10e18) // STREAM_MIN_BALANCE_MAX
+                uint32(150_000) // PUSH_GAS_MAX
             )
         );
         bytes32 launch = keccak256(
@@ -100,14 +93,7 @@ contract ConstantsV2Test is Test {
         assertEq(Constants.MAX_BASELINE_SKIM_BPS, 10_000);
         assertEq(Constants.MAX_REFERRAL_CAP_OF_VOLUME, 1000);
         assertEq(Constants.MAX_BOUNTY_BPS, 9999);
-        assertEq(Constants.PUSH_GAS_MIN, 10_000);
-        assertEq(Constants.PUSH_GAS_DEFAULT, 50_000);
         assertEq(Constants.PUSH_GAS_MAX, 150_000);
-        assertEq(Constants.STREAM_GAS_MIN, 30_000);
-        assertEq(Constants.STREAM_GAS_DEFAULT, 150_000);
-        assertEq(Constants.STREAM_GAS_MAX, 500_000);
-        assertEq(Constants.STREAM_MIN_BALANCE_DEFAULT, 0.01 ether);
-        assertEq(Constants.STREAM_MIN_BALANCE_MAX, 10 ether);
         assertEq(Constants.MIN_MEV_WINDOW, 1 minutes);
         assertEq(Constants.DEFAULT_MEV_WINDOW, 69 minutes);
         assertEq(Constants.MAX_MEV_WINDOW, 180 minutes);
@@ -151,11 +137,6 @@ contract ConstantsV2Test is Test {
 
     /// @dev min < default < max for every bounded tunable, and cross bound sanity.
     function test_bounds_ordering() public pure {
-        assertLt(Constants.PUSH_GAS_MIN, Constants.PUSH_GAS_DEFAULT);
-        assertLt(Constants.PUSH_GAS_DEFAULT, Constants.PUSH_GAS_MAX);
-        assertLt(Constants.STREAM_GAS_MIN, Constants.STREAM_GAS_DEFAULT);
-        assertLt(Constants.STREAM_GAS_DEFAULT, Constants.STREAM_GAS_MAX);
-        assertLt(Constants.STREAM_MIN_BALANCE_DEFAULT, Constants.STREAM_MIN_BALANCE_MAX);
         assertLt(Constants.MIN_MEV_WINDOW, Constants.DEFAULT_MEV_WINDOW);
         assertLt(Constants.DEFAULT_MEV_WINDOW, Constants.MAX_MEV_WINDOW);
         assertLt(Constants.BURN_IMPACT_MIN, Constants.BURN_IMPACT_DEFAULT);

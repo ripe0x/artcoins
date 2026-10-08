@@ -1,0 +1,171 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.26;
+
+// D76: the coin admin changes a coin's locker reward recipients after launch,
+// the change takes effect on the next collect, the protocol slot stays frozen,
+// and a lock or a renounce freezes the setter. Also D76(2): a launch with lp
+// fee 0 works and the protocol skim floor still pays. Full v2 stack on a
+// mainnet fork; skips cleanly without an rpc.
+
+import {IntegrationV2Base} from "./IntegrationV2Base.sol";
+
+import {Constants} from "../../../src/Constants.sol";
+import {IArtCoinsFactoryV2} from "../../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
+import {IArtCoinsLpLockerV2} from "../../../src/v2/interfaces/IArtCoinsLpLockerV2.sol";
+import {ArtCoinsLpLockerV2} from "../../../src/v2/lp-lockers/ArtCoinsLpLockerV2.sol";
+
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {console2} from "forge-std/console2.sol";
+
+contract RecipientChangesV2ForkTest is IntegrationV2Base {
+    using PoolIdLibrary for PoolKey;
+
+    address internal treasury = makeAddr("rc.treasury");
+
+    function _launchCredits() internal returns (address coin, PoolKey memory key) {
+        coin = _ownerLaunch(_creditsConfig(treasury));
+        key = _key(coin);
+        // reward slots: [0] project (treasury), [1] protocol (controller).
+        address[] memory rr = v2.locker.rewardRecipients(coin);
+        assertEq(rr.length, 2, "project + protocol slot");
+        assertEq(rr[0], treasury, "project slot");
+        assertEq(rr[1], address(v2.controller), "protocol slot");
+    }
+
+    // ── locker reward recipient ──────────────────────────────────────────
+
+    function test_locker_setRewardRecipient_flowsToNewOnCollect() public onlyFork {
+        (address coin, PoolKey memory key) = _launchCredits();
+        address payable newArtist = payable(makeAddr("rc.newArtist"));
+
+        vm.expectEmit(true, true, false, true, address(v2.locker));
+        emit IArtCoinsLpLockerV2.RewardRecipientSet(coin, 0, treasury, newArtist);
+        vm.prank(admin);
+        v2.locker.setRewardRecipient(coin, 0, newArtist);
+        assertEq(v2.locker.rewardRecipients(coin)[0], newArtist, "project slot repointed");
+
+        // accrue lp fees on both sides, then collect.
+        _buyAndSell(key, 0.5 ether);
+        uint256 ethBefore = newArtist.balance;
+        uint256 coinBefore = IERC20(coin).balanceOf(newArtist);
+        uint256 oldEth = treasury.balance;
+        v2.locker.collectRewards(coin);
+        assertGt(newArtist.balance - ethBefore, 0, "new artist eth share");
+        assertGt(IERC20(coin).balanceOf(newArtist) - coinBefore, 0, "new artist coin share");
+        assertEq(treasury.balance - oldEth, 0, "old slot not paid from collect");
+    }
+
+    function test_locker_setRewardRecipient_protocolSlotFrozen() public onlyFork {
+        (address coin,) = _launchCredits();
+        vm.prank(admin);
+        vm.expectRevert(ArtCoinsLpLockerV2.ProtocolSlotFrozen.selector);
+        v2.locker.setRewardRecipient(coin, 1, makeAddr("rc.x"));
+    }
+
+    function test_locker_setRewardRecipient_nonAdminReverts() public onlyFork {
+        (address coin,) = _launchCredits();
+        vm.prank(stranger);
+        vm.expectRevert(ArtCoinsLpLockerV2.NotCoinAdmin.selector);
+        v2.locker.setRewardRecipient(coin, 0, makeAddr("rc.x"));
+    }
+
+    function test_locker_setRewardRecipient_unpayableSelfReverts() public onlyFork {
+        (address coin,) = _launchCredits();
+        vm.prank(admin);
+        vm.expectRevert(IArtCoinsLpLockerV2.ZeroAddress.selector);
+        v2.locker.setRewardRecipient(coin, 0, address(v2.locker));
+        vm.prank(admin);
+        vm.expectRevert(IArtCoinsLpLockerV2.ZeroAddress.selector);
+        v2.locker.setRewardRecipient(coin, 0, address(0));
+    }
+
+    function test_locker_setRewardRecipient_outOfRangeReverts() public onlyFork {
+        (address coin,) = _launchCredits();
+        vm.prank(admin);
+        vm.expectRevert(ArtCoinsLpLockerV2.RewardIndexOutOfRange.selector);
+        v2.locker.setRewardRecipient(coin, 2, makeAddr("rc.x"));
+    }
+
+    function test_locker_setRewardRecipient_lockFreezes() public onlyFork {
+        (address coin,) = _launchCredits();
+        vm.prank(admin);
+        _token(coin).lockRecipients();
+        vm.prank(admin);
+        vm.expectRevert(ArtCoinsLpLockerV2.RecipientsLocked.selector);
+        v2.locker.setRewardRecipient(coin, 0, makeAddr("rc.x"));
+    }
+
+    function test_locker_setRewardRecipient_renounceFreezes() public onlyFork {
+        (address coin,) = _launchCredits();
+        vm.prank(admin);
+        _token(coin).renounceAdmin();
+        vm.prank(admin);
+        vm.expectRevert(ArtCoinsLpLockerV2.NotCoinAdmin.selector);
+        v2.locker.setRewardRecipient(coin, 0, makeAddr("rc.x"));
+    }
+
+    /// one call freezes both the hook bounty and the locker reward setters.
+    function test_lockRecipients_freezesHookAndLocker() public onlyFork {
+        (address coin, PoolKey memory key) = _launchCredits();
+        vm.prank(admin);
+        _token(coin).lockRecipients();
+        vm.prank(admin);
+        vm.expectRevert();
+        v2.hook.setBountyRecipient(key.toId(), payable(makeAddr("rc.b")));
+        vm.prank(admin);
+        vm.expectRevert(ArtCoinsLpLockerV2.RecipientsLocked.selector);
+        v2.locker.setRewardRecipient(coin, 0, makeAddr("rc.x"));
+    }
+
+    // ── D76(2): lp fee 0 launch, protocol skim floor still pays ───────────
+
+    function test_lpFeeZero_launch_skimProtocolStillPays() public onlyFork {
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _creditsConfig(treasury);
+        c.fee.lpFee = 0; // pure skim, no lp fee
+        address coin = _ownerLaunch(c);
+        PoolKey memory key = _key(coin);
+        assertEq(v2.hook.skimConfig(key.toId()).lpFee, 0, "lp fee 0 frozen");
+        (,,, uint24 poolFee) = readSlot0(key);
+        assertEq(poolFee, 0, "pool runs with 0 lp fee");
+
+        _pastWindow();
+        vm.recordLogs();
+        _buy(key, 0.5 ether);
+        Legs memory l = _legs(vm.getRecordedLogs());
+        assertGt(l.protocol, 0, "D52 protocol skim floor still pays");
+        assertGt(l.bounty, 0, "bounty leg paid");
+    }
+
+    /// D76(7): during the anti sniper window the skim above the baseline goes
+    /// entirely to the bounty recipient. A buy in the window: the protocol leg
+    /// equals the baseline share net of the bounty cut; the whole extra is
+    /// bounty.
+    function test_antiSniperWindow_extraSkimAllToBounty() public onlyFork {
+        (, PoolKey memory key) = _launchCredits();
+        // buy inside the window (setUp just launched, module active).
+        vm.recordLogs();
+        _buy(key, 0.1 ether);
+        Legs memory l = _legs(vm.getRecordedLogs());
+        assertEq(l.splits, 1, "one skim");
+        assertEq(l.referral, 0, "no referrer");
+
+        uint256 total = l.bounty + l.protocol;
+        // the protocol leg is a pure share of the baseline skim:
+        //   protocol = base * (BPS - bountyBps) / BPS, so base reconstructs from it.
+        uint256 base = l.protocol * Constants.BPS / (Constants.BPS - BOUNTY_BPS);
+        assertGt(total, base, "in window: total skim above the baseline");
+        uint256 extra = total - base; // the anti sniper amount
+        // bounty = baseline bounty cut + the whole extra.
+        uint256 bountyFromBase = base * BOUNTY_BPS / Constants.BPS;
+        assertApproxEqAbs(l.bounty, bountyFromBase + extra, 3, "extra all to bounty");
+
+        console2.log("anti sniper window split for a 0.1 eth in-window buy:");
+        console2.log("  total skim        ", total);
+        console2.log("  baseline portion  ", base);
+        console2.log("  bounty leg        ", l.bounty);
+        console2.log("  protocol leg      ", l.protocol);
+        console2.log("  extra to bounty   ", extra);
+    }
+}

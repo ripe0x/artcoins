@@ -49,6 +49,10 @@ interface IArtCoinsLpLockerV2 is IConstantsBound {
     );
     event KeeperRewardBpsSet(uint256 oldBps, uint256 newBps);
     event KeeperRewardCapSet(uint256 oldCap, uint256 newCap);
+    /// @notice The coin admin changed a reward recipient slot.
+    event RewardRecipientSet(
+        address indexed token, uint256 indexed index, address oldRecipient, address newRecipient
+    );
     event FeeEscrowSet(address indexed oldEscrow, address indexed newEscrow);
     event LauncherSet(address indexed launcher, bool enabled);
     event Rescued(address indexed token, address indexed to, uint256 amount);
@@ -90,6 +94,13 @@ interface IArtCoinsLpLockerV2 is IConstantsBound {
 
     /// @notice Collects lp fees for `token` and delivers every share.
     function collectRewards(address token) external;
+
+    // ── coin admin ─────────────────────────────────────────────────────────
+
+    /// @notice Sets reward recipient `index` for `token`. Coin admin only, until
+    ///         the coin locks its recipients or renounces its admin. bps stay
+    ///         fixed. The protocol slot stays frozen.
+    function setRewardRecipient(address token, uint256 index, address newRecipient) external;
 
     // ── reads ─────────────────────────────────────────────────────────────
 

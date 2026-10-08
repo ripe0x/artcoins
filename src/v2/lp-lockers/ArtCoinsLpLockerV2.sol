@@ -3,7 +3,9 @@ pragma solidity ^0.8.26;
 
 import {Constants} from "../../Constants.sol";
 import {IArtCoinsFactoryV2} from "../interfaces/IArtCoinsFactoryV2.sol";
+import {IArtCoinsHookV2} from "../interfaces/IArtCoinsHookV2.sol";
 import {IArtCoinsLpLockerV2} from "../interfaces/IArtCoinsLpLockerV2.sol";
+import {IArtCoinsTokenV2} from "../interfaces/IArtCoinsTokenV2.sol";
 import {IConstantsBound} from "../interfaces/IConstantsBound.sol";
 import {FeeDelivery} from "../libraries/FeeDelivery.sol";
 
@@ -16,6 +18,7 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {IPositionManager} from "@uniswap/v4-periphery/src/interfaces/IPositionManager.sol";
 import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
@@ -36,6 +39,7 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 ///         balance deltas.
 contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuardTransient {
     using TransientStateLibrary for IPoolManager;
+    using PoolIdLibrary for PoolKey;
 
     // ── additive errors (not in the frozen interface) ─────────────────────
 
@@ -49,6 +53,16 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     error RescueForbidden();
     /// @notice Native eth may only arrive from the PoolManager.
     error UnexpectedEth();
+    /// @notice `setRewardRecipient` caller is not the coin admin.
+    error NotCoinAdmin();
+    /// @notice The coin's recipients are frozen (the coin locked them or
+    ///         renounced its admin).
+    error RecipientsLocked();
+    /// @notice `setRewardRecipient` index is past the reward slots.
+    error RewardIndexOutOfRange();
+    /// @notice The protocol reward slot is frozen; the coin admin changes the
+    ///         project slots.
+    error ProtocolSlotFrozen();
 
     /// @notice Gas forwarded on each native reward push. A recipient that
     ///         needs more is credited in the escrow instead.
@@ -359,6 +373,31 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     /// @inheritdoc IArtCoinsLpLockerV2
     function rewardBps(address token) external view returns (uint16[] memory) {
         return _tokenRewards[token].rewardBps;
+    }
+
+    // ── coin admin ──────────────────────────────────────────────────────────
+
+    /// @inheritdoc IArtCoinsLpLockerV2
+    /// @dev Caller must be the coin's current admin. Reverts once the coin locks
+    ///      its recipients or renounces its admin (admin becomes 0, which no
+    ///      caller matches). bps stay fixed. `newRecipient` is nonzero and not
+    ///      this locker (the launch reward rule, LF-05). The protocol slot, whose
+    ///      recipient is the pool's protocol recipient, stays frozen.
+    function setRewardRecipient(address token, uint256 index, address newRecipient) external {
+        TokenRewardInfoV2 storage info = _tokenRewards[token];
+        if (info.numPositions == 0) revert TokenNotFound();
+        IArtCoinsTokenV2 t = IArtCoinsTokenV2(token);
+        if (msg.sender != t.admin()) revert NotCoinAdmin();
+        if (t.recipientsLocked()) revert RecipientsLocked();
+        if (index >= info.rewardRecipients.length) revert RewardIndexOutOfRange();
+        if (newRecipient == address(0) || newRecipient == address(this)) revert ZeroAddress();
+        address old = info.rewardRecipients[index];
+        PoolKey memory key = info.poolKey;
+        if (old == IArtCoinsHookV2(address(key.hooks)).skimConfig(key.toId()).protocolRecipient) {
+            revert ProtocolSlotFrozen();
+        }
+        info.rewardRecipients[index] = newRecipient;
+        emit RewardRecipientSet(token, index, old, newRecipient);
     }
 
     // ── owner ─────────────────────────────────────────────────────────────

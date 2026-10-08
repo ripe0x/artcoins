@@ -121,9 +121,20 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     /// @dev Additive: a fee recipient that can never receive eth (this hook,
     ///      the PoolManager) would strand every leg in the escrow (V2H-08).
     error RecipientCannotReceive(address recipient);
+    /// @dev Additive: `setBountyRecipient` caller is not the coin admin.
+    error NotCoinAdmin();
+    /// @dev Additive: the coin's recipients are frozen (the coin locked them or
+    ///      renounced its admin).
+    error RecipientsLocked();
+    /// @dev Additive: `poolId` was not created by this hook.
+    error UnknownPool();
 
     /// @dev Additive (D52): the pool's frozen protocol leg floor.
     event ProtocolFloorInitialized(PoolId indexed poolId, uint16 minProtocolShareBps);
+    /// @dev Additive (D76): the coin admin changed the pool's bounty recipient.
+    event BountyRecipientSet(
+        PoolId indexed poolId, address indexed oldRecipient, address indexed newRecipient
+    );
 
     // ── storage ───────────────────────────────────────────────────────────
 
@@ -146,20 +157,9 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         Ownable(owner_)
     {
         _checkConstants(escrow_);
-        _globals = HookGlobals({
-            pushGas: Constants.PUSH_GAS_DEFAULT,
-            preSwapStreamGas: Constants.STREAM_GAS_DEFAULT,
-            preSwapStreamMin: Constants.STREAM_MIN_BALANCE_DEFAULT,
-            feeEscrow: escrow_,
-            extensionAllowlist: allowlist_
-        });
+        _globals = HookGlobals({feeEscrow: escrow_, extensionAllowlist: allowlist_});
         emit FeeEscrowSet(address(0), escrow_);
         emit ExtensionAllowlistSet(address(0), allowlist_);
-        emit DeliveryParamsSet(
-            Constants.PUSH_GAS_DEFAULT,
-            Constants.STREAM_GAS_DEFAULT,
-            Constants.STREAM_MIN_BALANCE_DEFAULT
-        );
     }
 
     /// @notice Eth arrives only from the PoolManager (`take`) mid swap.
@@ -606,31 +606,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     }
 
     /// @inheritdoc IArtCoinsHookV2
-    /// @dev Inert since D41: pushes carry only the 2,300 gas stipend and the
-    ///      stream probe is gone, so the swap path reads none of these. Kept
-    ///      (bounded, stored, evented, reported by `globals()`) so the frozen
-    ///      abi does not change.
-    function setDeliveryParams(uint32 pushGas, uint32 streamGas, uint96 streamMin)
-        external
-        onlyOwner
-    {
-        if (pushGas < Constants.PUSH_GAS_MIN || pushGas > Constants.PUSH_GAS_MAX) {
-            revert ParamOutOfBounds(pushGas, Constants.PUSH_GAS_MIN, Constants.PUSH_GAS_MAX);
-        }
-        if (streamGas < Constants.STREAM_GAS_MIN || streamGas > Constants.STREAM_GAS_MAX) {
-            revert ParamOutOfBounds(streamGas, Constants.STREAM_GAS_MIN, Constants.STREAM_GAS_MAX);
-        }
-        if (streamMin > Constants.STREAM_MIN_BALANCE_MAX) {
-            revert ParamOutOfBounds(streamMin, 0, Constants.STREAM_MIN_BALANCE_MAX);
-        }
-        HookGlobals storage g = _globals;
-        g.pushGas = pushGas;
-        g.preSwapStreamGas = streamGas;
-        g.preSwapStreamMin = streamMin;
-        emit DeliveryParamsSet(pushGas, streamGas, streamMin);
-    }
-
-    /// @inheritdoc IArtCoinsHookV2
     function rescue(address token, address to, uint256 amount) external onlyOwner {
         if (to == address(0)) revert ZeroAddress();
         if (token == address(0)) {
@@ -647,6 +622,27 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         if (to == address(0)) revert ZeroAddress();
         poolManager.transfer(to, currency.toId(), amount);
         emit ClaimsRescued(currency, to, amount);
+    }
+
+    // ── coin admin ──────────────────────────────────────────────────────────
+
+    /// @inheritdoc IArtCoinsHookV2
+    /// @dev The coin is the pool's currency1. The caller must be its current
+    ///      admin (`IArtCoinsTokenV2(coin).admin()`). The call reverts once the
+    ///      coin locks its recipients or renounces its admin (admin becomes 0,
+    ///      which no caller matches). `newRecipient` passes the launch receiver
+    ///      checks: nonzero and able to receive eth or an escrow credit.
+    function setBountyRecipient(PoolId poolId, address payable newRecipient) external {
+        address coin = _info[poolId].token;
+        if (coin == address(0)) revert UnknownPool();
+        IArtCoinsTokenV2 t = IArtCoinsTokenV2(coin);
+        if (msg.sender != t.admin()) revert NotCoinAdmin();
+        if (t.recipientsLocked()) revert RecipientsLocked();
+        if (newRecipient == address(0)) revert BountyRecipientZero();
+        _checkReceiver(newRecipient);
+        address old = _skim[poolId].bountyRecipient;
+        _skim[poolId].bountyRecipient = newRecipient;
+        emit BountyRecipientSet(poolId, old, newRecipient);
     }
 
     // ── reads ─────────────────────────────────────────────────────────────

@@ -222,9 +222,9 @@ contract V2FFactoryReviewTest is ForkBase {
     /// that referrer, so the protocol earned 0 from the skim, and the 20%
     /// locker slot earned 0 because there was no lp fee to share.
     ///
-    /// now: the factory refuses lpFee below `minLpFee` (D53) and a referral cap
-    /// that does not fit above the protocol floor (D52), and the hook clamps
-    /// the referral leg at `protocol - floor` on every swap.
+    /// now: the factory refuses a referral cap that does not fit above the
+    /// protocol floor (D52), and the hook clamps the referral leg at
+    /// `protocol - floor` on every swap. lp fee 0 is allowed (D76).
     function test_V2F01_referralCapZeroesProtocolSkimFloor() public onlyFork {
         factory.setMinProtocolSkimShareBps(2000);
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
@@ -234,14 +234,8 @@ contract V2FFactoryReviewTest is ForkBase {
         c.fee.maxReferralBpsOfVolume = Constants.MAX_REFERRAL_CAP_OF_VOLUME; // 1%
         c.fee.lpFee = 0;
 
-        // V2F-02: an lp fee of 0 (a worthless protocol locker slot) is refused.
-        vm.prank(alice);
-        vm.expectRevert(ArtCoinsFactoryV2.LpFeeBelowMinimum.selector);
-        factory.deployToken{value: FEE}(c);
-
-        // V2F-01: with a valid lp fee, the old attack config is refused because
-        // the 1% referral cap cannot fit above a 20% floor with an 80% bounty.
-        c.fee.lpFee = factory.minLpFee();
+        // V2F-01: the old attack config is refused because the 1% referral cap
+        // cannot fit above a 20% floor with an 80% bounty.
         vm.prank(alice);
         vm.expectRevert(ArtCoinsFactoryV2.ReferralCapAboveProtocolFloor.selector);
         factory.deployToken{value: FEE}(c);
@@ -254,6 +248,7 @@ contract V2FFactoryReviewTest is ForkBase {
         vm.expectRevert(ArtCoinsFactoryV2.ReferralCapAboveProtocolFloor.selector);
         factory.deployToken{value: FEE}(c);
         c.fee.maxReferralBpsOfVolume = 300;
+        c.fee.lpFee = 5000; // a nonzero lp fee so the protocol locker slot earns
         vm.prank(alice);
         address token = factory.deployToken{value: FEE}(c);
         PoolKey memory key = _key(token);
@@ -284,7 +279,7 @@ contract V2FFactoryReviewTest is ForkBase {
         console2.log("protocol leg, with referrer (wei)", protocolWithRef);
         console2.log("referral leg (wei)", referral);
 
-        // D53: the 20% locker protocol slot now has an lp fee to share
+        // the 20% locker protocol slot has an lp fee to share
         assertEq(locker.rewardRecipients(token)[1], protocolR);
         p0 = protocolR.balance;
         uint256 c0 = IERC20(token).balanceOf(protocolR);
