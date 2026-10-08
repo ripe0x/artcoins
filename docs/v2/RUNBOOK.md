@@ -218,9 +218,9 @@ sources of truth, in this order: `script/v2/DeployV2Lib.sol` (the routine), `scr
 | TREASURY, TREASURY_BPS | OWNER, 9000 | controller treasury and its share (Constants allow 4000 to 9000, the rest burns) |
 | REFERRAL_PAYOUT | 0 = the new escrow | D57. must have code. the live 0xB03C… answers `Unauthorized()` to everyone but the v1 hook and the owner eoa has no code, so neither is used |
 | DEPLOY_FEE, PROTOCOL_BPS | 0.069 eth, 2000 | factory deploy fee and default protocol slot |
-| MIN_PROTOCOL_SKIM_SHARE_BPS, MIN_LP_FEE | 1000, 3000 | D52 and D53 |
+| MIN_PROTOCOL_SKIM_SHARE_BPS | 1000 | D52 |
 
-about 29.5m gas over 30 txs (0.011 eth at 0.38 gwei, measured on a fork at block 26131304). the hook address depends on the broadcaster, so a dry run with `--sender $OWNER` shows the real one. `script/v2/deploy.sh mainnet` runs steps 0a, 0c, 13 and the record of step 15 in one path (guards, warm ci build, dry run, `--slow` broadcast with `--account ripe0x`, readback, `deployments/1.v2.json`, `verify-v2.sh`). it refuses while `TREASURY`, `TREASURY_BPS`, `DEPLOY_FEE` or `PROTOCOL_BPS` is empty in the env file.
+about 29.5m gas over 29 txs (0.011 eth at 0.38 gwei, measured on a fork at block 26131304). the hook address depends on the broadcaster, so a dry run with `--sender $OWNER` shows the real one. `script/v2/deploy.sh mainnet` runs steps 0a, 0c, 13 and the record of step 15 in one path (guards, warm ci build, dry run, `--slow` broadcast with `--account ripe0x`, readback, `deployments/1.v2.json`, `verify-v2.sh`). it refuses while `TREASURY`, `TREASURY_BPS`, `DEPLOY_FEE` or `PROTOCOL_BPS` is empty in the env file.
 
 | step | rehearsal, no key | command |
 |---|---|---|
@@ -254,12 +254,11 @@ wiring, in the order `_wire` sends it (D36: the escrow knows the hook and locker
 | 14 to 16 | factory | `setProtocolRecipient(controller)`, `setReferralPayout(escrow or REFERRAL_PAYOUT)`, `setTeamFeeRecipient(OWNER)` | D57. referral legs are credited to the referrer in the escrow (D16), claimed with `escrow.claim(referrer, 0x0)` (0x21c0b342) |
 | 17, 18 | factory | `setDeployFee(0.069 eth)`, `setDefaultProtocolFeeBps(2000)` | |
 | 19 | factory | `setMinProtocolSkimShareBps(1000)` (0x76ed5aeb) | D52: the protocol keeps at least 10% of every skim. caps `bountyBps` at 9000 and the referral cap |
-| 20 | factory | `setMinLpFee(3000)` (0x8fadcf37) | D53: launch lp fee floor, 0.3% |
 | none | factory | `deprecated` stays true | opening is the last owner tx, 2c |
 
 | step | what | detail |
 |---|---|---|
-| 11 | wiring | the table above, 20 calls after step 10. not wired at deploy: per coin tax exempt entries, a coin's fee swapper as depositor, the burn router `initialize`. those are per coin owner calls in 2b (D33, D47) |
+| 11 | wiring | the table above, 19 calls after step 10. not wired at deploy: a coin's fee swapper as depositor, the burn router `initialize`. those are per coin owner calls in 2b (D33) |
 | 12 | ownership, Ownable2Step (D20) | broadcaster == OWNER: nothing to do. otherwise escrow, hook, locker and factory end with `pendingOwner() == OWNER` (0xe30c3978) and the broadcaster still owns them. the allowlist, router and controller are constructed with OWNER, nothing to accept |
 | 13 | post deploy asserts, in the script | `constantsHash()` of escrow, hook, locker, mev, factory, deployer, router, controller. hook low bits 0x2DCC, permissions equal the address flags, hook PoolManager, globals escrow and allowlist, factory is a launcher. escrow depositors and core flags. locker escrow, launcher, reward bps 0. every factory getter above, deployer binding, `deprecated`, `STACK_VERSION`. mev hook, keeper factory, controller and router links, router `coin() == 0`. owners or pending owners. runtime size of all 10 under 24,576. prints `post deploy asserts: ok`, the registry json, writes `tmp/v2-deploy-1.json` |
 
@@ -329,6 +328,6 @@ before the call: every gate below is true, the first coin ran at least one full 
 | 9b | LAYER keeper cron running | `CollectFlushKeeperLayer` (part 1 action 2b, 3.5M gas limit, `ALLOW_SUPERSEDED=1` for the scripts), daily `preview()` check, weekly run regardless. alert when a router stays at or above 0.01 weth for more than a day, or a run logs `StepSkipped` step 5 |
 | 10 | old factories deprecated | `deprecated()` true on `$F_OPEN`, `$F_CUR`, `$F_LEGACY`. `setHook(0x636c…, false)` on `$F_CUR` after the first v2 coin trades (part 1 action 7) |
 | 11 | part 1 actions 1, 2, 4 and 5 done, router floors fresh | collect timestamps, `minLayerOutPerWeth()` within 5% of 95% of spot |
-| 12 | stack defaults read back | `minProtocolSkimShareBps` 1000, `minLpFee` 3000, locker `keeperRewardBps` 0, referral payout is the escrow or a deliberate v2 aware payout, `deprecated` true until the last tx |
+| 12 | stack defaults read back | `minProtocolSkimShareBps` 1000, locker `keeperRewardBps` 0, referral payout is the escrow or a deliberate v2 aware payout, `deprecated` true until the last tx |
 | 13 | public repo decision D26 reviewed | `origin` is the public ripe0x/artcoins (H3), branch `v2` and the review docs with findings on live contracts are already public (D26): keep or delete the remote branch on purpose. curated merge of `docs/v2` and `test/v2/review` (H2), mirror tag filter fixed (H1). part 1 of this file stays off the mirror until actions 1, 2, 4 and 5 are done |
 | 14 | owner key custody | hardware or keystore. `acceptOwnership` was exercised on a fork (step 0b) before the real accepts |

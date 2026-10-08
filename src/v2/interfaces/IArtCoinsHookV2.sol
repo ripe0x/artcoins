@@ -29,7 +29,9 @@ interface IArtCoinsHookV2 is IConstantsBound {
         address extension;
     }
 
-    /// @notice Frozen per pool fee config. Field order matches v1 `skimConfig`.
+    /// @notice Per pool fee config. The rates and caps are set once at init; the
+    ///         coin admin may change `bountyRecipient` later. Field order matches
+    ///         v1 `skimConfig`.
     struct SkimConfig {
         uint24 baselineSkimBps; // SKIM_DENOMINATOR units
         uint16 bountyBps; // bounty share of the skim, BPS
@@ -155,7 +157,9 @@ interface IArtCoinsHookV2 is IConstantsBound {
     // ── coin admin ─────────────────────────────────────────────────────────
 
     /// @notice Sets the pool's bounty recipient. Coin admin only, until the coin
-    ///         locks its recipients or renounces its admin. `newRecipient` passes
-    ///         the launch receiver checks.
+    ///         locks its recipients or renounces its admin. `newRecipient` must
+    ///         be nonzero and not the coin, this hook, the PoolManager, the fee
+    ///         escrow, the pool's mev module, the pool's locker, the factory, its
+    ///         token deployer or the PositionManager.
     function setBountyRecipient(PoolId poolId, address payable newRecipient) external;
 }

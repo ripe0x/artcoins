@@ -70,6 +70,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     /// @notice D52 / V2F-01: `maxReferralBpsOfVolume` could take the protocol
     ///         leg below `minProtocolSkimShareBps` of the baseline skim.
     error ReferralCapAboveProtocolFloor();
+    /// @notice A launch must earn some fee: both `lpFee` and `baselineSkimBps`
+    ///         are zero, so the pool, the locker and the protocol earn nothing.
+    error ZeroFeeLaunch();
     /// @notice No token deployer set yet (D38).
     error DeployerNotSet();
     /// @notice A restricted launch's hook has no fee escrow set, so the seeded
@@ -420,6 +423,8 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     function _validateFee(FeeConfigV2 calldata f) internal view {
         if (f.bountyRecipient == address(0)) revert ZeroAddress();
+        // a launch must earn some fee on one of the two legs.
+        if (f.lpFee == 0 && f.baselineSkimBps == 0) revert ZeroFeeLaunch();
         if (
             f.lpFee > Constants.MAX_LP_FEE || f.baselineSkimBps > Constants.MAX_BASELINE_SKIM_BPS
                 || f.maxReferralBpsOfVolume > Constants.MAX_REFERRAL_CAP_OF_VOLUME

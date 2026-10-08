@@ -54,14 +54,14 @@ rule: per coin state is written once inside the launch tx and has no writer afte
 | token | venue set | venueAdmin, add only, renounceable | can only widen fee dodge coverage, never open a hole |
 | token | metadata, image, renderer pointer, admin | token admin | cosmetic, as v1 |
 | token | launcher, launcherVersion | nobody | integrator version tag |
-| hook (per pool) | artCoinIsToken0, locker, mevModule, createdAt, skim config (lpFee, baselineSkimBps, bountyBps, maxReferralBpsOfVolume, bountyRecipient, protocolRecipient, referralPayout, quote), taxMode, extension, launcher, version | nobody | pool fee config and recipients fixed. v1 let the token admin change maxReferral, extension, sniper recipient: all removed |
+| hook (per pool) | artCoinIsToken0, locker, mevModule, createdAt, skim rates and caps (lpFee, baselineSkimBps, bountyBps, maxReferralBpsOfVolume), protocolRecipient, referralPayout, quote, restricted, extension, launcher, version | nobody | fee rates, caps and the protocol/referral recipients fixed. lpFee may be 0 (D76) |
+| hook (per pool) | bountyRecipient | coin admin, until recipients locked or admin renounced (D76) | the coin admin moves its own recipient; the rejected set mirrors the factory launch checks |
 | hook (global) | launchers allowlist | owner | factory side is replaceable; a new factory must be able to init pools |
 | hook (global) | feeEscrow pointer | owner | escrow is replaceable; only affects where failed pushes land from now on |
 | hook (global) | extensionAllowlist pointer | owner | affects new pools only (checked at init) |
-| hook (global) | pushGas, preSwapStreamGas, preSwapStreamMin | owner, within Constants bounds | operational tuning; cannot zero out delivery (fallback catches everything) |
 | hook | rescue eth, erc20, erc6909 claims | owner | hook holds nothing between swaps by invariant, so any balance is stray |
-| hook | cold module address | nobody (immutable) | a mutable delegate would make every frozen field mutable |
-| locker (per coin) | poolKey, positionIds, numPositions, rewardBps, rewardRecipients | nobody | lp lock and fee recipients fixed. slot admins removed |
+| locker (per coin) | poolKey, positionIds, numPositions, rewardBps, the protocol reward slot | nobody | lp lock, bps and the protocol slot fixed |
+| locker (per coin) | project reward recipients | coin admin, until recipients locked or admin renounced (D76) | collects pending fees to the old recipient first; the rejected set mirrors the launch checks |
 | locker (per coin) | liquidity | nobody | no decrease path except zero liquidity fee collection |
 | locker (global) | keeperRewardBps (<= 200), keeperRewardCap (0.001..0.05 eth) | owner | as v1 |
 | locker (global) | feeEscrow pointer, launchers allowlist | owner | replaceable modules |
@@ -111,14 +111,14 @@ each block names the regression test. tests are fork tests against live v4 using
 | tests | `test_tax_addThenRemoveSameTx_mintsNoBudget`, `test_tax_budgetNotSpendableOnV3Venue`, `test_tax_priorTxLpExit_isExempt`, `test_tax_lockerCollect_isExempt` |
 
 ### b2. recipient with no code or empty fallback bricks swaps
-v1 `try IPreSwapStream(br).streamForward() {} catch {}` decodes the uint256 return outside the try: an eoa or empty fallback returns no data, decode reverts the swap (whenever the recipient holds >= 0.01 eth). separately, a bounty push failure reverts the swap.
+v1 `try IPreSwapStream(br).streamForward() {} catch {}` decoded the uint256 return outside the try: an eoa or empty fallback returns no data, decode reverts the swap (whenever the recipient holds >= 0.01 eth). separately, a bounty push failure reverted the swap.
 | item | design |
 |---|---|
 | contract | `ArtCoinsHookV2` |
-| function | `function _probeStream(address r) internal` : return if `r.code.length == 0` or `r.balance < preSwapStreamMin`; assembly `pop(call(preSwapStreamGas, r, 0, sel, 4, 0, 0))`. no returndata copy (no return bomb), no decode |
-| storage | `HookGlobals { uint32 pushGas; uint32 preSwapStreamGas; uint96 preSwapStreamMin; address feeEscrow; address extensionAllowlist; }` one struct, owner set via cold module |
-| events | `PreSwapStreamParamsSet(uint32 gas, uint96 min)` |
-| invariant | no recipient behavior (no code, empty fallback, revert, gas burn, huge returndata) can revert a swap; probe cost <= preSwapStreamGas + 5k |
+| delivery | fee legs are pushed with a zero gas call (`_PUSH_GAS = 0`), so the recipient runs on the evm's 2,300 stipend only; a failed push is credited in the fee escrow. no `streamForward` probe (D41, D60) |
+| storage | `HookGlobals { address feeEscrow; address extensionAllowlist; }` one struct, owner set |
+| events | `FeeDelivered(poolId, leg, to, amount, escrowed)` per leg; no delivery tunable |
+| invariant | no recipient behavior (no code, empty fallback, revert, gas burn, huge returndata) can revert a swap; the stipend lets the recipient read state and call `PoolManager.sync`, nothing else (D60) |
 | tests | `test_swap_bountyEoaWithBalance_noRevert`, `test_swap_bountyEmptyFallback_noRevert`, `test_swap_bountyReturnBomb_bounded`, `test_swap_bountyGasBurner_bounded`, `test_swap_bountyRejectsEth_escrowed` |
 
 ### b3. skim charged on the unfilled part of a price limited swap
@@ -186,7 +186,7 @@ v1: `ArtCoinsMevLinearFees` and `ArtCoinsMevLinearSkim` accept up to 180m; the b
 |---|---|
 | library | `FeeDelivery` (internal): `function sendNative(address escrow, address to, uint256 amount, uint256 gasCap) internal returns (bool pushed)`: `call{value: amount, gas: gasCap}("")`, on failure `IArtCoinsFeeEscrowV2(escrow).storeFeesNative{value: amount}(to)`. `function sendErc20(address escrow, address token, address to, uint256 amount) internal returns (bool pushed)`: low level `transfer` with success and return check, on failure approve and `storeFees` |
 | users | hook (bounty, protocol, referral legs), locker (every slot, both currencies), FeeAutoSwapperV2, ProtocolFeeControllerV2 |
-| referral | `IReferralPayoutForHook(referralPayout).notify{value: r, gas: pushGas}(referrer)`; on failure credit the referrer in escrow (v1 folded it into protocol) |
+| referral | pushed straight to the referrer with the 2,300 gas stipend like the other legs, escrow on failure (D16, D59); `referralPayout` stays in the frozen config but is not called during a swap (D41) |
 | events | hook `FeeDelivered(PoolId indexed poolId, uint8 indexed leg, address indexed to, uint256 amount, bool escrowed)` replaces `LegForwarded`; locker `RewardDelivered(address indexed token, address indexed currency, address indexed to, uint256 amount, bool escrowed)` |
 | invariant | delivery never reverts its caller once the caller is a core depositor; every wei reaches `to` or `to`'s escrow balance |
 | tests | `test_delivery_payable_pushed`, `test_delivery_reverting_escrowed`, `test_delivery_gasBurner_escrowed`, `test_lockerV2_collect_revertingRecipient_noRevert` |
@@ -264,15 +264,8 @@ library Constants {
     uint24 internal constant MAX_REFERRAL_CAP_OF_VOLUME = 1_000; // 1% of volume
     uint16 internal constant MAX_BOUNTY_BPS = 9_999;
 
-    // hook delivery (owner tunable within bounds)
-    uint32 internal constant PUSH_GAS_MIN = 10_000;
-    uint32 internal constant PUSH_GAS_DEFAULT = 50_000;
+    // fee push gas cap (locker and controller; the hook pushes with zero gas)
     uint32 internal constant PUSH_GAS_MAX = 150_000;
-    uint32 internal constant STREAM_GAS_MIN = 30_000;
-    uint32 internal constant STREAM_GAS_DEFAULT = 150_000;
-    uint32 internal constant STREAM_GAS_MAX = 500_000;
-    uint96 internal constant STREAM_MIN_BALANCE_DEFAULT = 0.01 ether;
-    uint96 internal constant STREAM_MIN_BALANCE_MAX = 10 ether;
 
     // anti sniper window (module and hook agree)
     uint32 internal constant MIN_MEV_WINDOW = 1 minutes;
@@ -323,13 +316,13 @@ library Constants {
     uint256 internal constant RENDER_GAS_BUDGET = 8_000_000;
 
     function hash() internal pure returns (bytes32) {
+        // grouped: pool fee config, the push gas cap, launch limits, keeper.
         return keccak256(
             abi.encode(
                 STACK_VERSION, MAX_LP_FEE, MAX_SKIM_BPS, MAX_BASELINE_SKIM_BPS,
-                MAX_REFERRAL_CAP_OF_VOLUME, MAX_MEV_WINDOW, MIN_MEV_WINDOW,
-                MAX_REWARD_PARTICIPANTS, MAX_LP_POSITIONS, MAX_PROTOCOL_FEE_BPS,
-                TAX_BPS_ABSOLUTE_MAX, KEEPER_REWARD_BPS, KEEPER_REWARD_CAP,
-                PUSH_GAS_MIN, PUSH_GAS_MAX, STREAM_GAS_MIN, STREAM_GAS_MAX
+                MAX_REFERRAL_CAP_OF_VOLUME, MAX_BOUNTY_BPS, MIN_MEV_WINDOW, MAX_MEV_WINDOW,
+                MAX_REWARD_PARTICIPANTS, MAX_LP_POSITIONS, MAX_PROTOCOL_FEE_BPS, MAX_ALLOWED,
+                KEEPER_REWARD_BPS, KEEPER_REWARD_CAP, SPOT_FLOOR_BPS, PUSH_GAS_MAX
             )
         );
     }

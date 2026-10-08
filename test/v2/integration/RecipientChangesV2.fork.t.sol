@@ -10,7 +10,9 @@ pragma solidity ^0.8.26;
 import {IntegrationV2Base} from "./IntegrationV2Base.sol";
 
 import {Constants} from "../../../src/Constants.sol";
+import {ArtCoinsHookV2} from "../../../src/v2/hooks/ArtCoinsHookV2.sol";
 import {IArtCoinsFactoryV2} from "../../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
+import {IArtCoinsHookV2} from "../../../src/v2/interfaces/IArtCoinsHookV2.sol";
 import {IArtCoinsLpLockerV2} from "../../../src/v2/interfaces/IArtCoinsLpLockerV2.sol";
 import {ArtCoinsLpLockerV2} from "../../../src/v2/lp-lockers/ArtCoinsLpLockerV2.sol";
 
@@ -36,25 +38,35 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
 
     // ── locker reward recipient ──────────────────────────────────────────
 
-    function test_locker_setRewardRecipient_flowsToNewOnCollect() public onlyFork {
+    /// accrued lp fees go to the old recipient (the change collects first); only
+    /// fees after the change reach the new recipient.
+    function test_locker_setRewardRecipient_accruedToOld_newAfterChange() public onlyFork {
         (address coin, PoolKey memory key) = _launchCredits();
         address payable newArtist = payable(makeAddr("rc.newArtist"));
 
+        // accrue lp fees on both sides.
+        _buyAndSell(key, 0.5 ether);
+
+        // the change collects the accrued fees to the current (old) recipient.
+        uint256 oldEth0 = treasury.balance;
+        uint256 oldCoin0 = IERC20(coin).balanceOf(treasury);
         vm.expectEmit(true, true, false, true, address(v2.locker));
         emit IArtCoinsLpLockerV2.RewardRecipientSet(coin, 0, treasury, newArtist);
         vm.prank(admin);
         v2.locker.setRewardRecipient(coin, 0, newArtist);
         assertEq(v2.locker.rewardRecipients(coin)[0], newArtist, "project slot repointed");
+        uint256 toOld = (treasury.balance - oldEth0) + (IERC20(coin).balanceOf(treasury) - oldCoin0);
+        assertGt(toOld, 0, "accrued share paid to the old recipient at the change");
+        assertEq(newArtist.balance, 0, "new recipient no eth from accrued fees");
+        assertEq(IERC20(coin).balanceOf(newArtist), 0, "new recipient no coin from accrued fees");
 
-        // accrue lp fees on both sides, then collect.
+        // fees accrued after the change reach the new recipient.
         _buyAndSell(key, 0.5 ether);
-        uint256 ethBefore = newArtist.balance;
-        uint256 coinBefore = IERC20(coin).balanceOf(newArtist);
-        uint256 oldEth = treasury.balance;
+        uint256 nEth0 = newArtist.balance;
+        uint256 nCoin0 = IERC20(coin).balanceOf(newArtist);
         v2.locker.collectRewards(coin);
-        assertGt(newArtist.balance - ethBefore, 0, "new artist eth share");
-        assertGt(IERC20(coin).balanceOf(newArtist) - coinBefore, 0, "new artist coin share");
-        assertEq(treasury.balance - oldEth, 0, "old slot not paid from collect");
+        uint256 toNew = (newArtist.balance - nEth0) + (IERC20(coin).balanceOf(newArtist) - nCoin0);
+        assertGt(toNew, 0, "post-change fees paid to the new recipient");
     }
 
     function test_locker_setRewardRecipient_protocolSlotFrozen() public onlyFork {
@@ -73,10 +85,18 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
 
     function test_locker_setRewardRecipient_rejectedAddressesRevert() public onlyFork {
         (address coin, PoolKey memory key) = _launchCredits();
-        // parity with the factory launch checks the locker can know: coin, this
-        // locker, its fee escrow, the pool's hook, the PoolManager.
-        address[5] memory bad =
-            [coin, address(v2.locker), v2.locker.feeEscrow(), address(key.hooks), POOL_MANAGER];
+        // parity with the factory launch checks the locker can look up.
+        address[9] memory bad = [
+            coin,
+            address(v2.locker),
+            v2.locker.feeEscrow(),
+            address(key.hooks),
+            POOL_MANAGER,
+            POSITION_MANAGER,
+            address(v2.mev),
+            address(v2.factory),
+            address(v2.tokenDeployer)
+        ];
         for (uint256 i; i < bad.length; ++i) {
             vm.prank(admin);
             vm.expectRevert(
@@ -87,6 +107,32 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
         vm.prank(admin);
         vm.expectRevert(IArtCoinsLpLockerV2.ZeroAddress.selector);
         v2.locker.setRewardRecipient(coin, 0, address(0));
+    }
+
+    function test_hook_setBountyRecipient_rejectedAddressesRevert() public onlyFork {
+        (address coin, PoolKey memory key) = _launchCredits();
+        PoolId pid = key.toId();
+        address[9] memory bad = [
+            coin,
+            address(v2.hook),
+            POOL_MANAGER,
+            address(v2.escrow),
+            address(v2.mev),
+            address(v2.locker),
+            address(v2.factory),
+            address(v2.tokenDeployer),
+            POSITION_MANAGER
+        ];
+        for (uint256 i; i < bad.length; ++i) {
+            vm.prank(admin);
+            vm.expectRevert(
+                abi.encodeWithSelector(ArtCoinsHookV2.RecipientCannotReceive.selector, bad[i])
+            );
+            v2.hook.setBountyRecipient(pid, payable(bad[i]));
+        }
+        vm.prank(admin);
+        vm.expectRevert(IArtCoinsHookV2.BountyRecipientZero.selector);
+        v2.hook.setBountyRecipient(pid, payable(address(0)));
     }
 
     /// a project slot whose recipient equals the protocol recipient is still
@@ -125,6 +171,13 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
         vm.prank(admin);
         vm.expectRevert(ArtCoinsLpLockerV2.RewardIndexOutOfRange.selector);
         v2.locker.setRewardRecipient(coin, 2, makeAddr("rc.x"));
+    }
+
+    function test_locker_protocolSlotIndex_view() public onlyFork {
+        (address coin,) = _launchCredits();
+        (bool exists, uint256 index) = v2.locker.protocolSlotIndex(coin);
+        assertTrue(exists, "credits launch reserves a protocol slot");
+        assertEq(index, 1, "protocol slot is the appended last index");
     }
 
     function test_locker_setRewardRecipient_lockFreezes() public onlyFork {

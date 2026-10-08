@@ -499,6 +499,15 @@ contract LockerV2ForkTest is ForkBase {
 
     // ── fork tests (real PoolManager and PositionManager) ─────────────────
 
+    function test_lockerV2_protocolSlotIndex_none() public onlyFork {
+        MockToken coin = _newCoin();
+        (address[] memory r, uint16[] memory b,,,) = _three();
+        _launch(address(coin), r, b, 3); // placed with the type(uint256).max sentinel
+        (bool exists, uint256 index) = locker.protocolSlotIndex(address(coin));
+        assertFalse(exists, "no protocol slot when launched with the sentinel");
+        assertEq(index, 0);
+    }
+
     function test_lockerV2_place_freezesSplit() public onlyFork {
         MockToken coin = _newCoin();
         (address[] memory r, uint16[] memory b,,,) = _three();

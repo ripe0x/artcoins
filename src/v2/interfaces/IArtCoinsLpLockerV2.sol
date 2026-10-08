@@ -7,10 +7,13 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
 /// @title  IArtCoinsLpLockerV2
 /// @notice Holds a coin's launch liquidity forever and splits collected lp
-///         fees to frozen recipients. Rewards are pushed; a failed push is
-///         credited in the fee escrow. There is no liquidity decrease path.
+///         fees. The split bps are set once at launch; the coin admin may
+///         change a project reward recipient, the protocol slot stays frozen.
+///         Rewards are pushed; a failed push is credited in the fee escrow.
+///         There is no liquidity decrease path.
 interface IArtCoinsLpLockerV2 is IConstantsBound {
-    /// @notice Frozen per coin record. Position ids are
+    /// @notice Per coin record. The bps are set at launch; a project reward
+    ///         recipient may be changed by the coin admin. Position ids are
     ///         `positionId .. positionId + numPositions - 1`.
     struct TokenRewardInfoV2 {
         address token;
@@ -103,8 +106,17 @@ interface IArtCoinsLpLockerV2 is IConstantsBound {
 
     /// @notice Sets reward recipient `index` for `token`. Coin admin only, until
     ///         the coin locks its recipients or renounces its admin. bps stay
-    ///         fixed. The protocol slot stays frozen.
+    ///         fixed. The protocol slot stays frozen. Pending lp fees are
+    ///         collected to the current recipients first. `newRecipient` must be
+    ///         nonzero and not the coin, this locker, its fee escrow, the pool's
+    ///         hook, the PoolManager, the PositionManager, the pool's mev module,
+    ///         the factory or its token deployer.
     function setRewardRecipient(address token, uint256 index, address newRecipient) external;
+
+    /// @notice The reward slot reserved for the protocol at launch. `exists` is
+    ///         false when the launch appended no protocol slot. `setRewardRecipient`
+    ///         refuses `index` when `exists`.
+    function protocolSlotIndex(address token) external view returns (bool exists, uint256 index);
 
     // ── reads ─────────────────────────────────────────────────────────────
 

@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import {Constants} from "../../Constants.sol";
 import {IArtCoinsFactoryV2} from "../interfaces/IArtCoinsFactoryV2.sol";
+import {IArtCoinsHookV2} from "../interfaces/IArtCoinsHookV2.sol";
 import {IArtCoinsLpLockerV2} from "../interfaces/IArtCoinsLpLockerV2.sol";
 import {IArtCoinsTokenV2} from "../interfaces/IArtCoinsTokenV2.sol";
 import {IConstantsBound} from "../interfaces/IConstantsBound.sol";
@@ -17,17 +18,25 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {IPositionManager} from "@uniswap/v4-periphery/src/interfaces/IPositionManager.sol";
 import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmounts.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
+/// @dev Minimal read of the factory for the reward recipient reject set.
+interface IFactoryTokenDeployer {
+    function tokenDeployer() external view returns (address);
+}
+
 /// @title  ArtCoinsLpLockerV2
-/// @notice Holds each v2 coin's launch liquidity forever (no decrease path)
-///         and splits collected lp fees to recipients frozen at launch. Shares
-///         are pushed (eth with a gas cap, coin with a plain transfer); a
-///         failed push is credited to the recipient in the fee escrow.
+/// @notice Holds each v2 coin's launch liquidity forever (no decrease path) and
+///         splits collected lp fees. The split bps are set once at launch; the
+///         coin admin may change a project reward recipient, the protocol slot
+///         stays frozen. Shares are pushed (eth with a gas cap, coin with a
+///         plain transfer); a failed push is credited to the recipient in the
+///         fee escrow.
 /// @dev    Native eth paired pools only (D17): currency0 is eth, currency1 is
 ///         the coin. The locker holds nothing between calls; any balance is
 ///         stray and rescuable.
@@ -37,6 +46,7 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 ///         balance deltas.
 contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuardTransient {
     using TransientStateLibrary for IPoolManager;
+    using PoolIdLibrary for PoolKey;
 
     // ── additive errors (not in the frozen interface) ─────────────────────
 
@@ -50,19 +60,20 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     error RescueForbidden();
     /// @notice Native eth may only arrive from the PoolManager.
     error UnexpectedEth();
-    /// @notice `setRewardRecipient` caller is not the coin admin.
+    /// @notice The caller is not the coin's current admin.
     error NotCoinAdmin();
-    /// @notice The coin's recipients are frozen (the coin locked them or
-    ///         renounced its admin).
+    /// @notice The coin's recipients are frozen (the coin called `lockRecipients`
+    ///         or renounced its admin).
     error RecipientsLocked();
     /// @notice `setRewardRecipient` index is past the reward slots.
     error RewardIndexOutOfRange();
     /// @notice The protocol reward slot is frozen; the coin admin changes the
     ///         project slots.
     error ProtocolSlotFrozen();
-    /// @notice A reward recipient the factory launch checks reject for this role
-    ///         (the coin, this locker, its escrow, the pool's hook or the
-    ///         PoolManager).
+    /// @notice A reward recipient the factory launch checks reject for this role:
+    ///         the coin, this locker, its fee escrow, the pool's hook, the
+    ///         PoolManager, the PositionManager, the pool's mev module, the
+    ///         factory or its token deployer.
     error RecipientCannotReceive(address recipient);
 
     /// @notice Gas forwarded on each native reward push. A recipient that
@@ -302,6 +313,14 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     ///      `keeperRewardBps` and `keeperRewardCap`, skipped when the keeper
     ///      cannot take eth), then pushes every recipient share.
     function collectRewards(address token) external nonReentrant {
+        _collectAndDistribute(token);
+    }
+
+    /// @dev Collect path shared by `collectRewards` and `setRewardRecipient`.
+    ///      Refuses to run inside a foreign unlock (LF-01), pays the keeper, and
+    ///      pushes every current recipient share. Callers hold the reentrancy
+    ///      lock.
+    function _collectAndDistribute(address token) private {
         TokenRewardInfoV2 storage info = _tokenRewards[token];
         uint256 n = info.numPositions;
         if (n == 0) revert TokenNotFound();
@@ -394,13 +413,18 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     // ── coin admin ──────────────────────────────────────────────────────────
 
     /// @inheritdoc IArtCoinsLpLockerV2
-    /// @dev Caller must be the coin's current admin. Reverts once the coin locks
-    ///      its recipients or renounces its admin (admin becomes 0, which no
-    ///      caller matches). bps stay fixed. The protocol slot, recorded at
-    ///      placement, stays frozen. `newRecipient` must pass the factory launch
-    ///      checks for a reward recipient: nonzero, and not the coin, this
-    ///      locker, its fee escrow, the pool's hook or the PoolManager.
-    function setRewardRecipient(address token, uint256 index, address newRecipient) external {
+    /// @dev Caller must be the coin's current admin. Reverts for every caller
+    ///      once the admin is 0, which is how `lockRecipients` and renouncing
+    ///      the admin freeze it. bps stay fixed. The protocol slot, recorded at
+    ///      placement, stays frozen. `newRecipient` must be nonzero and not one
+    ///      of the stack contracts that cannot hold a reward (see
+    ///      `_rejectRewardRecipient`). Pending lp fees are collected and pushed
+    ///      to the current recipients before the slot is repointed, so accrued
+    ///      fees reach the old recipient.
+    function setRewardRecipient(address token, uint256 index, address newRecipient)
+        external
+        nonReentrant
+    {
         TokenRewardInfoV2 storage info = _tokenRewards[token];
         if (info.numPositions == 0) revert TokenNotFound();
         IArtCoinsTokenV2 t = IArtCoinsTokenV2(token);
@@ -410,14 +434,41 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         uint256 frozen = _protocolSlotPlusOne[token];
         if (frozen != 0 && index == frozen - 1) revert ProtocolSlotFrozen();
         if (newRecipient == address(0)) revert ZeroAddress();
-        if (
-            newRecipient == token || newRecipient == address(this) || newRecipient == feeEscrow
-                || newRecipient == address(info.poolKey.hooks)
-                || newRecipient == address(poolManager)
-        ) revert RecipientCannotReceive(newRecipient);
+        _rejectRewardRecipient(token, info.poolKey, newRecipient);
+
+        _collectAndDistribute(token);
+
         address old = info.rewardRecipients[index];
         info.rewardRecipients[index] = newRecipient;
         emit RewardRecipientSet(token, index, old, newRecipient);
+    }
+
+    /// @dev Reverts `RecipientCannotReceive` when `r` is a stack contract that
+    ///      cannot hold a reward. Resolves the factory from the coin, the token
+    ///      deployer from the factory and the mev module from the pool's hook;
+    ///      an unreachable read is skipped.
+    function _rejectRewardRecipient(address token, PoolKey memory key, address r) private view {
+        if (
+            r == token || r == address(this) || r == feeEscrow || r == address(key.hooks)
+                || r == address(poolManager) || r == address(positionManager)
+        ) revert RecipientCannotReceive(r);
+        address factory = IArtCoinsTokenV2(token).launcher();
+        if (r == factory) revert RecipientCannotReceive(r);
+        try IFactoryTokenDeployer(factory).tokenDeployer() returns (address dep) {
+            if (r == dep) revert RecipientCannotReceive(r);
+        } catch {}
+        try IArtCoinsHookV2(address(key.hooks)).poolInfo(key.toId()) returns (
+            IArtCoinsHookV2.PoolInfo memory pinfo
+        ) {
+            if (r == pinfo.mevModule) revert RecipientCannotReceive(r);
+        } catch {}
+    }
+
+    /// @inheritdoc IArtCoinsLpLockerV2
+    function protocolSlotIndex(address token) external view returns (bool exists, uint256 index) {
+        uint256 plus1 = _protocolSlotPlusOne[token];
+        if (plus1 == 0) return (false, 0);
+        return (true, plus1 - 1);
     }
 
     // ── owner ─────────────────────────────────────────────────────────────

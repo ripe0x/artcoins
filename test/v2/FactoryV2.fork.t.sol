@@ -984,14 +984,27 @@ contract FactoryV2ForkTest is ForkBase {
 
     /// D76: the min lp fee rule is removed; a launch accepts lp fee 0 (pure skim).
     function test_lpFeeZero_launches() public onlyFork {
+        // lp fee 0 with a nonzero skim passes (pure skim pool).
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
         c.fee.lpFee = 0;
+        c.fee.baselineSkimBps = 6000;
         address t = _deploy(alice, c);
         assertEq(hook.skimConfig(factory.deploymentInfo(t).poolId).lpFee, 0, "lp fee 0 launched");
         // the protocol skim share floor (D52) still bounds referrals.
         c = _cfg();
         c.fee.lpFee = Constants.MAX_LP_FEE;
         _deploy(alice, c);
+    }
+
+    /// a launch must earn some fee: both lp fee and baseline skim zero reverts.
+    function test_zeroFeeLaunch_reverts() public onlyFork {
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
+        c.fee.lpFee = 0;
+        c.fee.baselineSkimBps = 0;
+        c.fee.bountyBps = 0;
+        c.fee.maxReferralBpsOfVolume = 0;
+        c.mev = IArtCoinsFactoryV2.MevConfigV2(address(0), 0, 0); // no window (startingSkimBps >= baseline)
+        _expectRevertDeploy(c, abi.encodeWithSelector(ArtCoinsFactoryV2.ZeroFeeLaunch.selector));
     }
 
     /// D30: string caps are checked before any deploy work, same error as the token.
