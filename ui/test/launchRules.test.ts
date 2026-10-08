@@ -33,7 +33,6 @@ const ctx = (over: Partial<LaunchContext> = {}): LaunchContext => ({
   devBuy: '0x7777777777777777777777777777777777777777',
   protocolBps: 2000,
   minProtocolSkimShareBps: 1000, // what the deploy script sets (D52)
-  minLpFee: 3000, // DEFAULT_MIN_LP_FEE (D53)
   defaultAllowedCount: 0,
   deployFee: 69_000_000_000_000_000n,
   salt: `0x${'ab'.repeat(32)}` as Hex,
@@ -212,18 +211,18 @@ test('built config always satisfies the factory referral expression at the maxim
   assert.ok(solidityOk(maxReferralBpsOfVolume, baselineSkimBps, bountyBps, 1000));
 });
 
-// ── lp fee minimum ──────────────────────────────────────────────────────────────────────────────
+// ── lp fee ──────────────────────────────────────────────────────────────────────────────────────
 
-test('validateLaunch: lp fee below the factory minimum is an error, at the minimum it is not', () => {
+test('validateLaunch: lp fee 0 is valid, above the max is an error', () => {
   const f = form();
-  f.pool.lpFeePercent = 0.3; // 3000 pips = minLpFee
+  f.pool.lpFeePercent = 0;
   assert.equal(errorsOf(f, ctx(), 'pool.lpFee').length, 0);
-  f.pool.lpFeePercent = 0.29;
+  f.pool.baselineSkimPercent = 0;
+  assert.equal(errorsOf(f, ctx(), 'pool.baselineSkim').length, 1); // lp fee 0 and baseline skim 0 (ZeroFeeLaunch)
+  f.pool.lpFeePercent = 0.3;
+  assert.equal(errorsOf(f, ctx(), 'pool.baselineSkim').length, 0);
+  f.pool.lpFeePercent = 10.5;
   assert.equal(errorsOf(f, ctx(), 'pool.lpFee').length, 1);
-  f.pool.lpFeePercent = 0.5;
-  assert.equal(errorsOf(f, ctx({ minLpFee: 6000 }), 'pool.lpFee').length, 1);
-  assert.equal(errorsOf(f, ctx({ minLpFee: 5000 }), 'pool.lpFee').length, 0);
-  assert.equal(errorsOf(f, ctx({ minLpFee: 0 }), 'pool.lpFee').length, 0);
 });
 
 // ── restriction allowlist ───────────────────────────────────────────────────────────────────────
@@ -279,14 +278,12 @@ test('escrow claim blocks: nothing to claim, and self claim only for a stranger'
 test('factory abi carries the additive reads and errors the form uses', () => {
   const names = new Set(factoryV2Abi.map((x) => ('name' in x ? String(x.name) : '')));
   for (const name of [
-    'minLpFee',
     'minProtocolSkimShareBps',
     'defaultAllowed',
     'setDefaultAllowed',
     'owner',
     'InvalidRestrictionConfig',
     'ReferralCapAboveProtocolFloor',
-    'LpFeeBelowMinimum',
     'StringTooLong',
   ]) {
     assert.ok(names.has(name), name);

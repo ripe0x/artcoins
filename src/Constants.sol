@@ -30,18 +30,10 @@ library Constants {
     /// @notice Max bounty share of the skim, in BPS.
     uint16 internal constant MAX_BOUNTY_BPS = 9999;
 
-    // ── hook delivery (owner tunable within bounds) ───────────────────────
-    /// @notice Gas forwarded on a fee push; failure falls back to the escrow.
-    uint32 internal constant PUSH_GAS_MIN = 10_000;
-    uint32 internal constant PUSH_GAS_DEFAULT = 50_000;
+    // ── fee push gas cap ──────────────────────────────────────────────────
+    /// @notice Gas forwarded on a locker or controller fee push; a failed push
+    ///         falls back to the escrow. The hook pushes with a zero gas call.
     uint32 internal constant PUSH_GAS_MAX = 150_000;
-    /// @notice Gas forwarded to the pre swap `streamForward` probe.
-    uint32 internal constant STREAM_GAS_MIN = 30_000;
-    uint32 internal constant STREAM_GAS_DEFAULT = 150_000;
-    uint32 internal constant STREAM_GAS_MAX = 500_000;
-    /// @notice Recipient balance below which the stream probe is skipped.
-    uint96 internal constant STREAM_MIN_BALANCE_DEFAULT = 0.01 ether;
-    uint96 internal constant STREAM_MIN_BALANCE_MAX = 10 ether;
 
     // ── anti sniper window (module and hook agree) ────────────────────────
     /// @notice Window bounds. The hook treats any module as expired at
@@ -151,18 +143,7 @@ library Constants {
     }
 
     function _hashDelivery() private pure returns (bytes32) {
-        return keccak256(
-            abi.encode(
-                PUSH_GAS_MIN,
-                PUSH_GAS_DEFAULT,
-                PUSH_GAS_MAX,
-                STREAM_GAS_MIN,
-                STREAM_GAS_DEFAULT,
-                STREAM_GAS_MAX,
-                STREAM_MIN_BALANCE_DEFAULT,
-                STREAM_MIN_BALANCE_MAX
-            )
-        );
+        return keccak256(abi.encode(PUSH_GAS_MAX));
     }
 
     function _hashLaunch() private pure returns (bytes32) {

@@ -25,21 +25,6 @@ export const hookV2Abi = [
         "internalType": "struct IArtCoinsHookV2.HookGlobals",
         "components": [
           {
-            "name": "pushGas",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "preSwapStreamGas",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "preSwapStreamMin",
-            "type": "uint96",
-            "internalType": "uint96"
-          },
-          {
             "name": "feeEscrow",
             "type": "address",
             "internalType": "address"
@@ -381,22 +366,17 @@ export const hookV2Abi = [
   },
   {
     "type": "function",
-    "name": "setDeliveryParams",
+    "name": "setBountyRecipient",
     "inputs": [
       {
-        "name": "pushGas",
-        "type": "uint32",
-        "internalType": "uint32"
+        "name": "poolId",
+        "type": "bytes32",
+        "internalType": "PoolId"
       },
       {
-        "name": "streamGas",
-        "type": "uint32",
-        "internalType": "uint32"
-      },
-      {
-        "name": "streamMin",
-        "type": "uint96",
-        "internalType": "uint96"
+        "name": "newRecipient",
+        "type": "address",
+        "internalType": "address payable"
       }
     ],
     "outputs": [],
@@ -528,31 +508,6 @@ export const hookV2Abi = [
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "DeliveryParamsSet",
-    "inputs": [
-      {
-        "name": "pushGas",
-        "type": "uint32",
-        "indexed": false,
-        "internalType": "uint32"
-      },
-      {
-        "name": "streamGas",
-        "type": "uint32",
-        "indexed": false,
-        "internalType": "uint32"
-      },
-      {
-        "name": "streamMin",
-        "type": "uint96",
-        "indexed": false,
-        "internalType": "uint96"
       }
     ],
     "anonymous": false

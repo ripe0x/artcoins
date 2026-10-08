@@ -181,7 +181,7 @@ contract FeeDeliveryTest is Test {
 
     function test_delivery_payable_pushed() public {
         PayableRecipient r = new PayableRecipient();
-        bool pushed = harness.sendNative(address(r), 1 ether, Constants.PUSH_GAS_DEFAULT);
+        bool pushed = harness.sendNative(address(r), 1 ether, Constants.PUSH_GAS_MAX);
         assertTrue(pushed);
         assertEq(address(r).balance, 1 ether);
         assertEq(r.received(), 1 ether);
@@ -193,13 +193,13 @@ contract FeeDeliveryTest is Test {
         address eoa = makeAddr("delivery.eoa");
         vm.etch(eoa, "");
         vm.deal(eoa, 0);
-        assertTrue(harness.sendNative(eoa, 1 ether, Constants.PUSH_GAS_MIN));
+        assertTrue(harness.sendNative(eoa, 1 ether, uint256(10_000)));
         assertEq(eoa.balance, 1 ether);
     }
 
     function test_delivery_reverting_escrowed() public {
         RevertingRecipient r = new RevertingRecipient();
-        bool pushed = harness.sendNative(address(r), 1 ether, Constants.PUSH_GAS_DEFAULT);
+        bool pushed = harness.sendNative(address(r), 1 ether, Constants.PUSH_GAS_MAX);
         assertFalse(pushed);
         assertEq(address(r).balance, 0);
         assertEq(escrow.balances(address(r), address(0)), 1 ether);
@@ -210,12 +210,12 @@ contract FeeDeliveryTest is Test {
     function test_delivery_gasBurner_escrowed() public {
         GasBurner r = new GasBurner();
         uint256 g = gasleft();
-        bool pushed = harness.sendNative(address(r), 1 ether, Constants.PUSH_GAS_DEFAULT);
+        bool pushed = harness.sendNative(address(r), 1 ether, Constants.PUSH_GAS_MAX);
         uint256 used = g - gasleft();
         assertFalse(pushed);
         assertEq(escrow.balances(address(r), address(0)), 1 ether);
         // the burner is limited to the cap; the fallback adds well under 100k
-        assertLt(used, uint256(Constants.PUSH_GAS_DEFAULT) + 120_000);
+        assertLt(used, uint256(Constants.PUSH_GAS_MAX) + 120_000);
     }
 
     function test_delivery_returnBomb_escrowed_cheaply() public {
@@ -230,7 +230,7 @@ contract FeeDeliveryTest is Test {
 
     function test_delivery_zeroAmount_noop() public {
         RevertingRecipient r = new RevertingRecipient();
-        assertTrue(harness.sendNative(address(r), 0, Constants.PUSH_GAS_DEFAULT));
+        assertTrue(harness.sendNative(address(r), 0, Constants.PUSH_GAS_MAX));
         assertTrue(harness.sendErc20(address(0xBEEF), address(r), 0));
         assertEq(escrow.totalOwed(address(0)), 0);
     }
@@ -240,7 +240,7 @@ contract FeeDeliveryTest is Test {
         vm.deal(address(stranger), 1 ether);
         RevertingRecipient r = new RevertingRecipient();
         vm.expectRevert(IArtCoinsFeeEscrowV2.NotDepositor.selector);
-        stranger.sendNative(address(r), 1 ether, Constants.PUSH_GAS_DEFAULT);
+        stranger.sendNative(address(r), 1 ether, Constants.PUSH_GAS_MAX);
     }
 
     function testFuzz_delivery_native_everyWeiAccounted(uint96 amount, uint8 kind) public {
@@ -250,7 +250,7 @@ contract FeeDeliveryTest is Test {
         else if (kind % 3 == 1) to = address(new RevertingRecipient());
         else to = address(new GasBurner());
         vm.deal(address(harness), amount);
-        harness.sendNative(to, amount, Constants.PUSH_GAS_DEFAULT);
+        harness.sendNative(to, amount, Constants.PUSH_GAS_MAX);
         assertEq(to.balance + escrow.balances(to, address(0)), amount);
         assertEq(address(harness).balance, 0);
     }

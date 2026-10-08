@@ -8,9 +8,10 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
 /// @title  IArtCoinsHookV2
 /// @notice Skim fee hook for v2 art coin pools (native eth paired). Pools are
-///         created only by allowlisted launchers; every per pool value is
-///         written once at init and has no writer afterwards. Fees are pushed
-///         to recipients with a gas cap and fall back to the fee escrow.
+///         created only by allowlisted launchers. Per pool values are written
+///         once at init; the coin admin may later change the bounty recipient.
+///         Fee legs are pushed with a zero gas call and fall back to the fee
+///         escrow.
 interface IArtCoinsHookV2 is IConstantsBound {
     // ── types ─────────────────────────────────────────────────────────────
 
@@ -28,7 +29,9 @@ interface IArtCoinsHookV2 is IConstantsBound {
         address extension;
     }
 
-    /// @notice Frozen per pool fee config. Field order matches v1 `skimConfig`.
+    /// @notice Per pool fee config. The rates and caps are set once at init; the
+    ///         coin admin may change `bountyRecipient` later. Field order matches
+    ///         v1 `skimConfig`.
     struct SkimConfig {
         uint24 baselineSkimBps; // SKIM_DENOMINATOR units
         uint16 bountyBps; // bounty share of the skim, BPS
@@ -40,11 +43,8 @@ interface IArtCoinsHookV2 is IConstantsBound {
         address quoteToken; // always address(0), native eth
     }
 
-    /// @notice Owner set globals. Gas and balance values are bounded by Constants.
+    /// @notice Owner set globals.
     struct HookGlobals {
-        uint32 pushGas;
-        uint32 preSwapStreamGas;
-        uint96 preSwapStreamMin;
         address feeEscrow;
         address extensionAllowlist;
     }
@@ -101,7 +101,6 @@ interface IArtCoinsHookV2 is IConstantsBound {
     event LauncherSet(address indexed launcher, bool enabled);
     event FeeEscrowSet(address indexed oldEscrow, address indexed newEscrow);
     event ExtensionAllowlistSet(address indexed oldAllowlist, address indexed newAllowlist);
-    event DeliveryParamsSet(uint32 pushGas, uint32 streamGas, uint96 streamMin);
     event Rescued(address indexed token, address indexed to, uint256 amount);
     event ClaimsRescued(Currency indexed currency, address indexed to, uint256 amount);
 
@@ -150,10 +149,17 @@ interface IArtCoinsHookV2 is IConstantsBound {
     function setFeeEscrow(address escrow) external;
     /// @dev Affects new pools only.
     function setExtensionAllowlist(address allowlist) external;
-    /// @dev Each value within its Constants bounds.
-    function setDeliveryParams(uint32 pushGas, uint32 streamGas, uint96 streamMin) external;
     /// @notice Sends stray eth (`token == address(0)`) or erc20. The hook holds nothing between swaps.
     function rescue(address token, address to, uint256 amount) external;
     /// @notice Sends stray PoolManager erc6909 claims held by the hook.
     function rescueClaims(Currency currency, address to, uint256 amount) external;
+
+    // ── coin admin ─────────────────────────────────────────────────────────
+
+    /// @notice Sets the pool's bounty recipient. Coin admin only, until the coin
+    ///         locks its recipients or renounces its admin. `newRecipient` must
+    ///         be nonzero and not the coin, this hook, the PoolManager, the hook
+    ///         or locker fee escrow, the pool's mev module, the pool's locker,
+    ///         the factory, its token deployer or the PositionManager.
+    function setBountyRecipient(PoolId poolId, address payable newRecipient) external;
 }

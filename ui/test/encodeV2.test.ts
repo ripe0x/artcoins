@@ -29,7 +29,6 @@ const ctx = (over: Partial<LaunchContext> = {}): LaunchContext => ({
   devBuy: '0x7777777777777777777777777777777777777777',
   protocolBps: 2000,
   minProtocolSkimShareBps: 1000, // the deploy script value (D52), 1667 would leave the default form no room for a referral cap
-  minLpFee: 3000,
   defaultAllowedCount: 0,
   deployFee: 69_000_000_000_000_000n,
   salt: `0x${'ab'.repeat(32)}` as Hex,

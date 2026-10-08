@@ -861,45 +861,78 @@ contract HookV2ForkTest is HookV2ForkBase {
 
     function test_globals_defaults() public view {
         IArtCoinsHookV2.HookGlobals memory g = hook.globals();
-        assertEq(g.pushGas, Constants.PUSH_GAS_DEFAULT);
-        assertEq(g.preSwapStreamGas, Constants.STREAM_GAS_DEFAULT);
-        assertEq(g.preSwapStreamMin, Constants.STREAM_MIN_BALANCE_DEFAULT);
         assertEq(g.feeEscrow, address(escrow));
         assertEq(g.extensionAllowlist, address(allowlist));
         assertTrue(hook.isLauncher(address(this)));
         assertEq(hook.owner(), address(this));
     }
 
-    function test_owner_setDeliveryParams_bounded() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IArtCoinsHookV2.ParamOutOfBounds.selector,
-                uint256(Constants.PUSH_GAS_MIN - 1),
-                uint256(Constants.PUSH_GAS_MIN),
-                uint256(Constants.PUSH_GAS_MAX)
-            )
-        );
-        hook.setDeliveryParams(Constants.PUSH_GAS_MIN - 1, Constants.STREAM_GAS_DEFAULT, 0);
-        vm.expectRevert();
-        hook.setDeliveryParams(Constants.PUSH_GAS_MAX + 1, Constants.STREAM_GAS_DEFAULT, 0);
-        vm.expectRevert();
-        hook.setDeliveryParams(Constants.PUSH_GAS_DEFAULT, Constants.STREAM_GAS_MIN - 1, 0);
-        vm.expectRevert();
-        hook.setDeliveryParams(Constants.PUSH_GAS_DEFAULT, Constants.STREAM_GAS_MAX + 1, 0);
-        vm.expectRevert();
-        hook.setDeliveryParams(
-            Constants.PUSH_GAS_DEFAULT,
-            Constants.STREAM_GAS_DEFAULT,
-            Constants.STREAM_MIN_BALANCE_MAX + 1
-        );
+    // ─── D76: coin admin changes the bounty recipient ────────────────────
 
-        vm.expectEmit(address(hook));
-        emit IArtCoinsHookV2.DeliveryParamsSet(20_000, 40_000, 1 ether);
-        hook.setDeliveryParams(20_000, 40_000, 1 ether);
-        IArtCoinsHookV2.HookGlobals memory g = hook.globals();
-        assertEq(g.pushGas, 20_000);
-        assertEq(g.preSwapStreamGas, 40_000);
-        assertEq(g.preSwapStreamMin, 1 ether);
+    /// the coin admin repoints the bounty recipient; the next swap's bounty leg
+    /// flows to the new recipient, the old one gets nothing.
+    function test_setBountyRecipient_flowsToNewOnSwap() public onlyFork {
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(_defaults(bountyEoa));
+        PoolId pid = key.toId();
+        address payable newBounty = payable(makeAddr("newBounty"));
+
+        vm.expectEmit(true, true, true, true, address(hook));
+        emit ArtCoinsHookV2.BountyRecipientSet(pid, bountyEoa, newBounty);
+        assertEq(token.admin(), address(this), "admin is this test contract");
+        hook.setBountyRecipient(pid, newBounty);
+        assertEq(hook.skimConfig(pid).bountyRecipient, newBounty, "config updated");
+
+        uint256 oldB = _paid(bountyEoa);
+        uint256 nb0 = _paid(newBounty);
+        _swap(key, true, -1 ether, 0, "");
+        (uint256 bounty,) = _legs((1 ether * uint256(BASELINE)) / D, BASELINE);
+        assertEq(_paid(bountyEoa) - oldB, 0, "old bounty gets nothing");
+        assertEq(_paid(newBounty) - nb0, bounty, "new bounty paid");
+    }
+
+    function test_setBountyRecipient_nonAdminReverts() public onlyFork {
+        (PoolKey memory key,) = _launch(_defaults(bountyEoa));
+        vm.prank(makeAddr("stranger"));
+        vm.expectRevert(ArtCoinsHookV2.NotCoinAdmin.selector);
+        hook.setBountyRecipient(key.toId(), payable(makeAddr("x")));
+    }
+
+    function test_setBountyRecipient_rejectedAddressesRevert() public onlyFork {
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(_defaults(bountyEoa));
+        PoolId pid = key.toId();
+        // parity with the factory launch checks the hook can know: coin, hook,
+        // PoolManager, fee escrow.
+        address[4] memory bad = [address(token), address(hook), POOL_MANAGER, address(escrow)];
+        for (uint256 i; i < bad.length; ++i) {
+            vm.expectRevert(
+                abi.encodeWithSelector(ArtCoinsHookV2.RecipientCannotReceive.selector, bad[i])
+            );
+            hook.setBountyRecipient(pid, payable(bad[i]));
+        }
+        vm.expectRevert(IArtCoinsHookV2.BountyRecipientZero.selector);
+        hook.setBountyRecipient(pid, payable(address(0)));
+    }
+
+    function test_setBountyRecipient_unknownPoolReverts() public {
+        PoolKey memory fake;
+        fake.tickSpacing = 1;
+        vm.expectRevert(ArtCoinsHookV2.UnknownPool.selector);
+        hook.setBountyRecipient(fake.toId(), payable(bountyEoa));
+    }
+
+    function test_setBountyRecipient_lockFreezes() public onlyFork {
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(_defaults(bountyEoa));
+        token.lockRecipients();
+        assertTrue(token.recipientsLocked());
+        vm.expectRevert(ArtCoinsHookV2.RecipientsLocked.selector);
+        hook.setBountyRecipient(key.toId(), payable(makeAddr("x")));
+    }
+
+    function test_setBountyRecipient_renounceFreezes() public onlyFork {
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(_defaults(bountyEoa));
+        token.renounceAdmin();
+        vm.expectRevert(ArtCoinsHookV2.NotCoinAdmin.selector);
+        hook.setBountyRecipient(key.toId(), payable(makeAddr("x")));
     }
 
     function test_owner_onlyOwner() public {
@@ -912,8 +945,6 @@ contract HookV2ForkTest is HookV2ForkBase {
         hook.setFeeEscrow(address(escrow));
         vm.expectRevert(err);
         hook.setExtensionAllowlist(address(0));
-        vm.expectRevert(err);
-        hook.setDeliveryParams(Constants.PUSH_GAS_DEFAULT, Constants.STREAM_GAS_DEFAULT, 0);
         vm.expectRevert(err);
         hook.rescue(address(0), s, 0);
         vm.expectRevert(err);
@@ -1064,7 +1095,7 @@ contract HookV2RealLockerTest is HookV2ForkBase {
         pc.tickSpacing = TS;
         uint256 supply = 500_000_000e18;
         t.approve(address(rl), supply);
-        rl.placeLiquidity(lc, pc, k, supply, address(t)); // through the PositionManager
+        rl.placeLiquidity(lc, pc, k, supply, address(t), type(uint256).max); // through the PositionManager
         hook.initializeMevModule(k, "");
 
         // trade both ways so the position earns eth and coin fees

@@ -1,6 +1,6 @@
 // 5b. deploy page against a v2 stack deployed on the fork (project "v2", needs E2E_V2_JSON):
 //   - a stranger's launch is blocked while the factory is deprecated
-//   - after setDeprecated(false) (owner tx) the form validates: byte caps, referral cap max, min lp fee,
+//   - after setDeprecated(false) (owner tx) the form validates: byte caps, referral cap max, lp fee 0,
 //     restriction allowlist; then a launch succeeds through the ui
 //   - the new v2 coin trades through the widget and its hookData names the wallet as the refund address
 //   - its referral page reads the fee escrow
@@ -42,6 +42,7 @@ async function setRange(loc: ReturnType<PwPage['locator']>, v: string) {
 const deployButton = (page: PwPage) => page.getByRole('button', { name: /Deploy token|problem|owner only|Connect your wallet|Checking|Confirm|Could not read/ }).last();
 
 let launched: Address | null = null;
+let launchedPool: `0x${string}` | null = null;
 let referralPushed: boolean | null = null;
 
 test('stranger is blocked while the v2 factory is deprecated', async ({ page, makeWallet, consoleLog }) => {
@@ -54,7 +55,6 @@ test('stranger is blocked while the v2 factory is deprecated', async ({ page, ma
   await expect(status).toContainText(/Only the factory owner can launch/);
   await expect(page.getByText(/Public launches: closed/)).toBeVisible();
   await expect(page.getByText(/Deploy fee: 0\.069 ETH/)).toBeVisible();
-  await expect(page.getByText(/Min lp fee: 0\.3%/)).toBeVisible();
   await expect(page.getByText(/Min protocol skim share: 10%/)).toBeVisible();
   await page.getByPlaceholder('My Token').fill('E2E Blocked');
   await page.getByPlaceholder('MTK').fill('BLKD');
@@ -90,9 +90,10 @@ test('after setDeprecated(false) the form validates and a launch succeeds', asyn
   // ── pool and fees ──
   await step(page, /Pool and fees/).click();
   const lp = slider(page, 'LP fee');
-  await expect(lp).toHaveAttribute('min', '0.3'); // the factory's minLpFee, 3000 pips
-  await setRange(lp, '0.1'); // the browser clamps a range input to its min, a lower fee cannot be entered
-  await expect(page.getByText(/^LP fee: 0\.3%/)).toBeVisible();
+  await expect(lp).toHaveAttribute('min', '0');
+  await setRange(lp, '0');
+  await expect(page.getByText(/^LP fee: 0%/)).toBeVisible();
+  await expect(page.getByText(/the pool earns from the skim only/)).toBeVisible();
   await setRange(lp, '0.5');
   // referral cap max: bounty to its ceiling (90% with a 10% floor) leaves no room for a referral cap
   const bounty = slider(page, 'Bounty share of the skim');
@@ -136,6 +137,7 @@ test('after setDeprecated(false) the form validates and a launch succeeds', asyn
   expect(rc.status).toBe('success');
   const [ev] = parseEventLogs({ abi: factoryV2Abi, eventName: 'TokenCreatedV2', logs: rc.logs });
   launched = ev.args.token;
+  launchedPool = ev.args.poolId;
   await expect(page.getByText(launched!, { exact: true })).toBeVisible();
   expect(await pub.readContract({ address: v2.factory, abi: factoryV2Abi, functionName: 'isArtCoin', args: [launched!] })).toBe(true);
   const cfg = ev.args.config;
@@ -178,6 +180,30 @@ test('the launched v2 coin is listed, trades through the widget, and names the r
   const s = decodeRouterSwap(sell.at(-1)!.data!);
   expect(s.refundTo).toBe(wallet.address);
   expect(await pub.readContract({ address: coin, abi: erc20Abi, functionName: 'balanceOf', args: [wallet.address] })).toBe(bal - bal / 2n);
+  expect(consoleLog.filter((e) => e.type !== 'warning' && !isNoise(e))).toEqual([]);
+});
+
+test('the coin admin changes the bounty recipient from the token page', async ({ page, makeWallet, consoleLog }) => {
+  test.skip(!launched || !launchedPool, 'launch did not happen');
+  const wallet = await makeWallet({ label: 'v2-stranger' }); // the launcher, so the coin admin
+  const next = '0x00000000000000000000000000000000000b0b11' as Address;
+  await page.goto(`/tokens/${launched}`);
+  await connectWallet(page, wallet.address);
+  await expect(page.getByText('Fee recipients')).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/Recipients locked/)).toBeVisible();
+  await expect(page.getByText(/\(protocol, fixed\)/)).toBeVisible();
+  await page.getByRole('button', { name: 'Change' }).first().click();
+  await page.getByPlaceholder('0x...').last().fill(v2.hook); // the hook cannot receive fees
+  await expect(page.getByText(/the hook cannot receive fees/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Set recipient' })).toBeDisabled();
+  await page.getByPlaceholder('0x...').last().fill(next);
+  const before = wallet.sent.length;
+  await page.getByRole('button', { name: 'Set recipient' }).click();
+  await expect.poll(() => wallet.sent.length, { timeout: 60_000 }).toBeGreaterThan(before);
+  const rc = await pub.waitForTransactionReceipt({ hash: wallet.sent[before].hash, pollingInterval: 250 });
+  expect(rc.status).toBe('success');
+  const skim = await pub.readContract({ address: v2.hook, abi: hookV2Abi, functionName: 'skimConfig', args: [launchedPool!] });
+  expect(skim.bountyRecipient.toLowerCase()).toBe(next.toLowerCase());
   expect(consoleLog.filter((e) => e.type !== 'warning' && !isNoise(e))).toEqual([]);
 });
 

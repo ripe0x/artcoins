@@ -153,7 +153,7 @@ export default function ReviewAndDeploy({ form, ctx, v2, state, pageBlock, suppl
           <Row label="Paired with" value="native ETH" />
           <Row label="Tick spacing / start tick" value={`${form.pool.tickSpacing} / ${form.pool.startingTick}`} />
           <Row label="Launch fdv" value={`${impliedFdvEth(form.pool.startingTick, supplyWhole).toLocaleString(undefined, { maximumFractionDigits: 3 })} ETH`} />
-          <Row label="LP fee" value={`${pct(form.pool.lpFeePercent)} (factory minimum ${pct(ctx.minLpFee / 10_000)})`} />
+          <Row label="LP fee" value={pct(form.pool.lpFeePercent)} />
           <Row label="Baseline skim" value={`${pct(form.pool.baselineSkimPercent)} of volume`} />
           <Row label="Bounty share of skim" value={pct(form.pool.bountyPercent)} />
           <Row

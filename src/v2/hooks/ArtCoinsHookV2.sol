@@ -34,10 +34,23 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {BaseHook} from "@uniswap/v4-periphery/src/utils/BaseHook.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
+/// @dev Minimal reads of sibling stack contracts for the bounty recipient
+///      reject set. The factory holds the token deployer; the locker holds the
+///      PositionManager.
+interface IFactoryTokenDeployer {
+    function tokenDeployer() external view returns (address);
+}
+
+interface ILockerReads {
+    function positionManager() external view returns (address);
+    function feeEscrow() external view returns (address);
+}
+
 /// @title  ArtCoinsHookV2
 /// @notice Skim fee hook for v2 art coin pools. Every pool is native eth
 ///         (currency0) against the art coin (currency1), created only by an
-///         allowlisted launcher, with a fee config frozen at init.
+///         allowlisted launcher. The fee rates and caps are set once at init;
+///         the coin admin may change the pool's bounty recipient afterwards.
 ///
 ///         Per swap, on the quote (eth) side, with `volume` the realized
 ///         pool side quote amount `r` for all four swap shapes (V2H-05):
@@ -115,15 +128,32 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     uint256 private constant _REQ_SLOT =
         0x1ed2782058d87e2c0cc971c5cc47936f85ed6b62abd4c00f9ad4c24ce7f27f87;
 
-    /// @dev Additive, not in the frozen interface: `setFeeEscrow` target does
-    ///      not list this hook as a core depositor.
+    /// @dev The escrow passed to `setFeeEscrow` does not list this hook as a
+    ///      core depositor, so a failed push could not fall back to it.
     error EscrowNotCoreDepositor(address escrow);
-    /// @dev Additive: a fee recipient that can never receive eth (this hook,
-    ///      the PoolManager) would strand every leg in the escrow (V2H-08).
+    /// @dev A bounty recipient the factory launch checks reject for this role:
+    ///      the coin, this hook, the PoolManager, this hook's fee escrow, the
+    ///      pool locker's fee escrow, the pool's mev module, the pool's locker,
+    ///      the factory, its token deployer or the PositionManager.
     error RecipientCannotReceive(address recipient);
+    /// @dev A reject-set lookup (token deployer, locker PositionManager or locker
+    ///      fee escrow) reverted, so the recipient could not be verified. The
+    ///      setter refuses the change rather than skip a check.
+    error RecipientCheckFailed();
+    /// @dev The caller is not the coin's current admin.
+    error NotCoinAdmin();
+    /// @dev The coin's recipients are frozen (the coin called `lockRecipients`
+    ///      or renounced its admin).
+    error RecipientsLocked();
+    /// @dev `poolId` was not created by this hook.
+    error UnknownPool();
 
-    /// @dev Additive (D52): the pool's frozen protocol leg floor.
+    /// @dev The pool's protocol leg floor, BPS of the baseline skim, set at init.
     event ProtocolFloorInitialized(PoolId indexed poolId, uint16 minProtocolShareBps);
+    /// @dev The coin admin changed the pool's bounty recipient.
+    event BountyRecipientSet(
+        PoolId indexed poolId, address indexed oldRecipient, address indexed newRecipient
+    );
 
     // ── storage ───────────────────────────────────────────────────────────
 
@@ -146,20 +176,9 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         Ownable(owner_)
     {
         _checkConstants(escrow_);
-        _globals = HookGlobals({
-            pushGas: Constants.PUSH_GAS_DEFAULT,
-            preSwapStreamGas: Constants.STREAM_GAS_DEFAULT,
-            preSwapStreamMin: Constants.STREAM_MIN_BALANCE_DEFAULT,
-            feeEscrow: escrow_,
-            extensionAllowlist: allowlist_
-        });
+        _globals = HookGlobals({feeEscrow: escrow_, extensionAllowlist: allowlist_});
         emit FeeEscrowSet(address(0), escrow_);
         emit ExtensionAllowlistSet(address(0), allowlist_);
-        emit DeliveryParamsSet(
-            Constants.PUSH_GAS_DEFAULT,
-            Constants.STREAM_GAS_DEFAULT,
-            Constants.STREAM_MIN_BALANCE_DEFAULT
-        );
     }
 
     /// @notice Eth arrives only from the PoolManager (`take`) mid swap.
@@ -606,31 +625,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     }
 
     /// @inheritdoc IArtCoinsHookV2
-    /// @dev Inert since D41: pushes carry only the 2,300 gas stipend and the
-    ///      stream probe is gone, so the swap path reads none of these. Kept
-    ///      (bounded, stored, evented, reported by `globals()`) so the frozen
-    ///      abi does not change.
-    function setDeliveryParams(uint32 pushGas, uint32 streamGas, uint96 streamMin)
-        external
-        onlyOwner
-    {
-        if (pushGas < Constants.PUSH_GAS_MIN || pushGas > Constants.PUSH_GAS_MAX) {
-            revert ParamOutOfBounds(pushGas, Constants.PUSH_GAS_MIN, Constants.PUSH_GAS_MAX);
-        }
-        if (streamGas < Constants.STREAM_GAS_MIN || streamGas > Constants.STREAM_GAS_MAX) {
-            revert ParamOutOfBounds(streamGas, Constants.STREAM_GAS_MIN, Constants.STREAM_GAS_MAX);
-        }
-        if (streamMin > Constants.STREAM_MIN_BALANCE_MAX) {
-            revert ParamOutOfBounds(streamMin, 0, Constants.STREAM_MIN_BALANCE_MAX);
-        }
-        HookGlobals storage g = _globals;
-        g.pushGas = pushGas;
-        g.preSwapStreamGas = streamGas;
-        g.preSwapStreamMin = streamMin;
-        emit DeliveryParamsSet(pushGas, streamGas, streamMin);
-    }
-
-    /// @inheritdoc IArtCoinsHookV2
     function rescue(address token, address to, uint256 amount) external onlyOwner {
         if (to == address(0)) revert ZeroAddress();
         if (token == address(0)) {
@@ -647,6 +641,65 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         if (to == address(0)) revert ZeroAddress();
         poolManager.transfer(to, currency.toId(), amount);
         emit ClaimsRescued(currency, to, amount);
+    }
+
+    // ── coin admin ──────────────────────────────────────────────────────────
+
+    /// @inheritdoc IArtCoinsHookV2
+    /// @dev The coin is the pool's currency1. The caller must be its current
+    ///      admin (`IArtCoinsTokenV2(coin).admin()`). The call reverts for every
+    ///      caller once the admin is 0, which is how `lockRecipients` and
+    ///      renouncing the admin freeze it. `newRecipient` must be nonzero and
+    ///      must not be one of the stack contracts that cannot hold a fee: the
+    ///      coin, this hook, the PoolManager, the fee escrow, the pool's mev
+    ///      module, the pool's locker, the factory, its token deployer or the
+    ///      PositionManager. The launch extensions are not stored, so the admin
+    ///      must not set an extension here: an extension cannot claim its credit.
+    function setBountyRecipient(PoolId poolId, address payable newRecipient) external {
+        PoolInfo storage info = _info[poolId];
+        address coin = info.token;
+        if (coin == address(0)) revert UnknownPool();
+        IArtCoinsTokenV2 t = IArtCoinsTokenV2(coin);
+        if (msg.sender != t.admin()) revert NotCoinAdmin();
+        if (t.recipientsLocked()) revert RecipientsLocked();
+        if (newRecipient == address(0)) revert BountyRecipientZero();
+        _rejectKnownStackContract(coin, info.locker, info.mevModule, newRecipient);
+        address old = _skim[poolId].bountyRecipient;
+        _skim[poolId].bountyRecipient = newRecipient;
+        emit BountyRecipientSet(poolId, old, newRecipient);
+    }
+
+    /// @dev Reverts `RecipientCannotReceive` when `r` is a stack contract that
+    ///      cannot hold a fee. Resolves the factory from the coin, the token
+    ///      deployer from the factory and the PositionManager from the locker;
+    ///      an unreachable read is skipped.
+    function _rejectKnownStackContract(address coin, address locker, address mevModule, address r)
+        private
+        view
+    {
+        if (
+            r == coin || r == address(this) || r == address(poolManager) || r == _globals.feeEscrow
+                || r == mevModule || r == locker
+        ) revert RecipientCannotReceive(r);
+        address factory = IArtCoinsTokenV2(coin).launcher();
+        if (r == factory) revert RecipientCannotReceive(r);
+        // fail closed: a lookup that cannot be read refuses the change.
+        try IFactoryTokenDeployer(factory).tokenDeployer() returns (address dep) {
+            if (r == dep) revert RecipientCannotReceive(r);
+        } catch {
+            revert RecipientCheckFailed();
+        }
+        try ILockerReads(locker).positionManager() returns (address posm) {
+            if (r == posm) revert RecipientCannotReceive(r);
+        } catch {
+            revert RecipientCheckFailed();
+        }
+        // the locker's escrow may differ from this hook's; reject it too.
+        try ILockerReads(locker).feeEscrow() returns (address esc) {
+            if (r == esc) revert RecipientCannotReceive(r);
+        } catch {
+            revert RecipientCheckFailed();
+        }
     }
 
     // ── reads ─────────────────────────────────────────────────────────────

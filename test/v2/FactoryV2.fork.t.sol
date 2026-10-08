@@ -982,33 +982,29 @@ contract FactoryV2ForkTest is ForkBase {
         );
     }
 
-    /// D53 / V2F-02: owner set lp fee floor.
-    function test_minLpFee_boundaryAndSetter() public onlyFork {
-        assertEq(factory.minLpFee(), 3000, "default 0.3%");
+    /// D76: the min lp fee rule is removed; a launch accepts lp fee 0 (pure skim).
+    function test_lpFeeZero_launches() public onlyFork {
+        // lp fee 0 with a nonzero skim passes (pure skim pool).
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        c.fee.lpFee = 2999;
-        _expectRevertDeploy(c, abi.encodeWithSelector(ArtCoinsFactoryV2.LpFeeBelowMinimum.selector));
         c.fee.lpFee = 0;
-        _expectRevertDeploy(c, abi.encodeWithSelector(ArtCoinsFactoryV2.LpFeeBelowMinimum.selector));
-        c.fee.lpFee = 3000; // boundary passes
+        c.fee.baselineSkimBps = 6000;
         address t = _deploy(alice, c);
-        assertEq(hook.skimConfig(factory.deploymentInfo(t).poolId).lpFee, 3000);
-
-        // setter: bounds, owner only, event
-        vm.expectRevert(ArtCoinsFactoryV2.MinLpFeeTooHigh.selector);
-        factory.setMinLpFee(Constants.MAX_LP_FEE + 1);
-        vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
-        factory.setMinLpFee(0);
-        vm.expectEmit(false, false, false, true, address(factory));
-        emit ArtCoinsFactoryV2.MinLpFeeSet(3000, Constants.MAX_LP_FEE);
-        factory.setMinLpFee(Constants.MAX_LP_FEE);
+        assertEq(hook.skimConfig(factory.deploymentInfo(t).poolId).lpFee, 0, "lp fee 0 launched");
+        // the protocol skim share floor (D52) still bounds referrals.
         c = _cfg();
-        c.fee.lpFee = Constants.MAX_LP_FEE - 1;
-        _expectRevertDeploy(c, abi.encodeWithSelector(ArtCoinsFactoryV2.LpFeeBelowMinimum.selector));
-        factory.setMinLpFee(0);
-        c.fee.lpFee = 0;
+        c.fee.lpFee = Constants.MAX_LP_FEE;
         _deploy(alice, c);
+    }
+
+    /// a launch must earn some fee: both lp fee and baseline skim zero reverts.
+    function test_zeroFeeLaunch_reverts() public onlyFork {
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
+        c.fee.lpFee = 0;
+        c.fee.baselineSkimBps = 0;
+        c.fee.bountyBps = 0;
+        c.fee.maxReferralBpsOfVolume = 0;
+        c.mev = IArtCoinsFactoryV2.MevConfigV2(address(0), 0, 0); // no window (startingSkimBps >= baseline)
+        _expectRevertDeploy(c, abi.encodeWithSelector(ArtCoinsFactoryV2.ZeroFeeLaunch.selector));
     }
 
     /// D30: string caps are checked before any deploy work, same error as the token.

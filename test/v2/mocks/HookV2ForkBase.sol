@@ -89,6 +89,12 @@ abstract contract HookV2ForkBase is Test {
 
     receive() external payable virtual {}
 
+    /// @dev This base is the token's `launcher()` (the factory) in these tests;
+    ///      the hook reads `factory.tokenDeployer()` in its fail-closed reject set.
+    function tokenDeployer() external view returns (address) {
+        return address(this);
+    }
+
     function setUp() public virtual {
         if (!vm.envOr("SKIP_FORK_TESTS", false)) {
             string memory rpc =

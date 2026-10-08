@@ -62,8 +62,6 @@ library DeployV2Lib {
     /// @dev D52: the protocol keeps at least 10% of every skim; caps launch
     ///      bountyBps at 9000 and the referral cap above that floor.
     uint16 internal constant MIN_PROTOCOL_SKIM_SHARE_BPS = 1000;
-    /// @dev D53: launch lp fee floor, 3,000 pips (0.3%), the factory default.
-    uint24 internal constant MIN_LP_FEE = 3000;
     uint256 internal constant EIP170 = 24_576;
 
     /// @dev Deploy inputs. `referralPayout == 0` means "use the escrow": the
@@ -85,7 +83,6 @@ library DeployV2Lib {
         uint256 deployFee;
         uint16 protocolBps;
         uint16 minProtocolSkimShareBps;
-        uint24 minLpFee;
         /// @dev Enforce EIP-170 in `check`. Always true in the script. The
         ///      token deployer is over the limit at the default profile
         ///      (optimizer_runs 20000), so the stack ships from FOUNDRY_PROFILE=ci;
@@ -128,7 +125,6 @@ library DeployV2Lib {
         p.deployFee = DEPLOY_FEE;
         p.protocolBps = PROTOCOL_BPS;
         p.minProtocolSkimShareBps = MIN_PROTOCOL_SKIM_SHARE_BPS;
-        p.minLpFee = MIN_LP_FEE;
         p.checkSizes = true;
     }
 
@@ -248,7 +244,6 @@ library DeployV2Lib {
         f.setDeployFee(p.deployFee);
         f.setDefaultProtocolFeeBps(p.protocolBps);
         f.setMinProtocolSkimShareBps(p.minProtocolSkimShareBps);
-        f.setMinLpFee(p.minLpFee);
         // defaultAllowed ships empty; see the allowlist rule on
         // ArtCoinsFactoryV2._defaultAllowed for what may be added.
         // deprecated stays true (constructor). opening is a separate owner tx.
@@ -360,7 +355,6 @@ library DeployV2Lib {
         require(f.deployFee() == p.deployFee, "v2: deploy fee");
         require(f.defaultProtocolFeeBps() == p.protocolBps, "v2: protocol bps");
         require(f.minProtocolSkimShareBps() == p.minProtocolSkimShareBps, "v2: min skim share");
-        require(f.minLpFee() == p.minLpFee, "v2: min lp fee");
         require(f.defaultAllowed().length == 0, "v2: default allowed must ship empty");
         require(f.deprecated(), "v2: factory must ship deprecated");
         require(f.STACK_VERSION() == Constants.STACK_VERSION, "v2: stack version");

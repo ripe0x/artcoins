@@ -21,6 +21,15 @@ contract HV2ConstantsStub {
     constructor(bytes32 h) {
         constantsHash = h;
     }
+
+    /// @dev Answers the hook's fail-closed reject-set reads (ILockerReads).
+    function positionManager() external view returns (address) {
+        return address(this);
+    }
+
+    function feeEscrow() external view returns (address) {
+        return address(this);
+    }
 }
 
 /// a module that lies: reports an active skim above MAX_SKIM_BPS forever and a

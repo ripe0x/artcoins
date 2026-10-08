@@ -95,6 +95,8 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
     bool public restricted;
     /// @inheritdoc IArtCoinsTokenV2
     bool public locked;
+    /// @inheritdoc IArtCoinsTokenV2
+    bool public recipientsLocked;
 
     mapping(address => bool) private _allowed;
     /// @dev Allowlist entries the factory seeded (the stack escrow, this launch's
@@ -297,6 +299,16 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
     }
 
     /// @inheritdoc IArtCoinsTokenV2
+    /// @dev The hook and locker read this flag to freeze the bounty and reward
+    ///      recipient setters. One way.
+    function lockRecipients() external {
+        if (msg.sender != _admin) revert NotAdmin();
+        if (recipientsLocked) revert AlreadyLocked();
+        recipientsLocked = true;
+        emit RecipientsLocked();
+    }
+
+    /// @inheritdoc IArtCoinsTokenV2
     function isAllowed(address account) external view returns (bool) {
         return _allowed[account];
     }
@@ -330,8 +342,9 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
     /// @inheritdoc IArtCoinsTokenV2
     /// @dev Freezes the image, metadata, renderer, the allowlist and the
     ///      restriction switch in their current state: the admin only functions
-    ///      (`setAllowed`, `unrestrict`, `lock`, the metadata setters) all
-    ///      require the admin, which becomes 0.
+    ///      (`setAllowed`, `unrestrict`, `lock`, `lockRecipients`, the metadata
+    ///      setters) all require the admin, which becomes 0. The hook and locker
+    ///      recipient setters key on `admin()`, so they freeze too.
     function renounceAdmin() external {
         if (msg.sender != _admin) revert NotAdmin();
         address oldAdmin = _admin;

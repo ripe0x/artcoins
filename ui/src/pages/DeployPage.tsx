@@ -85,7 +85,6 @@ export default function DeployPage() {
         deployFee: cur.deployFee,
         defaultProtocolFeeBps: cur.defaultProtocolFeeBps,
         minProtocolSkimShareBps: 0,
-        minLpFee: 0,
         defaultAllowed: [],
         refetch: () => undefined,
       };
@@ -108,9 +107,9 @@ export default function DeployPage() {
   }
 
   // the defaults (lp fee, bounty, referral cap) come from coin 111. once the factory answers, pull them inside the
-  // factory's limits (min lp fee, bounty ceiling, referral cap maximum) so the untouched form is launchable.
+  // factory's limits (bounty ceiling, referral cap maximum) so the untouched form is launchable.
   // this only ever lowers or raises a default into range, it never overwrites a value that is already valid.
-  const limitsKey = state.ok ? `${state.minLpFee}:${state.minProtocolSkimShareBps}` : null;
+  const limitsKey = state.ok ? `${state.minProtocolSkimShareBps}` : null;
   const [limitsFor, setLimitsFor] = useState<string | null>(null);
   if (limitsKey && limitsFor !== limitsKey) {
     setLimitsFor(limitsKey);
@@ -119,11 +118,10 @@ export default function DeployPage() {
     const capMaxPct = maxReferralCapSkim(percentToSkim(p.baselineSkimPercent), percentToBps(bounty), state.minProtocolSkimShareBps) / 1_000;
     const next = {
       ...p,
-      lpFeePercent: Math.max(p.lpFeePercent, state.minLpFee / 10_000),
       bountyPercent: bounty,
       referralCapPercent: Math.min(p.referralCapPercent, capMaxPct),
     };
-    if (next.lpFeePercent !== p.lpFeePercent || next.bountyPercent !== p.bountyPercent || next.referralCapPercent !== p.referralCapPercent) {
+    if (next.bountyPercent !== p.bountyPercent || next.referralCapPercent !== p.referralCapPercent) {
       setForm((f) => ({ ...f, pool: next }));
     }
   }
@@ -140,12 +138,11 @@ export default function DeployPage() {
       poolExtension: v2?.poolExtension ?? ZERO_ADDRESS,
       protocolBps: state.defaultProtocolFeeBps,
       minProtocolSkimShareBps: state.minProtocolSkimShareBps,
-      minLpFee: state.minLpFee,
       defaultAllowedCount: state.defaultAllowed.length,
       deployFee: state.deployFee,
       salt,
     }),
-    [address, v2, state.defaultProtocolFeeBps, state.minProtocolSkimShareBps, state.minLpFee, state.defaultAllowed.length, state.deployFee, salt]
+    [address, v2, state.defaultProtocolFeeBps, state.minProtocolSkimShareBps, state.defaultAllowed.length, state.deployFee, salt]
   );
   const issues = useMemo(() => validateLaunch(form, ctx), [form, ctx]);
 
@@ -185,7 +182,6 @@ export default function DeployPage() {
           <span>Deploy fee: <span className="text-zinc-200">{Number(state.deployFee) / 1e18} ETH</span></span>
           <span>Protocol slot: <span className="text-zinc-200">{state.defaultProtocolFeeBps / 100}%</span></span>
           <span>Min protocol skim share: <span className="text-zinc-200">{state.minProtocolSkimShareBps / 100}%</span></span>
-          <span>Min lp fee: <span className="text-zinc-200">{state.minLpFee / 10_000}%</span></span>
           <span>Referral cap max (these fees): <span className="text-zinc-200">{refCapMaxPercent}% of volume</span></span>
           <span>Public launches: <span className="text-zinc-200">{state.deprecated ? 'closed' : 'open'}</span></span>
         </div>
@@ -196,7 +192,7 @@ export default function DeployPage() {
       </StepCard>
 
       <StepCard step={2} title="Pool and fees" subtitle="Start price, lp fee, skim, referral cap" isOpen={openStep === 2} onToggle={() => toggle(2)}>
-        <PoolConfigForm value={form.pool} onChange={patch('pool')} issues={issues} supplyWhole={supplyWhole} minProtocolSkimShareBps={state.minProtocolSkimShareBps} minLpFee={state.minLpFee} connectedAddress={address} />
+        <PoolConfigForm value={form.pool} onChange={patch('pool')} issues={issues} supplyWhole={supplyWhole} minProtocolSkimShareBps={state.minProtocolSkimShareBps} connectedAddress={address} />
       </StepCard>
 
       <StepCard step={3} title="Anti-sniper" subtitle="Skim that decays after launch" isOpen={openStep === 3} onToggle={() => toggle(3)}>

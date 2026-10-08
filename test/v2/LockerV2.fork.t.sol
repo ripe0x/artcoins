@@ -224,7 +224,7 @@ contract LockerV2ForkTest is ForkBase {
         IArtCoinsFactoryV2.LockerConfigV2 memory lc = _lockerConfig(recipients, bps, nPos);
         vm.startPrank(launcher);
         IERC20(coin).approve(address(locker), SUPPLY);
-        locker.placeLiquidity(lc, _poolConfig(hook), key, SUPPLY, coin);
+        locker.placeLiquidity(lc, _poolConfig(hook), key, SUPPLY, coin, type(uint256).max);
         vm.stopPrank();
     }
 
@@ -279,7 +279,12 @@ contract LockerV2ForkTest is ForkBase {
         vm.prank(launcher);
         vm.expectRevert(err);
         locker.placeLiquidity(
-            lc, _poolConfig(address(key.hooks)), key, SUPPLY, Currency.unwrap(key.currency1)
+            lc,
+            _poolConfig(address(key.hooks)),
+            key,
+            SUPPLY,
+            Currency.unwrap(key.currency1),
+            type(uint256).max
         );
     }
 
@@ -292,7 +297,7 @@ contract LockerV2ForkTest is ForkBase {
         IArtCoinsFactoryV2.LockerConfigV2 memory lc = _lockerConfig(r, b, 1);
         PoolKey memory key = _key(address(0xC01), hook);
         vm.expectRevert(IArtCoinsLpLockerV2.NotLauncher.selector);
-        locker.placeLiquidity(lc, _poolConfig(hook), key, SUPPLY, address(0xC01));
+        locker.placeLiquidity(lc, _poolConfig(hook), key, SUPPLY, address(0xC01), type(uint256).max);
     }
 
     /// @dev FT-10: array length mismatch reverts instead of truncating.
@@ -494,6 +499,15 @@ contract LockerV2ForkTest is ForkBase {
 
     // ── fork tests (real PoolManager and PositionManager) ─────────────────
 
+    function test_lockerV2_protocolSlotIndex_none() public onlyFork {
+        MockToken coin = _newCoin();
+        (address[] memory r, uint16[] memory b,,,) = _three();
+        _launch(address(coin), r, b, 3); // placed with the type(uint256).max sentinel
+        (bool exists, uint256 index) = locker.protocolSlotIndex(address(coin));
+        assertFalse(exists, "no protocol slot when launched with the sentinel");
+        assertEq(index, 0);
+    }
+
     function test_lockerV2_place_freezesSplit() public onlyFork {
         MockToken coin = _newCoin();
         (address[] memory r, uint16[] memory b,,,) = _three();
@@ -521,7 +535,12 @@ contract LockerV2ForkTest is ForkBase {
         vm.prank(launcher);
         vm.expectRevert(IArtCoinsLpLockerV2.TokenAlreadyHasRewards.selector);
         locker.placeLiquidity(
-            lc, _poolConfig(hook), _key(address(coin), hook), SUPPLY, address(coin)
+            lc,
+            _poolConfig(hook),
+            _key(address(coin), hook),
+            SUPPLY,
+            address(coin),
+            type(uint256).max
         );
     }
 
