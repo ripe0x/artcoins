@@ -75,6 +75,10 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     ///         the pool's hook, the PoolManager, the PositionManager, the pool's
     ///         mev module, the factory or its token deployer.
     error RecipientCannotReceive(address recipient);
+    /// @notice A reject-set lookup (token deployer, pool mev module or pool hook
+    ///         fee escrow) reverted, so the recipient could not be verified. The
+    ///         setter refuses the change rather than skip a check.
+    error RecipientCheckFailed();
 
     /// @notice Gas forwarded on each native reward push. A recipient that
     ///         needs more is credited in the escrow instead.
@@ -454,20 +458,27 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         ) revert RecipientCannotReceive(r);
         address factory = IArtCoinsTokenV2(token).launcher();
         if (r == factory) revert RecipientCannotReceive(r);
+        // fail closed: a lookup that cannot be read refuses the change.
         try IFactoryTokenDeployer(factory).tokenDeployer() returns (address dep) {
             if (r == dep) revert RecipientCannotReceive(r);
-        } catch {}
+        } catch {
+            revert RecipientCheckFailed();
+        }
         try IArtCoinsHookV2(address(key.hooks)).poolInfo(key.toId()) returns (
             IArtCoinsHookV2.PoolInfo memory pinfo
         ) {
             if (r == pinfo.mevModule) revert RecipientCannotReceive(r);
-        } catch {}
+        } catch {
+            revert RecipientCheckFailed();
+        }
         // the pool hook's escrow may differ from this locker's; reject it too.
         try IArtCoinsHookV2(address(key.hooks)).globals() returns (
             IArtCoinsHookV2.HookGlobals memory g
         ) {
             if (r == g.feeEscrow) revert RecipientCannotReceive(r);
-        } catch {}
+        } catch {
+            revert RecipientCheckFailed();
+        }
     }
 
     /// @inheritdoc IArtCoinsLpLockerV2

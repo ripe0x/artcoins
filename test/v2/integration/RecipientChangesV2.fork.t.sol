@@ -148,6 +148,58 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
         }
     }
 
+    /// fail closed: when a reject-set lookup reverts, the setter refuses.
+    function test_hook_setBountyRecipient_failsClosedOnBadRead() public onlyFork {
+        (, PoolKey memory key) = _launchCredits();
+        PoolId pid = key.toId();
+        address ok = makeAddr("rc.okHook");
+
+        bytes[3] memory reads = [
+            abi.encodeWithSignature("tokenDeployer()"),
+            abi.encodeWithSignature("positionManager()"),
+            abi.encodeWithSignature("feeEscrow()")
+        ];
+        address[3] memory on = [address(v2.factory), address(v2.locker), address(v2.locker)];
+        for (uint256 i; i < 3; ++i) {
+            vm.mockCallRevert(on[i], reads[i], "");
+            vm.prank(admin);
+            vm.expectRevert(ArtCoinsHookV2.RecipientCheckFailed.selector);
+            v2.hook.setBountyRecipient(pid, payable(ok));
+            vm.clearMockedCalls();
+        }
+    }
+
+    function test_locker_setRewardRecipient_failsClosedOnBadRead() public onlyFork {
+        (address coin, PoolKey memory key) = _launchCredits();
+        PoolId pid = key.toId();
+        address ok = makeAddr("rc.okLocker");
+
+        // factory.tokenDeployer()
+        vm.mockCallRevert(address(v2.factory), abi.encodeWithSignature("tokenDeployer()"), "");
+        vm.prank(admin);
+        vm.expectRevert(ArtCoinsLpLockerV2.RecipientCheckFailed.selector);
+        v2.locker.setRewardRecipient(coin, 0, ok);
+        vm.clearMockedCalls();
+
+        // hook.poolInfo(pid)
+        vm.mockCallRevert(
+            address(v2.hook), abi.encodeWithSelector(IArtCoinsHookV2.poolInfo.selector, pid), ""
+        );
+        vm.prank(admin);
+        vm.expectRevert(ArtCoinsLpLockerV2.RecipientCheckFailed.selector);
+        v2.locker.setRewardRecipient(coin, 0, ok);
+        vm.clearMockedCalls();
+
+        // hook.globals()
+        vm.mockCallRevert(
+            address(v2.hook), abi.encodeWithSelector(IArtCoinsHookV2.globals.selector), ""
+        );
+        vm.prank(admin);
+        vm.expectRevert(ArtCoinsLpLockerV2.RecipientCheckFailed.selector);
+        v2.locker.setRewardRecipient(coin, 0, ok);
+        vm.clearMockedCalls();
+    }
+
     function test_hook_setBountyRecipient_rejectedAddressesRevert() public onlyFork {
         (address coin, PoolKey memory key) = _launchCredits();
         PoolId pid = key.toId();

@@ -136,6 +136,10 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     ///      pool locker's fee escrow, the pool's mev module, the pool's locker,
     ///      the factory, its token deployer or the PositionManager.
     error RecipientCannotReceive(address recipient);
+    /// @dev A reject-set lookup (token deployer, locker PositionManager or locker
+    ///      fee escrow) reverted, so the recipient could not be verified. The
+    ///      setter refuses the change rather than skip a check.
+    error RecipientCheckFailed();
     /// @dev The caller is not the coin's current admin.
     error NotCoinAdmin();
     /// @dev The coin's recipients are frozen (the coin called `lockRecipients`
@@ -679,16 +683,23 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         ) revert RecipientCannotReceive(r);
         address factory = IArtCoinsTokenV2(coin).launcher();
         if (r == factory) revert RecipientCannotReceive(r);
+        // fail closed: a lookup that cannot be read refuses the change.
         try IFactoryTokenDeployer(factory).tokenDeployer() returns (address dep) {
             if (r == dep) revert RecipientCannotReceive(r);
-        } catch {}
+        } catch {
+            revert RecipientCheckFailed();
+        }
         try ILockerReads(locker).positionManager() returns (address posm) {
             if (r == posm) revert RecipientCannotReceive(r);
-        } catch {}
+        } catch {
+            revert RecipientCheckFailed();
+        }
         // the locker's escrow may differ from this hook's; reject it too.
         try ILockerReads(locker).feeEscrow() returns (address esc) {
             if (r == esc) revert RecipientCannotReceive(r);
-        } catch {}
+        } catch {
+            revert RecipientCheckFailed();
+        }
     }
 
     // ── reads ─────────────────────────────────────────────────────────────

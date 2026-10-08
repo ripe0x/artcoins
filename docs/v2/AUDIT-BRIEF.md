@@ -41,7 +41,7 @@ a token launcher: the factory deploys an erc20 (solady) via a CREATE2 deployer, 
 | i9 | the token address binds `(factory, sender, full config hash)`; a front runner cannot block or capture a launch; the factory refunds exactly the excess and holds no coin after a launch |
 | i10 | the burn router burns at most once per block within `maxImpactBps` and `maxBurnPerCall`; the swapper's convert is bounded the same way; neither can be bricked by a donation or by a floor that can never be met (fee aware floor) |
 | i11 | exact split of immutable and mutable state, see the table below this one. after D61 every bounded setter in `src/v2` reads its bounds from `Constants` (one technical exception, see the table); `constantsHash()` agrees across the stack (`Constants.hash()` covers the cross contract values only, the burn router per call bounds are not hashed) |
-| i12 | no contract exceeds 24,576 bytes at the ci profile (the hook is 16,223 with 8,353 headroom) |
+| i12 | no contract exceeds 24,576 bytes at the ci profile (the hook is 16,244 with 8,332 headroom) |
 
 ### i11 detail: immutable vs mutable
 
