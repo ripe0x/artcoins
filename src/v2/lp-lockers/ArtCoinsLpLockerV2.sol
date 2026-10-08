@@ -71,9 +71,9 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     ///         project slots.
     error ProtocolSlotFrozen();
     /// @notice A reward recipient the factory launch checks reject for this role:
-    ///         the coin, this locker, its fee escrow, the pool's hook, the
-    ///         PoolManager, the PositionManager, the pool's mev module, the
-    ///         factory or its token deployer.
+    ///         the coin, this locker, its fee escrow, the pool hook's fee escrow,
+    ///         the pool's hook, the PoolManager, the PositionManager, the pool's
+    ///         mev module, the factory or its token deployer.
     error RecipientCannotReceive(address recipient);
 
     /// @notice Gas forwarded on each native reward push. A recipient that
@@ -461,6 +461,12 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
             IArtCoinsHookV2.PoolInfo memory pinfo
         ) {
             if (r == pinfo.mevModule) revert RecipientCannotReceive(r);
+        } catch {}
+        // the pool hook's escrow may differ from this locker's; reject it too.
+        try IArtCoinsHookV2(address(key.hooks)).globals() returns (
+            IArtCoinsHookV2.HookGlobals memory g
+        ) {
+            if (r == g.feeEscrow) revert RecipientCannotReceive(r);
         } catch {}
     }
 

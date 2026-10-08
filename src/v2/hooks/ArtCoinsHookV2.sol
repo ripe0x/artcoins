@@ -41,8 +41,9 @@ interface IFactoryTokenDeployer {
     function tokenDeployer() external view returns (address);
 }
 
-interface ILockerPositionManager {
+interface ILockerReads {
     function positionManager() external view returns (address);
+    function feeEscrow() external view returns (address);
 }
 
 /// @title  ArtCoinsHookV2
@@ -131,9 +132,9 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     ///      core depositor, so a failed push could not fall back to it.
     error EscrowNotCoreDepositor(address escrow);
     /// @dev A bounty recipient the factory launch checks reject for this role:
-    ///      the coin, this hook, the PoolManager, the fee escrow, the pool's mev
-    ///      module, the pool's locker, the factory, its token deployer or the
-    ///      PositionManager.
+    ///      the coin, this hook, the PoolManager, this hook's fee escrow, the
+    ///      pool locker's fee escrow, the pool's mev module, the pool's locker,
+    ///      the factory, its token deployer or the PositionManager.
     error RecipientCannotReceive(address recipient);
     /// @dev The caller is not the coin's current admin.
     error NotCoinAdmin();
@@ -681,8 +682,12 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         try IFactoryTokenDeployer(factory).tokenDeployer() returns (address dep) {
             if (r == dep) revert RecipientCannotReceive(r);
         } catch {}
-        try ILockerPositionManager(locker).positionManager() returns (address posm) {
+        try ILockerReads(locker).positionManager() returns (address posm) {
             if (r == posm) revert RecipientCannotReceive(r);
+        } catch {}
+        // the locker's escrow may differ from this hook's; reject it too.
+        try ILockerReads(locker).feeEscrow() returns (address esc) {
+            if (r == esc) revert RecipientCannotReceive(r);
         } catch {}
     }
 

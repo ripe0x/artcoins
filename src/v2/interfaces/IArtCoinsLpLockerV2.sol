@@ -108,9 +108,9 @@ interface IArtCoinsLpLockerV2 is IConstantsBound {
     ///         the coin locks its recipients or renounces its admin. bps stay
     ///         fixed. The protocol slot stays frozen. Pending lp fees are
     ///         collected to the current recipients first. `newRecipient` must be
-    ///         nonzero and not the coin, this locker, its fee escrow, the pool's
-    ///         hook, the PoolManager, the PositionManager, the pool's mev module,
-    ///         the factory or its token deployer.
+    ///         nonzero and not the coin, this locker, the locker or pool hook fee
+    ///         escrow, the pool's hook, the PoolManager, the PositionManager, the
+    ///         pool's mev module, the factory or its token deployer.
     function setRewardRecipient(address token, uint256 index, address newRecipient) external;
 
     /// @notice The reward slot reserved for the protocol at launch. `exists` is

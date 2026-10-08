@@ -158,8 +158,8 @@ interface IArtCoinsHookV2 is IConstantsBound {
 
     /// @notice Sets the pool's bounty recipient. Coin admin only, until the coin
     ///         locks its recipients or renounces its admin. `newRecipient` must
-    ///         be nonzero and not the coin, this hook, the PoolManager, the fee
-    ///         escrow, the pool's mev module, the pool's locker, the factory, its
-    ///         token deployer or the PositionManager.
+    ///         be nonzero and not the coin, this hook, the PoolManager, the hook
+    ///         or locker fee escrow, the pool's mev module, the pool's locker,
+    ///         the factory, its token deployer or the PositionManager.
     function setBountyRecipient(PoolId poolId, address payable newRecipient) external;
 }

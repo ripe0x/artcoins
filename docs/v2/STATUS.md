@@ -120,7 +120,7 @@ all commands assume `source .env` with `MAINNET_RPC_URL` (tenderly public gatewa
 | v1 suites, no fork (ci `check`) | see .github/workflows/test.yml | 565 pass, 143 skipped (fork gated) |
 | v1 + v2 fork suites (ci `fork-tests`) | see test.yml | 391 pass, 4 known v1 failures (burn router floor at the pinned block) |
 | review proofs (v1 bugs + flipped v2 proofs) | `forge test --match-path "test/v2/{review,review-v2}/**" --fork-url ...` | 94 pass |
-| sizes | `FOUNDRY_PROFILE=ci forge build --sizes --skip "test/**" --skip script` | hook 16,132 bytes, headroom 8,444; factory 19,423; locker 15,211; token 9,552; deployer 15,551; every v2 contract under 24,576 |
+| sizes | `FOUNDRY_PROFILE=ci forge build --sizes --skip "test/**" --skip script` | hook 16,223 bytes, headroom 8,353; factory 19,423; locker 15,414; token 9,552; deployer 15,551; every v2 contract under 24,576 |
 | ui | `cd ui && npm ci && npm test && npm run build && npm run lint` | 51 pass, build and lint green |
 | registry | `node script-js/verify-registry.mjs` | 56 contracts, 2 coins, 0 drift (bytecode compare needs artifacts built at the stack's profile) |
 
@@ -142,7 +142,7 @@ coin admin recipient changes, min lp fee rule removed, dead hook delivery tunabl
 | v2 fork, reviews excluded | `--match-path "test/v2/**" --no-match-path "test/v2/{review,review-v2,review-v3}/**"` minus the unit regex | 248 pass, 8 skipped |
 | deploy rehearsal | `DeployV2Stack.fork.t.sol` | 6 pass |
 | review proofs | `test/v2/{review,review-v2,review-v3}/**` | 94 pass, 1 pre-existing fail (`ForkRenderersReview` forks at latest block via a single-arg `createSelectFork`, keyless gateway) |
-| sizes (ci) | hook 16,132 (headroom 8,444), factory 19,423, locker 15,211, token 9,552, deployer 15,551 |
+| sizes (ci) | hook 16,223 (headroom 8,353), factory 19,423, locker 15,414, token 9,552, deployer 15,551 |
 
 D76 review round (87a75228..): both recipient setters reject the full factory launch set they can resolve (coin, hook/locker, PoolManager, fee escrow, pool mev module, factory, token deployer, PositionManager; the hook resolves the factory from `coin.launcher()`, the deployer from the factory, the PositionManager from the locker; the locker resolves the mev module from the pool's hook; unreachable reads skipped). Launch extensions are not stored and must not be set as recipients (documented). `locker.setRewardRecipient` collects pending lp fees to the current recipients before repointing. The locker records the protocol slot explicitly and exposes `protocolSlotIndex(token) returns (bool exists, uint256 index)`. The factory rejects a launch with `lpFee == 0 && baselineSkimBps == 0` (`ZeroFeeLaunch`).
 | keeper runner | `cd keeper && npm test` | 70 pass, 1 skip |

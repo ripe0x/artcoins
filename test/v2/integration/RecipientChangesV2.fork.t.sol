@@ -10,6 +10,7 @@ pragma solidity ^0.8.26;
 import {IntegrationV2Base} from "./IntegrationV2Base.sol";
 
 import {Constants} from "../../../src/Constants.sol";
+import {ArtCoinsFeeEscrowV2} from "../../../src/v2/ArtCoinsFeeEscrowV2.sol";
 import {ArtCoinsHookV2} from "../../../src/v2/hooks/ArtCoinsHookV2.sol";
 import {IArtCoinsFactoryV2} from "../../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsHookV2} from "../../../src/v2/interfaces/IArtCoinsHookV2.sol";
@@ -107,6 +108,44 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
         vm.prank(admin);
         vm.expectRevert(IArtCoinsLpLockerV2.ZeroAddress.selector);
         v2.locker.setRewardRecipient(coin, 0, address(0));
+    }
+
+    /// both setters reject both escrows, even when the hook and locker run on
+    /// distinct escrows (each setter reads the sibling's escrow).
+    function test_recipientSetters_rejectBothEscrows() public onlyFork {
+        (address coin, PoolKey memory key) = _launchCredits();
+        PoolId pid = key.toId();
+        address hookEscrow = address(v2.escrow);
+
+        // give the locker a distinct escrow (owner only; new escrow lists the
+        // locker as a core depositor and matches constantsHash).
+        ArtCoinsFeeEscrowV2 escrow2 = new ArtCoinsFeeEscrowV2(LIVE_OWNER);
+        vm.prank(LIVE_OWNER);
+        escrow2.addDepositor(address(v2.locker), true);
+        vm.prank(LIVE_OWNER);
+        v2.locker.setFeeEscrow(address(escrow2));
+        assertTrue(address(escrow2) != hookEscrow, "distinct escrows");
+        assertEq(v2.locker.feeEscrow(), address(escrow2), "locker on escrow2");
+        assertEq(v2.hook.globals().feeEscrow, hookEscrow, "hook on the stack escrow");
+
+        // the hook setter rejects its own escrow and the locker's escrow.
+        for (uint256 i; i < 2; ++i) {
+            address esc = i == 0 ? hookEscrow : address(escrow2);
+            vm.prank(admin);
+            vm.expectRevert(
+                abi.encodeWithSelector(ArtCoinsHookV2.RecipientCannotReceive.selector, esc)
+            );
+            v2.hook.setBountyRecipient(pid, payable(esc));
+        }
+        // the locker setter rejects its own escrow and the hook's escrow.
+        for (uint256 i; i < 2; ++i) {
+            address esc = i == 0 ? address(escrow2) : hookEscrow;
+            vm.prank(admin);
+            vm.expectRevert(
+                abi.encodeWithSelector(ArtCoinsLpLockerV2.RecipientCannotReceive.selector, esc)
+            );
+            v2.locker.setRewardRecipient(coin, 0, esc);
+        }
     }
 
     function test_hook_setBountyRecipient_rejectedAddressesRevert() public onlyFork {
