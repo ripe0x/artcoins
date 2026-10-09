@@ -26,6 +26,8 @@ interface IArtCoinsLpLockerV2 is IConstantsBound {
 
     // ── events ────────────────────────────────────────────────────────────
 
+    /// @notice `hasProtocolSlot` marks the last reward element as the protocol
+    ///         slot, frozen against `setRewardRecipient`.
     event TokenRewardAdded(
         address indexed token,
         PoolKey poolKey,
@@ -36,7 +38,8 @@ interface IArtCoinsLpLockerV2 is IConstantsBound {
         address[] rewardRecipients,
         int24[] tickLower,
         int24[] tickUpper,
-        uint16[] positionBps
+        uint16[] positionBps,
+        bool hasProtocolSlot
     );
     event RewardsCollected(address indexed token, uint256 amount0, uint256 amount1);
     /// @notice One recipient share delivered; `escrowed` when the push failed.
@@ -83,10 +86,10 @@ interface IArtCoinsLpLockerV2 is IConstantsBound {
 
     /// @notice Mints the launch positions and freezes the reward split.
     ///         Allowlisted launchers only; checks the pool hook's `constantsHash()`.
-    /// @param  lockerConfig Split and positions, protocol slot already appended.
-    /// @param  protocolSlotIndex Reward slot the launcher appended for the
-    ///         protocol, frozen against `setRewardRecipient`; `type(uint256).max`
-    ///         means no protocol slot.
+    /// @param  lockerConfig Split and positions, protocol slot already appended
+    ///         as the last reward element when present.
+    /// @param  hasProtocolSlot True when the last reward element is the protocol
+    ///         slot, frozen against `setRewardRecipient`.
     /// @return positionId First position id.
     function placeLiquidity(
         IArtCoinsFactoryV2.LockerConfigV2 calldata lockerConfig,
@@ -94,7 +97,7 @@ interface IArtCoinsLpLockerV2 is IConstantsBound {
         PoolKey calldata poolKey,
         uint256 poolSupply,
         address token,
-        uint256 protocolSlotIndex
+        bool hasProtocolSlot
     ) external returns (uint256 positionId);
 
     // ── permissionless ────────────────────────────────────────────────────

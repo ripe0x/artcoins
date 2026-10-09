@@ -132,24 +132,19 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     /// @dev Pulls `poolSupply` of `token` from the launcher (prior approval),
     ///         mints coin only positions below the starting price and freezes
     ///         the split. Rounding dust of the coin is sent to `Constants.DEAD`.
-    ///         `protocolSlotIndex` is the reward slot the launcher appended for
-    ///         the protocol (frozen against `setRewardRecipient`);
-    ///         `type(uint256).max` means no protocol slot.
+    ///         When `hasProtocolSlot` the last reward element is the protocol
+    ///         slot, frozen against `setRewardRecipient`.
     function placeLiquidity(
         IArtCoinsFactoryV2.LockerConfigV2 calldata lockerConfig,
         IArtCoinsFactoryV2.PoolConfigV2 calldata poolConfig,
         PoolKey calldata poolKey,
         uint256 poolSupply,
         address token,
-        uint256 protocolSlotIndex
+        bool hasProtocolSlot
     ) external nonReentrant returns (uint256 positionId) {
         if (!isLauncher[msg.sender]) revert NotLauncher();
         if (token == address(0)) revert ZeroAddress();
         if (_tokenRewards[token].numPositions != 0) revert TokenAlreadyHasRewards();
-        if (
-            protocolSlotIndex != type(uint256).max
-                && protocolSlotIndex >= lockerConfig.rewardRecipients.length
-        ) revert RewardIndexOutOfRange();
 
         address hook = address(poolKey.hooks);
         if (
@@ -180,8 +175,9 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         info.numPositions = numPositions;
         info.rewardBps = lockerConfig.rewardBps;
         info.rewardRecipients = lockerConfig.rewardRecipients;
-        if (protocolSlotIndex != type(uint256).max) {
-            _protocolSlotPlusOne[token] = protocolSlotIndex + 1;
+        // the protocol slot, when present, is the last reward element.
+        if (hasProtocolSlot) {
+            _protocolSlotPlusOne[token] = lockerConfig.rewardRecipients.length;
         }
 
         emit TokenRewardAdded({
@@ -194,7 +190,8 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
             rewardRecipients: lockerConfig.rewardRecipients,
             tickLower: lockerConfig.tickLower,
             tickUpper: lockerConfig.tickUpper,
-            positionBps: lockerConfig.positionBps
+            positionBps: lockerConfig.positionBps,
+            hasProtocolSlot: hasProtocolSlot
         });
     }
 

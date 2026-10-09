@@ -1081,7 +1081,7 @@ contract HookV2RealLockerTest is HookV2ForkBase {
         pc.tickSpacing = TS;
         uint256 supply = 500_000_000e18;
         t.approve(address(rl), supply);
-        rl.placeLiquidity(lc, pc, k, supply, address(t), type(uint256).max); // through the PositionManager
+        rl.placeLiquidity(lc, pc, k, supply, address(t), false); // through the PositionManager
         hook.initializeMevModule(k, "");
 
         // trade both ways so the position earns eth and coin fees

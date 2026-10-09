@@ -261,9 +261,7 @@ contract MevLinearSkimV2Test is Test {
     function test_mevV2_startTimeIsInitTime_andEventsEmitted() public {
         vm.warp(T0 + 123);
         vm.expectEmit(true, false, false, true, address(mod));
-        emit IArtCoinsMevSkimV2.MevConfigInitialized(POOL, START, WINDOW, uint40(T0 + 123));
-        vm.expectEmit(true, false, false, true, address(mod));
-        emit ArtCoinsMevLinearSkimV2.MevEndSkimSet(POOL, END);
+        emit IArtCoinsMevSkimV2.MevConfigInitialized(POOL, START, END, WINDOW, uint40(T0 + 123));
         _init3();
         ArtCoinsMevLinearSkimV2.SkimSchedule memory s = mod.schedule(POOL);
         assertEq(s.startTime, T0 + 123);

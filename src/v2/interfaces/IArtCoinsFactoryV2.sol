@@ -97,7 +97,9 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
 
     // ── events ────────────────────────────────────────────────────────────
 
-    /// @notice Full launch record. An indexer can rebuild every frozen field from this log.
+    /// @notice Full launch record. An indexer can rebuild every frozen field from
+    ///         this log. When `protocolBps != 0` the protocol reward slot is the
+    ///         last element of the locker reward arrays.
     event TokenCreatedV2(
         address indexed sender,
         address indexed token,

@@ -21,7 +21,7 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
-import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
 interface IBurnableCoin {
@@ -73,7 +73,9 @@ contract BurnRouterV2 is
     /// @notice D32: owner moved the output floor (bps of the spot implied output).
     event SpotFloorBpsSet(uint256 oldBps, uint256 newBps);
     /// @notice D50: the pool's known fees were (re)read from the hook.
-    event PoolFeesSynced(uint256 baselineSkimBps, uint256 lpFeePips);
+    event PoolFeesSynced(
+        PoolId indexed poolId, address indexed coin, uint256 baselineSkimBps, uint256 lpFeePips
+    );
     /// @notice D40: owner moved the per burn eth cap.
     event MaxBurnPerCallSet(uint256 oldMax, uint256 newMax);
 
@@ -455,7 +457,7 @@ contract BurnRouterV2 is
         }
         poolBaselineSkimBps = uint24(s);
         poolLpFee = uint24(f);
-        emit PoolFeesSynced(s, f);
+        emit PoolFeesSynced(key.toId(), Currency.unwrap(key.currency1), s, f);
     }
 
     /// @dev 1 - baseline skim - lp fee, in FEE_DENOMINATOR units (>= 80% by the caps).

@@ -50,9 +50,6 @@ contract ArtCoinsMevLinearSkimV2 is IArtCoinsMevSkimV2 {
         uint40 startTime;
     }
 
-    /// @notice Additive. Emitted next to `MevConfigInitialized` with the end value.
-    event MevEndSkimSet(PoolId indexed poolId, uint24 endSkimBps);
-
     /// @inheritdoc IArtCoinsMevSkimV2
     address public immutable hook;
 
@@ -103,8 +100,7 @@ contract ArtCoinsMevLinearSkimV2 is IArtCoinsMevSkimV2 {
             startTime: startTime
         });
 
-        emit MevConfigInitialized(poolId, uint24(start), uint32(window), startTime);
-        emit MevEndSkimSet(poolId, uint24(end));
+        emit MevConfigInitialized(poolId, uint24(start), uint24(end), uint32(window), startTime);
     }
 
     /// @inheritdoc IArtCoinsMevSkimV2

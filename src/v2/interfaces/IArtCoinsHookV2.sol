@@ -68,7 +68,11 @@ interface IArtCoinsHookV2 is IConstantsBound {
         address indexed token,
         address indexed launcher,
         uint16 version,
-        bool restricted
+        bool restricted,
+        address locker,
+        address mevModule,
+        address extension,
+        int24 tickSpacing
     );
     event SkimConfigInitialized(PoolId indexed poolId, SkimConfig config);
     event MevModuleInitialized(PoolId indexed poolId, address indexed module);

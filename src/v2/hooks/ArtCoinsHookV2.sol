@@ -237,7 +237,17 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         });
         _skim[pid] = p.skim;
         _minProtocolShareBps[pid] = p.minProtocolShareBps;
-        emit PoolInitializedV2(pid, token, msg.sender, Constants.STACK_VERSION, restricted);
+        emit PoolInitializedV2(
+            pid,
+            token,
+            msg.sender,
+            Constants.STACK_VERSION,
+            restricted,
+            p.locker,
+            p.mevModule,
+            ext,
+            p.tickSpacing
+        );
         emit SkimConfigInitialized(pid, p.skim);
         emit ProtocolFloorInitialized(pid, p.minProtocolShareBps);
 

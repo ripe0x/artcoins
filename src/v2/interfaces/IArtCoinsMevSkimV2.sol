@@ -10,8 +10,15 @@ import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 ///         The factory accepts only modules answering `supportsInterface`
 ///         for `type(IArtCoinsMevSkimV2).interfaceId`.
 interface IArtCoinsMevSkimV2 is IERC165, IConstantsBound {
+    /// @notice The pool's anti sniper schedule, frozen at init: linear decay from
+    ///         `startingSkimBps` to `endSkimBps` over `windowSeconds`, starting at
+    ///         `startTime`. Rates are BPS of volume.
     event MevConfigInitialized(
-        PoolId indexed poolId, uint24 startingSkimBps, uint32 windowSeconds, uint40 startTime
+        PoolId indexed poolId,
+        uint24 startingSkimBps,
+        uint24 endSkimBps,
+        uint32 windowSeconds,
+        uint40 startTime
     );
 
     error NotHook();
@@ -23,6 +30,11 @@ interface IArtCoinsMevSkimV2 is IERC165, IConstantsBound {
 
     /// @notice Hook only, once per pool. Checks the hook's `constantsHash()`.
     /// @param  config abi.encode(uint24 startingSkimBps, uint32 windowSeconds).
+    /// @notice Configure the pool's schedule once. Hook only. `config` is empty
+    ///         for the Constants defaults, `abi.encode(uint24 startingSkimBps,
+    ///         uint32 windowSeconds)` (64 bytes, endSkimBps 0), or
+    ///         `abi.encode(uint24 startingSkimBps, uint32 windowSeconds,
+    ///         uint24 endSkimBps)` (96 bytes). Rates are BPS of volume.
     function initialize(PoolId poolId, bytes calldata config) external;
 
     /// @notice Current anti sniper skim (BPS of volume) and whether the window is open.

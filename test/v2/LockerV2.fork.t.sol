@@ -224,7 +224,7 @@ contract LockerV2ForkTest is ForkBase {
         IArtCoinsFactoryV2.LockerConfigV2 memory lc = _lockerConfig(recipients, bps, nPos);
         vm.startPrank(launcher);
         IERC20(coin).approve(address(locker), SUPPLY);
-        locker.placeLiquidity(lc, _poolConfig(hook), key, SUPPLY, coin, type(uint256).max);
+        locker.placeLiquidity(lc, _poolConfig(hook), key, SUPPLY, coin, false);
         vm.stopPrank();
     }
 
@@ -279,12 +279,7 @@ contract LockerV2ForkTest is ForkBase {
         vm.prank(launcher);
         vm.expectRevert(err);
         locker.placeLiquidity(
-            lc,
-            _poolConfig(address(key.hooks)),
-            key,
-            SUPPLY,
-            Currency.unwrap(key.currency1),
-            type(uint256).max
+            lc, _poolConfig(address(key.hooks)), key, SUPPLY, Currency.unwrap(key.currency1), false
         );
     }
 
@@ -297,7 +292,7 @@ contract LockerV2ForkTest is ForkBase {
         IArtCoinsFactoryV2.LockerConfigV2 memory lc = _lockerConfig(r, b, 1);
         PoolKey memory key = _key(address(0xC01), hook);
         vm.expectRevert(IArtCoinsLpLockerV2.NotLauncher.selector);
-        locker.placeLiquidity(lc, _poolConfig(hook), key, SUPPLY, address(0xC01), type(uint256).max);
+        locker.placeLiquidity(lc, _poolConfig(hook), key, SUPPLY, address(0xC01), false);
     }
 
     /// @dev FT-10: array length mismatch reverts instead of truncating.
@@ -527,12 +522,7 @@ contract LockerV2ForkTest is ForkBase {
         vm.prank(launcher);
         vm.expectRevert(IArtCoinsLpLockerV2.TokenAlreadyHasRewards.selector);
         locker.placeLiquidity(
-            lc,
-            _poolConfig(hook),
-            _key(address(coin), hook),
-            SUPPLY,
-            address(coin),
-            type(uint256).max
+            lc, _poolConfig(hook), _key(address(coin), hook), SUPPLY, address(coin), false
         );
     }
 
