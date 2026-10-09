@@ -26,7 +26,6 @@ import {ArtCoinsLpLockerV2} from "../../../../src/v2/lp-lockers/ArtCoinsLpLocker
 import {ArtCoinsMevLinearSkimV2} from "../../../../src/v2/mev-modules/ArtCoinsMevLinearSkimV2.sol";
 import {ArtCoinsDeployerV2} from "../../../../src/v2/utils/ArtCoinsDeployerV2.sol";
 import {ForkBase} from "../../harness/ForkBase.sol";
-import {FV2Payout} from "../../mocks/FactoryV2Mocks.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
@@ -78,7 +77,6 @@ contract V2FFactoryReviewTest is ForkBase {
     ArtCoinsMevLinearSkimV2 internal mev;
     ArtCoinsVaultV2 internal vault;
     ArtCoinsUniv4EthDevBuyV2 internal devBuy;
-    FV2Payout internal payout;
 
     address payable internal protocolR = payable(makeAddr("v2f.protocolRecipient"));
     address internal team = makeAddr("v2f.team");
@@ -117,7 +115,6 @@ contract V2FFactoryReviewTest is ForkBase {
         escrow.addDepositor(address(locker), true);
         locker.setLauncher(address(factory), true);
         mev = new ArtCoinsMevLinearSkimV2(address(hook));
-        payout = new FV2Payout();
         vault = new ArtCoinsVaultV2(address(factory));
         devBuy = new ArtCoinsUniv4EthDevBuyV2(address(factory), POOL_MANAGER);
 
@@ -128,7 +125,6 @@ contract V2FFactoryReviewTest is ForkBase {
         factory.setExtension(address(vault), true);
         factory.setExtension(address(devBuy), true);
         factory.setProtocolRecipient(protocolR);
-        factory.setReferralPayout(payable(address(payout)));
         factory.setTeamFeeRecipient(team);
         factory.setDeprecated(false);
     }

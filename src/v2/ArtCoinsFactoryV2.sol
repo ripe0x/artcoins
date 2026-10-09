@@ -38,10 +38,10 @@ interface IHookPoolManager {
 ///         3. `msg.value >= deployFee + sum(extension msgValue)`; the excess is
 ///            refunded to the sender at the end of the call.
 ///         4. token deployed by CREATE2 with the sender bound salt.
-///         5. `hook.initializePool` with the skim config; protocolRecipient and
-///            referralPayout are injected from factory storage. The token's
-///            canonical hook, pool id, PoolManager and `restricted` flag are
-///            checked against the pool just created (FT-06).
+///         5. `hook.initializePool` with the skim config; protocolRecipient is
+///            injected from factory storage. The token's canonical hook, pool id,
+///            PoolManager and `restricted` flag are checked against the pool just
+///            created (FT-06).
 ///         6. launch record (`isArtCoin`, `deploymentInfo`) written.
 ///         7. pool supply approved to the locker, `placeLiquidity` with the
 ///            protocol slot appended; the locker must pull exactly the pool supply.
@@ -132,8 +132,6 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     uint256 public deployFee;
     /// @inheritdoc IArtCoinsFactoryV2
     address payable public protocolRecipient;
-    /// @inheritdoc IArtCoinsFactoryV2
-    address payable public referralPayout;
     /// @inheritdoc IArtCoinsFactoryV2
     address public teamFeeRecipient;
 
@@ -368,7 +366,6 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
             STACK_VERSION,
             h,
             protocolRecipient,
-            referralPayout,
             protocolBps,
             poolSupply,
             extensionsSupply,
@@ -394,7 +391,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         }
         _validateStrings(c.token);
         if (!enabledHooks[c.pool.hook]) revert HookNotEnabled();
-        if (protocolRecipient == address(0) || referralPayout == address(0)) revert ZeroAddress();
+        if (protocolRecipient == address(0)) revert ZeroAddress();
 
         _validateFee(c.fee);
         _validateLocker(c.locker, protocolBps);
@@ -581,9 +578,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
             maxReferralBpsOfVolume: c.fee.maxReferralBpsOfVolume,
             lpFee: c.fee.lpFee,
             bountyRecipient: c.fee.bountyRecipient,
-            protocolRecipient: protocolRecipient,
-            referralPayout: referralPayout,
-            quoteToken: address(0)
+            protocolRecipient: protocolRecipient
         });
         // D52: the hook freezes the protocol floor per pool and caps each
         // referral at `protocol - floor`; `_validateFee` already made the
@@ -837,14 +832,6 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         if (recipient == address(0)) revert ZeroAddress();
         emit ProtocolRecipientSet(protocolRecipient, recipient);
         protocolRecipient = recipient;
-    }
-
-    /// @inheritdoc IArtCoinsFactoryV2
-    /// @dev Injected into new pools only.
-    function setReferralPayout(address payable payout) external onlyOwner {
-        if (payout == address(0)) revert ZeroAddress();
-        emit ReferralPayoutSet(referralPayout, payout);
-        referralPayout = payout;
     }
 
     /// @inheritdoc IArtCoinsFactoryV2

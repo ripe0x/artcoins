@@ -580,11 +580,6 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         address payable target = payable(makeAddr("i1.refTarget"));
         rref.pull(v2.escrow, target);
         assertEq(target.balance, l.referral, "referrer pulled it");
-        assertEq(
-            v2.hook.skimConfig(_pid(coin)).referralPayout,
-            address(v2.escrow),
-            "payout = escrow (D57)"
-        );
     }
 
     /// D52: the pool's protocol floor is frozen into the hook at launch, so the

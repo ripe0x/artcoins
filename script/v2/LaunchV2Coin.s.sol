@@ -124,7 +124,6 @@ library LaunchV2Lib {
             "preflight: mev module bound to another hook"
         );
         require(f.protocolRecipient() != address(0), "preflight: protocol recipient unset");
-        require(f.referralPayout().code.length != 0, "preflight: referral payout has no code");
         value = f.deployFee();
         require(
             value == 0 || f.teamFeeRecipient() != address(0), "preflight: team fee recipient unset"

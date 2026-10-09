@@ -27,7 +27,6 @@ import {
     FV2Extension,
     FV2HashStub,
     FV2NoErc165Module,
-    FV2Payout,
     FV2RevertingReceiver,
     FV2ToggleModule,
     FV2WrongHashModule
@@ -68,7 +67,6 @@ contract FactoryV2ForkTest is ForkBase {
     address internal locker;
     ArtCoinsLpLockerV2 internal realLocker;
     ArtCoinsMevLinearSkimV2 internal mev;
-    FV2Payout internal payout;
 
     address payable internal protocolR = payable(makeAddr("fv2.protocolRecipient"));
     address internal team = makeAddr("fv2.team");
@@ -113,7 +111,6 @@ contract FactoryV2ForkTest is ForkBase {
         // real locker (D37 skips the erc20 approve to permit2 for solady tokens)
         locker = address(realLocker);
         mev = new ArtCoinsMevLinearSkimV2(address(hook));
-        payout = new FV2Payout();
 
         hook.setLauncher(address(factory), true);
         // D46: the launch placement adds on a taxed canonical pool; the deploy
@@ -125,7 +122,6 @@ contract FactoryV2ForkTest is ForkBase {
         factory.setLocker(locker, true);
         factory.setMevModule(address(mev), true);
         factory.setProtocolRecipient(protocolR);
-        factory.setReferralPayout(payable(address(payout)));
         factory.setTeamFeeRecipient(team);
         factory.setDeprecated(false);
     }
@@ -406,9 +402,7 @@ contract FactoryV2ForkTest is ForkBase {
         // injected recipients
         IArtCoinsHookV2.SkimConfig memory s = hook.skimConfig(info.poolId);
         assertEq(s.protocolRecipient, protocolR);
-        assertEq(s.referralPayout, address(payout));
         assertEq(s.bountyRecipient, bounty);
-        assertEq(s.quoteToken, address(0));
         // the module window started in the launch tx
         assertEq(mev.windowEnd(info.poolId), block.timestamp + Constants.DEFAULT_MEV_WINDOW);
     }
@@ -1097,12 +1091,11 @@ contract FactoryV2ForkTest is ForkBase {
         assertEq(got.locker.rewardRecipients[0], project);
 
         // the remaining non indexed fields
-        (, bytes32 h, address pr, address rp,,,,) = abi.decode(
+        (, bytes32 h, address pr,,,,) = abi.decode(
             _createdData(logs),
             (
                 uint16,
                 bytes32,
-                address,
                 address,
                 uint16,
                 uint256,
@@ -1112,7 +1105,6 @@ contract FactoryV2ForkTest is ForkBase {
         );
         assertEq(h, factory.configHash(c));
         assertEq(pr, protocolR);
-        assertEq(rp, address(payout));
     }
 
     /// FT-09: floor dust from the extension shares goes to the pool, never to the team.
@@ -1221,8 +1213,6 @@ contract FactoryV2ForkTest is ForkBase {
         vm.expectRevert(IArtCoinsFactoryV2.ZeroAddress.selector);
         factory.setProtocolRecipient(payable(address(0)));
         vm.expectRevert(IArtCoinsFactoryV2.ZeroAddress.selector);
-        factory.setReferralPayout(payable(address(0)));
-        vm.expectRevert(IArtCoinsFactoryV2.ZeroAddress.selector);
         factory.setHook(address(0), true);
 
         vm.expectRevert(ArtCoinsFactoryV2.RenounceDisabled.selector);
@@ -1246,8 +1236,6 @@ contract FactoryV2ForkTest is ForkBase {
         factory.setMinProtocolSkimShareBps(0);
         vm.expectRevert(err);
         factory.setProtocolRecipient(payable(alice));
-        vm.expectRevert(err);
-        factory.setReferralPayout(payable(alice));
         vm.expectRevert(err);
         factory.setTeamFeeRecipient(alice);
         vm.expectRevert(err);

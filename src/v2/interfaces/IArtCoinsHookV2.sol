@@ -30,17 +30,14 @@ interface IArtCoinsHookV2 is IConstantsBound {
     }
 
     /// @notice Per pool fee config. The rates and caps are set once at init; the
-    ///         coin admin may change `bountyRecipient` later. Field order matches
-    ///         v1 `skimConfig`.
+    ///         coin admin may change `bountyRecipient` later.
     struct SkimConfig {
         uint24 baselineSkimBps; // SKIM_DENOMINATOR units
         uint16 bountyBps; // bounty share of the skim, BPS
         uint24 maxReferralBpsOfVolume; // SKIM_DENOMINATOR units
-        uint24 lpFee; // 1e6 units
+        uint24 lpFee; // uniswap v4 pips (1e6 units)
         address payable bountyRecipient;
         address payable protocolRecipient;
-        address payable referralPayout;
-        address quoteToken; // always address(0), native eth
     }
 
     /// @notice Owner set globals.
@@ -119,8 +116,6 @@ interface IArtCoinsHookV2 is IConstantsBound {
     error MaxReferralTooHigh();
     error BountyRecipientZero();
     error ProtocolRecipientZero();
-    error ReferralPayoutZero();
-    error QuoteTokenMustBeNative();
     error ParamOutOfBounds(uint256 value, uint256 min, uint256 max);
     error EthTransferFailed();
 

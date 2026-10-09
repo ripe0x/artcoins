@@ -21,7 +21,7 @@ import {ArtCoinsHookV2} from "../../../src/v2/hooks/ArtCoinsHookV2.sol";
 import {IArtCoinsFactoryV2} from "../../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsHookV2} from "../../../src/v2/interfaces/IArtCoinsHookV2.sol";
 import {ArtCoinsMevLinearSkimV2} from "../../../src/v2/mev-modules/ArtCoinsMevLinearSkimV2.sol";
-import {HV2ConstantsStub, HV2ReferralPayout, HV2SwapSeqRouter, IHV2Erc20} from "./HookV2Mocks.sol";
+import {HV2ConstantsStub, HV2SwapSeqRouter, IHV2Erc20} from "./HookV2Mocks.sol";
 
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
@@ -70,7 +70,6 @@ abstract contract HookV2ForkBase is Test {
     ArtCoinsPoolExtensionAllowlist internal allowlist;
     ArtCoinsHookV2 internal hook;
     HV2ConstantsStub internal lockerStub;
-    HV2ReferralPayout internal payout;
     address payable internal protocolR = payable(makeAddr("protocolRecipient"));
     address payable internal bountyEoa = payable(makeAddr("bountyEoa"));
     uint256 internal tokenNonce;
@@ -83,7 +82,6 @@ abstract contract HookV2ForkBase is Test {
         uint24 maxRef;
         address module;
         address extension;
-        address referralPayout;
         bytes mevConfig;
     }
 
@@ -119,7 +117,6 @@ abstract contract HookV2ForkBase is Test {
         hook.setLauncher(address(this), true);
 
         lockerStub = new HV2ConstantsStub(Constants.hash());
-        payout = new HV2ReferralPayout();
 
         if (onFork) {
             swapRouter = new PoolSwapTest(pm);
@@ -145,7 +142,6 @@ abstract contract HookV2ForkBase is Test {
         l.baseline = BASELINE;
         l.bountyBps = BOUNTY_BPS;
         l.maxRef = MAX_REF;
-        l.referralPayout = address(payout);
     }
 
     function _newToken(bool restricted, address, address hook_)
@@ -200,9 +196,7 @@ abstract contract HookV2ForkBase is Test {
             maxReferralBpsOfVolume: l.maxRef,
             lpFee: LP_FEE,
             bountyRecipient: payable(l.bounty),
-            protocolRecipient: protocolR,
-            referralPayout: payable(l.referralPayout),
-            quoteToken: address(0)
+            protocolRecipient: protocolR
         });
     }
 

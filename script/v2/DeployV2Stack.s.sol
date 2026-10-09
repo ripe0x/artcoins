@@ -23,7 +23,6 @@ import {Script, console2} from "forge-std/Script.sol";
 ///     OWNER                         default Addresses.OWNER. ownership target of every owned contract
 ///     TREASURY                      default OWNER. ProtocolFeeControllerV2 treasury
 ///     TREASURY_BPS                  default 9000 (Constants allow 4000..9000)
-///     REFERRAL_PAYOUT               default 0 = the new escrow (see DeployV2Lib.Params)
 ///     DEPLOY_FEE                    default 0.069 ether (wei)
 ///     PROTOCOL_BPS                  default 2000
 ///     MIN_PROTOCOL_SKIM_SHARE_BPS   default 1000 (D52)
@@ -45,7 +44,6 @@ contract DeployV2Stack is Script {
         );
         p.treasury = vm.envOr("TREASURY", owner);
         p.treasuryBps = uint16(vm.envOr("TREASURY_BPS", uint256(DeployV2Lib.TREASURY_BPS)));
-        p.referralPayout = vm.envOr("REFERRAL_PAYOUT", address(0));
         p.deployFee = vm.envOr("DEPLOY_FEE", DeployV2Lib.DEPLOY_FEE);
         p.protocolBps = uint16(vm.envOr("PROTOCOL_BPS", uint256(DeployV2Lib.PROTOCOL_BPS)));
         p.minProtocolSkimShareBps = uint16(
@@ -91,7 +89,6 @@ contract DeployV2Stack is Script {
         console2.log("owner       ", p.owner);
         console2.log("treasury    ", p.treasury);
         console2.log("treasuryBps ", p.treasuryBps);
-        console2.log("referral    ", p.referralPayout);
         console2.log("deployFee   ", p.deployFee);
         console2.log("protocolBps ", p.protocolBps);
         console2.log("minSkimShare", p.minProtocolSkimShareBps);

@@ -64,12 +64,7 @@ library DeployV2Lib {
     uint16 internal constant MIN_PROTOCOL_SKIM_SHARE_BPS = 1000;
     uint256 internal constant EIP170 = 24_576;
 
-    /// @dev Deploy inputs. `referralPayout == 0` means "use the escrow": the
-    ///      hook needs a payout with code; the escrow has no `notify`, so every
-    ///      referral leg credits the referrer in the escrow (D16), claimable
-    ///      with `escrow.claim(referrer, address(0))`. The live payout 0xB03C
-    ///      answers `Unauthorized()` to any caller but the v1 hook 0x636c, and
-    ///      the owner eoa has no code (hook init would revert), so neither is used.
+    /// @dev Deploy inputs.
     struct Params {
         address owner;
         address broadcaster;
@@ -79,7 +74,6 @@ library DeployV2Lib {
         address create2Deployer;
         address treasury;
         uint16 treasuryBps;
-        address referralPayout;
         uint256 deployFee;
         uint16 protocolBps;
         uint16 minProtocolSkimShareBps;
@@ -121,7 +115,6 @@ library DeployV2Lib {
         p.create2Deployer = create2Deployer;
         p.treasury = owner;
         p.treasuryBps = TREASURY_BPS;
-        p.referralPayout = address(0);
         p.deployFee = DEPLOY_FEE;
         p.protocolBps = PROTOCOL_BPS;
         p.minProtocolSkimShareBps = MIN_PROTOCOL_SKIM_SHARE_BPS;
@@ -232,13 +225,11 @@ library DeployV2Lib {
         s.locker.setLauncher(address(s.factory), true);
         s.locker.setKeeperRewardBps(0);
 
-        address payout = p.referralPayout == address(0) ? address(s.escrow) : p.referralPayout;
         ArtCoinsFactoryV2 f = s.factory;
         f.setHook(address(s.hook), true);
         f.setLocker(address(s.locker), true);
         f.setMevModule(address(s.mev), true);
         f.setProtocolRecipient(payable(address(s.controller)));
-        f.setReferralPayout(payable(payout));
         f.setTeamFeeRecipient(p.owner);
         f.setDeployFee(p.deployFee);
         f.setDefaultProtocolFeeBps(p.protocolBps);
@@ -340,7 +331,6 @@ library DeployV2Lib {
 
     function _checkFactory(Stack memory s, Params memory p) private view {
         ArtCoinsFactoryV2 f = s.factory;
-        address payout = p.referralPayout == address(0) ? address(s.escrow) : p.referralPayout;
         require(f.poolManager() == p.poolManager, "v2: factory PoolManager");
         require(f.tokenDeployer() == address(s.tokenDeployer), "v2: factory deployer");
         require(s.tokenDeployer.factory() == address(f), "v2: deployer binding");
@@ -348,7 +338,6 @@ library DeployV2Lib {
         require(f.enabledLockers(address(s.locker)), "v2: factory locker");
         require(f.enabledMevModules(address(s.mev)), "v2: factory mev");
         require(f.protocolRecipient() == address(s.controller), "v2: protocol recipient");
-        require(f.referralPayout() == payout && payout.code.length != 0, "v2: referral payout");
         require(f.teamFeeRecipient() == p.owner, "v2: team fee recipient");
         require(f.deployFee() == p.deployFee, "v2: deploy fee");
         require(f.defaultProtocolFeeBps() == p.protocolBps, "v2: protocol bps");

@@ -28,7 +28,6 @@ export FOUNDRY_PROFILE=ci
 | OWNER | `Addresses.OWNER` | owner of every owned contract, team fee recipient |
 | TREASURY | OWNER | `ProtocolFeeControllerV2` treasury |
 | TREASURY_BPS | 9000 | controller treasury share (Constants allow 4000..9000, the rest burns) |
-| REFERRAL_PAYOUT | 0 = the new escrow | factory referral payout. must have code. the escrow has no `notify`, so referral legs are credited to the referrer in the escrow (D16). the live 0xB03C… only accepts the v1 hook |
 | DEPLOY_FEE | 0.069 ether | factory deploy fee (wei) |
 | PROTOCOL_BPS | 2000 | factory default protocol slot |
 | MIN_PROTOCOL_SKIM_SHARE_BPS | 1000 | D52: protocol floor of every skim. caps launch `bountyBps` at `10000 - this` and the referral cap above the floor |
@@ -44,7 +43,7 @@ DRY_RUN=0 script/v2/deploy.sh <local|mainnet>
 
 | step | what |
 |---|---|
-| values | every required value of `env/<env>.env` is set. `env/mainnet.env` ships with `TREASURY`, `TREASURY_BPS`, `DEPLOY_FEE` and `PROTOCOL_BPS` empty and the wrapper refuses until they are set. `DEPLOY_FEE` is in wei. `REFERRAL_PAYOUT` may stay empty (the v2 escrow) |
+| values | every required value of `env/<env>.env` is set. `env/mainnet.env` ships with `TREASURY`, `TREASURY_BPS`, `DEPLOY_FEE` and `PROTOCOL_BPS` empty and the wrapper refuses until they are set. `DEPLOY_FEE` is in wei. |
 | guards | the rpc chain id equals `CHAIN_ID`. `WALLET_MODE=unlocked` needs a loopback rpc host that answers `anvil_nodeInfo` and an owner without code (on an anvil fork `cast rpc anvil_setCode <owner> 0x`). `REQUIRE_CLEAN_GIT=true` fetches `origin master` and needs HEAD equal to `origin/master`, or a tag that `git ls-remote` shows on origin at HEAD, and a clean tree. the git guards warn on a simulation and refuse on a broadcast |
 | build and simulation | `forge build` at profile ci, then `DeployV2Stack.s.sol` with `--sender $OWNER`. it must reach `post deploy asserts: ok` |
 | signer | `WALLET_MODE=account`: `cast wallet address --account $KEYSTORE` equals `OWNER`, then the operator types the last 6 hex digits of `OWNER` at the terminal |

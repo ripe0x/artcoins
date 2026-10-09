@@ -7,20 +7,11 @@ import {Constants} from "../../../src/Constants.sol";
 import {IArtCoinsExtensionV2} from "../../../src/v2/interfaces/IArtCoinsExtensionV2.sol";
 import {IArtCoinsFactoryV2} from "../../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsMevSkimV2} from "../../../src/v2/interfaces/IArtCoinsMevSkimV2.sol";
-import {IReferralPayoutForHook} from "../../../src/v2/interfaces/IReferralPayoutForHook.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-
-/// referral payout with code (the hook requires code at init).
-contract FV2Payout is IReferralPayoutForHook {
-    function notify(address referrer) external payable {
-        (bool ok,) = referrer.call{value: msg.value}("");
-        ok;
-    }
-}
 
 /// launch extension. mode 0 pulls its share, 1 pulls nothing, 2 pulls one wei
 /// less, 3 tries to reenter the factory.

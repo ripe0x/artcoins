@@ -479,10 +479,8 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
 
         _leg(pid, Constants.LEG_BOUNTY, escrow, cfg.bountyRecipient, bounty);
         _leg(pid, Constants.LEG_PROTOCOL, escrow, cfg.protocolRecipient, protocol);
-        // D41: the referral goes straight to the referrer like the other legs
-        // (stipend push, escrow on failure, D16). `referralPayout` is kept in
-        // the frozen config but is not called during a swap: under a 2,300
-        // gas stipend it could do no accounting.
+        // the referral is pushed to the referrer like the other legs: a zero gas
+        // call, credited in the escrow on failure.
         _leg(pid, Constants.LEG_REFERRAL, escrow, referrer, referral);
     }
 
@@ -575,10 +573,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         if (s.protocolRecipient == address(0)) revert ProtocolRecipientZero();
         _checkReceiver(s.bountyRecipient);
         _checkReceiver(s.protocolRecipient);
-        // H3: kept from the init contract (the payout is factory injected and
-        // must be a contract), although the swap path no longer calls it (D41).
-        if (s.referralPayout.code.length == 0) revert ReferralPayoutZero();
-        if (s.quoteToken != address(0)) revert QuoteTokenMustBeNative();
     }
 
     function _checkReceiver(address r) private view {

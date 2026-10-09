@@ -12,8 +12,7 @@
 #
 # Env file values: CHAIN_ID RPC_DEFAULT FOUNDRY_PROFILE WALLET_MODE (account|unlocked) KEYSTORE OWNER
 #   TREASURY TREASURY_BPS DEPLOY_FEE (wei) PROTOCOL_BPS MIN_PROTOCOL_SKIM_SHARE_BPS
-#   REFERRAL_PAYOUT (optional, empty = the v2 escrow) VERIFY (full|chain|none) REQUIRE_CLEAN_GIT
-#   BROADCAST_DIR DEPLOY_JSON RECORD.
+#   VERIFY (full|chain|none) REQUIRE_CLEAN_GIT BROADCAST_DIR DEPLOY_JSON RECORD.
 # Shell:
 #   RPC_URL            rpc endpoint, overrides RPC_DEFAULT. Cast and forge read it from the environment, messages show scheme and host
 #   DRY_RUN            exactly 1 (default) or 0. 1 runs every guard (git guards warn) and the simulation
@@ -58,7 +57,6 @@ case "$WALLET_MODE" in
   *) die "WALLET_MODE must be account or unlocked" ;;
 esac
 case "$VERIFY" in full | chain | none) ;; *) die "VERIFY must be full, chain or none" ;; esac
-[ -n "${REFERRAL_PAYOUT:-}" ] || unset REFERRAL_PAYOUT
 export FOUNDRY_PROFILE FOUNDRY_BROADCAST="$BROADCAST_DIR"
 
 # the rpc url can carry an api key: it travels in ETH_RPC_URL (cast) and FOUNDRY_ETH_RPC_URL (forge) and messages show scheme and host

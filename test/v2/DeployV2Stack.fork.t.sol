@@ -90,7 +90,6 @@ contract DeployV2StackForkTest is ForkStack {
         assertEq(s.factory.defaultProtocolFeeBps(), 2000, "protocol bps");
         assertEq(s.factory.minProtocolSkimShareBps(), 1000, "D52 protocol skim floor");
         assertEq(s.factory.protocolRecipient(), address(s.controller), "protocol recipient");
-        assertEq(s.factory.referralPayout(), address(s.escrow), "referral payout = escrow");
         assertEq(s.factory.teamFeeRecipient(), LIVE_OWNER, "team fee recipient");
         assertEq(s.controller.treasury(), LIVE_OWNER, "treasury = owner");
         assertEq(s.burnRouter.coin(), address(0), "router not initialized");

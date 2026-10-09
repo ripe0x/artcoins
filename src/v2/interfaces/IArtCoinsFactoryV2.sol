@@ -32,7 +32,7 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
         bytes extensionData;
     }
 
-    /// @dev protocolRecipient and referralPayout are injected by the factory.
+    /// @dev protocolRecipient is injected by the factory.
     struct FeeConfigV2 {
         uint24 lpFee;
         uint24 baselineSkimBps;
@@ -105,7 +105,6 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
         uint16 stackVersion,
         bytes32 configHash,
         address protocolRecipient,
-        address referralPayout,
         uint16 protocolBps,
         uint256 poolSupply,
         uint256 extensionsSupply,
@@ -125,7 +124,6 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     event DefaultProtocolFeeBpsSet(uint16 oldBps, uint16 newBps);
     event MinProtocolSkimShareBpsSet(uint16 oldBps, uint16 newBps);
     event ProtocolRecipientSet(address indexed oldRecipient, address indexed newRecipient);
-    event ReferralPayoutSet(address indexed oldPayout, address indexed newPayout);
     event TeamFeeRecipientSet(address indexed oldRecipient, address indexed newRecipient);
     /// @notice The owner `defaultAllowed` set was replaced. Seeded into every
     ///         restricted coin's launch allowlist.
@@ -191,7 +189,6 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     function defaultProtocolFeeBps() external view returns (uint16);
     function minProtocolSkimShareBps() external view returns (uint16);
     function protocolRecipient() external view returns (address payable);
-    function referralPayout() external view returns (address payable);
     function teamFeeRecipient() external view returns (address);
     function enabledHooks(address hook) external view returns (bool);
     function enabledLockers(address locker) external view returns (bool);
@@ -215,7 +212,6 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     /// @dev Minimum protocol share of the skim; caps launch bountyBps.
     function setMinProtocolSkimShareBps(uint16 bps) external;
     function setProtocolRecipient(address payable recipient) external;
-    function setReferralPayout(address payable payout) external;
     function setTeamFeeRecipient(address recipient) external;
     /// @notice Replace the `defaultAllowed` set. Affects new launches only.
     function setDefaultAllowed(address[] calldata accounts) external;

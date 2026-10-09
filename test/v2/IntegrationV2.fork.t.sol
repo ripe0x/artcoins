@@ -71,7 +71,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         IArtCoinsHookV2.SkimConfig memory sc = v2.hook.skimConfig(pid1);
         assertEq(sc.bountyRecipient, address(treasury), "bounty = treasury");
         assertEq(sc.protocolRecipient, address(v2.controller), "protocol injected");
-        assertEq(sc.referralPayout, address(v2.escrow), "referral payout = escrow (D57)");
         assertFalse(_token(coin1).restricted(), "credits coin is not restricted");
         address[] memory rr = v2.locker.rewardRecipients(coin1);
         assertEq(rr.length, 2, "project slot + protocol slot");
@@ -182,7 +181,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
                 uint16 stackVersion,
                 bytes32 cfgHash,
                 address protocolRecipient,
-                address referralPayout,
                 uint16 protocolBps,
                 uint256 poolSupply,
                 uint256 extensionsSupply,
@@ -192,7 +190,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
                 (
                     uint16,
                     bytes32,
-                    address,
                     address,
                     uint16,
                     uint256,
@@ -204,7 +201,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
             assertEq(cfgHash, h, "event configHash");
             assertEq(keccak256(abi.encode(cfg)), cfgHash, "event config hashes to configHash");
             assertEq(protocolRecipient, address(v2.controller));
-            assertEq(referralPayout, address(v2.escrow));
             assertEq(protocolBps, PROTOCOL_BPS);
             assertEq(poolSupply, Constants.DEFAULT_TOKEN_SUPPLY);
             assertEq(extensionsSupply, 0);
@@ -280,7 +276,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         v2.factory.setDefaultProtocolFeeBps(Constants.MAX_PROTOCOL_FEE_BPS);
         v2.factory.setMinProtocolSkimShareBps(uint16(Constants.BPS));
         v2.factory.setProtocolRecipient(payable(other));
-        v2.factory.setReferralPayout(payable(address(otherContract)));
         v2.factory.setTeamFeeRecipient(other);
         address[] memory da = new address[](1);
         da[0] = address(otherContract);

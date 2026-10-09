@@ -5,7 +5,6 @@ pragma solidity ^0.8.26;
 
 import {Constants} from "../../../src/Constants.sol";
 import {IArtCoinsPoolExtension} from "../../../src/hooks/interfaces/IArtCoinsPoolExtension.sol";
-import {IReferralPayoutForHook} from "../../../src/v2/interfaces/IReferralPayoutForHook.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
@@ -123,20 +122,6 @@ contract HV2Rejecter {
 
     function streamForward() external pure returns (uint256) {
         revert("no");
-    }
-}
-
-contract HV2ReferralPayout is IReferralPayoutForHook {
-    mapping(address => uint256) public credited;
-
-    function notify(address referrer) external payable override {
-        credited[referrer] += msg.value;
-    }
-}
-
-contract HV2RevertingPayout is IReferralPayoutForHook {
-    function notify(address) external payable override {
-        revert("closed");
     }
 }
 

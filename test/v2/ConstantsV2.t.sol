@@ -16,7 +16,6 @@ import {IBurnRouterV2} from "../../src/v2/interfaces/IBurnRouterV2.sol";
 import {IConstantsBound} from "../../src/v2/interfaces/IConstantsBound.sol";
 import {IFeeAutoSwapperV2} from "../../src/v2/interfaces/IFeeAutoSwapperV2.sol";
 import {IProtocolFeeControllerV2} from "../../src/v2/interfaces/IProtocolFeeControllerV2.sol";
-import {IReferralPayoutForHook} from "../../src/v2/interfaces/IReferralPayoutForHook.sol";
 
 /// @notice Pins `Constants`. Any edit to a constant must update the literals
 ///         here; any edit to a hashed constant also changes the golden hash.
@@ -184,6 +183,5 @@ contract ConstantsV2Test is Test {
         assertTrue(type(IBurnRouterV2).interfaceId != bytes4(0));
         assertTrue(type(IProtocolFeeControllerV2).interfaceId != bytes4(0));
         assertTrue(type(IArtCoinsKeeperV2).interfaceId != bytes4(0));
-        assertTrue(type(IReferralPayoutForHook).interfaceId != bytes4(0));
     }
 }

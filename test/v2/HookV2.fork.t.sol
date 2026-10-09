@@ -549,8 +549,6 @@ contract HookV2ForkTest is HookV2ForkBase {
         assertEq(c.lpFee, LP_FEE);
         assertEq(c.bountyRecipient, bountyEoa);
         assertEq(c.protocolRecipient, protocolR);
-        assertEq(c.referralPayout, address(payout));
-        assertEq(c.quoteToken, address(0));
 
         // a pool id nobody launched is not official
         assertFalse(hook.isOfficialPool(PoolId.wrap(bytes32(uint256(1)))));
@@ -648,12 +646,6 @@ contract HookV2ForkTest is HookV2ForkBase {
         vm.expectRevert(IArtCoinsHookV2.ProtocolRecipientZero.selector);
         hook.initializePool(p);
 
-        // H3: a codeless referral payout would revert referred swaps
-        p = _params(_defaults(bountyEoa), address(1));
-        p.skim.referralPayout = payable(makeAddr("eoaPayout"));
-        vm.expectRevert(IArtCoinsHookV2.ReferralPayoutZero.selector);
-        hook.initializePool(p);
-
         // V2H-08: recipients that can never receive eth
         p = _params(_defaults(address(hook)), address(1));
         vm.expectRevert(
@@ -667,10 +659,6 @@ contract HookV2ForkTest is HookV2ForkBase {
         );
         hook.initializePool(p);
 
-        p = _params(_defaults(bountyEoa), address(1));
-        p.skim.quoteToken = address(2);
-        vm.expectRevert(IArtCoinsHookV2.QuoteTokenMustBeNative.selector);
-        hook.initializePool(p);
     }
 
     // ─── d1 / D16 / H13: referral leg ────────────────────────────────────
@@ -685,7 +673,6 @@ contract HookV2ForkTest is HookV2ForkBase {
         uint256 skim = (1 ether * uint256(BASELINE)) / D;
         uint256 referral = ((1 ether - skim) * uint256(MAX_REF)) / D;
         assertEq(ref.balance, referral, "pushed to the referrer (D41)");
-        assertEq(payout.credited(ref), 0, "payout not called during the swap");
         (, uint256 protocol) = _legs(skim, BASELINE);
         assertEq(protocolR.balance - p0, protocol - referral, "referral comes out of protocol");
 
