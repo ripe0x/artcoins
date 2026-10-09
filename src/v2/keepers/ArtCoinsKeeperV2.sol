@@ -12,7 +12,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 /// @title  ArtCoinsKeeperV2
 /// @notice Permissionless, stateless, ownerless keeper for any v2 art coin. One call collects the coin's locker
 ///         rewards, flushes (and optionally converts) every locker reward recipient that is a fee swapper,
-///         then forwards every wei and coin it received to the caller. Holds nothing between calls.
+///         then forwards every wei it received to the caller, and the coin it received when the coin allows the transfer; a restricted coin's reward stays in the keeper.
 /// @dev    Step gas values are floors, not caps. Before a step `gasleft()` must exceed floor plus margin or
 ///         the call reverts `InsufficientGas(step)`; the step then gets all remaining gas, so a collect that
 ///         grows past the old figure still runs. A step that reverts with `gasleft()` back under its floor is out

@@ -36,7 +36,7 @@ fee legs per swap: bounty, protocol, referral (`Constants.LEG_BOUNTY` 0, `LEG_PR
 | wants only itself to trigger the push | n/a | call `escrow.setSelfClaimOnly(true)` from the treasury. then `claim(treasury, 0)` from anyone else reverts `Unauthorized`. cost: nobody else can flush it, so the treasury or its keeper must call it |
 | default (selfClaimOnly false) | n/a | anyone can trigger the payout at any time. the treasury fallback must tolerate being called at arbitrary moments, with the full gas of the claimer |
 
-the escrow is `IArtCoinsFeeEscrowV2`: `balances(feeOwner, token)`, `claim`, `claimTo`, `setSelfClaimOnly`, `selfClaimOnly`. token `address(0)` is native eth. the hook and locker are core depositors; the escrow is the one wired into the hook and locker; read it from `hook.globals().feeEscrow` or `factory.deploymentInfo(token).escrow`.
+the escrow is `IArtCoinsFeeEscrowV2`: `balances(feeOwner, token)`, `claim`, `claimTo`, `setSelfClaimOnly`, `selfClaimOnly`. token `address(0)` is native eth. the hook and locker are core depositors; the current escrow is the one wired into the hook (`hook.globals().feeEscrow`) and the locker (`locker.feeEscrow()`); the owner can rotate it, so read the current pointer there. `factory.deploymentInfo(token).escrow` records the escrow at launch time and does not follow a rotation; credits already booked stay claimable in the escrow that booked them.
 
 ## 3. if the treasury keeps the v1 streamForward design
 
@@ -149,3 +149,7 @@ keeper: `ArtCoinsKeeperV2(factory)`, stateless, holds nothing. `collectAndForwar
 | config: `bountyBps`, referral cap, `lpFeePips`, slots pass section 4 limits | yes | yes or no |
 
 note: the locker pushes eth with 150k gas (`PUSH_GAS_MAX`), not the 2,300 stipend, because it never runs inside a swap; the hook legs use the stipend (a zero gas call).
+
+## fee recipient rule
+
+every fee recipient (bounty, project reward slot, protocol) must accept native eth or be able to call `escrow.claimTo(self, token, to)`. failed pushes are credited in the escrow under the recipient's address; a recipient that can neither receive eth nor call `claimTo` leaves those credits stranded. the stack rejects its own known contracts as recipients; choosing any other unpayable contract is the chooser's loss (D81).
