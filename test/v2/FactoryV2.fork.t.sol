@@ -1308,12 +1308,11 @@ contract FactoryV2ForkTest is ForkBase {
             sender = address(uint160(uint256(l.topics[1])));
             token = address(uint160(uint256(l.topics[2])));
             poolId = l.topics[3];
-            (version,,,, protocolBps, poolSupply, extensionsSupply, config) = abi.decode(
+            (version,,, protocolBps, poolSupply, extensionsSupply, config) = abi.decode(
                 l.data,
                 (
                     uint16,
                     bytes32,
-                    address,
                     address,
                     uint16,
                     uint256,
