@@ -451,8 +451,9 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
 
     /// @dev Reverts `RecipientCannotReceive` when `r` is a stack contract that
     ///      cannot hold a reward. Resolves the factory from the coin, the token
-    ///      deployer from the factory and the mev module from the pool's hook;
-    ///      an unreachable read is skipped.
+    ///      deployer from the factory and the mev module from the pool's hook. A
+    ///      read that reverts fails closed with `RecipientCheckFailed`: the
+    ///      change is refused, never allowed on an unverified address.
     function _rejectRewardRecipient(address token, PoolKey memory key, address r) private view {
         if (
             r == token || r == address(this) || r == feeEscrow || r == address(key.hooks)

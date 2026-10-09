@@ -643,10 +643,11 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     ///      caller once the admin is 0, which is how `lockRecipients` and
     ///      renouncing the admin freeze it. `newRecipient` must be nonzero and
     ///      must not be one of the stack contracts that cannot hold a fee: the
-    ///      coin, this hook, the PoolManager, the fee escrow, the pool's mev
-    ///      module, the pool's locker, the factory, its token deployer or the
-    ///      PositionManager. The launch extensions are not stored, so the admin
-    ///      must not set an extension here: an extension cannot claim its credit.
+    ///      coin, this hook, the PoolManager, this hook's fee escrow, the pool
+    ///      locker's fee escrow, the pool's mev module, the pool's locker, the
+    ///      factory, its token deployer or the PositionManager. The launch
+    ///      extensions are not stored, so the admin must not set an extension
+    ///      here: an extension cannot claim its credit.
     function setBountyRecipient(PoolId poolId, address payable newRecipient) external {
         PoolInfo storage info = _info[poolId];
         address coin = info.token;
@@ -663,8 +664,10 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
 
     /// @dev Reverts `RecipientCannotReceive` when `r` is a stack contract that
     ///      cannot hold a fee. Resolves the factory from the coin, the token
-    ///      deployer from the factory and the PositionManager from the locker;
-    ///      an unreachable read is skipped.
+    ///      deployer from the factory, and the PositionManager and fee escrow
+    ///      from the locker. A read that reverts fails closed with
+    ///      `RecipientCheckFailed`: the change is refused, never allowed on an
+    ///      unverified address.
     function _rejectKnownStackContract(address coin, address locker, address mevModule, address r)
         private
         view
