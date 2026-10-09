@@ -19,4 +19,7 @@ interface IArtCoinsKeeperV2 {
     function collectAndForward(address token, bool doConvert, uint256 minOut) external;
 
     function factory() external view returns (address);
+
+    /// @notice Stack version tag (Constants.STACK_VERSION).
+    function STACK_VERSION() external view returns (uint16);
 }

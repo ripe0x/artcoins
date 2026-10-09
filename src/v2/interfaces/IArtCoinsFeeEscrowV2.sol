@@ -70,4 +70,7 @@ interface IArtCoinsFeeEscrowV2 is IConstantsBound {
     function removeDepositor(address depositor) external;
     /// @notice Sends at most `balance - totalOwed[token]` (stray funds only).
     function rescue(address token, address to, uint256 amount) external;
+
+    /// @notice Stack version tag (Constants.STACK_VERSION).
+    function STACK_VERSION() external view returns (uint16);
 }

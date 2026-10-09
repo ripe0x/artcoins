@@ -85,4 +85,7 @@ interface IFeeAutoSwapperV2 is IERC165 {
     function setMaxStepIn(uint256 maxIn) external;
     /// @notice Sends tokens other than the paired currency and the art coin.
     function rescue(address token, address to, uint256 amount) external;
+
+    /// @notice Stack version tag (Constants.STACK_VERSION).
+    function STACK_VERSION() external view returns (uint16);
 }

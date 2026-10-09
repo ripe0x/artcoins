@@ -155,6 +155,9 @@ contract ProtocolFeeControllerV2 is
         emit Rescued(token, to, amount);
     }
 
+    /// @inheritdoc IProtocolFeeControllerV2
+    uint16 public constant STACK_VERSION = Constants.STACK_VERSION;
+
     /// @inheritdoc IConstantsBound
     function constantsHash() external pure returns (bytes32) {
         return Constants.hash();

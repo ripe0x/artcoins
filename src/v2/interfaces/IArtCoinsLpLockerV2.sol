@@ -138,4 +138,7 @@ interface IArtCoinsLpLockerV2 is IConstantsBound {
     function setLauncher(address launcher, bool enabled) external;
     /// @notice Sends stray eth (`token == address(0)`) or erc20. The locker holds nothing between calls.
     function rescue(address token, address to, uint256 amount) external;
+
+    /// @notice Stack version tag (Constants.STACK_VERSION).
+    function STACK_VERSION() external view returns (uint16);
 }

@@ -48,4 +48,7 @@ interface IBurnRouterV2 {
     function setMinProcessThreshold(uint96 threshold) external;
     /// @notice Sends tokens other than the coin.
     function rescue(address token, address to, uint256 amount) external;
+
+    /// @notice Stack version tag (Constants.STACK_VERSION).
+    function STACK_VERSION() external view returns (uint16);
 }

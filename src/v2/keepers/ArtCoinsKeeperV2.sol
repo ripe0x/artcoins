@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import {Constants} from "../../Constants.sol";
 import {IArtCoinsFactoryV2} from "../interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsKeeperV2} from "../interfaces/IArtCoinsKeeperV2.sol";
 import {IArtCoinsLpLockerV2} from "../interfaces/IArtCoinsLpLockerV2.sol";
@@ -23,6 +24,8 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 ///         Recipients are the locker's frozen reward list (bounded by Constants.MAX_REWARD_PARTICIPANTS).
 contract ArtCoinsKeeperV2 is IArtCoinsKeeperV2, ReentrancyGuardTransient {
     address public immutable factory;
+    /// @inheritdoc IArtCoinsKeeperV2
+    uint16 public constant STACK_VERSION = Constants.STACK_VERSION;
 
     // step ids used by `InsufficientGas`
     uint8 internal constant STEP_COLLECT = 1;

@@ -341,6 +341,9 @@ contract FeeAutoSwapperV2 is
             || interfaceId == type(IConstantsBound).interfaceId;
     }
 
+    /// @inheritdoc IFeeAutoSwapperV2
+    uint16 public constant STACK_VERSION = Constants.STACK_VERSION;
+
     /// @inheritdoc IConstantsBound
     function constantsHash() external pure returns (bytes32) {
         return Constants.hash();

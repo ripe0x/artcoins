@@ -118,6 +118,9 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         if (msg.sender != address(poolManager)) revert UnexpectedEth();
     }
 
+    /// @inheritdoc IArtCoinsLpLockerV2
+    uint16 public constant STACK_VERSION = Constants.STACK_VERSION;
+
     /// @inheritdoc IConstantsBound
     function constantsHash() external pure returns (bytes32) {
         return Constants.hash();

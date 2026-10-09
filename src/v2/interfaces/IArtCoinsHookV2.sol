@@ -160,4 +160,7 @@ interface IArtCoinsHookV2 is IConstantsBound {
     ///         or locker fee escrow, the pool's mev module, the pool's locker,
     ///         the factory, its token deployer or the PositionManager.
     function setBountyRecipient(PoolId poolId, address payable newRecipient) external;
+
+    /// @notice Stack version tag (Constants.STACK_VERSION).
+    function STACK_VERSION() external view returns (uint16);
 }

@@ -33,4 +33,7 @@ interface IProtocolFeeControllerV2 {
     /// @dev treasuryBps >= Constants.PFC_MIN_TREASURY_BPS, burn share >= Constants.PFC_MIN_BURN_BPS.
     function setSplit(uint16 treasuryBps_) external;
     function rescue(address token, address to, uint256 amount) external;
+
+    /// @notice Stack version tag (Constants.STACK_VERSION).
+    function STACK_VERSION() external view returns (uint16);
 }

@@ -38,6 +38,9 @@ contract ArtCoinsFeeEscrowV2 is IArtCoinsFeeEscrowV2, Ownable2Step, ReentrancyGu
         _;
     }
 
+    /// @inheritdoc IArtCoinsFeeEscrowV2
+    uint16 public constant STACK_VERSION = Constants.STACK_VERSION;
+
     /// @inheritdoc IConstantsBound
     function constantsHash() external pure returns (bytes32) {
         return Constants.hash();
