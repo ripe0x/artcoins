@@ -1,0 +1,58 @@
+{
+  "example": false,
+  "about": "anvil fork rehearsal config, restricted coin with the example on-chain renderer",
+  "protocolBps": 2000,
+  "expectedToken": "0x0000000000000000000000000000000000000000",
+  "token": {
+    "tokenAdmin": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+    "name": "Anvil Test Coin",
+    "symbol": "ANVT",
+    "salt": "0x0000000000000000000000000000000000000000000000000000000000000002",
+    "image": "ipfs://bafkreianviltest",
+    "description": "{\"description\":\"anvil rehearsal coin\"}",
+    "totalSupply": 0,
+    "renderer": "0x738b5369ECf479732c91295507E2c61881279732"
+  },
+  "pool": {
+    "tickIfToken0IsCoin": -200000,
+    "tickSpacing": 200
+  },
+  "fee": {
+    "lpFeePips": 5000,
+    "baselineSkimBps": 600,
+    "bountyBps": 8333,
+    "maxReferralBpsOfVolume": 25,
+    "bountyRecipient": "0x000000000000000000000000000000000000bEEF"
+  },
+  "locker": {
+    "rewardRecipients": [
+      "0x000000000000000000000000000000000000bEEF"
+    ],
+    "rewardBps": [
+      8000
+    ],
+    "tickLower": [
+      -200000,
+      -160000,
+      -120000
+    ],
+    "tickUpper": [
+      -120000,
+      -100000,
+      -60000
+    ],
+    "positionBps": [
+      5000,
+      3000,
+      2000
+    ]
+  },
+  "mev": {
+    "startingSkimBps": 6869,
+    "windowSeconds": 4140
+  },
+  "restriction": {
+    "restricted": true,
+    "allowed": []
+  }
+}

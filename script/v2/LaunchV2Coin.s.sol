@@ -151,7 +151,6 @@ library LaunchV2Lib {
     {
         uint256 snap = vm.snapshotState();
         vm.deal(owner, owner.balance + value);
-        vm.deal(address(this), address(this).balance + value);
         vm.prank(owner);
         token = IArtCoinsFactoryV2(t.factory).deployTokenAsOwner{value: value}(l.cfg, l.protocolBps);
         poolId = checkLaunched(t, l, token);
@@ -250,7 +249,7 @@ library LaunchV2Lib {
 ///   in foundry.toml fs_permissions; LAUNCH_CONFIG_JSON or `run(string)` work without it:
 ///     forge script script/v2/LaunchV2Coin.s.sol --sig "run(string)" "$(cat my-coin.json)" \
 ///       --rpc-url $MAINNET_RPC_URL --sender $OWNER                      (dry run)
-///     ... --ledger --broadcast                                            (live)
+///     ... --account ripe0x --broadcast --slow                                     (live)
 ///   a config with `"example": true` is refused for broadcast unless ALLOW_EXAMPLE=true.
 contract LaunchV2Coin is Script {
     function run() external {
