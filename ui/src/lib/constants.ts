@@ -1,21 +1,19 @@
 // Mirror of src/Constants.sol (the values the ui needs). The v2 contracts enforce these; the ui uses
 // them to validate before sending. test/constants.test.ts pins the numbers, update both together.
 export const BPS = 10_000;
-/** skim and referral cap denominator: 100_000 = 100% of volume */
-export const SKIM_DENOMINATOR = 100_000;
 /** uniswap v4 lp fee denominator: 1_000_000 = 100%, a pip is 1e-6 */
 export const FEE_DENOMINATOR = 1_000_000;
 
 export const MAX_LP_FEE = 100_000; // 10%, in pips
-export const MAX_SKIM_BPS = 90_000; // anti sniper skim ceiling, SKIM_DENOMINATOR units
-export const MAX_BASELINE_SKIM_BPS = 10_000; // 10% of volume
-export const MAX_REFERRAL_CAP_OF_VOLUME = 1_000; // 1% of volume
+export const MAX_SKIM_BPS = 9_000; // anti sniper skim ceiling, 90% of volume in bps
+export const MAX_BASELINE_SKIM_BPS = 1_000; // 10% of volume
+export const MAX_REFERRAL_CAP_OF_VOLUME = 100; // 1% of volume
 export const MAX_BOUNTY_BPS = 9_999;
 
 export const MIN_MEV_WINDOW = 60; // seconds
 export const DEFAULT_MEV_WINDOW = 69 * 60;
 export const MAX_MEV_WINDOW = 180 * 60;
-export const DEFAULT_START_SKIM_BPS = 68_690;
+export const DEFAULT_START_SKIM_BPS = 6_869;
 
 export const MAX_REWARD_PARTICIPANTS = 7; // project slots plus the protocol slot
 export const MAX_LP_POSITIONS = 14;
@@ -36,8 +34,7 @@ export const MAX_ALLOWED = 64;
 export const MAX_NAME_BYTES = 64;
 export const MAX_SYMBOL_BYTES = 16;
 export const MAX_IMAGE_BYTES = 2_048;
-export const MAX_METADATA_BYTES = 4_096;
-export const MAX_CONTEXT_BYTES = 4_096;
+export const MAX_DESCRIPTION_BYTES = 4_096;
 
 export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
 

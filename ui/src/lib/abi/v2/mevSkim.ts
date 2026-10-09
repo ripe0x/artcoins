@@ -124,6 +124,12 @@ export const mevSkimV2Abi = [
         "internalType": "uint24"
       },
       {
+        "name": "endSkimBps",
+        "type": "uint24",
+        "indexed": false,
+        "internalType": "uint24"
+      },
+      {
         "name": "windowSeconds",
         "type": "uint32",
         "indexed": false,
@@ -166,6 +172,27 @@ export const mevSkimV2Abi = [
   },
   {
     "type": "error",
+    "name": "OutOfBounds",
+    "inputs": [
+      {
+        "name": "value",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "min",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "max",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "StartingSkimTooHigh",
     "inputs": [
       {
@@ -177,27 +204,6 @@ export const mevSkimV2Abi = [
         "name": "max",
         "type": "uint24",
         "internalType": "uint24"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "WindowOutOfBounds",
-    "inputs": [
-      {
-        "name": "windowSeconds",
-        "type": "uint32",
-        "internalType": "uint32"
-      },
-      {
-        "name": "min",
-        "type": "uint32",
-        "internalType": "uint32"
-      },
-      {
-        "name": "max",
-        "type": "uint32",
-        "internalType": "uint32"
       }
     ]
   }

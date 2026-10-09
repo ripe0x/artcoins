@@ -1,9 +1,9 @@
 // Mirror of script/LaunchDefaults.sol (the 4 position presets and the 12 position taper) plus the
 // live coin 111 fee numbers. Position offsets are from the starting tick, token0 frame, spacing 200.
 import {
+  BPS,
   DEFAULT_MEV_WINDOW,
   DEFAULT_START_SKIM_BPS,
-  SKIM_DENOMINATOR,
 } from './constants';
 import type { LpPosition, PositionPreset } from './types';
 
@@ -72,14 +72,14 @@ export function presetFitsSpacing(startingTick: number, tickSpacing: number): bo
 }
 
 /**
- * Fee defaults, copied from the live coin 111 pool (skimConfig: lpFee 5000, baseline 6000,
- * bounty 8333, max referral 250) and Constants.DEFAULT_START_SKIM_BPS / DEFAULT_MEV_WINDOW.
+ * Fee defaults, copied from the live coin 111 pool (skimConfig: lpFeePips 5000, baseline 600 bps,
+ * bounty 8333, max referral 25 bps) and Constants.DEFAULT_START_SKIM_BPS / DEFAULT_MEV_WINDOW.
  */
 export const FEE_DEFAULTS = {
   lpFeePercent: 0.5, // 5000 pips
-  baselineSkimPercent: 6, // 6000 of 100_000
+  baselineSkimPercent: 6, // 600 bps
   bountyPercent: 83.33, // 8333 bps
-  referralCapPercent: 0.25, // 250 of 100_000
-  mevStartPercent: (DEFAULT_START_SKIM_BPS * 100) / SKIM_DENOMINATOR, // 68.69
+  referralCapPercent: 0.25, // 25 bps
+  mevStartPercent: (DEFAULT_START_SKIM_BPS * 100) / BPS, // 68.69
   mevWindowMin: DEFAULT_MEV_WINDOW / 60, // 69
 } as const;

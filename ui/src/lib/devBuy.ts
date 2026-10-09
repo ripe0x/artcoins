@@ -1,7 +1,7 @@
 import { parseEther } from 'viem';
-import { BPS, DEFAULT_TOKEN_SUPPLY, FEE_DENOMINATOR, SKIM_DENOMINATOR } from './constants';
+import { BPS, DEFAULT_TOKEN_SUPPLY, FEE_DENOMINATOR } from './constants';
 import { quoteBuyFromFreshPool } from './curve';
-import { percentToBps, percentToPips, percentToSkim, supplyToWei } from './encodeV2';
+import { percentToBps, percentToPips, supplyToWei } from './encodeV2';
 import type { LaunchForm } from './types';
 
 export interface DevBuyEstimate {
@@ -32,8 +32,8 @@ export function estimateDevBuy(form: LaunchForm): DevBuyEstimate | null {
     const extSupply =
       (BigInt(bpsOf(form.extensions.vault)) * supply) / BigInt(BPS) + (BigInt(bpsOf(form.extensions.airdrop)) * supply) / BigInt(BPS);
     const poolSupply = supply - extSupply;
-    const feeFrac = BigInt(percentToPips(form.pool.lpFeePercent)) * BigInt(SKIM_DENOMINATOR) + BigInt(percentToSkim(form.pool.baselineSkimPercent)) * BigInt(FEE_DENOMINATOR);
-    const net = (eth * (BigInt(FEE_DENOMINATOR) * BigInt(SKIM_DENOMINATOR) - feeFrac)) / (BigInt(FEE_DENOMINATOR) * BigInt(SKIM_DENOMINATOR));
+    const feeFrac = BigInt(percentToPips(form.pool.lpFeePercent)) * BigInt(BPS) + BigInt(percentToBps(form.pool.baselineSkimPercent)) * BigInt(FEE_DENOMINATOR);
+    const net = (eth * (BigInt(FEE_DENOMINATOR) * BigInt(BPS) - feeFrac)) / (BigInt(FEE_DENOMINATOR) * BigInt(BPS));
     const positions = form.rewards.positions.map((p) => ({
       tickLower: p.tickLower,
       tickUpper: p.tickUpper,

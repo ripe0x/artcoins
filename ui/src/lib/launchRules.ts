@@ -1,11 +1,10 @@
 // Launch rules that the v2 factory enforces (ArtCoinsFactoryV2._validateFee, _validateStrings,
 // _validateRestriction), as pure functions so the form, the validator and the tests share one formula.
-// Units: skim and referral cap are SKIM_DENOMINATOR (1e5 = 100% of volume), bounty and shares are BPS (1e4).
+// Units: skims, referral cap, bounty and shares are BPS (1e4 = 100%).
 import {
   BPS,
-  MAX_CONTEXT_BYTES,
+  MAX_DESCRIPTION_BYTES,
   MAX_IMAGE_BYTES,
-  MAX_METADATA_BYTES,
   MAX_NAME_BYTES,
   MAX_REFERRAL_CAP_OF_VOLUME,
   MAX_SYMBOL_BYTES,
@@ -13,15 +12,14 @@ import {
 
 // ── string caps ─────────────────────────────────────────────────────────────────────────────────
 
-export type StringField = 'name' | 'symbol' | 'image' | 'metadata' | 'context';
+export type StringField = 'name' | 'symbol' | 'image' | 'description';
 
 /** the cap in utf8 bytes per token string field, same as ArtCoinsTokenV2.MAX_*_BYTES */
 export const STRING_CAPS: Record<StringField, number> = {
   name: MAX_NAME_BYTES,
   symbol: MAX_SYMBOL_BYTES,
   image: MAX_IMAGE_BYTES,
-  metadata: MAX_METADATA_BYTES,
-  context: MAX_CONTEXT_BYTES,
+  description: MAX_DESCRIPTION_BYTES,
 };
 
 const encoder = new TextEncoder();
@@ -59,11 +57,11 @@ export function referralCapWithinFloor(
 }
 
 /**
- * Largest `maxReferralBpsOfVolume` (skim units) the factory accepts for a fee config:
+ * Largest `maxReferralBpsOfVolume` (bps) the factory accepts for a fee config:
  * `baselineSkimBps * (BPS - bountyBps - minProtocolSkimShareBps) / BPS`, rounded down, and never above
  * `Constants.MAX_REFERRAL_CAP_OF_VOLUME`. Zero when the bounty already leaves no room above the floor.
  */
-export function maxReferralCapSkim(baselineSkimBps: number, bountyBps: number, minProtocolSkimShareBps: number): number {
+export function maxReferralCapBps(baselineSkimBps: number, bountyBps: number, minProtocolSkimShareBps: number): number {
   const room = BPS - bountyBps - minProtocolSkimShareBps;
   if (room <= 0 || baselineSkimBps <= 0) return 0;
   const byFloor = Math.floor((baselineSkimBps * room) / BPS);

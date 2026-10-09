@@ -61,12 +61,7 @@ export const factoryV2Abi = [
                 "internalType": "string"
               },
               {
-                "name": "metadata",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "context",
+                "name": "description",
                 "type": "string",
                 "internalType": "string"
               },
@@ -93,7 +88,7 @@ export const factoryV2Abi = [
                 "internalType": "address"
               },
               {
-                "name": "tickIfToken0IsArtCoin",
+                "name": "tickIfToken0IsCoin",
                 "type": "int24",
                 "internalType": "int24"
               },
@@ -120,7 +115,7 @@ export const factoryV2Abi = [
             "internalType": "struct IArtCoinsFactoryV2.FeeConfigV2",
             "components": [
               {
-                "name": "lpFee",
+                "name": "lpFeePips",
                 "type": "uint24",
                 "internalType": "uint24"
               },
@@ -353,12 +348,7 @@ export const factoryV2Abi = [
                 "internalType": "string"
               },
               {
-                "name": "metadata",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "context",
+                "name": "description",
                 "type": "string",
                 "internalType": "string"
               },
@@ -385,7 +375,7 @@ export const factoryV2Abi = [
                 "internalType": "address"
               },
               {
-                "name": "tickIfToken0IsArtCoin",
+                "name": "tickIfToken0IsCoin",
                 "type": "int24",
                 "internalType": "int24"
               },
@@ -412,7 +402,7 @@ export const factoryV2Abi = [
             "internalType": "struct IArtCoinsFactoryV2.FeeConfigV2",
             "components": [
               {
-                "name": "lpFee",
+                "name": "lpFeePips",
                 "type": "uint24",
                 "internalType": "uint24"
               },
@@ -593,12 +583,7 @@ export const factoryV2Abi = [
                 "internalType": "string"
               },
               {
-                "name": "metadata",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "context",
+                "name": "description",
                 "type": "string",
                 "internalType": "string"
               },
@@ -625,7 +610,7 @@ export const factoryV2Abi = [
                 "internalType": "address"
               },
               {
-                "name": "tickIfToken0IsArtCoin",
+                "name": "tickIfToken0IsCoin",
                 "type": "int24",
                 "internalType": "int24"
               },
@@ -652,7 +637,7 @@ export const factoryV2Abi = [
             "internalType": "struct IArtCoinsFactoryV2.FeeConfigV2",
             "components": [
               {
-                "name": "lpFee",
+                "name": "lpFeePips",
                 "type": "uint24",
                 "internalType": "uint24"
               },
@@ -835,9 +820,19 @@ export const factoryV2Abi = [
             "internalType": "address"
           },
           {
+            "name": "escrow",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
             "name": "poolId",
             "type": "bytes32",
             "internalType": "PoolId"
+          },
+          {
+            "name": "configHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "version",
@@ -848,6 +843,11 @@ export const factoryV2Abi = [
             "name": "launchedAt",
             "type": "uint40",
             "internalType": "uint40"
+          },
+          {
+            "name": "restricted",
+            "type": "bool",
+            "internalType": "bool"
           },
           {
             "name": "extensions",
@@ -863,25 +863,6 @@ export const factoryV2Abi = [
     "type": "function",
     "name": "deprecated",
     "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "enabledEscrows",
-    "inputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
     "outputs": [
       {
         "name": "",
@@ -969,7 +950,7 @@ export const factoryV2Abi = [
   },
   {
     "type": "function",
-    "name": "isArtCoin",
+    "name": "isCoin",
     "inputs": [
       {
         "name": "",
@@ -1083,12 +1064,7 @@ export const factoryV2Abi = [
                 "internalType": "string"
               },
               {
-                "name": "metadata",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "context",
+                "name": "description",
                 "type": "string",
                 "internalType": "string"
               },
@@ -1115,7 +1091,7 @@ export const factoryV2Abi = [
                 "internalType": "address"
               },
               {
-                "name": "tickIfToken0IsArtCoin",
+                "name": "tickIfToken0IsCoin",
                 "type": "int24",
                 "internalType": "int24"
               },
@@ -1142,7 +1118,7 @@ export const factoryV2Abi = [
             "internalType": "struct IArtCoinsFactoryV2.FeeConfigV2",
             "components": [
               {
-                "name": "lpFee",
+                "name": "lpFeePips",
                 "type": "uint24",
                 "internalType": "uint24"
               },
@@ -1298,19 +1274,6 @@ export const factoryV2Abi = [
   },
   {
     "type": "function",
-    "name": "referralPayout",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address payable"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "renounceOwnership",
     "inputs": [],
     "outputs": [],
@@ -1384,24 +1347,6 @@ export const factoryV2Abi = [
     "inputs": [
       {
         "name": "deprecated_",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setEscrow",
-    "inputs": [
-      {
-        "name": "escrow",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "enabled",
         "type": "bool",
         "internalType": "bool"
       }
@@ -1500,19 +1445,6 @@ export const factoryV2Abi = [
     "inputs": [
       {
         "name": "recipient",
-        "type": "address",
-        "internalType": "address payable"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setReferralPayout",
-    "inputs": [
-      {
-        "name": "payout",
         "type": "address",
         "internalType": "address payable"
       }
@@ -1661,25 +1593,6 @@ export const factoryV2Abi = [
     "inputs": [
       {
         "name": "deprecated",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "EscrowSet",
-    "inputs": [
-      {
-        "name": "escrow",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "enabled",
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
@@ -1872,25 +1785,6 @@ export const factoryV2Abi = [
   },
   {
     "type": "event",
-    "name": "ReferralPayoutSet",
-    "inputs": [
-      {
-        "name": "oldPayout",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "newPayout",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "Rescued",
     "inputs": [
       {
@@ -1974,12 +1868,6 @@ export const factoryV2Abi = [
         "internalType": "address"
       },
       {
-        "name": "referralPayout",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      },
-      {
         "name": "protocolBps",
         "type": "uint16",
         "indexed": false,
@@ -2034,12 +1922,7 @@ export const factoryV2Abi = [
                 "internalType": "string"
               },
               {
-                "name": "metadata",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "context",
+                "name": "description",
                 "type": "string",
                 "internalType": "string"
               },
@@ -2066,7 +1949,7 @@ export const factoryV2Abi = [
                 "internalType": "address"
               },
               {
-                "name": "tickIfToken0IsArtCoin",
+                "name": "tickIfToken0IsCoin",
                 "type": "int24",
                 "internalType": "int24"
               },
@@ -2093,7 +1976,7 @@ export const factoryV2Abi = [
             "internalType": "struct IArtCoinsFactoryV2.FeeConfigV2",
             "components": [
               {
-                "name": "lpFee",
+                "name": "lpFeePips",
                 "type": "uint24",
                 "internalType": "uint24"
               },
@@ -2280,6 +2163,11 @@ export const factoryV2Abi = [
   },
   {
     "type": "error",
+    "name": "CanonicalHookMismatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ConstantsMismatch",
     "inputs": [
       {
@@ -2302,11 +2190,6 @@ export const factoryV2Abi = [
   {
     "type": "error",
     "name": "Deprecated",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "EthTransferFailed",
     "inputs": []
   },
   {
@@ -2345,6 +2228,11 @@ export const factoryV2Abi = [
         "internalType": "address"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidExtension",
+    "inputs": []
   },
   {
     "type": "error",
@@ -2422,6 +2310,11 @@ export const factoryV2Abi = [
         "internalType": "uint256"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "NativeTransferFailed",
+    "inputs": []
   },
   {
     "type": "error",

@@ -106,7 +106,7 @@ function useAllowlist(tokenAddress: Address) {
 }
 
 /**
- * v2 coins (the v2 factory says `isArtCoin`) claim from ArtCoinsAirdropV2 with a tranche index.
+ * v2 coins (the v2 factory says `isCoin`) claim from ArtCoinsAirdropV2 with a tranche index.
  * Every other token, and every chain without a configured v2 stack, keeps the v1 claim path.
  */
 function ClaimRouter({ tokenAddress, chainId, addresses }: { tokenAddress: Address; chainId: number; addresses: ContractAddresses }) {
@@ -114,7 +114,7 @@ function ClaimRouter({ tokenAddress, chainId, addresses }: { tokenAddress: Addre
   const { data, isLoading } = useReadContracts({
     contracts: v2
       ? [
-          { address: v2.factory, abi: factoryV2Abi, functionName: 'isArtCoin', args: [tokenAddress] } as const,
+          { address: v2.factory, abi: factoryV2Abi, functionName: 'isCoin', args: [tokenAddress] } as const,
           { address: v2.factory, abi: factoryV2Abi, functionName: 'deploymentInfo', args: [tokenAddress] } as const,
         ]
       : [],

@@ -179,12 +179,7 @@ export const airdropV2Abi = [
                 "internalType": "string"
               },
               {
-                "name": "metadata",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "context",
+                "name": "description",
                 "type": "string",
                 "internalType": "string"
               },
@@ -211,7 +206,7 @@ export const airdropV2Abi = [
                 "internalType": "address"
               },
               {
-                "name": "tickIfToken0IsArtCoin",
+                "name": "tickIfToken0IsCoin",
                 "type": "int24",
                 "internalType": "int24"
               },
@@ -238,7 +233,7 @@ export const airdropV2Abi = [
             "internalType": "struct IArtCoinsFactoryV2.FeeConfigV2",
             "components": [
               {
-                "name": "lpFee",
+                "name": "lpFeePips",
                 "type": "uint24",
                 "internalType": "uint24"
               },
@@ -751,6 +746,11 @@ export const airdropV2Abi = [
   {
     "type": "error",
     "name": "ZeroClaim",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroExtensionSupply",
     "inputs": []
   },
   {

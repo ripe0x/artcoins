@@ -14,7 +14,6 @@ async function checkReads(page: Page) {
   await expect(row(page, 'Admin')).toContainText(/0xA96a.*6258/i);
   await expect(row(page, 'Factory')).toContainText(/0x4959.*4e0e/i);
   await expect(row(page, 'Renderer')).toContainText(/0x7604.*eEc7/i);
-  await expect(row(page, 'Creator flag')).toContainText('not set');
   // pool card: native pair, tick spacing from the locker pool key, fees from the hook skimConfig
   await expect(row(page, 'Pair')).toContainText('native ETH');
   await expect(row(page, 'Tick spacing')).toContainText('200');

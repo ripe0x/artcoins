@@ -99,8 +99,8 @@ test('KR-01 LAYER: router due but the burn is skipped in simulation: one tx per 
 });
 
 test('KR-01 v2: rpc without eth_simulateV1 never converts: one tx per 6 h, not one per tick', async () => {
-  const v2 = { swappers: 1n, accruedPaired: 0n, accruedArtCoin: E(50_000), nextConvertibleBlock: 0n };
-  const sw = { address: SWAPPER, accruedArtCoin: E(50_000), maxStepIn: E(1000), sqrtPriceX96: COIN_PRICE, lpFeePpm: 0, skimPpm: 0 };
+  const v2 = { swappers: 1n, accruedPaired: 0n, accruedCoin: E(50_000), nextConvertibleBlock: 0n };
+  const sw = { address: SWAPPER, accruedCoin: E(50_000), maxStepIn: E(1000), sqrtPriceX96: COIN_PRICE, lpFeePpm: 0, skimPpm: 0 };
   const io = chain({ previews: { v2 }, sim: () => null, market: { v2: { swappers: [sw] } } });
   const ctx = ctxFor(io, { KEEPERS: 'v2' }, registryWithV2());
   await runFor(ctx, HOUR);
@@ -113,12 +113,12 @@ test('KR-01 v2: rpc without eth_simulateV1 never converts: one tx per 6 h, not o
 test('KR-01 v2: convert paced (ConvertTooEarly / maxStepIn) leaves the trigger set: 4 runs a day, not 90', async () => {
   // the swapper converts at most maxStepIn per call and once per minBlocksBetweenConverts: 1,000 coin per run here
   let accrued = E(100_000);
-  const sw = () => ({ address: SWAPPER, accruedArtCoin: accrued, maxStepIn: E(1000), sqrtPriceX96: COIN_PRICE, lpFeePpm: 0, skimPpm: 0 });
+  const sw = () => ({ address: SWAPPER, accruedCoin: accrued, maxStepIn: E(1000), sqrtPriceX96: COIN_PRICE, lpFeePpm: 0, skimPpm: 0 });
   const io = chain({
-    previews: { v2: { swappers: 1n, accruedPaired: 0n, accruedArtCoin: accrued, nextConvertibleBlock: 0n } },
+    previews: { v2: { swappers: 1n, accruedPaired: 0n, accruedCoin: accrued, nextConvertibleBlock: 0n } },
     sim: () => [{ swapper: SWAPPER, flushed: 0n, converted: E('0.1') }], // 1,000 coin at 1e-4 eth
     market: () => ({ swappers: [sw()] }),
-    onMined: (c) => { accrued -= E(1000); c.previews.v2 = { ...c.previews.v2, accruedArtCoin: accrued }; },
+    onMined: (c) => { accrued -= E(1000); c.previews.v2 = { ...c.previews.v2, accruedCoin: accrued }; },
   });
   const ctx = ctxFor(io, { KEEPERS: 'v2' }, registryWithV2());
   await runFor(ctx, 24 * HOUR);
@@ -129,7 +129,7 @@ test('KR-01 v2: convert paced (ConvertTooEarly / maxStepIn) leaves the trigger s
 
 // KR-01: the backoff doubles from 1 h to 24 h, and the weekly timer (due on every tick here) never overrides it
 test('KR-01 backoff: no progress doubles the wait 1 h to 24 h; a due weekly timer does not override it; progress clears it', async () => {
-  const v2 = { swappers: 1n, accruedPaired: 0n, accruedArtCoin: E(50_000), nextConvertibleBlock: 0n };
+  const v2 = { swappers: 1n, accruedPaired: 0n, accruedCoin: E(50_000), nextConvertibleBlock: 0n };
   const io = chain({ previews: { v2 }, sim: () => null, market: { v2: { swappers: [] } } });
   const ctx = ctxFor(io, { KEEPERS: 'v2', KEEPER_V2_MIN_RUN_INTERVAL_SECONDS: '0', CHECK_INTERVAL_SECONDS: '0', WEEKLY_SECONDS: '60' }, registryWithV2());
   await runFor(ctx, 4 * 24 * HOUR);
@@ -140,7 +140,7 @@ test('KR-01 backoff: no progress doubles the wait 1 h to 24 h; a due weekly time
   const n = io.sends.length;
   ctx.io.t = ctx.state.keepers['v2:CRED'].backoffUntil;
   const settle = io.mine.bind(io);
-  io.mine = (h) => { io.previews.v2 = { ...v2, accruedArtCoin: E(100) }; settle(h); };
+  io.mine = (h) => { io.previews.v2 = { ...v2, accruedCoin: E(100) }; settle(h); };
   await tick(ctx);
   assert.equal(io.sends.length, n + 1);
   assert.equal(ctx.state.keepers['v2:CRED'].backoffUntil, null);
@@ -175,7 +175,7 @@ test('KR-03 v2: a 1 eth and a 0.001 eth swapper: no convert, the small one is na
   const A = '0x' + 'a'.repeat(40);
   const B = '0x' + 'b'.repeat(40);
   const ev = [{ swapper: A, flushed: 0n, converted: E(1) }, { swapper: B, flushed: 0n, converted: E('0.001') }];
-  const sw = (address, coin) => ({ address, accruedArtCoin: coin, maxStepIn: E(1e9), sqrtPriceX96: COIN_PRICE, lpFeePpm: 0, skimPpm: 0 });
+  const sw = (address, coin) => ({ address, accruedCoin: coin, maxStepIn: E(1e9), sqrtPriceX96: COIN_PRICE, lpFeePpm: 0, skimPpm: 0 });
   const q = argsV2(COIN_V2, ev, 100, { swappers: [sw(A, E(10_000)), sw(B, E(10))] });
   assert.equal(q.status, 'floor_above_quote');
   assert.equal(q.blockedBy, B);

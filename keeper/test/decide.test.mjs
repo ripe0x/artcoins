@@ -69,11 +69,11 @@ test('LAYER: weekly', () => {
 });
 
 test('v2: paired and coin thresholds and weekly', () => {
-  const t = { accruedPaired: E('0.02'), accruedArtCoin: E(10000) };
-  const p = (o) => ({ swappers: 1n, accruedPaired: 0n, accruedArtCoin: 0n, nextConvertibleBlock: 0n, ...o });
+  const t = { accruedPaired: E('0.02'), accruedCoin: E(10000) };
+  const p = (o) => ({ swappers: 1n, accruedPaired: 0n, accruedCoin: 0n, nextConvertibleBlock: 0n, ...o });
   assert.deepEqual(decideV2(p({}), t, fresh).reasons, []);
   assert.deepEqual(decideV2(p({ accruedPaired: E('0.021') }), t, fresh).reasons, ['accrued_paired']);
-  assert.deepEqual(decideV2(p({ accruedArtCoin: E(10001) }), t, fresh).reasons, ['accrued_coin']);
+  assert.deepEqual(decideV2(p({ accruedCoin: E(10001) }), t, fresh).reasons, ['accrued_coin']);
   assert.deepEqual(decideV2(p({}), t, { lastRunAt: null, now: 1, weeklySeconds: WEEK }).reasons, ['weekly']);
 });
 
@@ -190,7 +190,7 @@ test('KR-03 v2: per swapper floors, convert only when one minOut fits every swap
   const tok = '0x4444444444444444444444444444444444444444';
   const A = '0x' + 'a'.repeat(40);
   const B = '0x' + 'b'.repeat(40);
-  const sw = (address, accruedArtCoin, maxStepIn = E(1_000_000)) => ({ address, accruedArtCoin, maxStepIn, sqrtPriceX96: Q96, lpFeePpm: 0, skimPpm: 0 });
+  const sw = (address, accruedCoin, maxStepIn = E(1_000_000)) => ({ address, accruedCoin, maxStepIn, sqrtPriceX96: Q96, lpFeePpm: 0, skimPpm: 0 });
   // price 1: 1 coin wei buys 1 eth wei
   const same = argsV2(tok, [{ swapper: A, converted: E(1) }, { swapper: B, converted: E('0.999') }], 100, { swappers: [sw(A, E(1)), sw(B, E(1))] });
   assert.equal(same.status, 'ok');

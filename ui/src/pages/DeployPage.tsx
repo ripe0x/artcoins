@@ -12,10 +12,10 @@ import { CURRENT } from '../lib/deployments.generated';
 import { getV2Stack } from '../lib/v2';
 import { useFactoryStateV1, useFactoryStateV2, type FactoryState } from '../lib/factoryState';
 import { factoryV2Abi } from '../lib/abi/v2/factory';
-import { maxReferralCapSkim } from '../lib/launchRules';
+import { maxReferralCapBps } from '../lib/launchRules';
 import { useAddressesOrNull } from '../lib/useChain';
 import { defaultLaunchForm } from '../lib/launchForm';
-import { generateSalt, maxBountyBps, percentToBps, percentToSkim, projectSideBps, skimToPercent, validateLaunch, type LaunchContext } from '../lib/encodeV2';
+import { generateSalt, maxBountyBps, percentToBps, projectSideBps, bpsToPercent, validateLaunch, type LaunchContext } from '../lib/encodeV2';
 import { ZERO_ADDRESS } from '../lib/constants';
 
 function StepCard({
@@ -115,7 +115,7 @@ export default function DeployPage() {
     setLimitsFor(limitsKey);
     const p = form.pool;
     const bounty = Math.min(p.bountyPercent, maxBountyBps(state.minProtocolSkimShareBps) / 100);
-    const capMaxPct = maxReferralCapSkim(percentToSkim(p.baselineSkimPercent), percentToBps(bounty), state.minProtocolSkimShareBps) / 1_000;
+    const capMaxPct = maxReferralCapBps(percentToBps(p.baselineSkimPercent), percentToBps(bounty), state.minProtocolSkimShareBps) / 100;
     const next = {
       ...p,
       bountyPercent: bounty,
@@ -158,7 +158,7 @@ export default function DeployPage() {
 
   // the most a referrer may be paid for the fees on the form (D52), shown next to the factory numbers
   const refCapMaxPercent =
-    maxReferralCapSkim(percentToSkim(form.pool.baselineSkimPercent), percentToBps(form.pool.bountyPercent), state.minProtocolSkimShareBps) / 1_000;
+    maxReferralCapBps(percentToBps(form.pool.baselineSkimPercent), percentToBps(form.pool.bountyPercent), state.minProtocolSkimShareBps) / 100;
   const supplyWhole = Number(form.token.totalSupply) > 0 ? Number(form.token.totalSupply) : 1_000_000_000;
   const toggle = (step: number) => setOpenStep((prev) => (prev === step ? 0 : step));
   const patch = <K extends keyof LaunchForm>(k: K) => (v: LaunchForm[K]) => setForm((f) => ({ ...f, [k]: v }));
@@ -229,7 +229,7 @@ export default function DeployPage() {
       <StepCard step={7} title="Review and launch" subtitle="Everything you are about to freeze on chain" isOpen={openStep === 7} onToggle={() => toggle(7)}>
         <ReviewAndDeploy form={form} ctx={ctx} v2={v2} state={state} pageBlock={pageBlock} supplyWhole={supplyWhole} />
       </StepCard>
-      <p className="text-xs text-zinc-600 pt-2">Baseline skim {skimToPercent(Math.round(form.pool.baselineSkimPercent * 1000))}% of volume is paid on every swap on top of the lp fee. Everything on this page is frozen at launch.</p>
+      <p className="text-xs text-zinc-600 pt-2">Baseline skim {bpsToPercent(Math.round(form.pool.baselineSkimPercent * 1000))}% of volume is paid on every swap on top of the lp fee. Everything on this page is frozen at launch.</p>
     </main>
   );
 }

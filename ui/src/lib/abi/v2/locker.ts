@@ -3,6 +3,19 @@
 export const lockerV2Abi = [
   {
     "type": "function",
+    "name": "STACK_VERSION",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "collectRewards",
     "inputs": [
       {
@@ -137,7 +150,7 @@ export const lockerV2Abi = [
             "internalType": "address"
           },
           {
-            "name": "tickIfToken0IsArtCoin",
+            "name": "tickIfToken0IsCoin",
             "type": "int24",
             "internalType": "int24"
           },
@@ -201,9 +214,9 @@ export const lockerV2Abi = [
         "internalType": "address"
       },
       {
-        "name": "protocolSlotIndex",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "hasProtocolSlot",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "outputs": [
@@ -773,6 +786,12 @@ export const lockerV2Abi = [
         "type": "uint16[]",
         "indexed": false,
         "internalType": "uint16[]"
+      },
+      {
+        "name": "hasProtocolSlot",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
       }
     ],
     "anonymous": false
@@ -787,11 +806,6 @@ export const lockerV2Abi = [
         "internalType": "address"
       }
     ]
-  },
-  {
-    "type": "error",
-    "name": "EthTransferFailed",
-    "inputs": []
   },
   {
     "type": "error",
@@ -821,26 +835,35 @@ export const lockerV2Abi = [
   },
   {
     "type": "error",
-    "name": "KeeperRewardBpsOutOfBounds",
-    "inputs": [
-      {
-        "name": "supplied",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "max",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
+    "name": "MismatchedPositionArrays",
+    "inputs": []
   },
   {
     "type": "error",
-    "name": "KeeperRewardCapOutOfBounds",
+    "name": "MismatchedRewardArrays",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NativeTransferFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NoRewardRecipients",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotLauncher",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OutOfBounds",
     "inputs": [
       {
-        "name": "supplied",
+        "name": "value",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -855,26 +878,6 @@ export const lockerV2Abi = [
         "internalType": "uint256"
       }
     ]
-  },
-  {
-    "type": "error",
-    "name": "MismatchedPositionArrays",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "MismatchedRewardArrays",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NoRewardRecipients",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NotLauncher",
-    "inputs": []
   },
   {
     "type": "error",

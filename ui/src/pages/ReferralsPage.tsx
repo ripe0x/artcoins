@@ -22,6 +22,7 @@ import { referralPayoutAbi } from '../lib/abi';
 import { hookV1Abi } from '../lib/abi/v1/hook';
 import { hookV2Abi } from '../lib/abi/v2/hook';
 import { factoryV2Abi } from '../lib/abi/v2/factory';
+import { ZERO_ADDRESS } from '../lib/constants';
 import { shortAddr } from '../lib/format';
 import { normalizeSkim, skimPercent } from '../lib/poolReads';
 import { useToken } from '../lib/useTokens';
@@ -80,35 +81,22 @@ export default function ReferralsPage() {
     query: { enabled: !!poolId && !!event },
   });
   const skim = normalizeSkim(skimRaw);
-  const referralPayoutAddr = skim?.referralPayout;
   const maxReferralBps = skim?.maxReferralBpsOfVolume;
 
-  // v2: the factory injects its own payout, compare it. v1: the deployer supplied it, ask for a confirmation.
-  const { data: factoryPayout } = useReadContract({
+  // v2: referral fees the hook could not push sit in the pool's fee escrow, named by the factory's
+  // deploymentInfo. v1: the deployer supplied the ledger address in the hook's skim config.
+  const { data: info } = useReadContract({
     address: event?.factory,
     abi: factoryV2Abi,
-    functionName: 'referralPayout',
+    functionName: 'deploymentInfo',
+    args: event ? [event.token] : undefined,
     query: { enabled: event?.version === 2 },
   });
-  // D57: the v2 default payout is the fee escrow, claimed with claim(referrer, address(0)). the factory
-  // knows its escrows, so ask it instead of assuming the address
-  const { data: payoutIsEscrow } = useReadContract({
-    address: event?.factory,
-    abi: factoryV2Abi,
-    functionName: 'enabledEscrows',
-    args: referralPayoutAddr ? [referralPayoutAddr] : undefined,
-    query: { enabled: event?.version === 2 && !!referralPayoutAddr },
-  });
-  const stackEscrow = getV2Stack(chainId)?.escrow;
-  const isEscrow =
-    event?.version === 2 &&
-    !!referralPayoutAddr &&
-    (payoutIsEscrow === true || (!!stackEscrow && stackEscrow.toLowerCase() === referralPayoutAddr.toLowerCase()));
-  const payoutTrusted =
-    event?.version === 2 &&
-    !!factoryPayout &&
-    !!referralPayoutAddr &&
-    (factoryPayout as string).toLowerCase() === referralPayoutAddr.toLowerCase();
+  const poolEscrow = info?.escrow;
+  const v2Escrow = poolEscrow && poolEscrow !== ZERO_ADDRESS ? poolEscrow : getV2Stack(chainId)?.escrow;
+  const referralPayoutAddr = event?.version === 2 ? v2Escrow : skim?.referralPayout;
+  const isEscrow = event?.version === 2 && !!v2Escrow && v2Escrow !== ZERO_ADDRESS;
+  const payoutTrusted = isEscrow;
   const [payoutConfirmed, setPayoutConfirmed] = useState(false);
 
   // 3. the connected wallet's balance on that ledger
@@ -189,7 +177,7 @@ export default function ReferralsPage() {
           address. The hook routes up to{' '}
           {maxReferralBps !== undefined ? (
             <strong className="text-zinc-200">
-              {skimPercent(maxReferralBps).toFixed(2)}%
+              {skimPercent(maxReferralBps, skim?.denominator).toFixed(2)}%
             </strong>
           ) : (
             '...'
