@@ -1,7 +1,7 @@
 {
   "chainId": 1,
-  "generatedAt": "2026-10-07T03:36:32.138Z",
-  "repoCommit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+  "generatedAt": "2026-10-09T21:56:32.711Z",
+  "repoCommit": "fbe07c7650cf699493047c7436dba9a0da1da835",
   "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
   "stacks": {
     "legacy": {
@@ -24,6 +24,13 @@
       "factory": "0x49596c375c139E79bb937bcf826068a8F78D4e0e",
       "deployedAt": "2026-06-06",
       "notes": "factory 0x4959 matches repo head under profile ci (optimizer_runs 200) modulo linked libraries and metadata. owner only deploys, deploy fee 0.069 eth. coin: 111"
+    },
+    "v2": {
+      "label": "v2 stack (skim hook v2, constants bound)",
+      "status": "deployed",
+      "factory": "0x9b17bf6f97F5429368E11028BC637479b4667f7b",
+      "deployedAt": "2026-10-09",
+      "notes": "deployed by script/v2/DeployV2Stack.s.sol. factory ships deprecated (owner only) until the first coin ran a fee cycle"
     }
   },
   "contracts": [
@@ -38,7 +45,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/utils/ArtCoinsDeployer.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -49,7 +56,7 @@
       "status": "legacy",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "external library linked into legacy factory 0xd159 and open factory 0xf051 (CREATE2 via 0x4e59 deployer). broadcast: Deploy. blockscout unverified | bytecode: first diff @2 (chain 12530 vs artifact 16811, best default/none runs=20000; tried default/none,ci/none,ci/ipfs,default/ipfs)"
+      "notes": "external library linked into legacy factory 0xd159 and open factory 0xf051 (CREATE2 via 0x4e59 deployer). broadcast: Deploy. blockscout unverified | bytecode: first diff @2 (chain 12530 vs artifact 14513, best ci/none runs=200; tried ci/none); not tried (no artifacts): foundry-out-default,foundry-out-ci-ipfs,foundry-out-default-ipfs"
     },
     {
       "name": "ArtCoinsFeeLocker",
@@ -62,7 +69,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/legacy/ArtCoinsFeeLocker.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -73,7 +80,7 @@
       "status": "legacy",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "legacy fee locker (pre-escrow naming); depositor: legacy locker 0x75be. broadcast: Deploy. blockscout verified | bytecode: default/none runs=20000"
+      "notes": "legacy fee locker (pre-escrow naming); depositor: legacy locker 0x75be. broadcast: Deploy. blockscout verified | bytecode: artifact missing in foundry-out-default"
     },
     {
       "name": "ArtCoinsFactory",
@@ -86,7 +93,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/legacy/ArtCoinsFactory.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -97,7 +104,7 @@
       "status": "legacy",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "legacy factory, deployToken owner/admin only (deprecated=true), version 1. launched LAYER. broadcast: Deploy. blockscout verified | bytecode: first diff @1252 (chain 13804 vs artifact 13804, best default/none runs=20000; tried default/none,ci/none,ci/ipfs,default/ipfs)"
+      "notes": "legacy factory, deployToken owner/admin only (deprecated=true), version 1. launched LAYER. broadcast: Deploy. blockscout verified | bytecode: first diff @33 (chain 13804 vs artifact 11408, best ci/none runs=200; tried ci/none); not tried (no artifacts): foundry-out-default,foundry-out-ci-ipfs,foundry-out-default-ipfs"
     },
     {
       "name": "ArtCoinsPoolExtensionAllowlist",
@@ -110,7 +117,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/hooks/ArtCoinsPoolExtensionAllowlist.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -121,7 +128,7 @@
       "status": "legacy",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "pool extension allowlist for legacy hook 0xa5ea. broadcast: Deploy. blockscout unverified | bytecode: default/none runs=20000"
+      "notes": "pool extension allowlist for legacy hook 0xa5ea. broadcast: Deploy. blockscout unverified | bytecode: artifact missing in foundry-out-default"
     },
     {
       "name": "ArtCoinsHookStaticFeeV2",
@@ -134,7 +141,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/hooks/legacy/ArtCoinsHookStaticFeeV2.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -145,7 +152,7 @@
       "status": "legacy",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "LAYER pool hook (CREATE2 via 0x4e59). broadcast: Deploy. blockscout verified | bytecode: first diff @33 (chain 21202 vs artifact 21162, best default/none runs=20000; tried default/none,ci/none,ci/ipfs,default/ipfs)"
+      "notes": "LAYER pool hook (CREATE2 via 0x4e59). broadcast: Deploy. blockscout verified | bytecode: first diff @32 (chain 21202 vs artifact 17579, best ci/none runs=200; tried ci/none); not tried (no artifacts): foundry-out-default,foundry-out-ci-ipfs,foundry-out-default-ipfs"
     },
     {
       "name": "ArtCoinsLpLockerMultiple",
@@ -158,7 +165,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/lp-lockers/legacy/ArtCoinsLpLockerMultiple.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -169,7 +176,7 @@
       "status": "legacy",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "LAYER lp locker; reward recipients: owner, burn router 0x2edb, controller 0x5fdc. broadcast: Deploy. blockscout verified | bytecode: default/none runs=20000"
+      "notes": "LAYER lp locker; reward recipients: owner, burn router 0x2edb, controller 0x5fdc. broadcast: Deploy. blockscout verified | bytecode: artifact missing in foundry-out-default"
     },
     {
       "name": "ArtCoinsMevTimeDelay",
@@ -182,7 +189,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/mev-modules/ArtCoinsMevTimeDelay.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -193,7 +200,7 @@
       "status": "legacy",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "ctor arg 120 (seconds). broadcast: Deploy. blockscout unverified | bytecode: first diff @358 (chain 1208 vs artifact 1262, best default/none runs=20000; tried default/none,ci/none,ci/ipfs,default/ipfs)"
+      "notes": "ctor arg 120 (seconds). broadcast: Deploy. blockscout unverified | bytecode: first diff @33 (chain 1208 vs artifact 801, best ci/none runs=200; tried ci/none); not tried (no artifacts): foundry-out-default,foundry-out-ci-ipfs,foundry-out-default-ipfs"
     },
     {
       "name": "ArtCoinsMevDescendingFees",
@@ -206,7 +213,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/mev-modules/ArtCoinsMevDescendingFees.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -217,7 +224,7 @@
       "status": "legacy",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "broadcast: Deploy. blockscout unverified | bytecode: first diff @163 (chain 3677 vs artifact 3731, best default/none runs=20000; tried default/none,ci/none,ci/ipfs,default/ipfs)"
+      "notes": "broadcast: Deploy. blockscout unverified | bytecode: first diff @33 (chain 3677 vs artifact 2744, best ci/none runs=200; tried ci/none); not tried (no artifacts): foundry-out-default,foundry-out-ci-ipfs,foundry-out-default-ipfs"
     },
     {
       "name": "ArtCoinsMevLinearFees",
@@ -230,7 +237,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/mev-modules/ArtCoinsMevLinearFees.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -241,7 +248,7 @@
       "status": "legacy",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "broadcast: Deploy. blockscout unverified | bytecode: first diff @218 (chain 2831 vs artifact 2880, best default/none runs=20000; tried default/none,ci/none,ci/ipfs,default/ipfs)"
+      "notes": "broadcast: Deploy. blockscout unverified | bytecode: first diff @34 (chain 2831 vs artifact 2453, best ci/none runs=200; tried ci/none); not tried (no artifacts): foundry-out-default,foundry-out-ci-ipfs,foundry-out-default-ipfs"
     },
     {
       "name": "ArtCoinsMevSniperSteppedFees",
@@ -254,7 +261,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/mev-modules/ArtCoinsMevSniperSteppedFees.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -265,7 +272,7 @@
       "status": "legacy",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "LAYER mev module. broadcast: Deploy. blockscout verified | bytecode: first diff @194 (chain 3988 vs artifact 4037, best default/none runs=20000; tried default/none,ci/none,ci/ipfs,default/ipfs)"
+      "notes": "LAYER mev module. broadcast: Deploy. blockscout verified | bytecode: first diff @33 (chain 3988 vs artifact 3324, best ci/none runs=200; tried ci/none); not tried (no artifacts): foundry-out-default,foundry-out-ci-ipfs,foundry-out-default-ipfs"
     },
     {
       "name": "ArtCoinsVault",
@@ -278,7 +285,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/extensions/ArtCoinsVault.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -289,7 +296,7 @@
       "status": "legacy",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "enabled on legacy factory. broadcast: Deploy. blockscout unverified | bytecode: default/none runs=20000"
+      "notes": "enabled on legacy factory. broadcast: Deploy. blockscout unverified | bytecode: artifact missing in foundry-out-default"
     },
     {
       "name": "ArtCoinsAirdropV2",
@@ -302,7 +309,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/extensions/ArtCoinsAirdrop.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -313,7 +320,7 @@
       "status": "legacy",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "on-chain name ArtCoinsAirdropV2, source renamed ArtCoinsAirdrop; LAYER airdrop extension (100M). broadcast: Deploy. blockscout verified | bytecode: default/none runs=20000"
+      "notes": "on-chain name ArtCoinsAirdropV2, source renamed ArtCoinsAirdrop; LAYER airdrop extension (100M). broadcast: Deploy. blockscout verified | bytecode: artifact missing in foundry-out-default"
     },
     {
       "name": "BurnExtension",
@@ -326,7 +333,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/extensions/BurnExtension.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -337,7 +344,7 @@
       "status": "legacy",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "LAYER burn extension (260.2M). broadcast: Deploy. blockscout unverified | bytecode: default/none runs=20000"
+      "notes": "LAYER burn extension (260.2M). broadcast: Deploy. blockscout unverified | bytecode: artifact missing in foundry-out-default"
     },
     {
       "name": "ArtCoinsUniv4EthDevBuy",
@@ -350,7 +357,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/extensions/legacy/ArtCoinsUniv4EthDevBuy.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -361,7 +368,7 @@
       "status": "legacy",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "enabled on legacy factory. broadcast: Deploy. blockscout unverified | bytecode: first diff @36 (chain 6904 vs artifact 6934, best default/none runs=20000; tried default/none,ci/none,ci/ipfs,default/ipfs)"
+      "notes": "enabled on legacy factory. broadcast: Deploy. blockscout unverified | bytecode: first diff @35 (chain 6904 vs artifact 4986, best ci/none runs=200; tried ci/none); not tried (no artifacts): foundry-out-default,foundry-out-ci-ipfs,foundry-out-default-ipfs"
     },
     {
       "name": "DefaultMetadataRenderer",
@@ -374,7 +381,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/renderer/DefaultMetadataRenderer.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -385,7 +392,7 @@
       "status": "legacy",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "default json renderer, unused by LAYER. broadcast: Deploy. blockscout unverified | bytecode: first diff @180 (chain 2429 vs artifact 1952, best default/none runs=20000; tried default/none,ci/none,ci/ipfs,default/ipfs)"
+      "notes": "default json renderer, unused by LAYER. broadcast: Deploy. blockscout unverified | bytecode: first diff @39 (chain 2429 vs artifact 1369, best ci/none runs=200; tried ci/none); not tried (no artifacts): foundry-out-default,foundry-out-ci-ipfs,foundry-out-default-ipfs"
     },
     {
       "name": "LiquidityLayerCounterPoolExtension",
@@ -398,7 +405,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/extensions/LiquidityLayerCounterPoolExtension.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -409,7 +416,7 @@
       "status": "legacy",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "pool extension, enabled on the legacy allowlist. broadcast: Deploy. blockscout unverified | bytecode: default/none runs=20000"
+      "notes": "pool extension, enabled on the legacy allowlist. broadcast: Deploy. blockscout unverified | bytecode: artifact missing in foundry-out-default"
     },
     {
       "name": "ScriptyContentChunk",
@@ -566,7 +573,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/extensions/LiquidityLayerOnchainRenderer.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -577,7 +584,7 @@
       "status": "superseded",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "first LAYER renderer, replaced by 0x0572 (MigrateLayerRenderer). broadcast: Deploy. blockscout unverified | bytecode: first diff @945 (chain 14193 vs artifact 13930, best default/none runs=20000; tried default/none,ci/none,ci/ipfs,default/ipfs)"
+      "notes": "first LAYER renderer, replaced by 0x0572 (MigrateLayerRenderer). broadcast: Deploy. blockscout unverified | bytecode: first diff @32 (chain 14193 vs artifact 11774, best ci/none runs=200; tried ci/none); not tried (no artifacts): foundry-out-default,foundry-out-ci-ipfs,foundry-out-default-ipfs"
     },
     {
       "name": "ScriptyContentChunk",
@@ -614,7 +621,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/protocol-fee/legacy/BurnRouter.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -625,7 +632,7 @@
       "status": "legacy",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "LAYER burn router; locker reward recipient. broadcast: DeployProtocolFeeStack. blockscout verified | bytecode: default/none runs=20000"
+      "notes": "LAYER burn router; locker reward recipient. broadcast: DeployProtocolFeeStack. blockscout verified | bytecode: artifact missing in foundry-out-default"
     },
     {
       "name": "ProtocolFeeController",
@@ -638,7 +645,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/protocol-fee/legacy/ProtocolFeeController.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -649,7 +656,7 @@
       "status": "legacy",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "legacy factory teamFeeRecipient and LAYER locker recipient; treasury 0x41c3. broadcast: DeployProtocolFeeStack. blockscout unverified | bytecode: default/none runs=20000"
+      "notes": "legacy factory teamFeeRecipient and LAYER locker recipient; treasury 0x41c3. broadcast: DeployProtocolFeeStack. blockscout unverified | bytecode: artifact missing in foundry-out-default"
     },
     {
       "name": "ArtCoinsToken",
@@ -662,7 +669,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/ArtCoinsToken.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -673,7 +680,7 @@
       "status": "legacy",
       "provenance": "chain",
       "chainVerified": true,
-      "notes": "LAYER, launched by legacy factory; token build predates current ArtCoinsToken. blockscout verified | bytecode: first diff @34 (chain 9147 vs artifact 8283, best ci/none runs=200; tried default/none,ci/none,ci/ipfs,default/ipfs)"
+      "notes": "LAYER, launched by legacy factory; token build predates current ArtCoinsToken. blockscout verified | bytecode: first diff @34 (chain 9147 vs artifact 8283, best ci/none runs=200; tried ci/none); not tried (no artifacts): foundry-out-default,foundry-out-ci-ipfs,foundry-out-default-ipfs"
     },
     {
       "name": "LiquidityLayerAutoForwardExtension",
@@ -686,7 +693,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/extensions/LiquidityLayerAutoForwardExtension.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -697,7 +704,7 @@
       "status": "legacy",
       "provenance": "chain",
       "chainVerified": true,
-      "notes": "LAYER pool extension (autoforward to burn router). broadcast SetUpLayerAutoForward records tx 0x30340e3c which is not on chain; chain tx used. blockscout unverified | bytecode: default/none runs=20000"
+      "notes": "LAYER pool extension (autoforward to burn router). broadcast SetUpLayerAutoForward records tx 0x30340e3c which is not on chain; chain tx used. blockscout unverified | bytecode: artifact missing in foundry-out-default"
     },
     {
       "name": "LiquidityLayerOnchainRenderer",
@@ -710,7 +717,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/extensions/LiquidityLayerOnchainRenderer.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -721,7 +728,7 @@
       "status": "legacy",
       "provenance": "chain",
       "chainVerified": true,
-      "notes": "LAYER metadataRenderer today. broadcast MigrateLayerRenderer records tx 0xcfe6d733 which is not on chain; chain tx used. blockscout unverified | bytecode: first diff @945 (chain 14193 vs artifact 13930, best default/none runs=20000; tried default/none,ci/none,ci/ipfs,default/ipfs)"
+      "notes": "LAYER metadataRenderer today. broadcast MigrateLayerRenderer records tx 0xcfe6d733 which is not on chain; chain tx used. blockscout unverified | bytecode: first diff @32 (chain 14193 vs artifact 11774, best ci/none runs=200; tried ci/none); not tried (no artifacts): foundry-out-default,foundry-out-ci-ipfs,foundry-out-default-ipfs"
     },
     {
       "name": "PoolSwapTest",
@@ -806,7 +813,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/ArtCoinsFactory.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -817,7 +824,7 @@
       "status": "superseded",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "open to public (deprecated=false), deployFee 0, version() returns \"3\" so not head (head is \"1\"); zero coins launched; its hook interface id check rejects fresh hooks (see DeployV1Stack header). broadcast: DeployNativeEthStack. blockscout unverified | bytecode: first diff @44 (chain 13926 vs artifact 12608, best ci/none runs=200; tried default/none,ci/none,ci/ipfs,default/ipfs)"
+      "notes": "open to public (deprecated=false), deployFee 0, version() returns \"3\" so not head (head is \"1\"); zero coins launched; its hook interface id check rejects fresh hooks (see DeployV1Stack header). broadcast: DeployNativeEthStack. blockscout unverified | bytecode: first diff @44 (chain 13926 vs artifact 12608, best ci/none runs=200; tried ci/none); not tried (no artifacts): foundry-out-default,foundry-out-ci-ipfs,foundry-out-default-ipfs"
     },
     {
       "name": "ArtCoinsPoolExtensionAllowlist",
@@ -830,7 +837,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/hooks/ArtCoinsPoolExtensionAllowlist.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -841,7 +848,7 @@
       "status": "superseded",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "also the poolExtensionAllowlist of the current hook 0x636c, so it is live infrastructure. broadcast: DeployNativeEthStack. blockscout unverified | bytecode: default/none runs=20000"
+      "notes": "also the poolExtensionAllowlist of the current hook 0x636c, so it is live infrastructure. broadcast: DeployNativeEthStack. blockscout unverified | bytecode: artifact missing in foundry-out-default"
     },
     {
       "name": "ArtCoinsFeeEscrow",
@@ -854,7 +861,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/ArtCoinsFeeEscrow.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -865,7 +872,7 @@
       "status": "superseded",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "depositors: open locker 0xd914 and open hook 0xaad6. broadcast: DeployNativeEthStack. blockscout unverified | bytecode: default/none runs=20000"
+      "notes": "depositors: open locker 0xd914 and open hook 0xaad6. broadcast: DeployNativeEthStack. blockscout unverified | bytecode: artifact missing in foundry-out-default"
     },
     {
       "name": "ArtCoinsLpLocker",
@@ -878,7 +885,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/lp-lockers/ArtCoinsLpLocker.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "mismatch",
         "profile": "default",
         "metadata": "none"
@@ -889,7 +896,7 @@
       "status": "superseded",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "keeperRewardBps 50. broadcast: DeployNativeEthStack. blockscout verified | bytecode: first diff @1972 (chain 18504 vs artifact 18504, best default/none runs=20000; tried default/none)"
+      "notes": "keeperRewardBps 50. broadcast: DeployNativeEthStack. blockscout verified | bytecode: artifact missing in foundry-out-default"
     },
     {
       "name": "BurnRouter",
@@ -902,7 +909,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/protocol-fee/BurnRouter.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -913,7 +920,7 @@
       "status": "superseded",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "first open stack router, replaced by 0xe600 (RedeployBurnRouter). broadcast: DeployNativeEthStack. blockscout unverified | bytecode: first diff @2 (chain 9247 vs artifact 10374, best default/none runs=20000; tried default/none,ci/none,ci/ipfs,default/ipfs)"
+      "notes": "first open stack router, replaced by 0xe600 (RedeployBurnRouter). broadcast: DeployNativeEthStack. blockscout unverified | bytecode: first diff @2 (chain 9247 vs artifact 7717, best ci/none runs=200; tried ci/none); not tried (no artifacts): foundry-out-default,foundry-out-ci-ipfs,foundry-out-default-ipfs"
     },
     {
       "name": "ArtCoinsHookStaticFee",
@@ -926,7 +933,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/hooks/ArtCoinsHookStaticFee.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -937,7 +944,7 @@
       "status": "superseded",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "static fee hook, no skim, no tax; no pools (zero logs). broadcast: DeployNativeEthStack. blockscout verified | bytecode: first diff @41 (chain 21302 vs artifact 18959, best default/none runs=20000; tried default/none,ci/none,ci/ipfs,default/ipfs)"
+      "notes": "static fee hook, no skim, no tax; no pools (zero logs). broadcast: DeployNativeEthStack. blockscout verified | bytecode: first diff @41 (chain 21302 vs artifact 15708, best ci/none runs=200; tried ci/none); not tried (no artifacts): foundry-out-default,foundry-out-ci-ipfs,foundry-out-default-ipfs"
     },
     {
       "name": "BurnRouter",
@@ -950,7 +957,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/protocol-fee/BurnRouter.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -961,7 +968,7 @@
       "status": "superseded",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "teamFeeRecipient of open factory. broadcast: RedeployBurnRouter. blockscout verified | bytecode: first diff @2 (chain 11038 vs artifact 10374, best default/none runs=20000; tried default/none,ci/none,ci/ipfs,default/ipfs)"
+      "notes": "teamFeeRecipient of open factory. broadcast: RedeployBurnRouter. blockscout verified | bytecode: first diff @2 (chain 11038 vs artifact 7717, best ci/none runs=200; tried ci/none); not tried (no artifacts): foundry-out-default,foundry-out-ci-ipfs,foundry-out-default-ipfs"
     },
     {
       "name": "PassThroughWallet",
@@ -998,7 +1005,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/utils/ArtCoinsDeployer.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "ipfs"
@@ -1009,7 +1016,7 @@
       "status": "current",
       "provenance": "chain",
       "chainVerified": true,
-      "notes": "external library linked into current factory 0x4959 (address read from chain code); CREATE2 via 0x4e59. blockscout unverified | bytecode: ci/ipfs runs=200"
+      "notes": "external library linked into current factory 0x4959 (address read from chain code); CREATE2 via 0x4e59. blockscout unverified | bytecode: artifact missing in foundry-out-ci-ipfs"
     },
     {
       "name": "SkimFeeInitLib",
@@ -1022,7 +1029,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/hooks/libraries/SkimFeeInitLib.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "ipfs"
@@ -1033,7 +1040,7 @@
       "status": "current",
       "provenance": "chain",
       "chainVerified": true,
-      "notes": "external library linked into current hook 0x636c (address read from chain code). blockscout verified | bytecode: ci/ipfs runs=200 (also matches ci/none)"
+      "notes": "external library linked into current hook 0x636c (address read from chain code). blockscout verified | bytecode: artifact missing in foundry-out-ci-ipfs"
     },
     {
       "name": "ArtCoinsFactory",
@@ -1046,7 +1053,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/ArtCoinsFactory.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "ipfs"
@@ -1057,7 +1064,7 @@
       "status": "current",
       "provenance": "chain",
       "chainVerified": true,
-      "notes": "current factory, version 1, deprecated=true means owner only deploys, deployFee 0.069 eth. NOT in broadcast records. blockscout verified | bytecode: ci/ipfs runs=200 (also matches ci/none)"
+      "notes": "current factory, version 1, deprecated=true means owner only deploys, deployFee 0.069 eth. NOT in broadcast records. blockscout verified | bytecode: artifact missing in foundry-out-ci-ipfs"
     },
     {
       "name": "ArtCoinsFeeEscrow",
@@ -1070,7 +1077,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/ArtCoinsFeeEscrow.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "ipfs"
@@ -1081,7 +1088,7 @@
       "status": "current",
       "provenance": "chain",
       "chainVerified": true,
-      "notes": "depositors: current locker and current hook. blockscout verified | bytecode: ci/ipfs runs=200 (also matches ci/none)"
+      "notes": "depositors: current locker and current hook. blockscout verified | bytecode: artifact missing in foundry-out-ci-ipfs"
     },
     {
       "name": "ArtCoinsHookSkimFee",
@@ -1094,7 +1101,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/hooks/ArtCoinsHookSkimFee.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "ipfs"
@@ -1105,7 +1112,7 @@
       "status": "current",
       "provenance": "chain",
       "chainVerified": true,
-      "notes": "skim hook for 111 (CREATE2 via 0x4e59); poolExtensionAllowlist is open-stack 0xd6d5. blockscout verified | bytecode: ci/ipfs runs=200 (also matches ci/none)"
+      "notes": "skim hook for 111 (CREATE2 via 0x4e59); poolExtensionAllowlist is open-stack 0xd6d5. blockscout verified | bytecode: artifact missing in foundry-out-ci-ipfs"
     },
     {
       "name": "ArtCoinsMevLinearSkim",
@@ -1118,7 +1125,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/mev-modules/ArtCoinsMevLinearSkim.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "ipfs"
@@ -1129,7 +1136,7 @@
       "status": "current",
       "provenance": "chain",
       "chainVerified": true,
-      "notes": "blockscout unverified | bytecode: ci/ipfs runs=200 (also matches ci/none)"
+      "notes": "blockscout unverified | bytecode: artifact missing in foundry-out-ci-ipfs"
     },
     {
       "name": "ProtocolFeeController",
@@ -1142,7 +1149,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/protocol-fee/ProtocolFeeController.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "ipfs"
@@ -1153,7 +1160,7 @@
       "status": "current",
       "provenance": "chain",
       "chainVerified": true,
-      "notes": "permanent-collection controller, 86.67% treasury 0x41c3 / 13.33% burn router 0x0EB2. blockscout verified | bytecode: ci/ipfs runs=200 (also matches ci/none)"
+      "notes": "permanent-collection controller, 86.67% treasury 0x41c3 / 13.33% burn router 0x0EB2. blockscout verified | bytecode: artifact missing in foundry-out-ci-ipfs"
     },
     {
       "name": "ArtCoinsLpLocker",
@@ -1166,7 +1173,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/lp-lockers/ArtCoinsLpLocker.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "ipfs"
@@ -1177,7 +1184,7 @@
       "status": "current",
       "provenance": "chain",
       "chainVerified": true,
-      "notes": "111 locker, keeperRewardBps 0. blockscout verified | bytecode: ci/ipfs runs=200 (also matches ci/none)"
+      "notes": "111 locker, keeperRewardBps 0. blockscout verified | bytecode: artifact missing in foundry-out-ci-ipfs"
     },
     {
       "name": "LiveBidAdapter",
@@ -1310,7 +1317,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/FeeAutoSwapper.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -1321,7 +1328,7 @@
       "status": "current",
       "provenance": "chain",
       "chainVerified": true,
-      "notes": "111 fee swapper (locker reward recipient 100%), endRecipient is LiveBidAdapter 0x8c72. blockscout verified | bytecode: first diff @45 (chain 11086 vs artifact 7990, best ci/ipfs runs=200; tried ci/ipfs,default/ipfs,default/none,ci/none)"
+      "notes": "111 fee swapper (locker reward recipient 100%), endRecipient is LiveBidAdapter 0x8c72. blockscout verified | bytecode: first diff @45 (chain 11033 vs artifact 7937, best ci/none runs=200; tried ci/none); not tried (no artifacts): foundry-out-default,foundry-out-ci-ipfs,foundry-out-default-ipfs"
     },
     {
       "name": "ArtCoinsToken",
@@ -1334,7 +1341,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/ArtCoinsToken.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "ipfs"
@@ -1345,7 +1352,7 @@
       "status": "current",
       "provenance": "chain",
       "chainVerified": true,
-      "notes": "111 \"permanent collection\", launched by factory 0x4959, tokenAdmin is TokenAdminPoker 0xa96a. blockscout verified | bytecode: ci/ipfs runs=200 (also matches ci/none)"
+      "notes": "111 \"permanent collection\", launched by factory 0x4959, tokenAdmin is TokenAdminPoker 0xa96a. blockscout verified | bytecode: artifact missing in foundry-out-ci-ipfs"
     },
     {
       "name": "BurnRouter",
@@ -1358,7 +1365,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/protocol-fee/BurnRouter.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -1369,7 +1376,7 @@
       "status": "current",
       "provenance": "chain",
       "chainVerified": true,
-      "notes": "burn router behind current controller 0xd8c6; not in broadcast records. blockscout unverified | bytecode: default/none runs=20000"
+      "notes": "burn router behind current controller 0xd8c6; not in broadcast records. blockscout unverified | bytecode: artifact missing in foundry-out-default"
     },
     {
       "name": "CollectFlushKeeperV1",
@@ -1382,7 +1389,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/legacy/keepers/CollectFlushKeeperV1.sol",
-        "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -1393,7 +1400,247 @@
       "status": "current",
       "provenance": "broadcast",
       "chainVerified": true,
-      "notes": "collect, flush and convert helper pinned to the 111 locker 0x866e, coin 0x61C9, fee swapper 0xeBD9 and escrow 0x7559. ownerless, holds nothing. broadcast: script/v2/RunKeeper111.s.sol:DeployKeeper111 (runbook action 3) | bytecode: default/none runs=20000"
+      "notes": "collect, flush and convert helper pinned to the 111 locker 0x866e, coin 0x61C9, fee swapper 0xeBD9 and escrow 0x7559. ownerless, holds nothing. broadcast: script/v2/RunKeeper111.s.sol:DeployKeeper111 (runbook action 3) | bytecode: artifact missing in foundry-out-default"
+    },
+    {
+      "name": "ArtCoinsFeeEscrowV2",
+      "address": "0x32845df52436a737C9623Af1d461A1c9999BBc1e",
+      "stack": "v2",
+      "role": "escrow",
+      "deployBlock": 26157195,
+      "deployTxHash": "0xec6f49e2cc90d7c56f8c77cc489f5e43ed4cbe2c8803df3b44f09aea1e64eed2",
+      "deployedAt": "2026-10-09",
+      "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "source": {
+        "repoPath": "src/v2/ArtCoinsFeeEscrowV2.sol",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "bytecodeMatch": "verified",
+        "profile": "ci",
+        "metadata": "none"
+      },
+      "etherscanVerified": "unknown",
+      "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "state": "unknown",
+      "status": "deployed",
+      "provenance": "broadcast",
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: ci/none runs=200"
+    },
+    {
+      "name": "ArtCoinsPoolExtensionAllowlist",
+      "address": "0xddbC9EE6A8E08b4afC208B9dD1f283506E669C11",
+      "stack": "v2",
+      "role": "allowlist",
+      "deployBlock": 26157196,
+      "deployTxHash": "0xa85bb7c913fcfa0e2bdc109b7c174498660b097d4ee5c75e75a3b0f1377ddcef",
+      "deployedAt": "2026-10-09",
+      "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "source": {
+        "repoPath": "src/hooks/ArtCoinsPoolExtensionAllowlist.sol",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "bytecodeMatch": "verified",
+        "profile": "ci",
+        "metadata": "none"
+      },
+      "etherscanVerified": "unknown",
+      "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "state": "unknown",
+      "status": "deployed",
+      "provenance": "broadcast",
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: ci/none runs=200"
+    },
+    {
+      "name": "ArtCoinsHookV2",
+      "address": "0x2f7976bf73dE8e1D49D4c687404e527a75b0e8Cc",
+      "stack": "v2",
+      "role": "hook",
+      "deployBlock": 26157197,
+      "deployTxHash": "0x49300b86b4a23384051630eadab6dc5ccfc206f6e0afb63a248cfe2c01324f5c",
+      "deployedAt": "2026-10-09",
+      "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "source": {
+        "repoPath": "src/v2/hooks/ArtCoinsHookV2.sol",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "bytecodeMatch": "verified",
+        "profile": "ci",
+        "metadata": "none"
+      },
+      "etherscanVerified": "unknown",
+      "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "state": "enabled",
+      "status": "deployed",
+      "provenance": "broadcast",
+      "chainVerified": true,
+      "notes": "CREATE2 via 0x4e59b44847b379578588920cA78FbF26c0B4956C salt 0x0000000000000000000000000000000000000000000000000000000000005544 | bytecode: ci/none runs=200"
+    },
+    {
+      "name": "ArtCoinsLpLockerV2",
+      "address": "0x1e2456861B864B96FFe6b34066b12FBD7EEb23fC",
+      "stack": "v2",
+      "role": "locker",
+      "deployBlock": 26157198,
+      "deployTxHash": "0x47c50f5a005babcb75a1c3a0d7089460256154e381f91d2801d58a0956d50c9e",
+      "deployedAt": "2026-10-09",
+      "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "source": {
+        "repoPath": "src/v2/lp-lockers/ArtCoinsLpLockerV2.sol",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "bytecodeMatch": "verified",
+        "profile": "ci",
+        "metadata": "none"
+      },
+      "etherscanVerified": "unknown",
+      "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "state": "unknown",
+      "status": "deployed",
+      "provenance": "broadcast",
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: ci/none runs=200"
+    },
+    {
+      "name": "ArtCoinsMevLinearSkimV2",
+      "address": "0xFbb55b4C13b8517C000e2686efB12F0FAAFc9072",
+      "stack": "v2",
+      "role": "mevModule",
+      "deployBlock": 26157199,
+      "deployTxHash": "0x09b6ec0f61bdbac6a7af6ef9908b505f90c8f80e4c76370c5c8c2439d474c1f2",
+      "deployedAt": "2026-10-09",
+      "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "source": {
+        "repoPath": "src/v2/mev-modules/ArtCoinsMevLinearSkimV2.sol",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "bytecodeMatch": "verified",
+        "profile": "ci",
+        "metadata": "none"
+      },
+      "etherscanVerified": "unknown",
+      "owner": null,
+      "state": "enabled",
+      "status": "deployed",
+      "provenance": "broadcast",
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: ci/none runs=200"
+    },
+    {
+      "name": "ArtCoinsFactoryV2",
+      "address": "0x9b17bf6f97F5429368E11028BC637479b4667f7b",
+      "stack": "v2",
+      "role": "factory",
+      "deployBlock": 26157200,
+      "deployTxHash": "0x4780a4b9ca43ed2808eb022db9701d80e43bb95442596f4814adf5ebc2f1a092",
+      "deployedAt": "2026-10-09",
+      "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "source": {
+        "repoPath": "src/v2/ArtCoinsFactoryV2.sol",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "bytecodeMatch": "verified",
+        "profile": "ci",
+        "metadata": "none"
+      },
+      "etherscanVerified": "unknown",
+      "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "state": "deprecated",
+      "status": "deployed",
+      "provenance": "broadcast",
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: ci/none runs=200"
+    },
+    {
+      "name": "ArtCoinsDeployerV2",
+      "address": "0xB2f0086E6EE82f059AD1736dD265a783cE50f473",
+      "stack": "v2",
+      "role": "other",
+      "deployBlock": 26157201,
+      "deployTxHash": "0x20bf75165b571dd2f21a013bb8d59a394c5ec9109b0fa69b410cd4754334ce41",
+      "deployedAt": "2026-10-09",
+      "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "source": {
+        "repoPath": "src/v2/utils/ArtCoinsDeployerV2.sol",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "bytecodeMatch": "verified",
+        "profile": "ci",
+        "metadata": "none"
+      },
+      "etherscanVerified": "unknown",
+      "owner": null,
+      "state": "unknown",
+      "status": "deployed",
+      "provenance": "broadcast",
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: ci/none runs=200"
+    },
+    {
+      "name": "BurnRouterV2",
+      "address": "0x6f159a0BDddB808Ca364cd006fb29C7B52eB88e1",
+      "stack": "v2",
+      "role": "router",
+      "deployBlock": 26157203,
+      "deployTxHash": "0xa27933bf3557119b87a507980a5b4abd662e3308f645d0a188620bfd8c0b6542",
+      "deployedAt": "2026-10-09",
+      "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "source": {
+        "repoPath": "src/v2/protocol-fee/BurnRouterV2.sol",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "bytecodeMatch": "verified",
+        "profile": "ci",
+        "metadata": "none"
+      },
+      "etherscanVerified": "unknown",
+      "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "state": "unknown",
+      "status": "deployed",
+      "provenance": "broadcast",
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: ci/none runs=200"
+    },
+    {
+      "name": "ProtocolFeeControllerV2",
+      "address": "0x183De82db1b7AAb798328AB1d7AE181ff39460c2",
+      "stack": "v2",
+      "role": "controller",
+      "deployBlock": 26157204,
+      "deployTxHash": "0xa3d667ff7d54bf14fe753e6a748f6085600f9f1f318fac64c38375f1e2242446",
+      "deployedAt": "2026-10-09",
+      "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "source": {
+        "repoPath": "src/v2/protocol-fee/ProtocolFeeControllerV2.sol",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "bytecodeMatch": "verified",
+        "profile": "ci",
+        "metadata": "none"
+      },
+      "etherscanVerified": "unknown",
+      "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "state": "unknown",
+      "status": "deployed",
+      "provenance": "broadcast",
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: ci/none runs=200"
+    },
+    {
+      "name": "ArtCoinsKeeperV2",
+      "address": "0x9884B79974a51aaa07b3a7f0B45b6Ae294FC7072",
+      "stack": "v2",
+      "role": "other",
+      "deployBlock": 26157205,
+      "deployTxHash": "0x86c8c3f6c30a9096d43da560071014b26af0dc346978a1db9d7a2380722112de",
+      "deployedAt": "2026-10-09",
+      "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "source": {
+        "repoPath": "src/v2/keepers/ArtCoinsKeeperV2.sol",
+        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "bytecodeMatch": "verified",
+        "profile": "ci",
+        "metadata": "none"
+      },
+      "etherscanVerified": "unknown",
+      "owner": null,
+      "state": "unknown",
+      "status": "deployed",
+      "provenance": "broadcast",
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: ci/none runs=200"
     }
   ],
   "coins": [

@@ -5,7 +5,7 @@ import type { Address } from 'viem';
 export const REGISTRY_CHAIN_ID = 1;
 export const REGISTRY_OWNER: Address = '0xCB43078C32423F5348Cab5885911C3B5faE217F9';
 
-export type StackId = 'legacy' | 'open' | 'current';
+export type StackId = 'legacy' | 'open' | 'current' | 'v2';
 
 export interface RegistryStack {
   label: string;
@@ -38,6 +38,13 @@ export const STACKS: Record<StackId, RegistryStack> = {
     deployedAt: '2026-06-06',
     deployBlock: 25260062n,
   },
+  v2: {
+    label: 'v2 stack (skim hook v2, constants bound)',
+    status: 'deployed',
+    factory: '0x9b17bf6f97F5429368E11028BC637479b4667f7b',
+    deployedAt: '2026-10-09',
+    deployBlock: 26157200n,
+  },
 };
 
 /** addresses of the stack with id current */
@@ -58,6 +65,21 @@ export const CURRENT = {
   payout: '0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4',
   poolExtensionAllowlist: '0xd6D5fb5CfE386d0eB73a09cba5d190beb802e6E8',
 } as const satisfies Record<string, Address>;
+
+/** addresses of the stack with id v2 */
+export const V2 = {
+  factory: '0x9b17bf6f97F5429368E11028BC637479b4667f7b',
+  hook: '0x2f7976bf73dE8e1D49D4c687404e527a75b0e8Cc',
+  locker: '0x1e2456861B864B96FFe6b34066b12FBD7EEb23fC',
+  escrow: '0x32845df52436a737C9623Af1d461A1c9999BBc1e',
+  allowlist: '0xddbC9EE6A8E08b4afC208B9dD1f283506E669C11',
+  mevModule: '0xFbb55b4C13b8517C000e2686efB12F0FAAFc9072',
+  deployer: '0xB2f0086E6EE82f059AD1736dD265a783cE50f473',
+  burnRouter: '0x6f159a0BDddB808Ca364cd006fb29C7B52eB88e1',
+  protocolFeeController: '0x183De82db1b7AAb798328AB1d7AE181ff39460c2',
+  keeper: '0x9884B79974a51aaa07b3a7f0B45b6Ae294FC7072',
+  deployBlock: 26157200n,
+} as const;
 
 
 /** external infra (not in the registry) */
