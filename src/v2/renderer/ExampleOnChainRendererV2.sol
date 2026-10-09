@@ -32,7 +32,7 @@ contract ExampleOnChainRendererV2 is IMetadataRenderer {
             '","symbol":"',
             SvgText.jsonText(symbol, SvgText.SYMBOL_MAX),
             '","description":"',
-            SvgText.jsonText(t.metadata(), SvgText.DESC_MAX),
+            SvgText.jsonText(t.description(), SvgText.DESC_MAX),
             '","image":"data:image/svg+xml;base64,',
             Base64.encode(bytes(svg)),
             '","external_url":"',

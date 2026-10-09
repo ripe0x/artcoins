@@ -39,7 +39,10 @@ import {MockScriptyStorage} from "../../../mocks/MockScriptyStorage.sol";
 contract RStubToken {
     string public name;
     string public symbol;
+    // v1 renderers read `metadata()`, v2 renderers read `description()`; this
+    // stub feeds the same value to both so one suite exercises every renderer.
     string public metadata;
+    string public description;
     string public imageUrl;
     uint256 public totalSupply = 1_000_000_000e18;
 
@@ -47,6 +50,7 @@ contract RStubToken {
         name = n;
         symbol = s;
         metadata = m;
+        description = m;
         imageUrl = i;
     }
 }

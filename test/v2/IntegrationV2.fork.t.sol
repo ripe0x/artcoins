@@ -234,7 +234,7 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         );
         bytes memory b = abi.encode(
             t.restricted(),
-            t.locked(),
+            t.allowlistLocked(),
             t.canonicalHook(),
             t.canonicalPoolId(),
             t.poolManager(),
@@ -289,7 +289,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         v2.factory.setHook(address(v2.hook), false);
         v2.factory.setLocker(address(v2.locker), false);
         v2.factory.setMevModule(address(v2.mev), false);
-        v2.factory.setEscrow(address(v2.escrow), false);
         // hook: globals only
         escrow2.addDepositor(address(v2.hook), true);
         escrow2.addDepositor(address(v2.locker), true);

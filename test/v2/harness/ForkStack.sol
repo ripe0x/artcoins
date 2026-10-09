@@ -293,7 +293,6 @@ abstract contract ForkStack is ForkBase {
         t.name = p.name;
         t.symbol = p.symbol;
         t.salt = p.salt;
-        t.context = "v2 fork harness";
         t.totalSupply = p.totalSupply;
     }
 

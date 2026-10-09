@@ -9,8 +9,7 @@
     "symbol": "RESTX",
     "salt": "0x0000000000000000000000000000000000000000000000000000000000000002",
     "image": "ipfs://example",
-    "metadata": "{\"description\":\"restricted example coin\"}",
-    "context": "{\"interface\":\"script/v2/LaunchV2Coin.s.sol\"}",
+    "description": "{\"description\":\"restricted example coin\"}",
     "totalSupply": 0,
     "renderer": "0x0000000000000000000000000000000000000000"
   },

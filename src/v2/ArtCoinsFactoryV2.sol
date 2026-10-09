@@ -105,13 +105,12 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     /// @inheritdoc IArtCoinsFactoryV2
     uint16 public constant STACK_VERSION = Constants.STACK_VERSION;
 
-    /// @dev D30 string caps, equal to `ArtCoinsTokenV2.MAX_*_BYTES` (the test
-    ///      suite asserts the match).
+    /// @dev String caps, equal to `ArtCoinsTokenV2.MAX_*_BYTES` (the test suite
+    ///      asserts the match).
     uint256 private constant _MAX_NAME = 64;
     uint256 private constant _MAX_SYMBOL = 16;
     uint256 private constant _MAX_IMAGE = 2048;
-    uint256 private constant _MAX_METADATA = 4096;
-    uint256 private constant _MAX_CONTEXT = 4096;
+    uint256 private constant _MAX_DESCRIPTION = 4096;
 
     /// @notice The Uniswap v4 PoolManager every enabled hook must answer.
     address public immutable poolManager;
@@ -146,8 +145,6 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     mapping(address => bool) public enabledMevModules;
     /// @inheritdoc IArtCoinsFactoryV2
     mapping(address => bool) public enabledExtensions;
-    /// @inheritdoc IArtCoinsFactoryV2
-    mapping(address => bool) public enabledEscrows;
     /// @notice Owner set addresses seeded into every restricted coin's launch
     ///         allowlist, on top of the stack escrow, the launch locker and the
     ///         launch extensions. Ships empty.
@@ -413,8 +410,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         _cap(bytes(t.name).length, _MAX_NAME, 0);
         _cap(bytes(t.symbol).length, _MAX_SYMBOL, 1);
         _cap(bytes(t.image).length, _MAX_IMAGE, 2);
-        _cap(bytes(t.metadata).length, _MAX_METADATA, 3);
-        _cap(bytes(t.context).length, _MAX_CONTEXT, 4);
+        _cap(bytes(t.description).length, _MAX_DESCRIPTION, 3);
     }
 
     function _cap(uint256 len, uint256 max, uint8 field) internal pure {
@@ -772,14 +768,6 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         }
         enabledExtensions[extension] = enabled;
         emit ExtensionSet(extension, enabled);
-    }
-
-    /// @inheritdoc IArtCoinsFactoryV2
-    function setEscrow(address escrow, bool enabled) external onlyOwner {
-        if (escrow == address(0)) revert ZeroAddress();
-        if (enabled) _checkConstants(escrow);
-        enabledEscrows[escrow] = enabled;
-        emit EscrowSet(escrow, enabled);
     }
 
     /// @inheritdoc IArtCoinsFactoryV2

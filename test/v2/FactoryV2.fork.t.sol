@@ -124,7 +124,6 @@ contract FactoryV2ForkTest is ForkBase {
         factory.setHook(address(hook), true);
         factory.setLocker(locker, true);
         factory.setMevModule(address(mev), true);
-        factory.setEscrow(address(escrow), true);
         factory.setProtocolRecipient(protocolR);
         factory.setReferralPayout(payable(address(payout)));
         factory.setTeamFeeRecipient(team);
@@ -139,8 +138,7 @@ contract FactoryV2ForkTest is ForkBase {
         c.token.symbol = "FV2";
         c.token.salt = bytes32(uint256(1));
         c.token.image = "ipfs://image";
-        c.token.metadata = "{}";
-        c.token.context = "f1";
+        c.token.description = "{}";
 
         c.pool.hook = address(hook);
         c.pool.tickIfToken0IsArtCoin = START;
@@ -374,10 +372,6 @@ contract FactoryV2ForkTest is ForkBase {
             abi.encodeWithSelector(IConstantsBound.ConstantsMismatch.selector, address(badHash))
         );
         factory.setLocker(address(badHash), true);
-        vm.expectRevert(
-            abi.encodeWithSelector(IConstantsBound.ConstantsMismatch.selector, address(badHash))
-        );
-        factory.setEscrow(address(badHash), true);
 
         // no code at all is a mismatch, not a raw revert
         address eoa = makeAddr("fv2.eoa");
@@ -1007,23 +1001,21 @@ contract FactoryV2ForkTest is ForkBase {
         _expectRevertDeploy(c, abi.encodeWithSelector(ArtCoinsFactoryV2.ZeroFeeLaunch.selector));
     }
 
-    /// D30: string caps are checked before any deploy work, same error as the token.
+    /// String caps are checked before any deploy work, same error as the token.
     function test_tokenStrings_capPasses_capPlusOneReverts() public onlyFork {
         ArtCoinsTokenV2 ref = ArtCoinsTokenV2(_deploy(alice, _cfg()));
-        uint256[5] memory caps = [
+        uint256[4] memory caps = [
             ref.MAX_NAME_BYTES(),
             ref.MAX_SYMBOL_BYTES(),
             ref.MAX_IMAGE_BYTES(),
-            ref.MAX_METADATA_BYTES(),
-            ref.MAX_CONTEXT_BYTES()
+            ref.MAX_DESCRIPTION_BYTES()
         ];
         assertEq(caps[0], 64);
         assertEq(caps[1], 16);
         assertEq(caps[2], 2048);
         assertEq(caps[3], 4096);
-        assertEq(caps[4], 4096);
 
-        for (uint8 f; f < 5; ++f) {
+        for (uint8 f; f < 4; ++f) {
             IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
             c.token.salt = bytes32(uint256(100 + f));
             _setString(c, f, string(new bytes(caps[f] + 1)));
@@ -1034,13 +1026,13 @@ contract FactoryV2ForkTest is ForkBase {
         // every field at its cap at once
         IArtCoinsFactoryV2.DeploymentConfigV2 memory ok = _cfg();
         ok.token.salt = bytes32(uint256(200));
-        for (uint8 f; f < 5; ++f) {
+        for (uint8 f; f < 4; ++f) {
             _setString(ok, f, string(_filled(caps[f])));
         }
         ArtCoinsTokenV2 t = ArtCoinsTokenV2(_deploy(alice, ok));
         assertEq(bytes(t.name()).length, 64);
         assertEq(bytes(t.symbol()).length, 16);
-        assertEq(bytes(t.context()).length, 4096);
+        assertEq(bytes(t.description()).length, 4096);
     }
 
     function _filled(uint256 n) internal pure returns (bytes memory b) {
@@ -1057,8 +1049,7 @@ contract FactoryV2ForkTest is ForkBase {
         if (f == 0) c.token.name = v;
         else if (f == 1) c.token.symbol = v;
         else if (f == 2) c.token.image = v;
-        else if (f == 3) c.token.metadata = v;
-        else c.token.context = v;
+        else c.token.description = v;
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -1267,8 +1258,6 @@ contract FactoryV2ForkTest is ForkBase {
         factory.setMevModule(alice, false);
         vm.expectRevert(err);
         factory.setExtension(alice, false);
-        vm.expectRevert(err);
-        factory.setEscrow(alice, false);
         vm.expectRevert(err);
         factory.rescue(address(0), alice, 0);
         vm.stopPrank();

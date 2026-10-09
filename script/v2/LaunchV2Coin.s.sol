@@ -55,8 +55,7 @@ library LaunchV2Lib {
         c.token.symbol = vm.parseJsonString(j, ".token.symbol");
         c.token.salt = vm.parseJsonBytes32(j, ".token.salt");
         c.token.image = vm.parseJsonString(j, ".token.image");
-        c.token.metadata = vm.parseJsonString(j, ".token.metadata");
-        c.token.context = vm.parseJsonString(j, ".token.context");
+        c.token.description = vm.parseJsonString(j, ".token.description");
         c.token.totalSupply = vm.parseJsonUint(j, ".token.totalSupply");
         c.token.renderer = vm.parseJsonAddress(j, ".token.renderer");
 

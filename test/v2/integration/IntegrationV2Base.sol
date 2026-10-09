@@ -96,8 +96,7 @@ abstract contract IntegrationV2Base is ForkStack {
             symbol: "CREDITS",
             salt: bytes32(uint256(1)),
             image: "ipfs://credits",
-            metadata: "{}",
-            context: "{}",
+            description: "{}",
             totalSupply: 0,
             renderer: address(0)
         });

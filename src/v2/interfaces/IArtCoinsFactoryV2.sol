@@ -18,8 +18,7 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
         string symbol;
         bytes32 salt; // vanity input, folded into configHash
         string image;
-        string metadata;
-        string context;
+        string description;
         uint256 totalSupply; // 0 = Constants.DEFAULT_TOKEN_SUPPLY
         address renderer;
     }
@@ -121,7 +120,6 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     event LockerSet(address indexed locker, bool enabled);
     event MevModuleSet(address indexed module, bool enabled);
     event ExtensionSet(address indexed extension, bool enabled);
-    event EscrowSet(address indexed escrow, bool enabled);
     event DeprecatedSet(bool deprecated);
     event DeployFeeSet(uint256 oldFee, uint256 newFee);
     event DefaultProtocolFeeBpsSet(uint16 oldBps, uint16 newBps);
@@ -199,7 +197,6 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     function enabledLockers(address locker) external view returns (bool);
     function enabledMevModules(address module) external view returns (bool);
     function enabledExtensions(address extension) external view returns (bool);
-    function enabledEscrows(address escrow) external view returns (bool);
     /// @notice Owner set addresses seeded into every restricted coin's allowlist.
     function defaultAllowed() external view returns (address[] memory);
 
@@ -210,7 +207,6 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     function setLocker(address locker, bool enabled) external;
     function setMevModule(address module, bool enabled) external;
     function setExtension(address extension, bool enabled) external;
-    function setEscrow(address escrow, bool enabled) external;
     function setDeprecated(bool deprecated_) external;
     /// @dev <= Constants.MAX_DEPLOY_FEE.
     function setDeployFee(uint256 fee) external;

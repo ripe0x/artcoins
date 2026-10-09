@@ -24,7 +24,7 @@ contract DefaultMetadataRendererV2 is IMetadataRenderer {
             '","symbol":"',
             SvgText.jsonText(t.symbol(), SvgText.SYMBOL_MAX),
             '","description":"',
-            SvgText.jsonText(t.metadata(), SvgText.DESC_MAX),
+            SvgText.jsonText(t.description(), SvgText.DESC_MAX),
             '","image":"',
             SvgText.jsonUrl(t.imageUrl(), SvgText.URL_MAX),
             '"}'

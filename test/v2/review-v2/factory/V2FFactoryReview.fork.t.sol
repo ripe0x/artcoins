@@ -141,8 +141,7 @@ contract V2FFactoryReviewTest is ForkBase {
         c.token.symbol = "V2F";
         c.token.salt = bytes32(uint256(7));
         c.token.image = "ipfs://image";
-        c.token.metadata = "{}";
-        c.token.context = "v2f";
+        c.token.description = "{}";
 
         c.pool.hook = address(hook);
         c.pool.tickIfToken0IsArtCoin = START;
@@ -346,8 +345,7 @@ contract V2FFactoryReviewTest is ForkBase {
             c.token.name = _filled(64);
             c.token.symbol = _filled(16);
             c.token.image = _filled(2048);
-            c.token.metadata = _filled(4096);
-            c.token.context = _filled(4096);
+            c.token.description = _filled(4096);
         }
         if (slots) {
             c.locker.rewardRecipients = new address[](6);

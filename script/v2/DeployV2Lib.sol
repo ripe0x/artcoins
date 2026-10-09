@@ -237,7 +237,6 @@ library DeployV2Lib {
         f.setHook(address(s.hook), true);
         f.setLocker(address(s.locker), true);
         f.setMevModule(address(s.mev), true);
-        f.setEscrow(address(s.escrow), true);
         f.setProtocolRecipient(payable(address(s.controller)));
         f.setReferralPayout(payable(payout));
         f.setTeamFeeRecipient(p.owner);
@@ -348,7 +347,6 @@ library DeployV2Lib {
         require(f.enabledHooks(address(s.hook)), "v2: factory hook");
         require(f.enabledLockers(address(s.locker)), "v2: factory locker");
         require(f.enabledMevModules(address(s.mev)), "v2: factory mev");
-        require(f.enabledEscrows(address(s.escrow)), "v2: factory escrow");
         require(f.protocolRecipient() == address(s.controller), "v2: protocol recipient");
         require(f.referralPayout() == payout && payout.code.length != 0, "v2: referral payout");
         require(f.teamFeeRecipient() == p.owner, "v2: team fee recipient");

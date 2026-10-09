@@ -18,14 +18,14 @@ import {LibString} from "solady/utils/LibString.sol";
 contract RenderStubToken {
     string public name;
     string public symbol;
-    string public metadata;
+    string public description;
     string public imageUrl;
     uint256 public totalSupply = 1_000_000_000e18;
 
     function set(string memory n, string memory s, string memory m, string memory i) external {
         name = n;
         symbol = s;
-        metadata = m;
+        description = m;
         imageUrl = i;
     }
 }

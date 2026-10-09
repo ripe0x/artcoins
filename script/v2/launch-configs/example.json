@@ -9,8 +9,7 @@
     "symbol": "CREDX",
     "salt": "0x0000000000000000000000000000000000000000000000000000000000000001",
     "image": "ipfs://example",
-    "metadata": "{\"description\":\"credits engine example coin\"}",
-    "context": "{\"interface\":\"script/v2/LaunchV2Coin.s.sol\"}",
+    "description": "{\"description\":\"credits engine example coin\"}",
     "totalSupply": 0,
     "renderer": "0x0000000000000000000000000000000000000000"
   },
