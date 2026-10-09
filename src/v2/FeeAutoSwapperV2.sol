@@ -82,7 +82,7 @@ contract FeeAutoSwapperV2 is
     uint256 public constant DEFAULT_SPOT_FLOOR_BPS = 9500;
 
     /// @notice Constructor parameter bundle.
-    /// @dev `artCoin` may be zero; the deployer then binds it via `setup`.
+    /// @dev `coin` may be zero; the deployer then binds it via `setup`.
     struct Config {
         address owner;
         address poolManager;
@@ -91,7 +91,7 @@ contract FeeAutoSwapperV2 is
         uint24 poolFee;
         int24 tickSpacing;
         address endRecipient;
-        address artCoin;
+        address coin;
         uint256 maxSlippageBps;
         uint256 minBlocksBetweenConverts;
         uint256 maxStepIn;
@@ -112,7 +112,7 @@ contract FeeAutoSwapperV2 is
     // ── state ─────────────────────────────────────────────────────────────
 
     /// @inheritdoc IFeeAutoSwapperV2
-    address public artCoin;
+    address public coin;
     bool internal _finalized;
 
     /// @inheritdoc IFeeAutoSwapperV2
@@ -127,7 +127,7 @@ contract FeeAutoSwapperV2 is
     ///         tunable within [SPOT_FLOOR_MIN_BPS, SPOT_FLOOR_MAX_BPS].
     uint256 public spotFloorBps;
     /// @notice D39: price impact cap per convert in bps, owner tunable within
-    ///         [BURN_IMPACT_MIN, BURN_IMPACT_MAX]. The swap's price limit is
+    ///         [PRICE_IMPACT_MIN, PRICE_IMPACT_MAX]. The swap's price limit is
     ///         the tighter of this and `maxSlippageBps`.
     uint256 public maxImpactBps;
     /// @notice D50: pool baseline skim (SKIM_DENOMINATOR units) the floor nets out.
@@ -136,9 +136,9 @@ contract FeeAutoSwapperV2 is
     uint24 public poolLpFee;
 
     constructor(Config memory c) Ownable(c.owner) {
-        if (c.poolManager == address(0)) revert ZeroAddress("poolManager");
-        if (c.feeEscrow == address(0)) revert ZeroAddress("feeEscrow");
-        if (c.endRecipient == address(0)) revert ZeroAddress("endRecipient");
+        if (c.poolManager == address(0)) revert ZeroAddress();
+        if (c.feeEscrow == address(0)) revert ZeroAddress();
+        if (c.endRecipient == address(0)) revert ZeroAddress();
         if (c.endRecipient == address(this) || c.endRecipient == c.feeEscrow) {
             revert InvalidEndRecipient();
         }
@@ -158,17 +158,17 @@ contract FeeAutoSwapperV2 is
         minBlocksBetweenConverts = c.minBlocksBetweenConverts;
         maxStepIn = c.maxStepIn;
         spotFloorBps = DEFAULT_SPOT_FLOOR_BPS;
-        maxImpactBps = Constants.BURN_IMPACT_DEFAULT;
+        maxImpactBps = Constants.PRICE_IMPACT_DEFAULT;
         emit MaxSlippageBpsSet(0, c.maxSlippageBps);
         emit MinBlocksBetweenConvertsSet(0, c.minBlocksBetweenConverts);
         emit MaxStepInSet(0, c.maxStepIn);
         emit SpotFloorBpsSet(0, DEFAULT_SPOT_FLOOR_BPS);
-        emit MaxImpactBpsSet(0, Constants.BURN_IMPACT_DEFAULT);
+        emit MaxImpactBpsSet(0, Constants.PRICE_IMPACT_DEFAULT);
 
         // b5: a third party can no longer push escrowed fees into this contract.
         IArtCoinsFeeEscrowV2(c.feeEscrow).setSelfClaimOnly(true);
 
-        if (c.artCoin != address(0)) _bind(c.artCoin);
+        if (c.coin != address(0)) _bind(c.coin);
     }
 
     /// @notice Accepts eth from `poolManager.take`, escrow claims, the locker
@@ -178,10 +178,10 @@ contract FeeAutoSwapperV2 is
     // ── setup ─────────────────────────────────────────────────────────────
 
     /// @inheritdoc IFeeAutoSwapperV2
-    function setup(address artCoin_) external {
+    function setup(address coin_) external {
         if (msg.sender != _deployer) revert NotDeployer();
         if (_finalized) revert AlreadyFinalized();
-        _bind(artCoin_);
+        _bind(coin_);
     }
 
     /// @inheritdoc IFeeAutoSwapperV2
@@ -189,19 +189,19 @@ contract FeeAutoSwapperV2 is
         return _finalized;
     }
 
-    function _bind(address artCoin_) internal {
-        if (artCoin_ == address(0)) revert ZeroAddress("artCoin");
-        artCoin = artCoin_;
+    function _bind(address coin_) internal {
+        if (coin_ == address(0)) revert ZeroAddress();
+        coin = coin_;
         _finalized = true;
-        emit ArtCoinBound(artCoin_);
-        _syncFees(_key(artCoin_));
+        emit CoinBound(coin_);
+        _syncFees(_key(coin_));
     }
 
     /// @notice D50: anyone re reads the pool's known fees from the hook.
     ///         It can only set what the hook reports, so it is not gated.
     function syncPoolFees() external {
         if (!_finalized) revert NotFinalized();
-        _syncFees(_key(artCoin));
+        _syncFees(_key(coin));
     }
 
     // ── permissionless ────────────────────────────────────────────────────
@@ -224,7 +224,6 @@ contract FeeAutoSwapperV2 is
         uint256 next = lastConvertBlock + minBlocksBetweenConverts;
         if (lastConvertBlock != 0 && block.number < next) revert ConvertTooEarly(next);
 
-        address coin = artCoin;
         _claimEscrowed(coin);
         uint256 available = SafeTransferLib.balanceOf(coin, address(this));
         if (available == 0) revert NothingToConvert();
@@ -267,7 +266,6 @@ contract FeeAutoSwapperV2 is
     function unlockCallback(bytes calldata data) external returns (bytes memory) {
         if (msg.sender != address(poolManager)) revert NotPoolManager();
         (uint256 amountIn, uint160 spot) = abi.decode(data, (uint256, uint160));
-        address coin = artCoin;
 
         // coin is currency1 (native eth sorts first), selling it raises the
         // price. limit = spot * sqrt(1 + bps / BPS), rounded down, so the
@@ -306,7 +304,7 @@ contract FeeAutoSwapperV2 is
 
     /// @inheritdoc IFeeAutoSwapperV2
     function poolKey() external view returns (PoolKey memory) {
-        return _key(artCoin);
+        return _key(coin);
     }
 
     /// @inheritdoc IFeeAutoSwapperV2
@@ -315,8 +313,7 @@ contract FeeAutoSwapperV2 is
     }
 
     /// @inheritdoc IFeeAutoSwapperV2
-    function accruedArtCoin() external view returns (uint256) {
-        address coin = artCoin;
+    function accruedCoin() external view returns (uint256) {
         if (coin == address(0)) return 0;
         return SafeTransferLib.balanceOf(coin, address(this))
             + IArtCoinsFeeEscrowV2(feeEscrow).balances(address(this), coin);
@@ -332,8 +329,8 @@ contract FeeAutoSwapperV2 is
     /// @notice The output floor `convert` enforces for `artIn` consumed at the
     ///         current spot. Same code path as the enforced check (LF-12).
     function floorFor(uint256 artIn) external view returns (uint256) {
-        if (artCoin == address(0)) return 0;
-        (uint160 spot,,,) = poolManager.getSlot0(_key(artCoin).toId());
+        if (coin == address(0)) return 0;
+        (uint160 spot,,,) = poolManager.getSlot0(_key(coin).toId());
         return _spotFloor(artIn, spot);
     }
 
@@ -375,8 +372,8 @@ contract FeeAutoSwapperV2 is
     /// @notice D39: sets the per convert price impact cap within the burn
     ///         impact bounds.
     function setMaxImpactBps(uint256 bps) external onlyOwner {
-        if (bps < Constants.BURN_IMPACT_MIN || bps > Constants.BURN_IMPACT_MAX) {
-            revert OutOfBounds(bps, Constants.BURN_IMPACT_MIN, Constants.BURN_IMPACT_MAX);
+        if (bps < Constants.PRICE_IMPACT_MIN || bps > Constants.PRICE_IMPACT_MAX) {
+            revert OutOfBounds(bps, Constants.PRICE_IMPACT_MIN, Constants.PRICE_IMPACT_MAX);
         }
         emit MaxImpactBpsSet(maxImpactBps, bps);
         maxImpactBps = bps;
@@ -396,9 +393,9 @@ contract FeeAutoSwapperV2 is
     ///      `endRecipient` and can never be rescued. Before `setup` nothing can
     ///      be rescued (the coin is not yet known).
     function rescue(address token, address to, uint256 amount) external onlyOwner nonReentrant {
-        if (to == address(0)) revert ZeroAddress("to");
+        if (to == address(0)) revert ZeroAddress();
         if (!_finalized) revert NotFinalized();
-        if (token == address(0) || token == artCoin) revert CannotRescue(token);
+        if (token == address(0) || token == coin) revert CannotRescue(token);
         SafeTransferLib.safeTransfer(token, to, amount);
         emit Rescued(token, to, amount);
     }

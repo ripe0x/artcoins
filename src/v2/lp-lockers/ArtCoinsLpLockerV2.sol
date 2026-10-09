@@ -157,13 +157,12 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
 
         _validateRewards(lockerConfig.rewardRecipients, lockerConfig.rewardBps);
         uint256 numPositions =
-            _validatePositions(lockerConfig, poolConfig.tickIfToken0IsArtCoin, poolKey.tickSpacing);
+            _validatePositions(lockerConfig, poolConfig.tickIfToken0IsCoin, poolKey.tickSpacing);
 
         uint256 balBefore = SafeTransferLib.balanceOf(token, address(this));
         SafeTransferLib.safeTransferFrom(token, msg.sender, address(this), poolSupply);
 
-        positionId =
-            _mint(lockerConfig, poolConfig.tickIfToken0IsArtCoin, poolKey, poolSupply, token);
+        positionId = _mint(lockerConfig, poolConfig.tickIfToken0IsCoin, poolKey, poolSupply, token);
 
         // send any coin left after placement (rounding dust) to the burn sink
         uint256 balAfter = SafeTransferLib.balanceOf(token, address(this));
@@ -255,7 +254,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
 
     function _mint(
         IArtCoinsFactoryV2.LockerConfigV2 calldata cfg,
-        int24 tickIfToken0IsArtCoin,
+        int24 tickIfToken0IsCoin,
         PoolKey calldata poolKey,
         uint256 poolSupply,
         address token
@@ -263,7 +262,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         uint256 n = cfg.tickLower.length;
         bytes memory actions = new bytes(n + 1);
         bytes[] memory params = new bytes[](n + 1);
-        uint160 sqrtStart = TickMath.getSqrtPriceAtTick(-tickIfToken0IsArtCoin);
+        uint160 sqrtStart = TickMath.getSqrtPriceAtTick(-tickIfToken0IsCoin);
 
         for (uint256 i; i < n; ++i) {
             actions[i] = bytes1(uint8(Actions.MINT_POSITION));
@@ -493,7 +492,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     /// @inheritdoc IArtCoinsLpLockerV2
     function setKeeperRewardBps(uint256 newBps) external onlyOwner {
         if (newBps > Constants.LOCKER_KEEPER_BPS_MAX) {
-            revert KeeperRewardBpsOutOfBounds(newBps, Constants.LOCKER_KEEPER_BPS_MAX);
+            revert OutOfBounds(newBps, 0, Constants.LOCKER_KEEPER_BPS_MAX);
         }
         emit KeeperRewardBpsSet(keeperRewardBps, newBps);
         keeperRewardBps = newBps;
@@ -502,7 +501,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     /// @inheritdoc IArtCoinsLpLockerV2
     function setKeeperRewardCap(uint256 newCap) external onlyOwner {
         if (newCap < Constants.LOCKER_KEEPER_CAP_MIN || newCap > Constants.LOCKER_KEEPER_CAP_MAX) {
-            revert KeeperRewardCapOutOfBounds(
+            revert OutOfBounds(
                 newCap, Constants.LOCKER_KEEPER_CAP_MIN, Constants.LOCKER_KEEPER_CAP_MAX
             );
         }
@@ -540,7 +539,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         if (token == address(positionManager)) revert RescueForbidden();
         if (token == address(0)) {
             (bool ok,) = payable(to).call{value: amount}("");
-            if (!ok) revert EthTransferFailed();
+            if (!ok) revert NativeTransferFailed();
         } else {
             SafeTransferLib.safeTransfer(token, to, amount);
         }

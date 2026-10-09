@@ -309,9 +309,9 @@ contract BurnRouterV2ForkTest is P1Base {
     }
 
     function test_burnV2_impact_bounds() public {
-        assertEq(router.maxImpactBps(), Constants.BURN_IMPACT_DEFAULT);
-        uint16 lo = Constants.BURN_IMPACT_MIN;
-        uint16 hi = Constants.BURN_IMPACT_MAX;
+        assertEq(router.maxImpactBps(), Constants.PRICE_IMPACT_DEFAULT);
+        uint16 lo = Constants.PRICE_IMPACT_MIN;
+        uint16 hi = Constants.PRICE_IMPACT_MAX;
         vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, lo - 1, lo, hi));
         router.setMaxImpactBps(lo - 1);
         vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, hi + 1, lo, hi));

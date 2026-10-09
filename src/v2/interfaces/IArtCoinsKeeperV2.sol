@@ -14,7 +14,7 @@ interface IArtCoinsKeeperV2 {
     );
 
     error NotArtCoin(address token);
-    error EthTransferFailed();
+    error NativeTransferFailed();
 
     function collectAndForward(address token, bool doConvert, uint256 minOut) external;
 

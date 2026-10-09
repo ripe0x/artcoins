@@ -75,9 +75,9 @@ interface IArtCoinsLpLockerV2 is IConstantsBound {
     error TooManyPositions();
     error InvalidPositionBps();
     error InvalidTickRange(int24 tickLower, int24 tickUpper);
-    error KeeperRewardBpsOutOfBounds(uint256 supplied, uint256 max);
-    error KeeperRewardCapOutOfBounds(uint256 supplied, uint256 min, uint256 max);
-    error EthTransferFailed();
+    /// @notice A bounded owner setter received a value outside [min, max].
+    error OutOfBounds(uint256 value, uint256 min, uint256 max);
+    error NativeTransferFailed();
 
     // ── launcher ──────────────────────────────────────────────────────────
 

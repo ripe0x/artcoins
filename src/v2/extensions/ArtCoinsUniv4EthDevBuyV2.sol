@@ -142,7 +142,7 @@ contract ArtCoinsUniv4EthDevBuyV2 is ReentrancyGuard, IUnlockCallback, IArtCoins
         uint256 refunded = address(this).balance;
         if (refunded != 0) {
             (bool ok,) = refundRecipient.call{value: refunded}("");
-            if (!ok) revert EthRefundFailed();
+            if (!ok) revert NativeTransferFailed();
         }
 
         emit EthDevBuy(token, recipient, spent, out, refunded, refundRecipient);

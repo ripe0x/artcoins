@@ -26,7 +26,7 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     /// @dev Paired currency is always native eth.
     struct PoolConfigV2 {
         address hook;
-        int24 tickIfToken0IsArtCoin;
+        int24 tickIfToken0IsCoin;
         int24 tickSpacing;
         address extension; // pool extension, frozen per pool, 0 for none
         bytes extensionData;
@@ -152,7 +152,7 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     error MaxExtensionBpsExceeded();
     error InvalidRestrictionConfig();
     error TeamFeeRecipientNotSet();
-    error EthTransferFailed();
+    error NativeTransferFailed();
     /// @notice A project reward recipient is a contract with no way to receive
     ///         eth or claim an escrow credit: the factory, the coin, the
     ///         PoolManager, the launch's hook, locker, fee escrows, token
@@ -182,7 +182,7 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     // ── reads ─────────────────────────────────────────────────────────────
 
     function STACK_VERSION() external view returns (uint16);
-    function isArtCoin(address token) external view returns (bool);
+    function isCoin(address token) external view returns (bool);
     function deploymentInfo(address token) external view returns (DeploymentInfoV2 memory);
     function deprecated() external view returns (bool);
     function deployFee() external view returns (uint256);

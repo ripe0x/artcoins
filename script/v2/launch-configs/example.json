@@ -14,7 +14,7 @@
     "renderer": "0x0000000000000000000000000000000000000000"
   },
   "pool": {
-    "tickIfToken0IsArtCoin": -200000,
+    "tickIfToken0IsCoin": -200000,
     "tickSpacing": 200
   },
   "fee": {

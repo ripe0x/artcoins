@@ -117,9 +117,9 @@ contract ConstantsV2Test is Test {
         assertEq(Constants.SWAPPER_SLIPPAGE_MAX, 1000);
         assertEq(Constants.SWAPPER_MIN_BLOCKS_MIN, 1);
         assertEq(Constants.SWAPPER_MIN_BLOCKS_MAX, 50_400);
-        assertEq(Constants.BURN_IMPACT_MIN, 25);
-        assertEq(Constants.BURN_IMPACT_DEFAULT, 100);
-        assertEq(Constants.BURN_IMPACT_MAX, 300);
+        assertEq(Constants.PRICE_IMPACT_MIN, 25);
+        assertEq(Constants.PRICE_IMPACT_DEFAULT, 100);
+        assertEq(Constants.PRICE_IMPACT_MAX, 300);
         assertEq(Constants.BURN_THRESHOLD_FLOOR, 0.001 ether);
         assertEq(Constants.BURN_MAX_PER_CALL_MIN, 0.1 ether);
         assertEq(Constants.BURN_MAX_PER_CALL_MAX, 100 ether);
@@ -138,8 +138,8 @@ contract ConstantsV2Test is Test {
     function test_bounds_ordering() public pure {
         assertLt(Constants.MIN_MEV_WINDOW, Constants.DEFAULT_MEV_WINDOW);
         assertLt(Constants.DEFAULT_MEV_WINDOW, Constants.MAX_MEV_WINDOW);
-        assertLt(Constants.BURN_IMPACT_MIN, Constants.BURN_IMPACT_DEFAULT);
-        assertLt(Constants.BURN_IMPACT_DEFAULT, Constants.BURN_IMPACT_MAX);
+        assertLt(Constants.PRICE_IMPACT_MIN, Constants.PRICE_IMPACT_DEFAULT);
+        assertLt(Constants.PRICE_IMPACT_DEFAULT, Constants.PRICE_IMPACT_MAX);
         assertLt(Constants.BURN_MAX_PER_CALL_MIN, Constants.BURN_MAX_PER_CALL_DEFAULT);
         assertLt(Constants.BURN_MAX_PER_CALL_DEFAULT, Constants.BURN_MAX_PER_CALL_MAX);
         assertLt(Constants.LOCKER_KEEPER_CAP_MIN, Constants.LOCKER_KEEPER_CAP_MAX);
@@ -163,7 +163,7 @@ contract ConstantsV2Test is Test {
         assertLe(
             uint256(Constants.PFC_MIN_TREASURY_BPS) + Constants.PFC_MIN_BURN_BPS, Constants.BPS
         );
-        assertLt(Constants.BURN_IMPACT_MAX, Constants.BPS);
+        assertLt(Constants.PRICE_IMPACT_MAX, Constants.BPS);
         // ci gate fits under EIP-170
         assertLt(Constants.HOOK_SIZE_HEADROOM_MIN, 24_576);
     }

@@ -25,7 +25,7 @@ interface IArtCoinsUniv4EthDevBuyV2 is IArtCoinsExtensionV2 {
     error InvalidPoolKey();
     error NotPoolManager();
     error SlippageExceeded(uint256 out, uint256 minOut);
-    error EthRefundFailed();
+    error NativeTransferFailed();
     error Unauthorized();
     error ZeroAddress();
     /// @notice Eth sent to the contract outside an escrow claim.

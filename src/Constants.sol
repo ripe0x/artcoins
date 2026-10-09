@@ -86,10 +86,11 @@ library Constants {
     uint256 internal constant SWAPPER_SLIPPAGE_MAX = 1000;
     uint256 internal constant SWAPPER_MIN_BLOCKS_MIN = 1;
     uint256 internal constant SWAPPER_MIN_BLOCKS_MAX = 50_400;
-    /// @notice Burn router owner bounds (price impact per block, in BPS).
-    uint16 internal constant BURN_IMPACT_MIN = 25;
-    uint16 internal constant BURN_IMPACT_DEFAULT = 100;
-    uint16 internal constant BURN_IMPACT_MAX = 300;
+    /// @notice Per block price impact bounds, in BPS, for the swapper convert
+    ///         and the burn router.
+    uint16 internal constant PRICE_IMPACT_MIN = 25;
+    uint16 internal constant PRICE_IMPACT_DEFAULT = 100;
+    uint16 internal constant PRICE_IMPACT_MAX = 300;
     uint256 internal constant BURN_THRESHOLD_FLOOR = 0.001 ether;
     /// @notice Burn router per call eth cap bounds and default (not hashed).
     uint256 internal constant BURN_MAX_PER_CALL_MIN = 0.1 ether;

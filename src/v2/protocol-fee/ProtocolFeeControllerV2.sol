@@ -12,7 +12,7 @@ import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
-interface IBurnableToken {
+interface IBurnableCoin {
     function burn(uint256 amount) external;
 }
 
@@ -109,7 +109,7 @@ contract ProtocolFeeControllerV2 is
                 // burn directly; a coin that refuses goes to the router, which
                 // burns every coin it holds on its next burn.
                 if (burnAmt > 0) {
-                    try IBurnableToken(token).burn(burnAmt) {}
+                    try IBurnableCoin(token).burn(burnAmt) {}
                     catch {
                         FeeDelivery.sendErc20(feeEscrow, token, r, burnAmt);
                     }
@@ -148,7 +148,7 @@ contract ProtocolFeeControllerV2 is
         if (to == address(0)) revert ZeroAddress();
         if (token == address(0)) {
             (bool ok,) = payable(to).call{value: amount}("");
-            if (!ok) revert EthTransferFailed();
+            if (!ok) revert NativeTransferFailed();
         } else {
             SafeTransferLib.safeTransfer(token, to, amount);
         }

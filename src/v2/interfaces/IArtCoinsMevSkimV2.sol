@@ -17,7 +17,8 @@ interface IArtCoinsMevSkimV2 is IERC165, IConstantsBound {
     error NotHook();
     error AlreadyInitialized();
     error InvalidConfig();
-    error WindowOutOfBounds(uint32 windowSeconds, uint32 min, uint32 max);
+    /// @notice The window is outside [MIN_MEV_WINDOW, MAX_MEV_WINDOW], in seconds.
+    error OutOfBounds(uint256 value, uint256 min, uint256 max);
     error StartingSkimTooHigh(uint24 startingSkimBps, uint24 max);
 
     /// @notice Hook only, once per pool. Checks the hook's `constantsHash()`.

@@ -110,7 +110,7 @@ contract ArtCoinsKeeperV2 is IArtCoinsKeeperV2, ReentrancyGuardTransient {
         uint256 eth = address(this).balance;
         if (eth > 0) {
             (bool ok,) = msg.sender.call{value: eth}("");
-            if (!ok) revert EthTransferFailed();
+            if (!ok) revert NativeTransferFailed();
         }
         // A restricted coin forwards coin to the caller only through its own
         // transfer rule. The keeper is not on the coin allowlist, so a coin push
@@ -142,7 +142,7 @@ contract ArtCoinsKeeperV2 is IArtCoinsKeeperV2, ReentrancyGuardTransient {
     ///         fees are not readable through the locker interface, so they are not included; run on a schedule.
     /// @return swappers Reward recipients that are fee swappers.
     /// @return accruedPaired Sum of eth held plus escrowed across them (what `flushPaired` drains).
-    /// @return accruedArtCoin Sum of coin held plus escrowed across them (what `convert` can swap).
+    /// @return accruedCoin Sum of coin held plus escrowed across them (what `convert` can swap).
     /// @return nextConvertibleBlock Earliest block at which any of them can convert (0 when none).
     function preview(address token)
         external
@@ -150,7 +150,7 @@ contract ArtCoinsKeeperV2 is IArtCoinsKeeperV2, ReentrancyGuardTransient {
         returns (
             uint256 swappers,
             uint256 accruedPaired,
-            uint256 accruedArtCoin,
+            uint256 accruedCoin,
             uint256 nextConvertibleBlock
         )
     {
@@ -163,8 +163,8 @@ contract ArtCoinsKeeperV2 is IArtCoinsKeeperV2, ReentrancyGuardTransient {
             try IFeeAutoSwapperV2(r).accruedPaired() returns (uint256 p) {
                 accruedPaired += p;
             } catch {}
-            try IFeeAutoSwapperV2(r).accruedArtCoin() returns (uint256 c) {
-                accruedArtCoin += c;
+            try IFeeAutoSwapperV2(r).accruedCoin() returns (uint256 c) {
+                accruedCoin += c;
             } catch {}
             try IFeeAutoSwapperV2(r).nextConvertibleBlock() returns (uint256 b) {
                 if (nextConvertibleBlock == 0 || b < nextConvertibleBlock) {

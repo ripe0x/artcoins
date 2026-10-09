@@ -19,7 +19,7 @@ contract KeeperMockSwapper is IERC165 {
     uint256 public convertCalls;
     uint256 public lastMinOut;
     uint256 public accruedPaired;
-    uint256 public accruedArtCoin;
+    uint256 public accruedCoin;
     uint256 public nextConvertibleBlock;
     /// @dev when set, flush tries to reenter the keeper and records the revert data
     address public reenterKeeper;
@@ -57,7 +57,7 @@ contract KeeperMockSwapper is IERC165 {
 
     function setAccrued(uint256 paired, uint256 coin_, uint256 nextBlock) external {
         accruedPaired = paired;
-        accruedArtCoin = coin_;
+        accruedCoin = coin_;
         nextConvertibleBlock = nextBlock;
     }
 

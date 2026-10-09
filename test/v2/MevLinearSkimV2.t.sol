@@ -66,7 +66,7 @@ contract MevLinearSkimV2Test is Test {
         uint32 over = Constants.MAX_MEV_WINDOW + 1;
         vm.expectRevert(
             abi.encodeWithSelector(
-                IArtCoinsMevSkimV2.WindowOutOfBounds.selector,
+                IArtCoinsMevSkimV2.OutOfBounds.selector,
                 over,
                 Constants.MIN_MEV_WINDOW,
                 Constants.MAX_MEV_WINDOW
@@ -79,7 +79,7 @@ contract MevLinearSkimV2Test is Test {
         uint32 under = Constants.MIN_MEV_WINDOW - 1;
         vm.expectRevert(
             abi.encodeWithSelector(
-                IArtCoinsMevSkimV2.WindowOutOfBounds.selector,
+                IArtCoinsMevSkimV2.OutOfBounds.selector,
                 under,
                 Constants.MIN_MEV_WINDOW,
                 Constants.MAX_MEV_WINDOW

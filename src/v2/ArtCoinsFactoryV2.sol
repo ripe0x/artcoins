@@ -42,7 +42,7 @@ interface IHookPoolManager {
 ///            injected from factory storage. The token's canonical hook, pool id,
 ///            PoolManager and `restricted` flag are checked against the pool just
 ///            created (FT-06).
-///         6. launch record (`isArtCoin`, `deploymentInfo`) written.
+///         6. launch record (`isCoin`, `deploymentInfo`) written.
 ///         7. pool supply approved to the locker, `placeLiquidity` with the
 ///            protocol slot appended; the locker must pull exactly the pool supply.
 ///         8. extensions: each gets exactly its own `msgValue` and its own
@@ -163,7 +163,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     // ── launch records ────────────────────────────────────────────────────
 
     /// @inheritdoc IArtCoinsFactoryV2
-    mapping(address => bool) public isArtCoin;
+    mapping(address => bool) public isCoin;
     mapping(address => DeploymentInfoV2) internal _deploymentInfo;
 
     /// @param owner_         Initial owner (Ownable2Step).
@@ -566,7 +566,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     {
         IArtCoinsHookV2.PoolInitParams memory p;
         p.token = token;
-        p.tickIfToken0IsArtCoin = c.pool.tickIfToken0IsArtCoin;
+        p.tickIfToken0IsCoin = c.pool.tickIfToken0IsCoin;
         p.tickSpacing = c.pool.tickSpacing;
         p.locker = c.locker.locker;
         p.mevModule = c.mev.module;
@@ -602,7 +602,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     }
 
     function _record(DeploymentConfigV2 calldata c, address token, PoolId poolId) internal {
-        isArtCoin[token] = true;
+        isCoin[token] = true;
         DeploymentInfoV2 storage info = _deploymentInfo[token];
         info.token = token;
         info.hook = c.pool.hook;
@@ -691,7 +691,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     function _sendEth(address to, uint256 amount) internal {
         (bool ok,) = to.call{value: amount}("");
-        if (!ok) revert EthTransferFailed();
+        if (!ok) revert NativeTransferFailed();
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -701,7 +701,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     /// @inheritdoc IArtCoinsFactoryV2
     /// @dev Reverts `NotFound` for a token this factory did not launch.
     function deploymentInfo(address token) external view returns (DeploymentInfoV2 memory) {
-        if (!isArtCoin[token]) revert NotFound();
+        if (!isCoin[token]) revert NotFound();
         return _deploymentInfo[token];
     }
 

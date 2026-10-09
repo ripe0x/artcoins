@@ -86,12 +86,7 @@ contract ArtCoinsMevLinearSkimV2 is IArtCoinsMevSkimV2 {
         }
 
         if (window < Constants.MIN_MEV_WINDOW || window > Constants.MAX_MEV_WINDOW) {
-            // truncation is only for the error payload, the bound check above is on the full value
-            revert WindowOutOfBounds(
-                uint32(window > type(uint32).max ? type(uint32).max : window),
-                Constants.MIN_MEV_WINDOW,
-                Constants.MAX_MEV_WINDOW
-            );
+            revert OutOfBounds(window, Constants.MIN_MEV_WINDOW, Constants.MAX_MEV_WINDOW);
         }
         if (start > Constants.MAX_SKIM_BPS) {
             revert StartingSkimTooHigh(

@@ -60,7 +60,7 @@ library LaunchV2Lib {
         c.token.renderer = vm.parseJsonAddress(j, ".token.renderer");
 
         c.pool.hook = t.hook;
-        c.pool.tickIfToken0IsArtCoin = _i24(vm.parseJsonInt(j, ".pool.tickIfToken0IsArtCoin"));
+        c.pool.tickIfToken0IsCoin = _i24(vm.parseJsonInt(j, ".pool.tickIfToken0IsCoin"));
         c.pool.tickSpacing = _i24(vm.parseJsonInt(j, ".pool.tickSpacing"));
 
         c.fee.lpFee = _u24(vm.parseJsonUint(j, ".fee.lpFee"));
@@ -165,7 +165,7 @@ library LaunchV2Lib {
         returns (PoolId poolId)
     {
         IArtCoinsFactoryV2 f = IArtCoinsFactoryV2(t.factory);
-        require(f.isArtCoin(token), "launch: not an art coin");
+        require(f.isCoin(token), "launch: not an art coin");
         IArtCoinsFactoryV2.DeploymentInfoV2 memory info = f.deploymentInfo(token);
         poolId = info.poolId;
         require(

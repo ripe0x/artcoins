@@ -444,7 +444,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         PoolKey memory key = hook.initializePool(_params(l, address(token)));
         vm.expectRevert(
             abi.encodeWithSelector(
-                IArtCoinsMevSkimV2.WindowOutOfBounds.selector,
+                IArtCoinsMevSkimV2.OutOfBounds.selector,
                 Constants.MAX_MEV_WINDOW + 1,
                 Constants.MIN_MEV_WINDOW,
                 Constants.MAX_MEV_WINDOW
@@ -658,7 +658,6 @@ contract HookV2ForkTest is HookV2ForkBase {
             abi.encodeWithSelector(ArtCoinsHookV2.RecipientCannotReceive.selector, POOL_MANAGER)
         );
         hook.initializePool(p);
-
     }
 
     // ─── d1 / D16 / H13: referral leg ────────────────────────────────────
@@ -1061,7 +1060,7 @@ contract HookV2RealLockerTest is HookV2ForkBase {
         if (restricted) t.setAllowed(address(rl), true);
         IArtCoinsHookV2.PoolInitParams memory p = _params(l, address(t));
         p.locker = address(rl);
-        p.tickIfToken0IsArtCoin = START;
+        p.tickIfToken0IsCoin = START;
         k = hook.initializePool(p);
 
         IArtCoinsFactoryV2.LockerConfigV2 memory lc;
@@ -1078,7 +1077,7 @@ contract HookV2RealLockerTest is HookV2ForkBase {
         lc.positionBps[0] = 10_000;
         IArtCoinsFactoryV2.PoolConfigV2 memory pc;
         pc.hook = address(hook);
-        pc.tickIfToken0IsArtCoin = START;
+        pc.tickIfToken0IsCoin = START;
         pc.tickSpacing = TS;
         uint256 supply = 500_000_000e18;
         t.approve(address(rl), supply);

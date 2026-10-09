@@ -18,7 +18,7 @@ interface IProtocolFeeControllerV2 {
     error TreasuryShareTooLow(uint16 treasuryBps, uint16 minBps);
     error BurnShareTooLow(uint16 burnBps, uint16 minBps);
     error NothingToProcess();
-    error EthTransferFailed();
+    error NativeTransferFailed();
 
     /// @notice Splits the held balance of `token` (0 = eth) and delivers both shares.
     function processFees(address token) external;

@@ -49,7 +49,7 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @notice Launcher input to `initializePool`.
     struct PoolInitParams {
         address token;
-        int24 tickIfToken0IsArtCoin;
+        int24 tickIfToken0IsCoin;
         int24 tickSpacing;
         address locker;
         address mevModule; // 0 for none
@@ -116,8 +116,11 @@ interface IArtCoinsHookV2 is IConstantsBound {
     error MaxReferralTooHigh();
     error BountyRecipientZero();
     error ProtocolRecipientZero();
-    error ParamOutOfBounds(uint256 value, uint256 min, uint256 max);
-    error EthTransferFailed();
+    /// @notice A computed skim exceeds int128, the v4 BeforeSwapDelta limit.
+    ///         Unreachable for valid pools: the skim is bounded by the swap
+    ///         amount, itself an int128.
+    error SkimExceedsInt128(uint256 value);
+    error NativeTransferFailed();
 
     // ── launcher ──────────────────────────────────────────────────────────
 

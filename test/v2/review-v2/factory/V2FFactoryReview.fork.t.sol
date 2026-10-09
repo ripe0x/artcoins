@@ -140,7 +140,7 @@ contract V2FFactoryReviewTest is ForkBase {
         c.token.description = "{}";
 
         c.pool.hook = address(hook);
-        c.pool.tickIfToken0IsArtCoin = START;
+        c.pool.tickIfToken0IsCoin = START;
         c.pool.tickSpacing = TS;
 
         c.fee = IArtCoinsFactoryV2.FeeConfigV2({
@@ -403,7 +403,7 @@ contract V2FFactoryReviewTest is ForkBase {
             _maxCfg(true, true, true, true);
         console2.log("token creationCode bytes", type(ArtCoinsTokenV2).creationCode.length);
         (address token, uint256 total) = _measure(c, v, "max: every cap at its limit");
-        assertTrue(factory.isArtCoin(token));
+        assertTrue(factory.isCoin(token));
         assertLt(total, TX_GAS_CAP, "the heaviest launch fits under the EIP-7825 cap");
     }
 

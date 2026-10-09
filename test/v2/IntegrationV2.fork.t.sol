@@ -67,7 +67,7 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         // owner launch of the credits engine coin while deprecated
         address coin1 = _ownerLaunch(c);
         PoolId pid1 = _pid(coin1);
-        assertTrue(v2.factory.isArtCoin(coin1), "coin1 recorded");
+        assertTrue(v2.factory.isCoin(coin1), "coin1 recorded");
         IArtCoinsHookV2.SkimConfig memory sc = v2.hook.skimConfig(pid1);
         assertEq(sc.bountyRecipient, address(treasury), "bounty = treasury");
         assertEq(sc.protocolRecipient, address(v2.controller), "protocol injected");
@@ -145,8 +145,8 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         assertFalse(info.restricted);
         assertEq(info.createdAt, uint40(vm.getBlockTimestamp()));
         assertTrue(v2.hook.isOfficialPool(pid), "official pool");
-        assertTrue(v2.factory.isArtCoin(coin), "factory.isArtCoin");
-        assertFalse(v2.factory.isArtCoin(address(treasury)));
+        assertTrue(v2.factory.isCoin(coin), "factory.isCoin");
+        assertFalse(v2.factory.isCoin(address(treasury)));
         assertEq(_token(coin).launcherVersion(), 2, "token.launcherVersion() == 2");
         assertEq(_token(coin).launcher(), address(v2.factory));
         assertEq(v2.factory.STACK_VERSION(), 2);
@@ -239,11 +239,11 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         );
         bytes memory c = abi.encode(
             sw.endRecipient(),
-            sw.artCoin(),
+            sw.coin(),
             sw.poolKey(),
             sw.feeEscrow(),
             v2.factory.deploymentInfo(coin),
-            v2.factory.isArtCoin(coin)
+            v2.factory.isCoin(coin)
         );
         return keccak256(bytes.concat(a, b, c));
     }
@@ -303,14 +303,14 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         v2.controller.setSplit(Constants.PFC_MIN_TREASURY_BPS);
         v2.controller.setTreasury(other);
         v2.controller.setBurnRouter(other);
-        v2.burnRouter.setMaxImpactBps(Constants.BURN_IMPACT_MAX);
+        v2.burnRouter.setMaxImpactBps(Constants.PRICE_IMPACT_MAX);
         v2.burnRouter.setMinProcessThreshold(type(uint96).max);
         v2.burnRouter.setOpenTabCaller(other);
         // the coin's fee swapper: tunables only
         sw.setMaxSlippageBps(Constants.SWAPPER_SLIPPAGE_MAX);
         sw.setMinBlocksBetweenConverts(Constants.SWAPPER_MIN_BLOCKS_MAX);
         sw.setMaxStepIn(1);
-        sw.setMaxImpactBps(Constants.BURN_IMPACT_MAX);
+        sw.setMaxImpactBps(Constants.PRICE_IMPACT_MAX);
         sw.setSpotFloorBps(Constants.SPOT_FLOOR_MIN_BPS);
         vm.stopPrank();
 
@@ -392,7 +392,7 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
 
         // hook: holds nothing between swaps, so its rescue has nothing to take
         assertEq(address(v2.hook).balance, 0);
-        vm.expectRevert(IArtCoinsHookV2.EthTransferFailed.selector);
+        vm.expectRevert(IArtCoinsHookV2.NativeTransferFailed.selector);
         v2.hook.rescue(address(0), LIVE_OWNER, 1);
         vm.expectRevert();
         v2.hook.rescueClaims(key.currency0, LIVE_OWNER, 1);

@@ -242,7 +242,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         emit ProtocolFloorInitialized(pid, p.minProtocolShareBps);
 
         // art coin is always currency1, so the starting tick is negated.
-        poolManager.initialize(key, TickMath.getSqrtPriceAtTick(-p.tickIfToken0IsArtCoin));
+        poolManager.initialize(key, TickMath.getSqrtPriceAtTick(-p.tickIfToken0IsCoin));
         // the lp fee is frozen: set once here, never touched per swap.
         poolManager.updateDynamicLPFee(key, p.skim.lpFee);
 
@@ -554,9 +554,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     }
 
     function _i128(uint256 x) private pure returns (int128) {
-        if (x > uint128(type(int128).max)) {
-            revert ParamOutOfBounds(x, 0, uint128(type(int128).max));
-        }
+        if (x > uint128(type(int128).max)) revert SkimExceedsInt128(x);
         return int128(int256(x));
     }
 
@@ -623,7 +621,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         if (to == address(0)) revert ZeroAddress();
         if (token == address(0)) {
             (bool ok,) = to.call{value: amount}("");
-            if (!ok) revert EthTransferFailed();
+            if (!ok) revert NativeTransferFailed();
         } else {
             SafeTransferLib.safeTransfer(token, to, amount);
         }

@@ -66,7 +66,7 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
                 poolFee: key.fee,
                 tickSpacing: key.tickSpacing,
                 endRecipient: end,
-                artCoin: coin,
+                coin: coin,
                 maxSlippageBps: 500,
                 minBlocksBetweenConverts: 1,
                 maxStepIn: step
@@ -155,7 +155,7 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
         assertLe(ethIn, r.maxBurnPerCall());
 
         vm.roll(block.number + 1);
-        r.setMaxImpactBps(Constants.BURN_IMPACT_MAX);
+        r.setMaxImpactBps(Constants.PRICE_IMPACT_MAX);
         r.setSpotFloorBps(Constants.SPOT_FLOOR_MIN_BPS);
         r.setMaxBurnPerCall(r.MAX_BURN_PER_CALL_MAX());
         (, burned) = r.processBurn(0);

@@ -14,10 +14,10 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 interface IFeeAutoSwapperV2 is IERC165 {
     // ── events ────────────────────────────────────────────────────────────
 
-    event ArtCoinBound(address indexed artCoin);
+    event CoinBound(address indexed coin);
     event Converted(
         address indexed caller,
-        uint256 artCoinIn,
+        uint256 coinIn,
         uint256 pairedOut,
         uint256 pairedToRecipient,
         uint256 pairedToKeeper
@@ -32,7 +32,7 @@ interface IFeeAutoSwapperV2 is IERC165 {
 
     // ── errors ────────────────────────────────────────────────────────────
 
-    error ZeroAddress(string field);
+    error ZeroAddress();
     error InvalidEndRecipient();
     error NotDeployer();
     error AlreadyFinalized();
@@ -43,9 +43,8 @@ interface IFeeAutoSwapperV2 is IERC165 {
     error InsufficientOutput(uint256 received, uint256 minOut);
     error MinOutBelowFloor(uint256 minOut, uint256 floor);
     error ExcessInputSpent(uint256 spent, uint256 requested);
-    error OutOfBounds(uint256 value, uint256 lo, uint256 hi);
+    error OutOfBounds(uint256 value, uint256 min, uint256 max);
     error BadDelta();
-    error NativeSendFailed();
     error CannotRescue(address token);
 
     // ── permissionless ────────────────────────────────────────────────────
@@ -61,12 +60,12 @@ interface IFeeAutoSwapperV2 is IERC165 {
     // ── setup ─────────────────────────────────────────────────────────────
 
     /// @notice Deployer only, once. Binds the coin after the factory launch.
-    function setup(address artCoin_) external;
+    function setup(address coin_) external;
     function setupFinalized() external view returns (bool);
 
     // ── reads ─────────────────────────────────────────────────────────────
 
-    function artCoin() external view returns (address);
+    function coin() external view returns (address);
     function endRecipient() external view returns (address);
     function feeEscrow() external view returns (address);
     function poolKey() external view returns (PoolKey memory);
@@ -75,7 +74,7 @@ interface IFeeAutoSwapperV2 is IERC165 {
     function maxStepIn() external view returns (uint256);
     function nextConvertibleBlock() external view returns (uint256);
     /// @notice Coin held plus coin escrowed.
-    function accruedArtCoin() external view returns (uint256);
+    function accruedCoin() external view returns (uint256);
     /// @notice Eth held plus eth escrowed.
     function accruedPaired() external view returns (uint256);
 

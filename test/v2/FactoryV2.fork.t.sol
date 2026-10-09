@@ -137,7 +137,7 @@ contract FactoryV2ForkTest is ForkBase {
         c.token.description = "{}";
 
         c.pool.hook = address(hook);
-        c.pool.tickIfToken0IsArtCoin = START;
+        c.pool.tickIfToken0IsCoin = START;
         c.pool.tickSpacing = TS;
 
         c.fee = IArtCoinsFactoryV2.FeeConfigV2({
@@ -212,7 +212,7 @@ contract FactoryV2ForkTest is ForkBase {
         assertEq(predicted.code.length, 0, "not yet deployed");
         address token = _deploy(alice, c);
         assertEq(token, predicted, "predict");
-        assertTrue(factory.isArtCoin(token), "isArtCoin");
+        assertTrue(factory.isCoin(token), "isCoin");
         assertEq(factory.configHash(c), keccak256(abi.encode(c)), "configHash");
 
         IArtCoinsFactoryV2.DeploymentInfoV2 memory info = factory.deploymentInfo(token);
@@ -278,7 +278,7 @@ contract FactoryV2ForkTest is ForkBase {
         e.fee.bountyBps = 1;
         assertTrue(factory.predictToken(alice, c) != factory.predictToken(alice, e), "fee");
         e = _cfg();
-        e.pool.tickIfToken0IsArtCoin = START + TS;
+        e.pool.tickIfToken0IsCoin = START + TS;
         assertTrue(factory.predictToken(alice, c) != factory.predictToken(alice, e), "pool");
 
         address a = _deploy(alice, d);
@@ -461,14 +461,14 @@ contract FactoryV2ForkTest is ForkBase {
         factory.setDeployFee(0);
         vm.prank(alice);
         address t = factory.deployToken(_cfg());
-        assertTrue(factory.isArtCoin(t));
+        assertTrue(factory.isCoin(t));
         // a recipient that refuses eth reverts the launch (the owner picked it)
         factory.setDeployFee(FEE);
         factory.setTeamFeeRecipient(address(new FV2RevertingReceiver()));
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
         c.token.salt = bytes32(uint256(9));
         _expectRevertDeploy(
-            c, abi.encodeWithSelector(IArtCoinsFactoryV2.EthTransferFailed.selector)
+            c, abi.encodeWithSelector(IArtCoinsFactoryV2.NativeTransferFailed.selector)
         );
     }
 
@@ -477,11 +477,11 @@ contract FactoryV2ForkTest is ForkBase {
         _expectRevertDeploy(_cfg(), abi.encodeWithSelector(IArtCoinsFactoryV2.Deprecated.selector));
         // owner bypasses, both entries
         address t = factory.deployToken{value: FEE}(_cfg());
-        assertTrue(factory.isArtCoin(t));
+        assertTrue(factory.isCoin(t));
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
         c.token.salt = bytes32(uint256(7));
         address t2 = factory.deployTokenAsOwner{value: FEE}(c, PROTOCOL_BPS);
-        assertTrue(factory.isArtCoin(t2));
+        assertTrue(factory.isCoin(t2));
         factory.setDeprecated(false);
         IArtCoinsFactoryV2.DeploymentConfigV2 memory d = _cfg();
         d.token.salt = bytes32(uint256(8));

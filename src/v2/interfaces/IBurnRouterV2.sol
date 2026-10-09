@@ -23,8 +23,7 @@ interface IBurnRouterV2 {
     error BelowMinThreshold(uint256 balance, uint256 minThreshold);
     error NothingToBurn();
     error InsufficientOutput(uint256 out, uint256 minOut);
-    error OutOfBounds(uint256 value, uint256 lo, uint256 hi);
-    error EthTransferFailed();
+    error OutOfBounds(uint256 value, uint256 min, uint256 max);
     error CannotRescue(address token);
 
     /// @notice Owner, once. Binds the coin and its native eth pool.
@@ -43,7 +42,7 @@ interface IBurnRouterV2 {
     function maxImpactBps() external view returns (uint16);
     function minProcessThreshold() external view returns (uint96);
 
-    /// @dev Within [Constants.BURN_IMPACT_MIN, Constants.BURN_IMPACT_MAX].
+    /// @dev Within [Constants.PRICE_IMPACT_MIN, Constants.PRICE_IMPACT_MAX].
     function setMaxImpactBps(uint16 bps) external;
     /// @dev >= Constants.BURN_THRESHOLD_FLOOR.
     function setMinProcessThreshold(uint96 threshold) external;

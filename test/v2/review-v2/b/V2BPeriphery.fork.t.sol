@@ -104,7 +104,7 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
                 poolFee: key.fee,
                 tickSpacing: key.tickSpacing,
                 endRecipient: end,
-                artCoin: coin,
+                coin: coin,
                 maxSlippageBps: 500,
                 minBlocksBetweenConverts: 1,
                 maxStepIn: step
@@ -198,7 +198,7 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
         assertTrue(ok, "300 eth burns at the default settings");
 
         vm.roll(block.number + 1);
-        r.setMaxImpactBps(Constants.BURN_IMPACT_MAX);
+        r.setMaxImpactBps(Constants.PRICE_IMPACT_MAX);
         r.setSpotFloorBps(Constants.SPOT_FLOOR_MIN_BPS);
         (bool ok2, bytes4 sel2) = _burnSelector(r);
         assertTrue(ok2, "300 eth burns at the owner limits");

@@ -179,7 +179,7 @@ contract LockerV2ForkTest is ForkBase {
     function _poolConfig(address h) internal pure returns (IArtCoinsFactoryV2.PoolConfigV2 memory) {
         return IArtCoinsFactoryV2.PoolConfigV2({
             hook: h,
-            tickIfToken0IsArtCoin: START,
+            tickIfToken0IsCoin: START,
             tickSpacing: SPACING,
             extension: address(0),
             extensionData: ""
@@ -435,26 +435,18 @@ contract LockerV2ForkTest is ForkBase {
     function test_lockerV2_ownerSetters_bounded() public {
         vm.startPrank(owner);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IArtCoinsLpLockerV2.KeeperRewardBpsOutOfBounds.selector, 201, 200
-            )
+            abi.encodeWithSelector(IArtCoinsLpLockerV2.OutOfBounds.selector, 201, 0, 200)
         );
         locker.setKeeperRewardBps(201);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IArtCoinsLpLockerV2.KeeperRewardCapOutOfBounds.selector,
-                0.05 ether + 1,
-                0.001 ether,
-                0.05 ether
+                IArtCoinsLpLockerV2.OutOfBounds.selector, 0.05 ether + 1, 0.001 ether, 0.05 ether
             )
         );
         locker.setKeeperRewardCap(0.05 ether + 1);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IArtCoinsLpLockerV2.KeeperRewardCapOutOfBounds.selector,
-                0.001 ether - 1,
-                0.001 ether,
-                0.05 ether
+                IArtCoinsLpLockerV2.OutOfBounds.selector, 0.001 ether - 1, 0.001 ether, 0.05 ether
             )
         );
         locker.setKeeperRewardCap(0.001 ether - 1);

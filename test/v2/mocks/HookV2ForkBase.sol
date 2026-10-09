@@ -185,7 +185,7 @@ abstract contract HookV2ForkBase is Test {
         returns (IArtCoinsHookV2.PoolInitParams memory p)
     {
         p.token = token;
-        p.tickIfToken0IsArtCoin = 0;
+        p.tickIfToken0IsCoin = 0;
         p.tickSpacing = TS;
         p.locker = address(lockerStub);
         p.mevModule = l.module;

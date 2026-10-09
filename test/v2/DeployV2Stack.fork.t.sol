@@ -39,7 +39,7 @@ contract DeployV2StackForkTest is ForkStack {
         '"name":"Credits Example","symbol":"CREDX","salt":"0x0000000000000000000000000000000000000000000000000000000000000001",'
         '"image":"ipfs://example","description":"{\\"description\\":\\"credits engine example coin\\"}",'
         '"totalSupply":0,"renderer":"0x0000000000000000000000000000000000000000"},'
-        '"pool":{"tickIfToken0IsArtCoin":-200000,"tickSpacing":200},"fee":{"lpFee":5000,"baselineSkimBps":6000,'
+        '"pool":{"tickIfToken0IsCoin":-200000,"tickSpacing":200},"fee":{"lpFee":5000,"baselineSkimBps":6000,'
         '"bountyBps":8333,"maxReferralBpsOfVolume":250,"bountyRecipient":"0x7ea5000000000000000000000000000000000001"},'
         '"locker":{"rewardRecipients":["0x7ea5000000000000000000000000000000000001"],"rewardBps":[8000],'
         '"tickLower":[-200000,-160000,-120000],"tickUpper":[-120000,-100000,-60000],"positionBps":[5000,'
@@ -207,7 +207,7 @@ contract DeployV2StackForkTest is ForkStack {
         (address dry,) = LaunchV2Lib.dryRun(t, l, LIVE_OWNER, value);
         assertEq(dry, predicted, "dry run address");
         assertEq(dry.code.length, 0, "dry run reverted to snapshot");
-        assertFalse(s.factory.isArtCoin(dry), "dry run left no record");
+        assertFalse(s.factory.isCoin(dry), "dry run left no record");
 
         // a stranger cannot launch while deprecated
         vm.deal(stranger, 10 ether);
@@ -256,7 +256,7 @@ contract DeployV2StackForkTest is ForkStack {
         c.poolFee = LPFeeLibrary.DYNAMIC_FEE_FLAG;
         c.tickSpacing = 200;
         c.endRecipient = address(treasury);
-        c.artCoin = address(0);
+        c.coin = address(0);
         c.maxSlippageBps = 500;
         c.minBlocksBetweenConverts = 1;
         c.maxStepIn = 1000 ether;
@@ -269,7 +269,7 @@ contract DeployV2StackForkTest is ForkStack {
         assertEq(swapper.poolFee(), LPFeeLibrary.DYNAMIC_FEE_FLAG, "swapper poolFee");
         assertEq(swapper.tickSpacing(), int24(200), "swapper tickSpacing");
         assertEq(swapper.endRecipient(), address(treasury), "swapper endRecipient");
-        assertEq(swapper.artCoin(), address(0), "swapper artCoin unbound until setup");
+        assertEq(swapper.coin(), address(0), "swapper artCoin unbound until setup");
         assertEq(swapper.maxSlippageBps(), 500, "swapper maxSlippageBps");
         assertEq(swapper.minBlocksBetweenConverts(), 1, "swapper minBlocksBetweenConverts");
         assertEq(swapper.maxStepIn(), 1000 ether, "swapper maxStepIn");
@@ -337,7 +337,7 @@ contract DeployV2StackForkTest is ForkStack {
         address predicted = s.factory.predictToken(LIVE_OWNER, LaunchV2Lib.parse(json, t).cfg);
         script.run(json);
         assertEq(predicted.code.length, 0, "dry run only");
-        assertFalse(s.factory.isArtCoin(predicted), "no record");
+        assertFalse(s.factory.isCoin(predicted), "no record");
     }
 
     function test_launchConfig_embeddedCopyMatchesFile() public {

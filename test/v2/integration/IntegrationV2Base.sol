@@ -102,7 +102,7 @@ abstract contract IntegrationV2Base is ForkStack {
         });
         c.pool = IArtCoinsFactoryV2.PoolConfigV2({
             hook: address(v2.hook),
-            tickIfToken0IsArtCoin: -200_000,
+            tickIfToken0IsCoin: -200_000,
             tickSpacing: 200,
             extension: address(0),
             extensionData: ""
@@ -192,7 +192,7 @@ abstract contract IntegrationV2Base is ForkStack {
                 poolFee: LPFeeLibrary.DYNAMIC_FEE_FLAG,
                 tickSpacing: 200,
                 endRecipient: endRecipient,
-                artCoin: address(0),
+                coin: address(0),
                 maxSlippageBps: 500,
                 minBlocksBetweenConverts: 1,
                 maxStepIn: 1_000_000_000e18

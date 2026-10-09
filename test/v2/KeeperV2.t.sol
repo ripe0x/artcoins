@@ -450,7 +450,7 @@ contract KeeperV2Test is Test {
     function test_keeperV2_callerRejectingEth_reverts() public {
         EthRejecter rej = new EthRejecter();
         locker.setRewards(0.2 ether, 0);
-        vm.expectRevert(IArtCoinsKeeperV2.EthTransferFailed.selector);
+        vm.expectRevert(IArtCoinsKeeperV2.NativeTransferFailed.selector);
         rej.run(keeper, address(coin));
         assertEq(address(keeper).balance, 0, "revert undid the receipt");
     }

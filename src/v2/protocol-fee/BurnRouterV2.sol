@@ -34,7 +34,7 @@ interface IBurnableCoin {
 ///         - one burn per block across both entry points (`lastBurnBlock`),
 ///           so the per call impact limit cannot be looped inside a tx.
 ///         - the swap is exact input with a price limit `maxImpactBps` below
-///           the pre swap spot (owner bounded [BURN_IMPACT_MIN, MAX]); a big
+///           the pre swap spot (owner bounded [PRICE_IMPACT_MIN, MAX]); a big
 ///           balance partial fills and drains over later blocks, never in one.
 ///         - keeper reward is `min(consumed * KEEPER_REWARD_BPS / BPS, CAP)`
 ///           on the eth the swap actually consumed, reserved before the swap
@@ -117,11 +117,11 @@ contract BurnRouterV2 is
         if (poolManager_ == address(0) || feeEscrow_ == address(0)) revert ZeroAddress();
         poolManager = IPoolManager(poolManager_);
         feeEscrow = feeEscrow_;
-        maxImpactBps = Constants.BURN_IMPACT_DEFAULT;
+        maxImpactBps = Constants.PRICE_IMPACT_DEFAULT;
         minProcessThreshold = DEFAULT_MIN_PROCESS_THRESHOLD;
         _spotFloorBps = uint16(Constants.SPOT_FLOOR_BPS);
         maxBurnPerCall = DEFAULT_MAX_BURN_PER_CALL;
-        emit MaxImpactBpsSet(0, Constants.BURN_IMPACT_DEFAULT);
+        emit MaxImpactBpsSet(0, Constants.PRICE_IMPACT_DEFAULT);
         emit MinProcessThresholdSet(0, DEFAULT_MIN_PROCESS_THRESHOLD);
         emit SpotFloorBpsSet(0, Constants.SPOT_FLOOR_BPS);
         emit MaxBurnPerCallSet(0, DEFAULT_MAX_BURN_PER_CALL);
@@ -251,8 +251,8 @@ contract BurnRouterV2 is
 
     /// @inheritdoc IBurnRouterV2
     function setMaxImpactBps(uint16 bps) external onlyOwner {
-        if (bps < Constants.BURN_IMPACT_MIN || bps > Constants.BURN_IMPACT_MAX) {
-            revert OutOfBounds(bps, Constants.BURN_IMPACT_MIN, Constants.BURN_IMPACT_MAX);
+        if (bps < Constants.PRICE_IMPACT_MIN || bps > Constants.PRICE_IMPACT_MAX) {
+            revert OutOfBounds(bps, Constants.PRICE_IMPACT_MIN, Constants.PRICE_IMPACT_MAX);
         }
         emit MaxImpactBpsSet(maxImpactBps, bps);
         maxImpactBps = bps;
