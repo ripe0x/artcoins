@@ -808,18 +808,18 @@ contract FactoryV2ForkTest is ForkBase {
         assertEq(f.tokenDeployer(), address(0));
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c;
         c.token.tokenAdmin = admin;
-        vm.expectRevert(ArtCoinsFactoryV2.DeployerNotSet.selector);
+        vm.expectRevert(IArtCoinsFactoryV2.DeployerNotSet.selector);
         f.deployToken(c); // owner bypasses the deprecated gate, then hits the deployer check
-        vm.expectRevert(ArtCoinsFactoryV2.DeployerNotSet.selector);
+        vm.expectRevert(IArtCoinsFactoryV2.DeployerNotSet.selector);
         f.predictToken(alice, c);
 
         // bound to another factory, no code, zero
         vm.expectRevert(
-            abi.encodeWithSelector(ArtCoinsFactoryV2.InvalidDeployer.selector, address(deployer))
+            abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidDeployer.selector, address(deployer))
         );
         f.setTokenDeployer(address(deployer));
         address noCode = makeAddr("fv2.noCodeDeployer");
-        vm.expectRevert(abi.encodeWithSelector(ArtCoinsFactoryV2.InvalidDeployer.selector, noCode));
+        vm.expectRevert(abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidDeployer.selector, noCode));
         f.setTokenDeployer(noCode);
         vm.expectRevert(IArtCoinsFactoryV2.ZeroAddress.selector);
         f.setTokenDeployer(address(0));
@@ -831,7 +831,7 @@ contract FactoryV2ForkTest is ForkBase {
         f.setTokenDeployer(address(d));
 
         vm.expectEmit(true, true, false, false, address(f));
-        emit ArtCoinsFactoryV2.TokenDeployerSet(address(0), address(d));
+        emit IArtCoinsFactoryV2.TokenDeployerSet(address(0), address(d));
         f.setTokenDeployer(address(d));
         assertEq(f.tokenDeployer(), address(d));
         assertEq(d.factory(), address(f));

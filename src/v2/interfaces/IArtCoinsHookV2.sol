@@ -356,6 +356,9 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @return The fee config.
     function skimConfig(PoolId poolId) external view returns (SkimConfig memory);
 
+    /// @notice The pool's protocol leg floor, in bps of the baseline skim.
+    function minProtocolShareBps(PoolId poolId) external view returns (uint16);
+
     /// @notice Current fee escrow and extension allowlist.
     /// @return The hook wide addresses.
     function globals() external view returns (HookGlobals memory);

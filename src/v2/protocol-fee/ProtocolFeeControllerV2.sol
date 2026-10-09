@@ -132,6 +132,7 @@ contract ProtocolFeeControllerV2 is
     /// @dev The old router is not called.
     function setBurnRouter(address burnRouter_) external onlyOwner {
         if (burnRouter_ == address(0)) revert ZeroAddress();
+        _checkConstants(burnRouter_);
         emit BurnRouterSet(burnRouter, burnRouter_);
         burnRouter = burnRouter_;
     }
@@ -164,6 +165,16 @@ contract ProtocolFeeControllerV2 is
     }
 
     // ── internals ─────────────────────────────────────────────────────────
+
+    /// @dev `target.constantsHash()` must equal this build's hash.
+    function _checkConstants(address target) private view {
+        if (target == address(0)) revert ZeroAddress();
+        (bool ok, bytes memory ret) =
+            target.staticcall(abi.encodeCall(IConstantsBound.constantsHash, ()));
+        if (!ok || ret.length != 32 || abi.decode(ret, (bytes32)) != Constants.hash()) {
+            revert ConstantsMismatch(target);
+        }
+    }
 
     function _setSplit(uint16 treasuryBps_) internal {
         if (treasuryBps_ < Constants.PFC_MIN_TREASURY_BPS) {

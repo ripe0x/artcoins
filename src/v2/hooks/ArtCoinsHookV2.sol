@@ -125,6 +125,10 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     mapping(PoolId => bool) internal _started;
     mapping(address => bool) internal _launchers;
     HookGlobals internal _globals;
+    /// @dev Every fee escrow this hook has been wired to, set in the constructor
+    ///      and in `setFeeEscrow`. A bounty recipient can never be one of them,
+    ///      so a rotated-out escrow stays rejected.
+    mapping(address => bool) internal _knownEscrow;
 
     /// @param manager_   Uniswap v4 PoolManager.
     /// @param owner_     Owner (Ownable2Step).
@@ -136,6 +140,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     {
         _checkConstants(escrow_);
         _globals = HookGlobals({feeEscrow: escrow_, extensionAllowlist: allowlist_});
+        _knownEscrow[escrow_] = true;
         emit FeeEscrowSet(address(0), escrow_);
         emit ExtensionAllowlistSet(address(0), allowlist_);
     }
@@ -571,6 +576,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         }
         emit FeeEscrowSet(_globals.feeEscrow, escrow);
         _globals.feeEscrow = escrow;
+        _knownEscrow[escrow] = true;
     }
 
     /// @inheritdoc IArtCoinsHookV2
@@ -627,17 +633,17 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     }
 
     /// @dev Reverts `RecipientCannotReceive` when `r` is a stack contract that
-    ///      cannot hold a fee. Resolves the factory from the coin, the token
-    ///      deployer from the factory, and the PositionManager and fee escrow
-    ///      from the locker. A read that reverts fails closed with
-    ///      `RecipientCheckFailed`: the change is refused for an
-    ///      unverified address.
+    ///      cannot hold a fee: the coin, this hook, the PoolManager, any escrow
+    ///      this hook has ever been wired to, the pool's mev module or locker,
+    ///      the factory, its token deployer, and the locker's PositionManager and
+    ///      current escrow. A read that reverts fails closed with
+    ///      `RecipientCheckFailed`: the change is refused for an unverified address.
     function _rejectKnownStackContract(address coin, address locker, address mevModule, address r)
         private
         view
     {
         if (
-            r == coin || r == address(this) || r == address(poolManager) || r == _globals.feeEscrow
+            r == coin || r == address(this) || r == address(poolManager) || _knownEscrow[r]
                 || r == mevModule || r == locker
         ) revert RecipientCannotReceive(r);
         address factory = IArtCoinsTokenV2(coin).launcher();

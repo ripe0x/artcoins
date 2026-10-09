@@ -101,7 +101,7 @@ contract KeeperV2Test is Test {
     }
 
     function test_keeperV2_zeroFactoryReverts() public {
-        vm.expectRevert(ArtCoinsKeeperV2.ZeroAddress.selector);
+        vm.expectRevert(IArtCoinsKeeperV2.ZeroAddress.selector);
         new ArtCoinsKeeperV2(address(0));
     }
 
@@ -152,7 +152,7 @@ contract KeeperV2Test is Test {
         coin.setRestricted(true);
         locker.setRewards(0.3 ether, 7e18);
         vm.expectEmit(true, false, false, true, address(keeper));
-        emit ArtCoinsKeeperV2.CoinForwardSkipped(address(coin), 7e18);
+        emit IArtCoinsKeeperV2.CoinForwardSkipped(address(coin), 7e18);
         runner.run(keeper, address(coin), false, 0);
         assertEq(address(runner).balance, 0.3 ether, "eth forwarded");
         assertEq(coin.balanceOf(address(keeper)), 7e18, "coin kept by the keeper");
@@ -337,7 +337,9 @@ contract KeeperV2Test is Test {
     function test_keeperV2_outOfGasInsideCollect_reportsInsufficientGas() public {
         locker.setBurn(50_000_000);
         vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(ArtCoinsKeeperV2.InsufficientGas.selector, uint8(1)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsKeeperV2.InsufficientGas.selector, uint8(1))
+        );
         keeper.collectAndForward{gas: 3_000_000}(address(coin), true, 0);
     }
 
@@ -345,7 +347,9 @@ contract KeeperV2Test is Test {
 
     function test_keeperV2_lowGas_collectStep_reverts() public {
         vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(ArtCoinsKeeperV2.InsufficientGas.selector, uint8(1)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsKeeperV2.InsufficientGas.selector, uint8(1))
+        );
         keeper.collectAndForward{gas: 400_000}(address(coin), true, 0);
         assertEq(locker.collectCalls(), 0);
     }
@@ -353,7 +357,9 @@ contract KeeperV2Test is Test {
     function test_keeperV2_lowGas_flushStep_reverts() public {
         locker.setBurn(850_000); // leaves too little for the flush floor
         vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(ArtCoinsKeeperV2.InsufficientGas.selector, uint8(2)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsKeeperV2.InsufficientGas.selector, uint8(2))
+        );
         keeper.collectAndForward{gas: 1_100_000}(address(coin), true, 0);
     }
 
@@ -362,7 +368,9 @@ contract KeeperV2Test is Test {
         locker.setBurn(600_000);
         swapper.setBurn(100_000, 0);
         vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(ArtCoinsKeeperV2.InsufficientGas.selector, uint8(3)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsKeeperV2.InsufficientGas.selector, uint8(3))
+        );
         keeper.collectAndForward{gas: 1_100_000}(address(coin), true, 0);
         assertEq(locker.collectCalls(), 0, "reverted run left state");
     }
@@ -391,7 +399,7 @@ contract KeeperV2Test is Test {
         assembly {
             sel := mload(add(ret, 0x20))
         }
-        assertEq(sel, ArtCoinsKeeperV2.InsufficientGas.selector);
+        assertEq(sel, IArtCoinsKeeperV2.InsufficientGas.selector);
         assertEq(swapper.flushCalls(), 0);
     }
 
@@ -424,7 +432,7 @@ contract KeeperV2Test is Test {
                     sel := mload(add(ret, 0x20))
                 }
                 assertEq(
-                    sel, ArtCoinsKeeperV2.InsufficientGas.selector, "failed for another reason"
+                    sel, IArtCoinsKeeperV2.InsufficientGas.selector, "failed for another reason"
                 );
                 assertEq(locker.collectCalls(), 0, "reverted run left state");
             }

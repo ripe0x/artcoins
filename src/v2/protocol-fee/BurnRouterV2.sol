@@ -122,6 +122,10 @@ contract BurnRouterV2 is
         {
             revert InvalidPoolKey();
         }
+        // the escrow and (when present) the pool hook this router binds to must
+        // report this build's constants hash. A hookless pool has nothing to check.
+        _checkConstants(feeEscrow);
+        if (address(key.hooks) != address(0)) _checkConstants(address(key.hooks));
         (uint160 spot,,,) = poolManager.getSlot0(key.toId());
         if (spot == 0) revert InvalidPoolKey();
         coin = coin_;
@@ -222,6 +226,16 @@ contract BurnRouterV2 is
     /// @inheritdoc IConstantsBound
     function constantsHash() external pure returns (bytes32) {
         return Constants.hash();
+    }
+
+    /// @dev `target.constantsHash()` must equal this build's hash.
+    function _checkConstants(address target) private view {
+        if (target == address(0)) revert ZeroAddress();
+        (bool ok, bytes memory ret) =
+            target.staticcall(abi.encodeCall(IConstantsBound.constantsHash, ()));
+        if (!ok || ret.length != 32 || abi.decode(ret, (bytes32)) != Constants.hash()) {
+            revert ConstantsMismatch(target);
+        }
     }
 
     // ── owner ─────────────────────────────────────────────────────────────

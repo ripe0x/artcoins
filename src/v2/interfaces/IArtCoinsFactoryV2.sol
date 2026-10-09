@@ -5,10 +5,17 @@ import {IConstantsBound} from "./IConstantsBound.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 
 /// @title  IArtCoinsFactoryV2
-/// @notice Launches an art coin, its native eth Uniswap v4 pool on the v2
-///         hook, and its locked liquidity in one call. Every per coin value is
-///         frozen at launch. The token address is a function of
+/// @notice Launches a coin, its native eth Uniswap v4 pool on the v2 hook, and
+///         its locked liquidity in one call. The token address is a function of
 ///         (factory, sender, full config).
+///
+///         Frozen at launch: the pool, hook, locker, mev module, tick spacing,
+///         lp fee, skim rates and caps, the reward split bps, the protocol
+///         floor, supply and the restriction allowlist seed. Mutable by the coin
+///         admin afterwards: the pool bounty recipient and project reward
+///         recipients (until `lockRecipients` or admin renounce), the coin
+///         description, image and metadata renderer, the allowlist entries, and
+///         turning restriction off once (until `lockAllowlist`).
 /// @dev    Units: bps = 1/10,000 (Constants.BPS); pips = 1/1,000,000
 ///         (Constants.FEE_DENOMINATOR); amounts are in wei or coin base units;
 ///         durations are in seconds. Owner functions are restricted to the
@@ -230,6 +237,8 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     event MevModuleSet(address indexed module, bool enabled);
     /// @notice The owner enabled or disabled a launch extension.
     event ExtensionSet(address indexed extension, bool enabled);
+    /// @notice The CREATE2 token deployer pointer changed.
+    event TokenDeployerSet(address indexed oldDeployer, address indexed newDeployer);
     /// @notice The owner changed the deprecated flag.
     event DeprecatedSet(bool deprecated);
     /// @notice The owner changed the deploy fee. Values are in wei.
@@ -258,6 +267,10 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     error Deprecated();
     /// @notice `deploymentInfo` was called for a token this factory did not launch.
     error NotFound();
+    /// @notice A launch was attempted before the token deployer was set.
+    error DeployerNotSet();
+    /// @notice `setTokenDeployer` target is not bound to this factory or has no code.
+    error InvalidDeployer(address deployer);
     /// @notice A required address argument or config address is zero.
     error ZeroAddress();
     /// @notice The configured hook is not enabled.
@@ -361,6 +374,9 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     /// @notice Stack version tag of this factory.
     function STACK_VERSION() external view returns (uint16);
 
+    /// @notice The CREATE2 token deployer bound to this factory.
+    function tokenDeployer() external view returns (address);
+
     /// @notice Whether this factory launched `token`.
     function isCoin(address token) external view returns (bool);
 
@@ -425,6 +441,11 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     ///         and a matching `constantsHash()` (`ConstantsMismatch`).
     ///         Reverts `ZeroAddress` for address(0).
     function setExtension(address extension, bool enabled) external;
+
+    /// @notice Point the factory at a token deployer bound to it. Owner only.
+    /// @dev    Reverts `InvalidDeployer` unless the deployer reports this factory
+    ///         as its `factory()` and a matching `constantsHash()`.
+    function setTokenDeployer(address deployer) external;
 
     /// @notice Close or reopen public launches. Owner only.
     function setDeprecated(bool deprecated_) external;

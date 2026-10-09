@@ -42,23 +42,6 @@ contract ArtCoinsKeeperV2 is IArtCoinsKeeperV2, ReentrancyGuardTransient {
     uint256 internal constant POST_CALL_RESERVE = 20_000;
     uint256 internal constant MAX_REASON = 256;
 
-    /// @dev gas shortfall for `step` (1 collect, 2 flush, 3 convert, 4 erc165 probe).
-    error InsufficientGas(uint8 step);
-    error ZeroAddress();
-    error CoinTransferFailed();
-
-    /// @notice One fee swapper serviced. `flushed` and `converted` are gross eth, 0 when the step reverted.
-    event SwapperServiced(
-        address indexed token, address indexed swapper, uint256 flushed, uint256 converted
-    );
-    /// @notice A swapper's `convert` reverted for a reason other than gas (too early, nothing to convert, ...).
-    event ConvertSkipped(address indexed token, address indexed swapper, bytes reason);
-    /// @notice A swapper's `flushPaired` reverted for a reason other than gas (usually `NothingToFlush`).
-    event FlushSkipped(address indexed token, address indexed swapper, bytes reason);
-    /// @notice A restricted coin's keeper reward coin was not forwarded to the
-    ///         caller (the keeper is not on the coin allowlist); it stays here.
-    event CoinForwardSkipped(address indexed token, uint256 amount);
-
     constructor(address factory_) {
         if (factory_ == address(0)) revert ZeroAddress();
         factory = factory_;

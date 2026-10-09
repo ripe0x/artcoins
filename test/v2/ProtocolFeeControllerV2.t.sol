@@ -8,6 +8,7 @@ import {P1Coin, P1Rejector, P1Sink, P1Stray} from "./p1/P1Base.sol";
 import {Constants} from "../../src/Constants.sol";
 import {ArtCoinsFeeEscrowV2} from "../../src/v2/ArtCoinsFeeEscrowV2.sol";
 import {IArtCoinsFeeEscrowV2} from "../../src/v2/interfaces/IArtCoinsFeeEscrowV2.sol";
+import {IConstantsBound} from "../../src/v2/interfaces/IConstantsBound.sol";
 import {IProtocolFeeControllerV2} from "../../src/v2/interfaces/IProtocolFeeControllerV2.sol";
 import {FeeDelivery} from "../../src/v2/libraries/FeeDelivery.sol";
 import {ProtocolFeeControllerV2} from "../../src/v2/protocol-fee/ProtocolFeeControllerV2.sol";
@@ -15,7 +16,8 @@ import {FalseTransferToken} from "./FeeDelivery.t.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
-/// @notice Router stand in that reports its coin and accepts eth.
+/// @notice Router stand in that reports its coin and accepts eth. Carries a
+///         matching constants hash so the controller accepts it.
 contract P1MockRouter {
     address public coin;
 
@@ -23,12 +25,41 @@ contract P1MockRouter {
         coin = coin_;
     }
 
+    function constantsHash() external pure returns (bytes32) {
+        return Constants.hash();
+    }
+
     receive() external payable {}
 }
 
-/// @notice Router stand in without `coin()` (a legacy or broken router).
+/// @notice Router stand in without `coin()` (a different stack router). Carries
+///         a matching constants hash so the controller accepts it.
 contract P1NoCoinRouter {
+    function constantsHash() external pure returns (bytes32) {
+        return Constants.hash();
+    }
+
     receive() external payable {}
+}
+
+/// @notice A contract built against a different `Constants` set.
+contract P1WrongHashRouter {
+    function constantsHash() external pure returns (bytes32) {
+        return keccak256("wrong");
+    }
+
+    receive() external payable {}
+}
+
+/// @notice A valid-hash router that reverts on eth receipt (push fails).
+contract P1RejectingRouter {
+    function constantsHash() external pure returns (bytes32) {
+        return Constants.hash();
+    }
+
+    receive() external payable {
+        revert("no eth");
+    }
 }
 
 /// @title  ProtocolFeeControllerV2Test
@@ -124,7 +155,7 @@ contract ProtocolFeeControllerV2Test is Test {
     }
 
     function test_pfcV2_revertingRouter_fallsBackToEscrow() public {
-        address rej = address(new P1Rejector());
+        address rej = address(new P1RejectingRouter());
         pfc.setBurnRouter(rej);
         vm.deal(address(pfc), 1 ether);
         pfc.processFees(address(0));
@@ -163,7 +194,7 @@ contract ProtocolFeeControllerV2Test is Test {
         coin.mint(address(pfc), 10e18);
         pfc.processFees(address(coin));
         assertEq(coin.balanceOf(address(treasury)), 10e18);
-        pfc.setBurnRouter(makeAddr("eoaRouter"));
+        pfc.setBurnRouter(address(new P1NoCoinRouter()));
         coin.mint(address(pfc), 10e18);
         pfc.processFees(address(coin));
         assertEq(coin.balanceOf(address(treasury)), 20e18);
@@ -211,8 +242,8 @@ contract ProtocolFeeControllerV2Test is Test {
 
     function test_pfcV2_rotation_noOldRouterCall() public {
         pfc.setBurnRouter(address(new P1NoCoinRouter()));
-        pfc.setBurnRouter(makeAddr("eoa"));
-        pfc.setBurnRouter(address(router)); // rotate back from an eoa
+        pfc.setBurnRouter(address(new P1NoCoinRouter()));
+        pfc.setBurnRouter(address(router)); // rotate back; the old router is never called
         assertEq(pfc.burnRouter(), address(router));
         vm.expectRevert(IProtocolFeeControllerV2.ZeroAddress.selector);
         pfc.setBurnRouter(address(0));
@@ -231,6 +262,18 @@ contract ProtocolFeeControllerV2Test is Test {
         );
         pfc.setBurnRouter(attacker);
         vm.stopPrank();
+    }
+
+    /// A9-03: setBurnRouter rejects a router built against other Constants or
+    /// one with no code, so the IConstantsBound wiring guarantee holds.
+    function test_pfcV2_setBurnRouter_checksConstants() public {
+        address wrong = address(new P1WrongHashRouter());
+        vm.expectRevert(abi.encodeWithSelector(IConstantsBound.ConstantsMismatch.selector, wrong));
+        pfc.setBurnRouter(wrong);
+
+        address eoa = makeAddr("eoaRouter");
+        vm.expectRevert(abi.encodeWithSelector(IConstantsBound.ConstantsMismatch.selector, eoa));
+        pfc.setBurnRouter(eoa);
     }
 
     function test_pfcV2_rescue() public {

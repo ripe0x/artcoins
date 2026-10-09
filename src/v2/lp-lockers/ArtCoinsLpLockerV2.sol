@@ -61,6 +61,10 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     uint256 public keeperRewardCap = Constants.LOCKER_KEEPER_CAP_DEFAULT;
     /// @inheritdoc IArtCoinsLpLockerV2
     address public feeEscrow;
+    /// @dev Every fee escrow this locker has been wired to, set in the
+    ///      constructor and in `setFeeEscrow`. A reward recipient can never be
+    ///      one of them, so a rotated-out escrow stays rejected.
+    mapping(address => bool) internal _knownEscrow;
     /// @inheritdoc IArtCoinsLpLockerV2
     mapping(address launcher => bool) public isLauncher;
 
@@ -424,7 +428,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     ///      change is refused.
     function _rejectRewardRecipient(address token, PoolKey memory key, address r) private view {
         if (
-            r == token || r == address(this) || r == feeEscrow || r == address(key.hooks)
+            r == token || r == address(this) || _knownEscrow[r] || r == address(key.hooks)
                 || r == address(poolManager) || r == address(positionManager)
         ) revert RecipientCannotReceive(r);
         address factory = IArtCoinsTokenV2(token).launcher();
@@ -493,6 +497,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         _checkConstants(escrow);
         emit FeeEscrowSet(feeEscrow, escrow);
         feeEscrow = escrow;
+        _knownEscrow[escrow] = true;
     }
 
     /// @inheritdoc IArtCoinsLpLockerV2

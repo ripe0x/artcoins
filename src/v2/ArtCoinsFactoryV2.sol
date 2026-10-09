@@ -73,19 +73,12 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     /// @notice A launch must earn some fee: both `lpFeePips` and `baselineSkimBps`
     ///         are zero, so the pool, the locker and the protocol earn nothing.
     error ZeroFeeLaunch();
-    /// @notice No token deployer set yet.
-    error DeployerNotSet();
     /// @notice A restricted launch's hook has no fee escrow set, so the seeded
     ///         allowlist cannot be assembled.
     error HookEscrowNotSet(address hook);
-    /// @notice The deployer has no code, is not bound to this factory, or was
-    ///         built against other Constants.
-    error InvalidDeployer(address deployer);
 
     // ── events and errors declared on the contract ───────────────────────
 
-    /// @notice The owner changed the token deployer.
-    event TokenDeployerSet(address indexed oldDeployer, address indexed newDeployer);
     /// @notice Position count is 0 or above `Constants.MAX_LP_POSITIONS`, or position bps do not sum to BPS.
     error InvalidPositions();
     /// @notice Reward slot count (project slots plus protocol slot) is 0 or above
@@ -480,10 +473,11 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         if (sum != Constants.BPS) revert InvalidPositions();
     }
 
-    /// @dev Project reward recipients must be able to receive eth or claim an
-    ///      escrow credit. The factory, the coin, the PoolManager, this launch's
-    ///      hook, locker, fee escrows, token deployer and mev module, and every
-    ///      extension in the config cannot do either.
+    /// @dev Every fee recipient must be able to receive eth or claim an escrow
+    ///      credit: the project reward recipients, the pool bounty recipient and
+    ///      the injected protocol recipient. The factory, the coin, the
+    ///      PoolManager, this launch's hook, locker, fee escrows, token deployer
+    ///      and mev module, and every extension in the config cannot do either.
     function _checkRecipients(DeploymentConfigV2 calldata c, address token) internal view {
         address[_REJECT_SET] memory fixedSet = [
             address(this),
@@ -498,13 +492,24 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         ];
         uint256 n = c.locker.rewardRecipients.length;
         for (uint256 i; i < n; ++i) {
-            address r = c.locker.rewardRecipients[i];
-            for (uint256 j; j < _REJECT_SET; ++j) {
-                if (r == fixedSet[j]) revert RecipientCannotReceive(r);
-            }
-            for (uint256 j; j < c.extensions.length; ++j) {
-                if (r == c.extensions[j].extension) revert RecipientCannotReceive(r);
-            }
+            _rejectStackRecipient(c.locker.rewardRecipients[i], fixedSet, c);
+        }
+        _rejectStackRecipient(c.fee.bountyRecipient, fixedSet, c);
+        _rejectStackRecipient(protocolRecipient, fixedSet, c);
+    }
+
+    /// @dev Reverts `RecipientCannotReceive` when `r` is a stack contract or a
+    ///      launch extension that cannot hold a fee.
+    function _rejectStackRecipient(
+        address r,
+        address[_REJECT_SET] memory fixedSet,
+        DeploymentConfigV2 calldata c
+    ) private pure {
+        for (uint256 j; j < _REJECT_SET; ++j) {
+            if (r == fixedSet[j]) revert RecipientCannotReceive(r);
+        }
+        for (uint256 j; j < c.extensions.length; ++j) {
+            if (r == c.extensions[j].extension) revert RecipientCannotReceive(r);
         }
     }
 
@@ -833,6 +838,12 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     /// @dev Injected into new pools only: the skim protocol leg and the locker protocol slot.
     function setProtocolRecipient(address payable recipient) external onlyOwner {
         if (recipient == address(0)) revert ZeroAddress();
+        // the launch-specific members (hook, locker, escrows, coin, mev module)
+        // are not knowable here; reject the globally knowable ones. The launch
+        // rechecks the full set against each pool.
+        if (recipient == address(this) || recipient == poolManager || recipient == tokenDeployer) {
+            revert RecipientCannotReceive(recipient);
+        }
         emit ProtocolRecipientSet(protocolRecipient, recipient);
         protocolRecipient = recipient;
     }

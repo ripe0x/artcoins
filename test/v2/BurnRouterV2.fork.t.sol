@@ -7,7 +7,10 @@ import {Constants} from "../../src/Constants.sol";
 import {IBurnRouterV2} from "../../src/v2/interfaces/IBurnRouterV2.sol";
 import {BurnRouterV2} from "../../src/v2/protocol-fee/BurnRouterV2.sol";
 
+import {IConstantsBound} from "../../src/v2/interfaces/IConstantsBound.sol";
+
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
@@ -51,8 +54,14 @@ contract OpenTabCaller is IUnlockCallback {
     receive() external payable {}
 }
 
+/// @notice A hook built against a different `Constants` set.
+contract BRWrongHashHook {
+    function constantsHash() external pure returns (bytes32) {
+        return keccak256("wrong");
+    }
+}
+
 /// @title  BurnRouterV2ForkTest
-/// @notice DESIGN b6, review LF-03, LF-04, LF-09, LF-12.
 /// Run: /tmp/claude-0/forge.sh test --match-path test/v2/BurnRouterV2.fork.t.sol -vv
 contract BurnRouterV2ForkTest is P1Base {
     BurnRouterV2 internal router;
@@ -353,6 +362,15 @@ contract BurnRouterV2ForkTest is P1Base {
         bad = key;
         bad.fee = 3000; // not initialized
         vm.expectRevert(IBurnRouterV2.InvalidPoolKey.selector);
+        r.initialize(address(coin), bad);
+
+        // A9-03: the hook the router binds to must report this build's constants hash
+        address wrongHook = address(new BRWrongHashHook());
+        bad = key;
+        bad.hooks = IHooks(wrongHook);
+        vm.expectRevert(
+            abi.encodeWithSelector(IConstantsBound.ConstantsMismatch.selector, wrongHook)
+        );
         r.initialize(address(coin), bad);
 
         vm.prank(attacker);
