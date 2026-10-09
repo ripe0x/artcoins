@@ -11,41 +11,42 @@ import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 /// @title  ArtCoinsMevLinearSkimV2
 /// @notice Anti sniper skim schedule for v2 pools. The skim decays linearly
 ///         from `startingSkimBps` to `endSkimBps` over `windowSeconds`, in
-///         BPS. The hook reads
-///         `currentSkimBps` per swap and clamps the result itself (never below
-///         the pool baseline, never above `MAX_SKIM_BPS`, expired at
-///         `createdAt + MAX_MEV_WINDOW` whatever this module reports).
+///         bps of volume. The hook reads `currentSkimBps` per swap and clamps
+///         the result to [pool baseline, `MAX_SKIM_BPS`]. The hook ends the
+///         skim at `createdAt + MAX_MEV_WINDOW` whatever this module reports.
 ///
 ///         Trust model:
-///         - No owner, no admin, no setters. The only state changing entry is
-///           `initialize`, callable by the immutable `hook` only.
+///         - Ownerless. The only state changing entry is `initialize`,
+///           callable by the immutable `hook`.
 ///         - Each pool is configured once, in the launch transaction, and the
 ///           config is frozen after that.
-///         - The module never touches the lp fee. It has no `beforeSwap` and
-///           answers only the IArtCoinsMevSkimV2 erc-165 id, so it can never be
-///           enabled as a fee dialing module.
+///         - The module has no `beforeSwap` and does not set the lp fee. It
+///           answers only the IArtCoinsMevSkimV2 erc-165 id.
 ///         - The window bounds are `Constants.MIN_MEV_WINDOW` and
-///           `Constants.MAX_MEV_WINDOW`, the same cap the hook enforces
-///          .
+///           `Constants.MAX_MEV_WINDOW`, the cap the hook also applies.
 ///
 ///         Config encoding for `initialize`:
-///         - `abi.encode(uint24 startingSkimBps, uint32 windowSeconds)` (64 bytes,
-///           the frozen interface form). `endSkimBps` is 0, the hook clamps the
-///           reported value up to the pool baseline, so the effective schedule
-///           reaches the baseline before the window closes.
+///         - `abi.encode(uint24 startingSkimBps, uint32 windowSeconds)` (64 bytes).
+///           `endSkimBps` is 0 and the hook clamps the reported value up to the
+///           pool baseline, so the effective schedule reaches the baseline
+///           before the window closes.
 ///         - `abi.encode(uint24 startingSkimBps, uint32 windowSeconds, uint24 endSkimBps)`
-///           (96 bytes, additive). The hook passes the pool baseline as
+///           (96 bytes). The hook passes the pool baseline as
 ///           `endSkimBps` so the decay reaches the baseline exactly at the end of
 ///           the window. `endSkimBps <= startingSkimBps` and
 ///           `endSkimBps <= Constants.MAX_BASELINE_SKIM_BPS`.
 ///         - empty bytes: `Constants.DEFAULT_START_SKIM_BPS`,
 ///           `Constants.DEFAULT_MEV_WINDOW`, `endSkimBps = 0`.
 contract ArtCoinsMevLinearSkimV2 is IArtCoinsMevSkimV2 {
-    /// @notice Per pool schedule, packed in one slot, frozen after `initialize`.
+    /// @notice Per pool schedule, packed in one slot, fixed after `initialize`.
     struct SkimSchedule {
+        /// @dev Skim at `startTime`, bps of volume.
         uint24 startingSkimBps;
+        /// @dev Skim at the end of the window, bps of volume.
         uint24 endSkimBps;
+        /// @dev Window length, seconds.
         uint32 windowSeconds;
+        /// @dev Block timestamp of `initialize`, seconds; 0 when not initialized.
         uint40 startTime;
     }
 
@@ -54,6 +55,7 @@ contract ArtCoinsMevLinearSkimV2 is IArtCoinsMevSkimV2 {
 
     mapping(PoolId => SkimSchedule) internal _schedule;
 
+    /// @param hook_ The only caller of `initialize`. Reverts with `InvalidConfig` when zero.
     constructor(address hook_) {
         if (hook_ == address(0)) revert InvalidConfig();
         hook = hook_;
@@ -122,7 +124,9 @@ contract ArtCoinsMevLinearSkimV2 is IArtCoinsMevSkimV2 {
         return s.startTime + s.windowSeconds;
     }
 
-    /// @notice Additive. The frozen schedule of a pool (all zero if never initialized).
+    /// @notice The stored schedule of a pool (all zero if never initialized).
+    /// @param poolId Pool id.
+    /// @return The schedule.
     function schedule(PoolId poolId) external view returns (SkimSchedule memory) {
         return _schedule[poolId];
     }

@@ -27,25 +27,25 @@ import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
 /// @title  FeeAutoSwapperV2
-/// @notice Sits in a frozen locker reward slot for one native eth paired art
-///         coin. `convert` swaps the coin side fees to eth on the coin's own
-///         pool; `flushPaired` forwards the eth side. Both forward the WHOLE
-///         eth balance to the frozen `endRecipient` (push, escrow fallback).
+/// @notice Occupies a locker reward slot for one native eth paired art coin.
+///         `convert` swaps the coin side fees to eth on the coin's pool and
+///         `flushPaired` forwards the eth side. Both forward the whole eth
+///         balance to the immutable `endRecipient` (push, escrow fallback).
 /// @dev    Properties:
-///         - payouts are balance based, never ledger based, so eth that a
-///           third party pushed in (escrow claim, direct send, selfdestruct)
-///           always leaves on the next call. invariant: eth balance is 0 after
-///           every `convert` and `flushPaired`.
-///         - the constructor opts into escrow `selfClaimOnly`.
-///         - recipient payout goes through `FeeDelivery` (push, escrow on
-///           failure); a failed keeper reward goes to the recipient instead of
-///           reverting. neither can brick flush or convert as long as this
-///           contract is an escrow depositor.
-///         - owner (Ownable2Step) tunes slippage, pacing and step size within
-///           `Constants` bounds and can rescue unrelated tokens only.
+///         - payouts use the contract balance, so eth sent by a third party
+///           (escrow claim, direct send, selfdestruct) leaves on the next call.
+///           Invariant: the eth balance is 0 after every `convert` and `flushPaired`.
+///         - the constructor sets escrow `selfClaimOnly` for this contract.
+///         - the recipient payout goes through `FeeDelivery` (push, escrow on
+///           failure). A failed keeper reward goes to the recipient. While this
+///           contract is an escrow depositor, neither failure reverts `convert`
+///           or `flushPaired`.
+///         - the owner (Ownable2Step) tunes slippage, pacing, step size, impact
+///           cap and spot floor within `Constants` bounds, and rescues tokens
+///           other than eth and the art coin.
 ///         Pool topology (escrow, hook, fee, tick spacing, end recipient) is
-///         immutable; the coin is bound once by the deployer (`setup`) or at
-///         construction.
+///         immutable. The coin is bound once, by the deployer through `setup`
+///         or at construction.
 contract FeeAutoSwapperV2 is
     IFeeAutoSwapperV2,
     IConstantsBound,
@@ -56,58 +56,56 @@ contract FeeAutoSwapperV2 is
     using StateLibrary for IPoolManager;
     using PoolIdLibrary for PoolKey;
 
-    /// @notice Gas forwarded on the push to `endRecipient`. Generous because a
-    ///         recipient may do work on receipt; failure falls back to the escrow.
+    /// @inheritdoc IFeeAutoSwapperV2
     uint256 public constant END_RECIPIENT_GAS = 500_000;
-    /// @notice Gas forwarded on the keeper reward push. Failure sends the
-    ///         reward to `endRecipient` instead.
+    /// @inheritdoc IFeeAutoSwapperV2
     uint256 public constant KEEPER_GAS = 50_000;
-    /// @notice Max per call input (v4 swap amounts are int128 sized).
+    /// @inheritdoc IFeeAutoSwapperV2
     uint256 public constant MAX_STEP_IN_CEILING = uint256(uint128(type(int128).max));
 
-    /// @notice `unlockCallback` caller is not the PoolManager.
-    error NotPoolManager();
-
-    /// @notice a second `convert` in the same block.
-    error AlreadyConvertedThisBlock();
-
-    /// @notice owner moved the output floor (bps of the spot implied output).
-    event SpotFloorBpsSet(uint256 oldBps, uint256 newBps);
-    /// @notice the pool's known fees were (re)read from the hook.
-    event PoolFeesSynced(
-        PoolId indexed poolId, address indexed coin, uint256 baselineSkimBps, uint256 lpFeePips
-    );
-    /// @notice owner moved the per convert price impact cap.
-    event MaxImpactBpsSet(uint256 oldBps, uint256 newBps);
-
-    /// @notice Initial convert output floor, 95% of the fee net spot output.
+    /// @inheritdoc IFeeAutoSwapperV2
     uint256 public constant CONVERT_SPOT_FLOOR_DEFAULT_BPS = 9500;
 
     /// @notice Constructor parameter bundle.
     /// @dev `coin` may be zero; the deployer then binds it via `setup`.
     struct Config {
+        // Initial owner.
         address owner;
+        // Uniswap v4 PoolManager.
         address poolManager;
+        // Fee escrow used as push fallback and claim source.
         address feeEscrow;
+        // Hook of the coin's pool.
         address hook;
+        // Pool fee field of the pool key.
         uint24 poolFee;
+        // Tick spacing of the pool key.
         int24 tickSpacing;
+        // Receiver of all forwarded eth.
         address endRecipient;
+        // Art coin, or zero to bind later through `setup`.
         address coin;
+        // Initial maxSlippageBps, in bps.
         uint256 maxSlippageBps;
+        // Initial minBlocksBetweenConverts, in blocks.
         uint256 minBlocksBetweenConverts;
+        // Initial maxStepIn, in coin base units.
         uint256 maxStepIn;
     }
 
     // ── immutable topology ────────────────────────────────────────────────
 
+    /// @inheritdoc IFeeAutoSwapperV2
     IPoolManager public immutable poolManager;
     /// @inheritdoc IFeeAutoSwapperV2
     address public immutable feeEscrow;
     /// @inheritdoc IFeeAutoSwapperV2
     address public immutable endRecipient;
+    /// @inheritdoc IFeeAutoSwapperV2
     address public immutable hook;
+    /// @inheritdoc IFeeAutoSwapperV2
     uint24 public immutable poolFee;
+    /// @inheritdoc IFeeAutoSwapperV2
     int24 public immutable tickSpacing;
     address internal immutable _deployer;
 
@@ -123,18 +121,15 @@ contract FeeAutoSwapperV2 is
     uint256 public minBlocksBetweenConverts;
     /// @inheritdoc IFeeAutoSwapperV2
     uint256 public maxStepIn;
-    /// @notice Block of the last successful `convert`.
+    /// @inheritdoc IFeeAutoSwapperV2
     uint256 public lastConvertBlock;
-    /// @notice Output floor in bps of the spot implied output, owner
-    ///         tunable within [SPOT_FLOOR_MIN_BPS, SPOT_FLOOR_MAX_BPS].
+    /// @inheritdoc IFeeAutoSwapperV2
     uint256 public spotFloorBps;
-    /// @notice price impact cap per convert in bps, owner tunable within
-    ///         [PRICE_IMPACT_MIN, PRICE_IMPACT_MAX]. The swap's price limit is
-    ///         the tighter of this and `maxSlippageBps`.
+    /// @inheritdoc IFeeAutoSwapperV2
     uint256 public maxImpactBps;
-    /// @notice pool baseline skim (BPS of volume) the floor nets out.
+    /// @inheritdoc IFeeAutoSwapperV2
     uint24 public poolBaselineSkimBps;
-    /// @notice pool lp fee (FEE_DENOMINATOR units) the floor nets out.
+    /// @inheritdoc IFeeAutoSwapperV2
     uint24 public poolLpFee;
 
     constructor(Config memory c) Ownable(c.owner) {
@@ -167,14 +162,13 @@ contract FeeAutoSwapperV2 is
         emit SpotFloorBpsSet(0, CONVERT_SPOT_FLOOR_DEFAULT_BPS);
         emit MaxImpactBpsSet(0, Constants.PRICE_IMPACT_DEFAULT);
 
-        // b5: a third party can no longer push escrowed fees into this contract.
         IArtCoinsFeeEscrowV2(c.feeEscrow).setSelfClaimOnly(true);
 
         if (c.coin != address(0)) _bind(c.coin);
     }
 
-    /// @notice Accepts eth from `poolManager.take`, escrow claims, the locker
-    ///         push and anyone else. Everything held leaves on the next call.
+    /// @notice Accepts eth from `poolManager.take`, escrow claims and the locker
+    ///         push. Held eth leaves on the next `convert` or `flushPaired`.
     receive() external payable {}
 
     // ── setup ─────────────────────────────────────────────────────────────
@@ -199,8 +193,7 @@ contract FeeAutoSwapperV2 is
         _syncFees(_key(coin_));
     }
 
-    /// @notice anyone re reads the pool's known fees from the hook.
-    ///         It can only set what the hook reports, so it is not gated.
+    /// @inheritdoc IFeeAutoSwapperV2
     function syncPoolFees() external {
         if (!_finalized) revert NotFinalized();
         _syncFees(_key(coin));
@@ -209,17 +202,16 @@ contract FeeAutoSwapperV2 is
     // ── permissionless ────────────────────────────────────────────────────
 
     /// @inheritdoc IFeeAutoSwapperV2
-    /// @dev Guards, all against the pre swap spot: the swap's price limit caps
-    ///      the move at min(`maxImpactBps`, `maxSlippageBps`) (a binding limit
-    ///      partial fills, the rest waits); the output must clear both the
-    ///      caller's `minOut` and `spotFloorBps` of the spot implied output
-    ///      for the input actually consumed; at most `maxStepIn` per call; one
-    ///      convert per block, then `minBlocksBetweenConverts` pacing.
-    ///      A caller can still move the spot before calling in the same tx
-    ///     ; the impact cap bounds how much coin the swapper sells
-    ///      into that moved price, so the sandwich gain per call is about the
-    ///      cap times the consumed value, against the attacker's round trip
-    ///      fees. Not prevented: keepers should pass an off chain `minOut`.
+    /// @dev Guards, all measured against the pre swap spot: the swap price
+    ///      limit caps the move at min(`maxImpactBps`, `maxSlippageBps`) and a
+    ///      binding limit fills partially, leaving the rest for later converts.
+    ///      The output must reach the caller's `minOut` and `spotFloorBps` of
+    ///      the fee net spot output for the coin consumed. At most `maxStepIn`
+    ///      coin per call. One convert per block, then `minBlocksBetweenConverts`.
+    ///      A caller can move the spot earlier in the same transaction. The impact
+    ///      cap bounds the coin sold into that price, so the gain per call is about
+    ///      the cap times the consumed value, against the round trip fees of the
+    ///      attacker. Keepers should pass an off chain `minOut`.
     function convert(uint256 minOut) external nonReentrant returns (uint256 pairedOut) {
         if (!_finalized) revert NotFinalized();
         if (lastConvertBlock == block.number) revert AlreadyConvertedThisBlock();
@@ -261,9 +253,10 @@ contract FeeAutoSwapperV2 is
     }
 
     /// @notice v4 unlock callback: exact input coin to eth swap with a price
-    ///         limit, settle the coin actually consumed, take the eth.
-    /// @dev    The coin is settled to the PoolManager AFTER the swap, so on a
-    ///         restricted coin the hook's per swap transfer allowance is granted
+    ///         limit, settles the coin consumed and takes the eth.
+    /// @dev    Callable by the PoolManager only; reverts `NotPoolManager` otherwise.
+    ///         The coin is settled to the PoolManager after the swap, so on a
+    ///         restricted coin the hook grants its per swap transfer allowance
     ///         first and the settle consumes it.
     function unlockCallback(bytes calldata data) external returns (bytes memory) {
         if (msg.sender != address(poolManager)) revert NotPoolManager();
@@ -327,8 +320,7 @@ contract FeeAutoSwapperV2 is
                 + IArtCoinsFeeEscrowV2(feeEscrow).balances(address(this), address(0));
     }
 
-    /// @notice The output floor `convert` enforces for `artIn` consumed at the
-    ///         current spot. Same code path as the enforced check.
+    /// @inheritdoc IFeeAutoSwapperV2
     function floorFor(uint256 artIn) external view returns (uint256) {
         if (coin == address(0)) return 0;
         (uint160 spot,,,) = poolManager.getSlot0(_key(coin).toId());
@@ -373,8 +365,7 @@ contract FeeAutoSwapperV2 is
         maxStepIn = maxIn;
     }
 
-    /// @notice sets the per convert price impact cap within the burn
-    ///         impact bounds.
+    /// @inheritdoc IFeeAutoSwapperV2
     function setMaxImpactBps(uint256 bps) external onlyOwner {
         if (bps < Constants.PRICE_IMPACT_MIN || bps > Constants.PRICE_IMPACT_MAX) {
             revert OutOfBounds(bps, Constants.PRICE_IMPACT_MIN, Constants.PRICE_IMPACT_MAX);
@@ -383,7 +374,7 @@ contract FeeAutoSwapperV2 is
         maxImpactBps = bps;
     }
 
-    /// @notice sets the output floor within Constants bounds.
+    /// @inheritdoc IFeeAutoSwapperV2
     function setSpotFloorBps(uint256 bps) external onlyOwner {
         if (bps < Constants.SPOT_FLOOR_MIN_BPS || bps > Constants.SPOT_FLOOR_MAX_BPS) {
             revert OutOfBounds(bps, Constants.SPOT_FLOOR_MIN_BPS, Constants.SPOT_FLOOR_MAX_BPS);
@@ -393,9 +384,8 @@ contract FeeAutoSwapperV2 is
     }
 
     /// @inheritdoc IFeeAutoSwapperV2
-    /// @dev Native eth (the paired currency) and the art coin are owed to
-    ///      `endRecipient` and can never be rescued. Before `setup` nothing can
-    ///      be rescued (the coin is not yet known).
+    /// @dev Native eth and the art coin belong to `endRecipient` and revert
+    ///      `CannotRescue`. Every rescue reverts `NotFinalized` before `setup`.
     function rescue(address token, address to, uint256 amount) external onlyOwner nonReentrant {
         if (to == address(0)) revert ZeroAddress();
         if (!_finalized) revert NotFinalized();
@@ -406,8 +396,8 @@ contract FeeAutoSwapperV2 is
 
     // ── internals ─────────────────────────────────────────────────────────
 
-    /// @dev Pulls this contract's escrow credit for `token`, if any. A failing
-    ///      escrow never blocks forwarding what is already held.
+    /// @dev Pulls this contract's escrow credit for `token`, if any. A failed
+    ///      claim is skipped so held funds still forward.
     function _claimEscrowed(address token) internal {
         IArtCoinsFeeEscrowV2 escrow = IArtCoinsFeeEscrowV2(feeEscrow);
         if (escrow.balances(address(this), token) > 0) {
@@ -416,9 +406,9 @@ contract FeeAutoSwapperV2 is
     }
 
     /// @dev Pays `reward` to the caller (gas capped, no returndata), then pushes
-    ///      the whole remaining eth balance to `endRecipient` with escrow
-    ///      fallback. A failed keeper push leaves the reward in the balance, so
-    ///      it goes to the recipient.
+    ///      the remaining eth balance to `endRecipient` with escrow fallback.
+    ///      A failed keeper push leaves the reward in the balance, which goes
+    ///      to the recipient.
     function _forwardAll(uint256 reward) internal returns (uint256 toRecipient, uint256 toKeeper) {
         if (reward > 0) {
             address keeper = msg.sender;
@@ -461,10 +451,10 @@ contract FeeAutoSwapperV2 is
         );
     }
 
-    /// @dev the pool's known fees, read from `hook.skimConfig(poolId)`
+    /// @dev The pool fees, read from `hook.skimConfig(poolId)`
     ///      (zero for a hookless pool or a hook that does not answer), clamped
     ///      to the Constants caps. `baselineSkimBps` in BPS of volume,
-    ///      `lpFeePips` in FEE_DENOMINATOR units.
+    ///      `lpFeePips` in pips (1/1,000,000).
     function _syncFees(PoolKey memory key) internal {
         uint256 s;
         uint256 f;
@@ -484,7 +474,7 @@ contract FeeAutoSwapperV2 is
         emit PoolFeesSynced(key.toId(), Currency.unwrap(key.currency1), s, f);
     }
 
-    /// @dev 1 - baseline skim - lp fee, in FEE_DENOMINATOR units (>= 80% by the caps).
+    /// @dev 1 - baseline skim - lp fee, in pips (at least 800,000 by the caps).
     function _netPpm() internal view returns (uint256) {
         uint256 skimPpm = uint256(poolBaselineSkimBps) * (Constants.FEE_DENOMINATOR / Constants.BPS);
         return Constants.FEE_DENOMINATOR - skimPpm - poolLpFee;

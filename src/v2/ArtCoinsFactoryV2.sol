@@ -63,7 +63,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     using PoolIdLibrary for PoolKey;
     using SafeERC20 for IERC20;
 
-    // ── additive errors (not in the frozen interface) ────────────────────
+    // ── errors declared on the contract ──────────────────────────────────
 
     /// @notice Parallel arrays of different lengths.
     error ArrayLengthMismatch();
@@ -82,9 +82,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     ///         built against other Constants.
     error InvalidDeployer(address deployer);
 
-    // ── additive events (not in the frozen interface) ────────────────────
+    // ── events and errors declared on the contract ───────────────────────
 
-    /// @notice the token deployer pointer changed.
+    /// @notice The owner changed the token deployer.
     event TokenDeployerSet(address indexed oldDeployer, address indexed newDeployer);
     /// @notice Position count is 0 or above `Constants.MAX_LP_POSITIONS`, or position bps do not sum to BPS.
     error InvalidPositions();
@@ -109,13 +109,6 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     ///      PoolManager, hook, locker, token deployer, locker fee escrow, hook
     ///      fee escrow, mev module.
     uint256 private constant _REJECT_SET = 9;
-
-    /// @dev String caps, equal to `ArtCoinsTokenV2.MAX_*_BYTES` (the test suite
-    ///      asserts the match).
-    uint256 private constant _MAX_NAME = 64;
-    uint256 private constant _MAX_SYMBOL = 16;
-    uint256 private constant _MAX_IMAGE = 2048;
-    uint256 private constant _MAX_DESCRIPTION = 4096;
 
     /// @notice The Uniswap v4 PoolManager every enabled hook must answer.
     address public immutable poolManager;
@@ -405,14 +398,18 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         return _validateExtensions(c.extensions, supply);
     }
 
-    /// @dev the token's own string caps, checked up front so a long
-    ///      field fails with the token's `StringTooLong(field, len)` before any
-    ///      deploy work. Field codes match `ArtCoinsTokenV2.FIELD_*`.
+    /// @dev Checks the token's string caps (`Constants.MAX_*_BYTES`) so a long
+    ///      field reverts with the token's `StringTooLong(field, len)` before any
+    ///      deploy work.
     function _validateStrings(TokenConfigV2 calldata t) internal pure {
-        _cap(bytes(t.name).length, _MAX_NAME, 0);
-        _cap(bytes(t.symbol).length, _MAX_SYMBOL, 1);
-        _cap(bytes(t.image).length, _MAX_IMAGE, 2);
-        _cap(bytes(t.description).length, _MAX_DESCRIPTION, 3);
+        _cap(bytes(t.name).length, Constants.MAX_NAME_BYTES, Constants.FIELD_NAME);
+        _cap(bytes(t.symbol).length, Constants.MAX_SYMBOL_BYTES, Constants.FIELD_SYMBOL);
+        _cap(bytes(t.image).length, Constants.MAX_IMAGE_BYTES, Constants.FIELD_IMAGE);
+        _cap(
+            bytes(t.description).length,
+            Constants.MAX_DESCRIPTION_BYTES,
+            Constants.FIELD_DESCRIPTION
+        );
     }
 
     function _cap(uint256 len, uint256 max, uint8 field) internal pure {
@@ -706,7 +703,6 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     // ══════════════════════════════════════════════════════════════════════
 
     /// @inheritdoc IArtCoinsFactoryV2
-    /// @dev Reverts `NotFound` for a token this factory did not launch.
     function deploymentInfo(address token) external view returns (DeploymentInfoV2 memory) {
         if (!isCoin[token]) revert NotFound();
         return _deploymentInfo[token];

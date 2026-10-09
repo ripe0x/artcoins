@@ -55,16 +55,16 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
     bytes32 private constant _ALLOWANCE_SLOT = keccak256("artcoins.tokenV2.transferAllowance");
 
     /// @notice String caps in bytes, enforced at construction and in every
-    ///         setter. The factory checks the same caps before deploying.
-    uint256 public constant MAX_NAME_BYTES = 64;
-    uint256 public constant MAX_SYMBOL_BYTES = 16;
-    uint256 public constant MAX_IMAGE_BYTES = 2048;
-    uint256 public constant MAX_DESCRIPTION_BYTES = 4096;
-    /// @notice `StringTooLong.field` codes.
-    uint8 public constant FIELD_NAME = 0;
-    uint8 public constant FIELD_SYMBOL = 1;
-    uint8 public constant FIELD_IMAGE = 2;
-    uint8 public constant FIELD_DESCRIPTION = 3;
+    ///         setter. Values are defined in `Constants`.
+    uint256 public constant MAX_NAME_BYTES = Constants.MAX_NAME_BYTES;
+    uint256 public constant MAX_SYMBOL_BYTES = Constants.MAX_SYMBOL_BYTES;
+    uint256 public constant MAX_IMAGE_BYTES = Constants.MAX_IMAGE_BYTES;
+    uint256 public constant MAX_DESCRIPTION_BYTES = Constants.MAX_DESCRIPTION_BYTES;
+    /// @notice `StringTooLong.field` codes, defined in `Constants`.
+    uint8 public constant FIELD_NAME = Constants.FIELD_NAME;
+    uint8 public constant FIELD_SYMBOL = Constants.FIELD_SYMBOL;
+    uint8 public constant FIELD_IMAGE = Constants.FIELD_IMAGE;
+    uint8 public constant FIELD_DESCRIPTION = Constants.FIELD_DESCRIPTION;
 
     // ── immutables ────────────────────────────────────────────────────────
 

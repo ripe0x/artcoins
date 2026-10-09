@@ -16,15 +16,25 @@ pragma solidity ^0.8.26;
 ///         an empty attribution, never a swap revert. Values abi.decode would
 ///         reject (dirty high bits) yield an empty attribution.
 library HookCalldata {
+    /// @notice Swap attribution named by the swapper in `hookData`. All fields are
+    ///         zero when absent or malformed.
     struct Attribution {
+        /// @dev Opaque source id.
         bytes32 sourceId;
+        /// @dev Referral recipient, or 0.
         address referrer;
+        /// @dev Opaque campaign id.
         bytes16 campaignId;
+        /// @dev Requested referral, bps of swap volume. At most 2^24 - 1; the hook
+        ///      caps it by the pool's maxReferralBpsOfVolume.
         uint256 referralBps;
     }
 
+    /// @notice Parses the extension slice and attribution out of `hookData`.
+    /// @param d The swap `hookData`.
     /// @return ext The `poolExtensionSwapData` slice (empty if malformed).
     /// @return att The attribution inside it (all zero if absent or malformed).
+    /// @dev    Never reverts.
     function decode(bytes calldata d)
         internal
         pure
@@ -62,9 +72,11 @@ library HookCalldata {
     ///         limited swap: `mevModuleSwapData == abi.encode(address)`
     ///         (exactly 32 bytes, clean high bits). Zero if absent or
     ///         malformed (the hook then refunds the PoolManager caller).
-    /// @dev    Only the swapper's own over charge is at stake, and the swapper
-    ///         chooses its hookData, so no authorization is needed. Never
-    ///         reverts: same bounds discipline as `decode`.
+    /// @dev    The swapper chooses its hookData and the refund is its own over
+    ///         charge, so no authorization applies. Never reverts: same bounds
+    ///         checks as `decode`.
+    /// @param d The swap `hookData`.
+    /// @return to The refund address, or 0.
     function refundTo(bytes calldata d) internal pure returns (address to) {
         uint256 n = d.length;
         if (n < 0x60) return address(0);

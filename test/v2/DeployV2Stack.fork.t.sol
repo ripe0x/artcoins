@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import {IArtCoinsHookV2} from "../../src/v2/interfaces/IArtCoinsHookV2.sol";
+
 // s1 deploy suite. forks mainnet at the harness pin and runs the exact deploy
 // routine of script/v2/DeployV2Stack.s.sol (script/v2/DeployV2Lib.sol) with a
 // broadcaster that is not the owner, so the two step ownership hand over is
@@ -117,7 +119,7 @@ contract DeployV2StackForkTest is ForkStack {
         ArtCoinsFeeEscrowV2 other = new ArtCoinsFeeEscrowV2(LIVE_OWNER);
         vm.prank(LIVE_OWNER);
         vm.expectRevert(
-            abi.encodeWithSelector(ArtCoinsHookV2.EscrowNotCoreDepositor.selector, address(other))
+            abi.encodeWithSelector(IArtCoinsHookV2.EscrowNotCoreDepositor.selector, address(other))
         );
         s.hook.setFeeEscrow(address(other));
 

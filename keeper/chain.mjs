@@ -9,7 +9,7 @@ import { decodeSlot0 } from './decide.mjs';
 export const POOL_MANAGER = '0x000000000004444c5dc75cB358380D2e3dE08A90';
 export const CANCEL_GAS = 21_000n;
 // type(IFeeAutoSwapperV2).interfaceId: xor of its own selectors (supportsInterface is inherited, not counted)
-export const FEE_SWAPPER_V2_INTERFACE_ID = '0x85d8f2a1';
+export const FEE_SWAPPER_V2_INTERFACE_ID = '0xec420605';
 
 const KEY = '(address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks)';
 export const marketAbi = parseAbi([

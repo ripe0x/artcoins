@@ -15,38 +15,40 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
 /// @title  ProtocolFeeControllerV2
 /// @notice Protocol fee recipient. Splits what it holds between `treasury`
-///         and `burnRouter`; each share stays at or above its Constants
-///         minimum. Delivery is push with escrow fallback (FeeDelivery).
+///         and `burnRouter`; each share is at or above its Constants minimum.
+///         Delivery is push with escrow fallback (FeeDelivery).
 /// @dev    Properties:
-///         - split is owner settable within [PFC_MIN_TREASURY_BPS,
-///           BPS - PFC_MIN_BURN_BPS].
-///         - `setBurnRouter` no longer calls the old router, so a broken
-///           router can always be rotated out.
-///         - erc20 burn share: when `token` is the router's coin the burn share
-///           is burned here with the token's `burn`; any other erc20 cannot be
-///           burned by the router, so it goes wholly to the treasury instead of
-///           being parked.
-///         - owner rescue of any balance (protocol's own revenue in transit).
-///         - `receive` never reverts: it splits only when given enough gas,
-///           through a try wrapped self call, and otherwise just holds the eth
-///           for a later `processFees(address(0))`. The hook and locker push
-///           with a small gas cap, so their pushes always succeed.
-///         Fallback to the escrow requires this contract to be an escrow
-///         depositor; until it is, a failed push reverts `processFees` and the
-///         funds stay here for retry.
+///         - the owner sets the treasury share within [PFC_MIN_TREASURY_BPS,
+///           BPS - PFC_MIN_BURN_BPS] (4000 to 9000 bps). Owner setters apply
+///           to every coin.
+///         - `setBurnRouter` does not call the old router, so a faulty router
+///           can be replaced.
+///         - erc20 burn share: when `token` is the router's coin, the burn
+///           share is burned here with the coin's `burn`. Any other erc20 goes
+///           wholly to the treasury.
+///         - the owner can rescue any balance, including eth.
+///         - `receive` does not revert. It splits eth on arrival when the
+///           call has at least RECEIVE_SPLIT_MIN_GAS gas, through a try wrapped
+///           self call, and otherwise holds the eth for a later
+///           `processFees(address(0))`. The hook and locker push with a gas cap
+///           below that, so their pushes succeed.
+///         Escrow fallback requires this contract to be an escrow depositor.
+///         Until it is, a failed push reverts `processFees` and the funds stay
+///         here for a retry.
 contract ProtocolFeeControllerV2 is
     IProtocolFeeControllerV2,
     IConstantsBound,
     Ownable2Step,
     ReentrancyGuardTransient
 {
-    /// @notice Gas forwarded on each push to the treasury or burn router.
+    /// @inheritdoc IProtocolFeeControllerV2
     uint256 public constant PUSH_GAS = Constants.PUSH_GAS_MAX;
-    /// @notice `receive` splits on arrival only with at least this much gas.
+    /// @inheritdoc IProtocolFeeControllerV2
     uint256 public constant RECEIVE_SPLIT_MIN_GAS = 500_000;
     /// @notice Gas for reading `burnRouter.coin()`.
     uint256 internal constant COIN_READ_GAS = 30_000;
 
+    /// @inheritdoc IProtocolFeeControllerV2
     address public immutable feeEscrow;
 
     /// @inheritdoc IProtocolFeeControllerV2
@@ -76,8 +78,8 @@ contract ProtocolFeeControllerV2 is
         _setSplit(treasuryBps_);
     }
 
-    /// @notice Never reverts. With enough gas, splits the whole eth balance now;
-    ///         otherwise holds it.
+    /// @notice Accepts eth. With at least RECEIVE_SPLIT_MIN_GAS gas, splits the
+    ///         whole eth balance; otherwise holds it for `processFees(address(0))`.
     receive() external payable {
         if (gasleft() >= RECEIVE_SPLIT_MIN_GAS) {
             try this.processFees(address(0)) {} catch {}
@@ -103,8 +105,8 @@ contract ProtocolFeeControllerV2 is
         } else {
             if (token == _routerCoin(r)) {
                 burnAmt = total - (total * treasuryBps) / Constants.BPS;
-                // burn directly; a coin that refuses goes to the router, which
-                // burns every coin it holds on its next burn.
+                // A coin whose burn reverts goes to the router, which burns
+                // every coin it holds on its next burn.
                 if (burnAmt > 0) {
                     try IBurnableCoin(token).burn(burnAmt) {}
                     catch {
@@ -127,7 +129,7 @@ contract ProtocolFeeControllerV2 is
     }
 
     /// @inheritdoc IProtocolFeeControllerV2
-    /// @dev No call into the old router: rotation always works.
+    /// @dev The old router is not called.
     function setBurnRouter(address burnRouter_) external onlyOwner {
         if (burnRouter_ == address(0)) revert ZeroAddress();
         emit BurnRouterSet(burnRouter, burnRouter_);
@@ -140,7 +142,8 @@ contract ProtocolFeeControllerV2 is
     }
 
     /// @inheritdoc IProtocolFeeControllerV2
-    /// @dev Any token, including native eth (`token == address(0)`).
+    /// @dev Any token, including native eth (`token == address(0)`). Reverts
+    ///      `NativeTransferFailed` when the eth send fails.
     function rescue(address token, address to, uint256 amount) external onlyOwner nonReentrant {
         if (to == address(0)) revert ZeroAddress();
         if (token == address(0)) {
@@ -175,8 +178,9 @@ contract ProtocolFeeControllerV2 is
         emit SplitSet(treasuryBps_, burnBps);
     }
 
-    /// @dev `router.coin()` or zero when the router does not answer. Low level
-    ///      so a router without code or without `coin()` cannot revert this.
+    /// @dev `router.coin()`, or zero when the router does not answer. Uses a
+    ///      gas capped staticcall so a router without code or without `coin()`
+    ///      returns zero.
     function _routerCoin(address r) internal view returns (address c) {
         bytes4 sel = IBurnRouterV2.coin.selector;
         uint256 g = COIN_READ_GAS;

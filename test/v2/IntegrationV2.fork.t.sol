@@ -400,7 +400,7 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         // locker: the lp position nfts are not rescuable, it holds no fees
         uint256 positionId = v2.locker.tokenRewards(coin).positionId;
         address posm = address(v2.locker.positionManager()); // read before expectRevert
-        vm.expectRevert(ArtCoinsLpLockerV2.RescueForbidden.selector);
+        vm.expectRevert(IArtCoinsLpLockerV2.RescueForbidden.selector);
         v2.locker.rescue(posm, LIVE_OWNER, positionId);
         assertEq(address(v2.locker).balance, 0);
         assertEq(IERC20(coin).balanceOf(address(v2.locker)), 0);

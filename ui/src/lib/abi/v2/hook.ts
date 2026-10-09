@@ -482,6 +482,31 @@ export const hookV2Abi = [
   },
   {
     "type": "event",
+    "name": "BountyRecipientSet",
+    "inputs": [
+      {
+        "name": "poolId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "PoolId"
+      },
+      {
+        "name": "oldRecipient",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newRecipient",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "ClaimsRescued",
     "inputs": [
       {
@@ -675,6 +700,25 @@ export const hookV2Abi = [
         "type": "int24",
         "indexed": false,
         "internalType": "int24"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ProtocolFloorInitialized",
+    "inputs": [
+      {
+        "name": "poolId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "PoolId"
+      },
+      {
+        "name": "minProtocolShareBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
       }
     ],
     "anonymous": false
@@ -904,6 +948,17 @@ export const hookV2Abi = [
   },
   {
     "type": "error",
+    "name": "EscrowNotCoreDepositor",
+    "inputs": [
+      {
+        "name": "escrow",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "ExtensionNotAllowed",
     "inputs": [
       {
@@ -945,12 +1000,38 @@ export const hookV2Abi = [
   },
   {
     "type": "error",
+    "name": "NotCoinAdmin",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NotLauncher",
     "inputs": []
   },
   {
     "type": "error",
     "name": "ProtocolRecipientZero",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RecipientCannotReceive",
+    "inputs": [
+      {
+        "name": "recipient",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "RecipientCheckFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RecipientsLocked",
     "inputs": []
   },
   {
@@ -963,6 +1044,11 @@ export const hookV2Abi = [
         "internalType": "uint256"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "UnknownPool",
+    "inputs": []
   },
   {
     "type": "error",

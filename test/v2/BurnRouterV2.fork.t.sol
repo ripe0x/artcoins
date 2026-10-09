@@ -127,9 +127,9 @@ contract BurnRouterV2ForkTest is P1Base {
         _fund(2 ether);
         assertEq(router.openTabCaller(), address(0));
         OpenTabCaller caller = new OpenTabCaller(pm, router);
-        vm.expectRevert(BurnRouterV2.NotOpenTabCaller.selector);
+        vm.expectRevert(IBurnRouterV2.NotOpenTabCaller.selector);
         caller.go();
-        vm.expectRevert(BurnRouterV2.NotOpenTabCaller.selector);
+        vm.expectRevert(IBurnRouterV2.NotOpenTabCaller.selector);
         router.processBurnOpenTab(0);
     }
 
@@ -137,7 +137,7 @@ contract BurnRouterV2ForkTest is P1Base {
         _fund(2 ether);
         OpenTabCaller caller = new OpenTabCaller(pm, router);
         vm.expectEmit(true, true, false, false, address(router));
-        emit BurnRouterV2.OpenTabCallerSet(address(0), address(caller));
+        emit IBurnRouterV2.OpenTabCallerSet(address(0), address(caller));
         router.setOpenTabCaller(address(caller));
         caller.go();
         assertGt(caller.lastEthIn(), 0, "gated caller burns");
@@ -148,10 +148,10 @@ contract BurnRouterV2ForkTest is P1Base {
         OpenTabCaller allowed = new OpenTabCaller(pm, router);
         OpenTabCaller other = new OpenTabCaller(pm, router);
         router.setOpenTabCaller(address(allowed));
-        vm.expectRevert(BurnRouterV2.NotOpenTabCaller.selector);
+        vm.expectRevert(IBurnRouterV2.NotOpenTabCaller.selector);
         other.go();
         vm.prank(attacker);
-        vm.expectRevert(BurnRouterV2.NotOpenTabCaller.selector);
+        vm.expectRevert(IBurnRouterV2.NotOpenTabCaller.selector);
         router.processBurnOpenTab(0);
 
         // owner only, and zero disables again
@@ -161,7 +161,7 @@ contract BurnRouterV2ForkTest is P1Base {
         );
         router.setOpenTabCaller(attacker);
         router.setOpenTabCaller(address(0));
-        vm.expectRevert(BurnRouterV2.NotOpenTabCaller.selector);
+        vm.expectRevert(IBurnRouterV2.NotOpenTabCaller.selector);
         allowed.go();
     }
 
@@ -182,7 +182,7 @@ contract BurnRouterV2ForkTest is P1Base {
         vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, hi + 1, lo, hi));
         router.setSpotFloorBps(hi + 1);
         vm.expectEmit(false, false, false, true, address(router));
-        emit BurnRouterV2.SpotFloorBpsSet(Constants.BURN_SPOT_FLOOR_DEFAULT_BPS, lo);
+        emit IBurnRouterV2.SpotFloorBpsSet(Constants.BURN_SPOT_FLOOR_DEFAULT_BPS, lo);
         router.setSpotFloorBps(lo);
         assertEq(router.spotFloorBps(), lo);
         router.setSpotFloorBps(hi);
@@ -425,7 +425,7 @@ contract BurnRouterV2ForkTest is P1Base {
         vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, hi + 1, lo, hi));
         router.setMaxBurnPerCall(hi + 1);
         vm.expectEmit(false, false, false, true, address(router));
-        emit BurnRouterV2.MaxBurnPerCallSet(5 ether, lo);
+        emit IBurnRouterV2.MaxBurnPerCallSet(5 ether, lo);
         router.setMaxBurnPerCall(lo);
 
         _fund(1 ether);
@@ -444,7 +444,7 @@ contract BurnRouterV2ForkTest is P1Base {
     }
 
     function test_burnV2_unlockCallback_onlyPoolManager() public {
-        vm.expectRevert(BurnRouterV2.NotPoolManager.selector);
+        vm.expectRevert(IBurnRouterV2.NotPoolManager.selector);
         router.unlockCallback(abi.encode(uint256(1), uint160(1)));
     }
 }

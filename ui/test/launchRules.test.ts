@@ -49,11 +49,11 @@ const errorsOf = (f: LaunchForm, c: LaunchContext, field: string) =>
 
 // ── drift guards against the solidity sources ───────────────────────────────────────────────────
 
-test('string caps equal ArtCoinsTokenV2.MAX_*_BYTES in the contract source', (t) => {
-  const src = new URL('../../src/v2/ArtCoinsTokenV2.sol', import.meta.url);
+test('string caps equal Constants.MAX_*_BYTES in the contract source', (t) => {
+  const src = new URL('../../src/Constants.sol', import.meta.url);
   if (!existsSync(src)) return t.skip('contract source not found');
   const text = readFileSync(src, 'utf8');
-  const read = (n: string) => Number(new RegExp(`uint256 public constant ${n} = (\\d+);`).exec(text)?.[1]);
+  const read = (n: string) => Number(new RegExp(`uint256 internal constant ${n} = (\\d+);`).exec(text)?.[1]);
   assert.equal(STRING_CAPS.name, read('MAX_NAME_BYTES'));
   assert.equal(STRING_CAPS.symbol, read('MAX_SYMBOL_BYTES'));
   assert.equal(STRING_CAPS.image, read('MAX_IMAGE_BYTES'));

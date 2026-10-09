@@ -14,13 +14,15 @@ interface IArtCoinsExtensionV2 is IERC165, IConstantsBound {
     error InvalidMsgValue();
 
     /// @notice Called once by the factory during the launch tx. Factory only.
-    ///         The factory has already transferred `extensionSupply` of `token`
-    ///         to this extension and sends the extension's configured eth as
-    ///         `msg.value` (revert InvalidMsgValue on a mismatch).
+    ///         The factory approves `extensionSupply` of `token` to this
+    ///         extension before the call; the extension must pull exactly that
+    ///         amount with `transferFrom` during the call, or the launch reverts
+    ///         `SupplyNotPulled`. The factory sends the extension's configured
+    ///         eth as `msg.value` (revert InvalidMsgValue on a mismatch).
     /// @param  config         The full launch config.
     /// @param  poolKey        The pool the factory just created.
     /// @param  token          The launched coin.
-    /// @param  extensionSupply Coin supply already transferred in.
+    /// @param  extensionSupply Coin supply approved to this extension, to be pulled in full.
     /// @param  extensionIndex This extension's index in `config.extensions`.
     function receiveTokens(
         IArtCoinsFactoryV2.DeploymentConfigV2 calldata config,

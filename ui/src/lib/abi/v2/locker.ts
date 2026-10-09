@@ -855,6 +855,11 @@ export const lockerV2Abi = [
   },
   {
     "type": "error",
+    "name": "NotCoinAdmin",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NotLauncher",
     "inputs": []
   },
@@ -881,6 +886,47 @@ export const lockerV2Abi = [
   },
   {
     "type": "error",
+    "name": "PoolManagerUnlocked",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ProtocolSlotFrozen",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RecipientCannotReceive",
+    "inputs": [
+      {
+        "name": "recipient",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "RecipientCheckFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RecipientsLocked",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RescueForbidden",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RewardIndexOutOfRange",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "TokenAlreadyHasRewards",
     "inputs": []
   },
@@ -897,6 +943,16 @@ export const lockerV2Abi = [
   {
     "type": "error",
     "name": "TooManyRewardParticipants",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UnexpectedEth",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UnsupportedPoolKey",
     "inputs": []
   },
   {

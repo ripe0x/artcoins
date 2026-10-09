@@ -213,7 +213,7 @@ contract FeeAutoSwapperV2ForkTest is P1Base {
         uint256 next = b0 + 50;
         assertEq(swapper.nextConvertibleBlock(), next);
 
-        vm.expectRevert(FeeAutoSwapperV2.AlreadyConvertedThisBlock.selector);
+        vm.expectRevert(IFeeAutoSwapperV2.AlreadyConvertedThisBlock.selector);
         swapper.convert(0);
 
         vm.roll(b0 + 1);
@@ -257,7 +257,7 @@ contract FeeAutoSwapperV2ForkTest is P1Base {
         assertEq(address(s).balance, 0, "invariant");
 
         // drains over later blocks, one convert per block
-        vm.expectRevert(FeeAutoSwapperV2.AlreadyConvertedThisBlock.selector);
+        vm.expectRevert(IFeeAutoSwapperV2.AlreadyConvertedThisBlock.selector);
         s.convert(0);
         vm.roll(block.number + 50);
         uint256 before = coin.balanceOf(address(s));
@@ -277,7 +277,7 @@ contract FeeAutoSwapperV2ForkTest is P1Base {
         );
         swapper.setMaxImpactBps(hi + 1);
         vm.expectEmit(false, false, false, true, address(swapper));
-        emit FeeAutoSwapperV2.MaxImpactBpsSet(hi, lo);
+        emit IFeeAutoSwapperV2.MaxImpactBpsSet(hi, lo);
         swapper.setMaxImpactBps(lo);
         assertEq(swapper.maxImpactBps(), lo);
 
@@ -309,7 +309,7 @@ contract FeeAutoSwapperV2ForkTest is P1Base {
     }
 
     function test_swapperV2_unlockCallback_onlyPoolManager() public {
-        vm.expectRevert(FeeAutoSwapperV2.NotPoolManager.selector);
+        vm.expectRevert(IFeeAutoSwapperV2.NotPoolManager.selector);
         swapper.unlockCallback(abi.encode(uint256(1), uint160(1)));
     }
 
@@ -415,7 +415,7 @@ contract FeeAutoSwapperV2ForkTest is P1Base {
         );
         swapper.setSpotFloorBps(hi + 1);
         vm.expectEmit(false, false, false, true, address(swapper));
-        emit FeeAutoSwapperV2.SpotFloorBpsSet(9500, lo);
+        emit IFeeAutoSwapperV2.SpotFloorBpsSet(9500, lo);
         swapper.setSpotFloorBps(lo);
         assertEq(swapper.spotFloorBps(), lo);
         swapper.setSpotFloorBps(hi);

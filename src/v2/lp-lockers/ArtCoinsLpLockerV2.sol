@@ -28,60 +28,31 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
 /// @title  ArtCoinsLpLockerV2
 /// @notice Holds each v2 coin's launch liquidity (no decrease path) and
-///         splits collected lp fees. The split bps are set once at launch; the
-///         coin admin may change a project reward recipient, the protocol slot
-///         stays frozen. Shares are pushed (eth with a gas cap, coin with a
+///         splits collected lp fees. The split bps are set once at launch. The
+///         coin admin may change a reward recipient until the coin locks its
+///         recipients or renounces its admin. The protocol slot is fixed at
+///         launch and is the last reward element when present. Shares are pushed (eth with a gas cap, coin with a
 ///         plain transfer); a failed push is credited to the recipient in the
 ///         fee escrow.
 /// @dev    Native eth paired pools only: currency0 is eth, currency1 is
 ///         the coin. The locker holds nothing between calls; any balance is
 ///         stray and rescuable.
-///         there is no "without unlock" collect. `collectRewards` opens
-///         its own PositionManager unlock, refuses to run while the
-///         PoolManager is already unlocked, and sizes amounts from its own
-///         balance deltas.
+///         `collectRewards` opens its own PositionManager unlock, reverts
+///         while the PoolManager is already unlocked, and sizes amounts from
+///         its own balance deltas.
 contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuardTransient {
     using TransientStateLibrary for IPoolManager;
     using PoolIdLibrary for PoolKey;
-
-    // ── additive errors (not in the frozen interface) ─────────────────────
-
-    /// @notice `collectRewards` was called while the PoolManager is unlocked
-    ///         by someone else.
-    error PoolManagerUnlocked();
-    /// @notice Pool key is not a native eth pair of `token` with the configured
-    ///         hook and tick spacing.
-    error UnsupportedPoolKey();
-    /// @notice Rescue target is the PositionManager (lp nfts are never movable).
-    error RescueForbidden();
-    /// @notice Native eth may only arrive from the PoolManager.
-    error UnexpectedEth();
-    /// @notice The caller is not the coin's current admin.
-    error NotCoinAdmin();
-    /// @notice The coin's recipients are frozen (the coin called `lockRecipients`
-    ///         or renounced its admin).
-    error RecipientsLocked();
-    /// @notice `setRewardRecipient` index is past the reward slots.
-    error RewardIndexOutOfRange();
-    /// @notice The protocol reward slot is frozen; the coin admin changes the
-    ///         project slots.
-    error ProtocolSlotFrozen();
-    /// @notice A reward recipient the factory launch checks reject for this role:
-    ///         the coin, this locker, its fee escrow, the pool hook's fee escrow,
-    ///         the pool's hook, the PoolManager, the PositionManager, the pool's
-    ///         mev module, the factory or its token deployer.
-    error RecipientCannotReceive(address recipient);
-    /// @notice A reject-set lookup (token deployer, pool mev module or pool hook
-    ///         fee escrow) reverted, so the recipient could not be verified. The
-    ///         setter refuses the change rather than skip a check.
-    error RecipientCheckFailed();
 
     /// @notice Gas forwarded on each native reward push. A recipient that
     ///         needs more is credited in the escrow instead.
     uint256 public constant PUSH_GAS = Constants.PUSH_GAS_MAX;
 
+    /// @notice PositionManager that holds the launch positions.
     IPositionManager public immutable positionManager;
+    /// @notice Uniswap v4 PoolManager of `positionManager`.
     IPoolManager public immutable poolManager;
+    /// @notice Permit2 used to approve coin transfers into `positionManager`.
     IPermit2 public immutable permit2;
 
     /// @inheritdoc IArtCoinsLpLockerV2
@@ -99,6 +70,10 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     ///      launch data. `setRewardRecipient` refuses this slot.
     mapping(address token => uint256) internal _protocolSlotPlusOne;
 
+    /// @param owner_           Owner (Ownable2Step).
+    /// @param positionManager_ Uniswap v4 PositionManager.
+    /// @param permit2_         Permit2.
+    /// @param feeEscrow_       Fee escrow; must report this build's `constantsHash()`.
     constructor(address owner_, address positionManager_, address permit2_, address feeEscrow_)
         Ownable(owner_)
     {
@@ -446,7 +421,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     ///      cannot hold a reward. Resolves the factory from the coin, the token
     ///      deployer from the factory and the mev module from the pool's hook. A
     ///      read that reverts fails closed with `RecipientCheckFailed`: the
-    ///      change is refused, never allowed on an unverified address.
+    ///      change is refused.
     function _rejectRewardRecipient(address token, PoolKey memory key, address r) private view {
         if (
             r == token || r == address(this) || r == feeEscrow || r == address(key.hooks)

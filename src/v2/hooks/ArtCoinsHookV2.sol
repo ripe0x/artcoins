@@ -37,15 +37,19 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
 /// @dev Minimal reads of the pool locker for the bounty recipient reject set.
 interface ILockerReads {
+    /// @notice The locker's PositionManager.
     function positionManager() external view returns (address);
+    /// @notice The locker's fee escrow.
     function feeEscrow() external view returns (address);
 }
 
 /// @title  ArtCoinsHookV2
 /// @notice Skim fee hook for v2 coin pools. Every pool is native eth
 ///         (currency0) against the coin (currency1), created only by an
-///         allowlisted launcher. The fee rates and caps are set once at init;
-///         the coin admin may change the pool's bounty recipient afterwards.
+///         allowlisted launcher. The fee rates and caps are set once at init.
+///         The coin admin may change the pool's bounty recipient until the coin
+///         calls `lockRecipients` or renounces its admin. Anti sniper skim above
+///         the baseline goes to the bounty recipient.
 ///
 ///         Per swap, on the quote (eth) side, with `r` the realized pool side
 ///         quote amount for all four swap shapes:
@@ -76,7 +80,7 @@ interface ILockerReads {
 ///         per pool cap (<= 1% of volume, <= the protocol share). The PoolManager
 ///         caller cannot be the referrer.
 ///
-/// @dev    One contract, no delegate module; calldata parsing is inlined from
+/// @dev    Single contract; calldata parsing is inlined from
 ///         `HookCalldata`. The PoolManager never calls `beforeInitialize` on a
 ///         self initialized pool, so `_beforeInitialize` reverts unconditionally
 ///         and `initializePool` is the only init path.
@@ -109,33 +113,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     ///      keccak256("artcoins.hookV2.requested").
     uint256 private constant _REQ_SLOT =
         0x1ed2782058d87e2c0cc971c5cc47936f85ed6b62abd4c00f9ad4c24ce7f27f87;
-
-    /// @dev The escrow passed to `setFeeEscrow` does not list this hook as a
-    ///      core depositor, so a failed push could not fall back to it.
-    error EscrowNotCoreDepositor(address escrow);
-    /// @dev A bounty recipient the factory launch checks reject for this role:
-    ///      the coin, this hook, the PoolManager, this hook's fee escrow, the
-    ///      pool locker's fee escrow, the pool's mev module, the pool's locker,
-    ///      the factory, its token deployer or the PositionManager.
-    error RecipientCannotReceive(address recipient);
-    /// @dev A reject-set lookup (token deployer, locker PositionManager or locker
-    ///      fee escrow) reverted, so the recipient could not be verified. The
-    ///      setter refuses the change rather than skip a check.
-    error RecipientCheckFailed();
-    /// @dev The caller is not the coin's current admin.
-    error NotCoinAdmin();
-    /// @dev The coin's recipients are frozen (the coin called `lockRecipients`
-    ///      or renounced its admin).
-    error RecipientsLocked();
-    /// @dev `poolId` was not created by this hook.
-    error UnknownPool();
-
-    /// @dev The pool's protocol leg floor, BPS of the baseline skim, set at init.
-    event ProtocolFloorInitialized(PoolId indexed poolId, uint16 minProtocolShareBps);
-    /// @dev The coin admin changed the pool's bounty recipient.
-    event BountyRecipientSet(
-        PoolId indexed poolId, address indexed oldRecipient, address indexed newRecipient
-    );
 
     // ── storage ───────────────────────────────────────────────────────────
 
@@ -653,7 +630,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     ///      cannot hold a fee. Resolves the factory from the coin, the token
     ///      deployer from the factory, and the PositionManager and fee escrow
     ///      from the locker. A read that reverts fails closed with
-    ///      `RecipientCheckFailed`: the change is refused, never allowed on an
+    ///      `RecipientCheckFailed`: the change is refused for an
     ///      unverified address.
     function _rejectKnownStackContract(address coin, address locker, address mevModule, address r)
         private
@@ -691,7 +668,10 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         return _info[poolId];
     }
 
-    /// @notice Protocol leg floor of a pool (BPS of the baseline skim).
+    /// @notice Protocol leg floor of a pool, bps of the baseline skim. A referral
+    ///         is paid only from the protocol leg above it.
+    /// @param poolId Pool id.
+    /// @return Floor in bps.
     function minProtocolShareBps(PoolId poolId) external view returns (uint16) {
         return _minProtocolShareBps[poolId];
     }

@@ -649,13 +649,13 @@ contract HookV2ForkTest is HookV2ForkBase {
         // V2H-08: recipients that can never receive eth
         p = _params(_defaults(address(hook)), address(1));
         vm.expectRevert(
-            abi.encodeWithSelector(ArtCoinsHookV2.RecipientCannotReceive.selector, address(hook))
+            abi.encodeWithSelector(IArtCoinsHookV2.RecipientCannotReceive.selector, address(hook))
         );
         hook.initializePool(p);
         p = _params(_defaults(bountyEoa), address(1));
         p.skim.protocolRecipient = payable(POOL_MANAGER);
         vm.expectRevert(
-            abi.encodeWithSelector(ArtCoinsHookV2.RecipientCannotReceive.selector, POOL_MANAGER)
+            abi.encodeWithSelector(IArtCoinsHookV2.RecipientCannotReceive.selector, POOL_MANAGER)
         );
         hook.initializePool(p);
     }
@@ -863,7 +863,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         address payable newBounty = payable(makeAddr("newBounty"));
 
         vm.expectEmit(true, true, true, true, address(hook));
-        emit ArtCoinsHookV2.BountyRecipientSet(pid, bountyEoa, newBounty);
+        emit IArtCoinsHookV2.BountyRecipientSet(pid, bountyEoa, newBounty);
         assertEq(token.admin(), address(this), "admin is this test contract");
         hook.setBountyRecipient(pid, newBounty);
         assertEq(hook.skimConfig(pid).bountyRecipient, newBounty, "config updated");
@@ -879,7 +879,7 @@ contract HookV2ForkTest is HookV2ForkBase {
     function test_setBountyRecipient_nonAdminReverts() public onlyFork {
         (PoolKey memory key,) = _launch(_defaults(bountyEoa));
         vm.prank(makeAddr("stranger"));
-        vm.expectRevert(ArtCoinsHookV2.NotCoinAdmin.selector);
+        vm.expectRevert(IArtCoinsHookV2.NotCoinAdmin.selector);
         hook.setBountyRecipient(key.toId(), payable(makeAddr("x")));
     }
 
@@ -891,7 +891,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         address[4] memory bad = [address(token), address(hook), POOL_MANAGER, address(escrow)];
         for (uint256 i; i < bad.length; ++i) {
             vm.expectRevert(
-                abi.encodeWithSelector(ArtCoinsHookV2.RecipientCannotReceive.selector, bad[i])
+                abi.encodeWithSelector(IArtCoinsHookV2.RecipientCannotReceive.selector, bad[i])
             );
             hook.setBountyRecipient(pid, payable(bad[i]));
         }
@@ -902,7 +902,7 @@ contract HookV2ForkTest is HookV2ForkBase {
     function test_setBountyRecipient_unknownPoolReverts() public {
         PoolKey memory fake;
         fake.tickSpacing = 1;
-        vm.expectRevert(ArtCoinsHookV2.UnknownPool.selector);
+        vm.expectRevert(IArtCoinsHookV2.UnknownPool.selector);
         hook.setBountyRecipient(fake.toId(), payable(bountyEoa));
     }
 
@@ -910,14 +910,14 @@ contract HookV2ForkTest is HookV2ForkBase {
         (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(_defaults(bountyEoa));
         token.lockRecipients();
         assertTrue(token.recipientsLocked());
-        vm.expectRevert(ArtCoinsHookV2.RecipientsLocked.selector);
+        vm.expectRevert(IArtCoinsHookV2.RecipientsLocked.selector);
         hook.setBountyRecipient(key.toId(), payable(makeAddr("x")));
     }
 
     function test_setBountyRecipient_renounceFreezes() public onlyFork {
         (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(_defaults(bountyEoa));
         token.renounceAdmin();
-        vm.expectRevert(ArtCoinsHookV2.NotCoinAdmin.selector);
+        vm.expectRevert(IArtCoinsHookV2.NotCoinAdmin.selector);
         hook.setBountyRecipient(key.toId(), payable(makeAddr("x")));
     }
 
@@ -948,12 +948,12 @@ contract HookV2ForkTest is HookV2ForkBase {
         // turn every failed push into a swap revert
         ArtCoinsFeeEscrowV2 e2 = new ArtCoinsFeeEscrowV2(address(this));
         vm.expectRevert(
-            abi.encodeWithSelector(ArtCoinsHookV2.EscrowNotCoreDepositor.selector, address(e2))
+            abi.encodeWithSelector(IArtCoinsHookV2.EscrowNotCoreDepositor.selector, address(e2))
         );
         hook.setFeeEscrow(address(e2));
         e2.addDepositor(address(hook), false);
         vm.expectRevert(
-            abi.encodeWithSelector(ArtCoinsHookV2.EscrowNotCoreDepositor.selector, address(e2))
+            abi.encodeWithSelector(IArtCoinsHookV2.EscrowNotCoreDepositor.selector, address(e2))
         );
         hook.setFeeEscrow(address(e2));
         ArtCoinsFeeEscrowV2 e3 = new ArtCoinsFeeEscrowV2(address(this));

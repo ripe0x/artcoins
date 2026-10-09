@@ -240,7 +240,7 @@
   },
   {
     "type": "error",
-    "name": "NotArtCoin",
+    "name": "NotCoin",
     "inputs": [
       {
         "name": "token",

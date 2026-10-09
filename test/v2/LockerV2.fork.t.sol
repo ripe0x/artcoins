@@ -412,7 +412,7 @@ contract LockerV2ForkTest is ForkBase {
         PoolKey memory key = _key(address(0xC01), hook);
         key.currency0 = Currency.wrap(WETH);
         _expectPlaceRevert(
-            lc, key, abi.encodeWithSelector(ArtCoinsLpLockerV2.UnsupportedPoolKey.selector)
+            lc, key, abi.encodeWithSelector(IArtCoinsLpLockerV2.UnsupportedPoolKey.selector)
         );
         // hook with a different constants set
         address wrong = _etchHook(address(new WrongHashHook()));
@@ -470,7 +470,7 @@ contract LockerV2ForkTest is ForkBase {
         locker.rescue(address(t), address(0xBAD), 5e18);
         address posm = address(locker.positionManager());
         vm.startPrank(owner);
-        vm.expectRevert(ArtCoinsLpLockerV2.RescueForbidden.selector);
+        vm.expectRevert(IArtCoinsLpLockerV2.RescueForbidden.selector);
         locker.rescue(posm, owner, 1);
         vm.expectRevert(IArtCoinsLpLockerV2.ZeroAddress.selector);
         locker.rescue(address(t), address(0), 1);
@@ -770,7 +770,7 @@ contract LockerV2ForkTest is ForkBase {
         UnlockAttacker attacker = new UnlockAttacker(
             IPoolManager(POOL_MANAGER), IPositionManager(POSITION_MANAGER), locker
         );
-        vm.expectRevert(ArtCoinsLpLockerV2.PoolManagerUnlocked.selector);
+        vm.expectRevert(IArtCoinsLpLockerV2.PoolManagerUnlocked.selector);
         attacker.attack(key, address(coin), 100_000, 120_000);
         // the v1 open tab entry point does not exist
         (bool ok,) = address(locker)
