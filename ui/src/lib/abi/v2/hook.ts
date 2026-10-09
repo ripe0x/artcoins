@@ -262,6 +262,25 @@ export const hookV2Abi = [
   },
   {
     "type": "function",
+    "name": "minProtocolShareBps",
+    "inputs": [
+      {
+        "name": "poolId",
+        "type": "bytes32",
+        "internalType": "PoolId"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "poolInfo",
     "inputs": [
       {
