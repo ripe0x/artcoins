@@ -126,7 +126,6 @@ contract ConstantsV2Test is Test {
         assertEq(Constants.PFC_MIN_BURN_BPS, 1000);
         assertEq(Constants.MAX_GLYPHS, 256);
         assertEq(Constants.RENDER_GAS_BUDGET, 8_000_000);
-        assertEq(Constants.HOOK_SIZE_HEADROOM_MIN, 1024);
         assertEq(Constants.LEG_BOUNTY, 0);
         assertEq(Constants.LEG_PROTOCOL, 1);
         assertEq(Constants.LEG_REFERRAL, 2);
@@ -162,8 +161,6 @@ contract ConstantsV2Test is Test {
             uint256(Constants.PFC_MIN_TREASURY_BPS) + Constants.PFC_MIN_BURN_BPS, Constants.BPS
         );
         assertLt(Constants.PRICE_IMPACT_MAX, Constants.BPS);
-        // ci gate fits under EIP-170
-        assertLt(Constants.HOOK_SIZE_HEADROOM_MIN, 24_576);
     }
 
     /// @dev Interface ids used for erc165 checks are stable and non zero.

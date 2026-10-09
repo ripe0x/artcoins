@@ -30,6 +30,8 @@ interface IArtCoinsVaultV2 is IArtCoinsExtensionV2 {
 
     error InvalidExtensionData();
     error InvalidVaultBps();
+    /// @notice The launcher passed a zero supply share to the extension.
+    error ZeroExtensionSupply();
     error InvalidBeneficiary();
     error VaultLockupDurationTooShort();
     error VaultVestingDurationTooShort();

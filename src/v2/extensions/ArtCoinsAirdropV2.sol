@@ -79,7 +79,8 @@ contract ArtCoinsAirdropV2 is ReentrancyGuard, IArtCoinsAirdropV2 {
         IArtCoinsFactoryV2.ExtensionConfigV2 calldata e = config.extensions[extensionIndex];
         if (e.extension != address(this)) revert WrongExtensionEntry();
         if (e.msgValue != 0 || msg.value != 0) revert InvalidMsgValue();
-        if (e.extensionBps == 0 || extensionSupply == 0) revert InvalidAirdropBps();
+        if (e.extensionBps == 0) revert InvalidAirdropBps();
+        if (extensionSupply == 0) revert ZeroExtensionSupply();
         if (e.extensionData.length != 128) revert InvalidExtensionData();
 
         (address sweepRecipient, bytes32 root, uint256 lockup, uint256 vesting) =

@@ -5,6 +5,7 @@ import {Constants} from "../../Constants.sol";
 import {IArtCoinsFeeEscrowV2} from "../interfaces/IArtCoinsFeeEscrowV2.sol";
 import {IArtCoinsHookV2} from "../interfaces/IArtCoinsHookV2.sol";
 import {IBurnRouterV2} from "../interfaces/IBurnRouterV2.sol";
+import {IBurnableCoin} from "../interfaces/IBurnableCoin.sol";
 import {IConstantsBound} from "../interfaces/IConstantsBound.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
@@ -23,10 +24,6 @@ import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-
-interface IBurnableCoin {
-    function burn(uint256 amount) external;
-}
 
 /// @title  BurnRouterV2
 /// @notice Buys one v2 art coin with the native eth it holds and burns it.

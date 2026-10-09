@@ -38,6 +38,8 @@ contract ArtCoinsKeeperV2 is IArtCoinsKeeperV2, ReentrancyGuardTransient {
     uint256 internal constant CONVERT_GAS = 400_000;
     uint256 internal constant PROBE_GAS = 30_000; // erc165 recommends 30k for supportsInterface
     uint256 internal constant MARGIN = 50_000;
+    /// @dev Gas reserved for the bookkeeping after each step call (63/64 rule).
+    uint256 internal constant POST_CALL_RESERVE = 20_000;
     uint256 internal constant MAX_REASON = 256;
 
     /// @dev gas shortfall for `step` (1 collect, 2 flush, 3 convert, 4 erc165 probe).
@@ -210,10 +212,11 @@ contract ArtCoinsKeeperV2 is IArtCoinsKeeperV2, ReentrancyGuardTransient {
         }
     }
 
-    /// @dev Reverts rather than skips on a gas shortfall (63/64 rule plus 20k for the work after the call).
+    /// @dev Reverts rather than skips on a gas shortfall (63/64 rule plus the
+    ///      reserve for the work after the call).
     function _gas(uint8 step, uint256 cost) internal view returns (uint256 g) {
         g = cost + MARGIN;
-        if (gasleft() < g + g / 63 + 20_000) revert InsufficientGas(step);
+        if (gasleft() < g + g / 63 + POST_CALL_RESERVE) revert InsufficientGas(step);
     }
 
     /// @dev erc165 probe, gas capped, copies at most one word of returndata. A recipient that is an eoa, has

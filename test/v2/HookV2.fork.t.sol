@@ -629,7 +629,7 @@ contract HookV2ForkTest is HookV2ForkBase {
 
         p = _params(_defaults(bountyEoa), address(1));
         p.skim.bountyBps = Constants.MAX_BOUNTY_BPS + 1;
-        vm.expectRevert(IArtCoinsHookV2.BadLegBps.selector);
+        vm.expectRevert(IArtCoinsHookV2.BountyBpsTooHigh.selector);
         hook.initializePool(p);
 
         p = _params(_defaults(bountyEoa), address(1));

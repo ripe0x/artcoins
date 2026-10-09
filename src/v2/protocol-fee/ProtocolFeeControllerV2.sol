@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import {Constants} from "../../Constants.sol";
 import {IBurnRouterV2} from "../interfaces/IBurnRouterV2.sol";
+import {IBurnableCoin} from "../interfaces/IBurnableCoin.sol";
 import {IConstantsBound} from "../interfaces/IConstantsBound.sol";
 import {IProtocolFeeControllerV2} from "../interfaces/IProtocolFeeControllerV2.sol";
 import {FeeDelivery} from "../libraries/FeeDelivery.sol";
@@ -11,10 +12,6 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
-
-interface IBurnableCoin {
-    function burn(uint256 amount) external;
-}
 
 /// @title  ProtocolFeeControllerV2
 /// @notice Protocol fee recipient. Splits what it holds between `treasury`

@@ -116,6 +116,9 @@ interface IArtCoinsHookV2 is IConstantsBound {
     error MevWindowActive();
     error LpFeeTooHigh();
     error BaselineSkimBpsTooHigh();
+    /// @notice `bountyBps` exceeds MAX_BOUNTY_BPS (share of the skim, in BPS).
+    error BountyBpsTooHigh();
+    /// @notice `bountyBps + minProtocolShareBps` exceeds BPS, so the legs cannot fit.
     error BadLegBps();
     error MaxReferralTooHigh();
     error BountyRecipientZero();

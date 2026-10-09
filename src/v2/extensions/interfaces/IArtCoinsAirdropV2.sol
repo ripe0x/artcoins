@@ -36,6 +36,8 @@ interface IArtCoinsAirdropV2 is IArtCoinsExtensionV2 {
 
     error InvalidExtensionData();
     error InvalidAirdropBps();
+    /// @notice The launcher passed a zero supply share to the extension.
+    error ZeroExtensionSupply();
     error InvalidMerkleRoot();
     error ZeroSweepRecipient();
     error DurationTooLong();

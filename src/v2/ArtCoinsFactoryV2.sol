@@ -105,6 +105,11 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     /// @inheritdoc IArtCoinsFactoryV2
     uint16 public constant STACK_VERSION = Constants.STACK_VERSION;
 
+    /// @dev Stack contracts a reward recipient cannot be: factory, coin,
+    ///      PoolManager, hook, locker, token deployer, locker fee escrow, hook
+    ///      fee escrow, mev module.
+    uint256 private constant _REJECT_SET = 9;
+
     /// @dev String caps, equal to `ArtCoinsTokenV2.MAX_*_BYTES` (the test suite
     ///      asserts the match).
     uint256 private constant _MAX_NAME = 64;
@@ -483,7 +488,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     ///      hook, locker, fee escrows, token deployer and mev module, and every
     ///      extension in the config cannot do either.
     function _checkRecipients(DeploymentConfigV2 calldata c, address token) internal view {
-        address[9] memory fixedSet = [
+        address[_REJECT_SET] memory fixedSet = [
             address(this),
             token,
             poolManager,
@@ -497,7 +502,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         uint256 n = c.locker.rewardRecipients.length;
         for (uint256 i; i < n; ++i) {
             address r = c.locker.rewardRecipients[i];
-            for (uint256 j; j < 9; ++j) {
+            for (uint256 j; j < _REJECT_SET; ++j) {
                 if (r == fixedSet[j]) revert RecipientCannotReceive(r);
             }
             for (uint256 j; j < c.extensions.length; ++j) {
@@ -598,7 +603,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         if (
             t.canonicalHook() != c.pool.hook || t.canonicalPoolId() != PoolId.unwrap(poolId)
                 || t.poolManager() != poolManager || t.restricted() != c.restriction.restricted
-        ) revert InvalidRestrictionConfig();
+        ) revert CanonicalHookMismatch();
     }
 
     function _record(DeploymentConfigV2 calldata c, address token, PoolId poolId) internal {
@@ -756,7 +761,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         if (extension == address(0)) revert ZeroAddress();
         if (enabled) {
             if (!_supports(extension, type(IArtCoinsExtensionV2).interfaceId)) {
-                revert ExtensionNotEnabled();
+                revert InvalidExtension();
             }
             _checkConstants(extension);
         }

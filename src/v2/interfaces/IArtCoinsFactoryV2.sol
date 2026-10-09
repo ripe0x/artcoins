@@ -141,6 +141,11 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     error LockerNotEnabled();
     error MevModuleNotEnabled();
     error ExtensionNotEnabled();
+    /// @notice `setExtension` target does not answer the IArtCoinsExtensionV2 erc-165 id.
+    error InvalidExtension();
+    /// @notice A launched coin's canonical hook, pool id, PoolManager or restriction
+    ///         flag does not match the pool the factory just created.
+    error CanonicalHookMismatch();
     error InvalidMevModule(address module);
     error InvalidMevConfig();
     error MsgValueMismatch(uint256 expected, uint256 sent);

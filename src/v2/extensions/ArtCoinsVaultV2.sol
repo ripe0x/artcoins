@@ -69,7 +69,8 @@ contract ArtCoinsVaultV2 is ReentrancyGuard, IArtCoinsVaultV2 {
         IArtCoinsFactoryV2.ExtensionConfigV2 calldata e = config.extensions[extensionIndex];
         if (e.extension != address(this)) revert WrongExtensionEntry();
         if (e.msgValue != 0 || msg.value != 0) revert InvalidMsgValue();
-        if (e.extensionBps == 0 || extensionSupply == 0) revert InvalidVaultBps();
+        if (e.extensionBps == 0) revert InvalidVaultBps();
+        if (extensionSupply == 0) revert ZeroExtensionSupply();
         if (e.extensionData.length != 96) revert InvalidExtensionData();
 
         (address beneficiary, uint256 lockup, uint256 vesting) =

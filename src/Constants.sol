@@ -52,6 +52,8 @@ library Constants {
     uint256 internal constant LOCKER_KEEPER_BPS_MAX = 200;
     uint256 internal constant LOCKER_KEEPER_CAP_MIN = 0.001 ether;
     uint256 internal constant LOCKER_KEEPER_CAP_MAX = 0.05 ether;
+    /// @notice Initial locker keeper reward cap (not a setter bound, not hashed).
+    uint256 internal constant LOCKER_KEEPER_CAP_DEFAULT = 0.01 ether;
 
     // ── factory ───────────────────────────────────────────────────────────
     /// @notice Supply used when `TokenConfigV2.totalSupply == 0`.
@@ -106,8 +108,6 @@ library Constants {
     uint256 internal constant RENDER_GAS_BUDGET = 8_000_000;
 
     // ── informational (not hashed) ────────────────────────────────────────
-    /// @notice CI gate: minimum hook runtime headroom under EIP-170 at the ci profile.
-    uint256 internal constant HOOK_SIZE_HEADROOM_MIN = 1024;
     /// @notice `leg` codes in the hook `FeeDelivered` event.
     uint8 internal constant LEG_BOUNTY = 0;
     uint8 internal constant LEG_PROTOCOL = 1;

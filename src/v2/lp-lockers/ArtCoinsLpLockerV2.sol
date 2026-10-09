@@ -7,6 +7,7 @@ import {IArtCoinsHookV2} from "../interfaces/IArtCoinsHookV2.sol";
 import {IArtCoinsLpLockerV2} from "../interfaces/IArtCoinsLpLockerV2.sol";
 import {IArtCoinsTokenV2} from "../interfaces/IArtCoinsTokenV2.sol";
 import {IConstantsBound} from "../interfaces/IConstantsBound.sol";
+import {IFactoryTokenDeployer} from "../interfaces/IFactoryTokenDeployer.sol";
 import {FeeDelivery} from "../libraries/FeeDelivery.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
@@ -24,11 +25,6 @@ import {IPositionManager} from "@uniswap/v4-periphery/src/interfaces/IPositionMa
 import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmounts.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
-
-/// @dev Minimal read of the factory for the reward recipient reject set.
-interface IFactoryTokenDeployer {
-    function tokenDeployer() external view returns (address);
-}
 
 /// @title  ArtCoinsLpLockerV2
 /// @notice Holds each v2 coin's launch liquidity forever (no decrease path) and
@@ -91,7 +87,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     /// @inheritdoc IArtCoinsLpLockerV2
     uint256 public keeperRewardBps;
     /// @inheritdoc IArtCoinsLpLockerV2
-    uint256 public keeperRewardCap = 0.01 ether;
+    uint256 public keeperRewardCap = Constants.LOCKER_KEEPER_CAP_DEFAULT;
     /// @inheritdoc IArtCoinsLpLockerV2
     address public feeEscrow;
     /// @inheritdoc IArtCoinsLpLockerV2

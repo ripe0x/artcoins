@@ -11,6 +11,7 @@ import {IArtCoinsHookV2} from "../interfaces/IArtCoinsHookV2.sol";
 import {IArtCoinsMevSkimV2} from "../interfaces/IArtCoinsMevSkimV2.sol";
 import {IArtCoinsTokenV2} from "../interfaces/IArtCoinsTokenV2.sol";
 import {IConstantsBound} from "../interfaces/IConstantsBound.sol";
+import {IFactoryTokenDeployer} from "../interfaces/IFactoryTokenDeployer.sol";
 import {FeeDelivery} from "../libraries/FeeDelivery.sol";
 import {HookCalldata} from "./libraries/HookCalldata.sol";
 
@@ -34,13 +35,7 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {BaseHook} from "@uniswap/v4-periphery/src/utils/BaseHook.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
-/// @dev Minimal reads of sibling stack contracts for the bounty recipient
-///      reject set. The factory holds the token deployer; the locker holds the
-///      PositionManager.
-interface IFactoryTokenDeployer {
-    function tokenDeployer() external view returns (address);
-}
-
+/// @dev Minimal reads of the pool locker for the bounty recipient reject set.
 interface ILockerReads {
     function positionManager() external view returns (address);
     function feeEscrow() external view returns (address);
@@ -569,7 +564,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     function _validateSkim(SkimConfig calldata s) private view {
         if (s.lpFeePips > Constants.MAX_LP_FEE) revert LpFeeTooHigh();
         if (s.baselineSkimBps > Constants.MAX_BASELINE_SKIM_BPS) revert BaselineSkimBpsTooHigh();
-        if (s.bountyBps > Constants.MAX_BOUNTY_BPS) revert BadLegBps();
+        if (s.bountyBps > Constants.MAX_BOUNTY_BPS) revert BountyBpsTooHigh();
         if (s.maxReferralBpsOfVolume > Constants.MAX_REFERRAL_CAP_OF_VOLUME) {
             revert MaxReferralTooHigh();
         }
