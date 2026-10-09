@@ -47,6 +47,20 @@ library Addresses {
     address internal constant OPEN_BURN_ROUTER_V0 = 0x9304a81965Ef3F7A092bd9eFd8c2fFc411E5F34d;
     uint256 internal constant OPEN_FACTORY_DEPLOY_BLOCK = 25_125_708;
 
+    // V2 stack (deployed): v2 stack (skim hook v2, constants bound), factory deployed 2026-10-09
+    address internal constant V2_FACTORY = 0x9b17bf6f97F5429368E11028BC637479b4667f7b;
+    address internal constant V2_HOOK = 0x2f7976bf73dE8e1D49D4c687404e527a75b0e8Cc;
+    address internal constant V2_LOCKER = 0x1e2456861B864B96FFe6b34066b12FBD7EEb23fC;
+    address internal constant V2_ESCROW = 0x32845df52436a737C9623Af1d461A1c9999BBc1e;
+    address internal constant V2_ALLOWLIST = 0xddbC9EE6A8E08b4afC208B9dD1f283506E669C11;
+    address internal constant V2_MEV_MODULE = 0xFbb55b4C13b8517C000e2686efB12F0FAAFc9072;
+    address internal constant V2_DEPLOYER = 0xB2f0086E6EE82f059AD1736dD265a783cE50f473;
+    address internal constant V2_BURN_ROUTER = 0x6f159a0BDddB808Ca364cd006fb29C7B52eB88e1;
+    address internal constant V2_PROTOCOL_FEE_CONTROLLER =
+        0x183De82db1b7AAb798328AB1d7AE181ff39460c2;
+    address internal constant V2_KEEPER = 0x9884B79974a51aaa07b3a7f0B45b6Ae294FC7072;
+    uint256 internal constant V2_FACTORY_DEPLOY_BLOCK = 26_157_200;
+
     // LEGACY stack (legacy): legacy stack (LAYER), factory deployed 2026-05-07
     address internal constant LEGACY_FACTORY = 0xD1595A2742C392d1c109b616b4F08918D02292f9;
     address internal constant LEGACY_HOOK = 0xA5eA9904F2cD572c638a1eF81463BDAbEa9D28cc;
