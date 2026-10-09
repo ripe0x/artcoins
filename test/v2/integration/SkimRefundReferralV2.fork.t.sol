@@ -133,7 +133,7 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
     }
 
     function test_i1_antiSniper_moduleTreatedAsExpiredAfterMaxWindow() public onlyFork {
-        I1LyingMevModule lying = new I1LyingMevModule(address(v2.hook), 50_000);
+        I1LyingMevModule lying = new I1LyingMevModule(address(v2.hook), 5000);
         vm.prank(LIVE_OWNER);
         v2.factory.setMevModule(address(lying), true);
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _noneConfig(address(new I1EmptyTreasury()));
@@ -143,11 +143,11 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         uint256 t0 = vm.getBlockTimestamp();
         uint256 a = 0.01 ether;
 
-        assertEq(_skimOfBuy(key, a), (a * 50_000) / D, "module value used inside the cap");
+        assertEq(_skimOfBuy(key, a), (a * 5000) / D, "module value used inside the cap");
         vm.warp(t0 + WINDOW + 1); // past the configured window, the module still claims active
         (, bool active) = lying.currentSkimBps(_pid(coin));
         assertTrue(active);
-        assertEq(_skimOfBuy(key, a), (a * 50_000) / D, "still trusted before MAX_MEV_WINDOW");
+        assertEq(_skimOfBuy(key, a), (a * 5000) / D, "still trusted before MAX_MEV_WINDOW");
         vm.warp(t0 + Constants.MAX_MEV_WINDOW - 1);
         (bool ok,) = _ethOnlyAdd(key, bytes32(uint256(2)));
         assertFalse(ok, "add lock holds until the cap");
@@ -550,7 +550,7 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         PoolKey memory key = _key(coin);
         _pastWindow();
         address referrer = makeAddr("i1.referrer");
-        bytes memory hd = _attribution(referrer, 1000);
+        bytes memory hd = _attribution(referrer, 100);
 
         uint256 p0 = referrer.balance + _escrowed(referrer);
         vm.recordLogs();
@@ -571,7 +571,7 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         // (D16; the factory's referral payout is the escrow, D57) and pulls it
         I1RevertingTreasury rref = new I1RevertingTreasury();
         vm.recordLogs();
-        swapExactIn(key, true, 1 ether, address(this), _attribution(address(rref), 1000));
+        swapExactIn(key, true, 1 ether, address(this), _attribution(address(rref), 100));
         logs = vm.getRecordedLogs();
         l = _legs(logs);
         _checkReferred(l, address(rref), 0);

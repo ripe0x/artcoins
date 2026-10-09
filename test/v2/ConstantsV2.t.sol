@@ -22,24 +22,23 @@ import {IProtocolFeeControllerV2} from "../../src/v2/interfaces/IProtocolFeeCont
 contract ConstantsV2Test is Test {
     /// @dev Update only together with an intended change to a hashed constant.
     bytes32 internal constant GOLDEN_HASH =
-        0x8c029d0c45f69829f04e7020a96e6c57953f2308ed768ab002a1e4be0f372ed1;
+        0x69b6027a6426e4db8d91e06f74d3977b5d6e616067cf30c29f74d7c785ae4027;
 
     function _literalHash() internal pure returns (bytes32) {
         bytes32 pool = keccak256(
             abi.encode(
                 uint16(2), // STACK_VERSION
                 uint256(10_000), // BPS
-                uint256(100_000), // SKIM_DENOMINATOR
                 uint256(1_000_000), // FEE_DENOMINATOR
                 uint24(100_000), // MAX_LP_FEE
-                uint24(90_000), // MAX_SKIM_BPS
-                uint24(10_000), // MAX_BASELINE_SKIM_BPS
-                uint24(1000), // MAX_REFERRAL_CAP_OF_VOLUME
+                uint24(9000), // MAX_SKIM_BPS
+                uint24(1000), // MAX_BASELINE_SKIM_BPS
+                uint24(100), // MAX_REFERRAL_CAP_OF_VOLUME
                 uint16(9999), // MAX_BOUNTY_BPS
                 uint32(60), // MIN_MEV_WINDOW
                 uint32(4140), // DEFAULT_MEV_WINDOW
                 uint32(10_800), // MAX_MEV_WINDOW
-                uint24(68_690) // DEFAULT_START_SKIM_BPS
+                uint24(6869) // DEFAULT_START_SKIM_BPS
             )
         );
         bytes32 delivery = keccak256(
@@ -85,18 +84,17 @@ contract ConstantsV2Test is Test {
     /// @dev Pins every value, hashed or not.
     function test_literals_all() public pure {
         assertEq(Constants.BPS, 10_000);
-        assertEq(Constants.SKIM_DENOMINATOR, 100_000);
         assertEq(Constants.FEE_DENOMINATOR, 1_000_000);
         assertEq(Constants.MAX_LP_FEE, 100_000);
-        assertEq(Constants.MAX_SKIM_BPS, 90_000);
-        assertEq(Constants.MAX_BASELINE_SKIM_BPS, 10_000);
-        assertEq(Constants.MAX_REFERRAL_CAP_OF_VOLUME, 1000);
+        assertEq(Constants.MAX_SKIM_BPS, 9000);
+        assertEq(Constants.MAX_BASELINE_SKIM_BPS, 1000);
+        assertEq(Constants.MAX_REFERRAL_CAP_OF_VOLUME, 100);
         assertEq(Constants.MAX_BOUNTY_BPS, 9999);
         assertEq(Constants.PUSH_GAS_MAX, 150_000);
         assertEq(Constants.MIN_MEV_WINDOW, 1 minutes);
         assertEq(Constants.DEFAULT_MEV_WINDOW, 69 minutes);
         assertEq(Constants.MAX_MEV_WINDOW, 180 minutes);
-        assertEq(Constants.DEFAULT_START_SKIM_BPS, 68_690);
+        assertEq(Constants.DEFAULT_START_SKIM_BPS, 6869);
         assertEq(Constants.MAX_REWARD_PARTICIPANTS, 7);
         assertEq(Constants.MAX_LP_POSITIONS, 14);
         assertEq(Constants.LOCKER_KEEPER_BPS_MAX, 200);
@@ -150,7 +148,7 @@ contract ConstantsV2Test is Test {
         // skim: baseline and starting skim within the anti sniper ceiling, all within 100%
         assertLe(Constants.MAX_BASELINE_SKIM_BPS, Constants.MAX_SKIM_BPS);
         assertLe(Constants.DEFAULT_START_SKIM_BPS, Constants.MAX_SKIM_BPS);
-        assertLt(Constants.MAX_SKIM_BPS, Constants.SKIM_DENOMINATOR);
+        assertLt(Constants.MAX_SKIM_BPS, Constants.BPS);
         assertLe(Constants.MAX_REFERRAL_CAP_OF_VOLUME, Constants.MAX_BASELINE_SKIM_BPS);
         assertLt(Constants.MAX_BOUNTY_BPS, Constants.BPS);
         assertLt(Constants.MAX_LP_FEE, Constants.FEE_DENOMINATOR);

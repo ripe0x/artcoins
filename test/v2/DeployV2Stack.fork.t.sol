@@ -39,11 +39,11 @@ contract DeployV2StackForkTest is ForkStack {
         '"name":"Credits Example","symbol":"CREDX","salt":"0x0000000000000000000000000000000000000000000000000000000000000001",'
         '"image":"ipfs://example","description":"{\\"description\\":\\"credits engine example coin\\"}",'
         '"totalSupply":0,"renderer":"0x0000000000000000000000000000000000000000"},'
-        '"pool":{"tickIfToken0IsCoin":-200000,"tickSpacing":200},"fee":{"lpFee":5000,"baselineSkimBps":6000,'
-        '"bountyBps":8333,"maxReferralBpsOfVolume":250,"bountyRecipient":"0x7ea5000000000000000000000000000000000001"},'
+        '"pool":{"tickIfToken0IsCoin":-200000,"tickSpacing":200},"fee":{"lpFeePips":5000,"baselineSkimBps":600,'
+        '"bountyBps":8333,"maxReferralBpsOfVolume":25,"bountyRecipient":"0x7ea5000000000000000000000000000000000001"},'
         '"locker":{"rewardRecipients":["0x7ea5000000000000000000000000000000000001"],"rewardBps":[8000],'
         '"tickLower":[-200000,-160000,-120000],"tickUpper":[-120000,-100000,-60000],"positionBps":[5000,'
-        '3000,2000]},"mev":{"startingSkimBps":68690,"windowSeconds":4140},'
+        '3000,2000]},"mev":{"startingSkimBps":6869,"windowSeconds":4140},'
         '"restriction":{"restricted":false,"allowed":[]}}';
 
     DeployV2Lib.Stack internal s;

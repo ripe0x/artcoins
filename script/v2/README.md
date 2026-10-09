@@ -141,7 +141,7 @@ the script prints the predicted token, msg.value (the deploy fee), configHash, t
 
 config fields map 1:1 to `IArtCoinsFactoryV2.DeploymentConfigV2`; hook, locker and mev module come from the target. `restriction.restricted` is a bool; when true, list extra allowlist entries in `restriction.allowed` (the factory seeds the stack escrow, this launch's locker and the launch extensions on top). not supported by the json: launch extensions, pool extension. `protocolBps` is the protocol slot passed to `deployTokenAsOwner`; project `rewardBps` must sum to `10000 - protocolBps`.
 
-`fee.lpFee` ranges from 0 to `MAX_LP_FEE` (100,000 pips); 0 is a pure skim pool with no lp fee. The protocol skim share floor (D52) secures the protocol leg regardless.
+`fee.lpFeePips` ranges from 0 to `MAX_LP_FEE` (100,000 pips); 0 is a pure skim pool with no lp fee. The protocol skim share floor (D52) secures the protocol leg regardless.
 
 anti sniper window split: while the mev module is active (the first `windowSeconds`, capped at 180 minutes), the hook charges `startingSkimBps` decaying to `baselineSkimBps`. The baseline portion of the skim splits bounty / protocol / referral as configured; the skim ABOVE the baseline goes entirely to the bounty recipient. Measured for a 0.1 eth in-window buy on the example config (start 68,690, baseline 6,000, bounty 8,333 bps): total skim 0.06869 eth, baseline portion 0.006 eth, bounty leg 0.0676898 eth, protocol leg 0.0010002 eth. The 0.06269 eth above the baseline is all bounty. The coin admin may repoint the bounty recipient after launch with `hook.setBountyRecipient` until `lockRecipients` or admin renounce.
 

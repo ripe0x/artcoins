@@ -58,7 +58,7 @@ interface ILockerReads {
 ///           baselineSkim = totalSkim x baselineSkimBps / currentSkimBps
 ///           bounty       = baselineSkim x bountyBps / 10_000 + (totalSkim - baselineSkim)
 ///           protocol     = baselineSkim - baselineSkim x bountyBps / 10_000 - referral
-///           referral     = min(volume x min(att.referralBps, maxReferral) / 100_000,
+///           referral     = min(volume x min(att.referralBps, maxReferral) / 10_000,
 ///                              protocol share - baselineSkim x minProtocolShareBps / 10_000)  (D52, floored at 0)
 ///
 ///         No recipient code runs with useful gas while the PoolManager is
@@ -244,7 +244,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         // art coin is always currency1, so the starting tick is negated.
         poolManager.initialize(key, TickMath.getSqrtPriceAtTick(-p.tickIfToken0IsCoin));
         // the lp fee is frozen: set once here, never touched per swap.
-        poolManager.updateDynamicLPFee(key, p.skim.lpFee);
+        poolManager.updateDynamicLPFee(key, p.skim.lpFeePips);
 
         if (ext != address(0)) {
             IArtCoinsPoolExtension(ext).initializePreLockerSetup(key, false, p.extensionData);
@@ -327,9 +327,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         if (params.zeroForOne == exactIn) {
             uint256 a = exactIn ? uint256(-params.amountSpecified) : uint256(params.amountSpecified);
             uint256 bps = _skimBps(pid, cfg.baselineSkimBps);
-            uint256 s = exactIn
-                ? (a * bps) / Constants.SKIM_DENOMINATOR
-                : (a * bps) / (Constants.SKIM_DENOMINATOR - bps);
+            uint256 s = exactIn ? (a * bps) / Constants.BPS : (a * bps) / (Constants.BPS - bps);
             if (s != 0) {
                 uint256 packed = ((exactIn ? a - s : a + s) << 32) | bps;
                 assembly ("memory-safe") {
@@ -378,9 +376,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
             // unspecified delta (exact in sell: from the output; exact out
             // buy: on top of the input).
             bps = _skimBps(pid, _skim[pid].baselineSkimBps);
-            skim = exactIn
-                ? (r * bps) / Constants.SKIM_DENOMINATOR
-                : (r * bps) / (Constants.SKIM_DENOMINATOR - bps);
+            skim = exactIn ? (r * bps) / Constants.BPS : (r * bps) / (Constants.BPS - bps);
             charged = skim;
             ret = _i128(skim);
         }
@@ -461,7 +457,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         if (referrer != address(0) && referrer != sender) {
             uint256 cap = cfg.maxReferralBpsOfVolume;
             if (att.referralBps < cap) cap = att.referralBps;
-            referral = (volume * cap) / Constants.SKIM_DENOMINATOR;
+            referral = (volume * cap) / Constants.BPS;
             // D52: never below the pool's protocol floor (BPS of the baseline
             // skim, the factory's unit for `minProtocolSkimShareBps`).
             uint256 floor = (base * _minProtocolShareBps[pid]) / Constants.BPS;
@@ -490,7 +486,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         emit FeeDelivered(pid, leg, to, amount, !pushed);
     }
 
-    /// @dev Current skim in SKIM_DENOMINATOR units: the module's value while
+    /// @dev Current skim in BPS: the module's value while
     ///      it reports active, clamped to [baseline, MAX_SKIM_BPS]; the
     ///      baseline once `createdAt + MAX_MEV_WINDOW` passed (b7) or on any
     ///      module failure.
@@ -561,7 +557,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     // ── internals: config ─────────────────────────────────────────────────
 
     function _validateSkim(SkimConfig calldata s) private view {
-        if (s.lpFee > Constants.MAX_LP_FEE) revert LpFeeTooHigh();
+        if (s.lpFeePips > Constants.MAX_LP_FEE) revert LpFeeTooHigh();
         if (s.baselineSkimBps > Constants.MAX_BASELINE_SKIM_BPS) revert BaselineSkimBpsTooHigh();
         if (s.bountyBps > Constants.MAX_BOUNTY_BPS) revert BadLegBps();
         if (s.maxReferralBpsOfVolume > Constants.MAX_REFERRAL_CAP_OF_VOLUME) {

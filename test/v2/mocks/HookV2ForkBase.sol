@@ -53,9 +53,9 @@ abstract contract HookV2ForkBase is Test {
     uint256 internal constant LIQ = 1000e18;
 
     // default pool fee config (coin 111 live values)
-    uint24 internal constant BASELINE = 6000;
+    uint24 internal constant BASELINE = 600;
     uint16 internal constant BOUNTY_BPS = 8333;
-    uint24 internal constant MAX_REF = 250;
+    uint24 internal constant MAX_REF = 25;
     uint24 internal constant LP_FEE = 5000;
 
     bool internal onFork;
@@ -194,7 +194,7 @@ abstract contract HookV2ForkBase is Test {
             baselineSkimBps: l.baseline,
             bountyBps: l.bountyBps,
             maxReferralBpsOfVolume: l.maxRef,
-            lpFee: LP_FEE,
+            lpFeePips: LP_FEE,
             bountyRecipient: payable(l.bounty),
             protocolRecipient: protocolR
         });

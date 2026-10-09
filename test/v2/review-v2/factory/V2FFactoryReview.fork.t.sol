@@ -144,10 +144,10 @@ contract V2FFactoryReviewTest is ForkBase {
         c.pool.tickSpacing = TS;
 
         c.fee = IArtCoinsFactoryV2.FeeConfigV2({
-            lpFee: 5000,
-            baselineSkimBps: 6000,
+            lpFeePips: 5000,
+            baselineSkimBps: 600,
             bountyBps: 8333,
-            maxReferralBpsOfVolume: 250,
+            maxReferralBpsOfVolume: 25,
             bountyRecipient: bounty
         });
 
@@ -212,7 +212,7 @@ contract V2FFactoryReviewTest is ForkBase {
     /// original attack: the owner sets minProtocolSkimShareBps = 2000 ("the
     /// protocol keeps at least 20% of the skim", ui encodeV2.ts:288). a public
     /// launcher picks the max bounty the factory allowed (8000), the max
-    /// referral cap (1% of volume) and lpFee 0. any swapper that names a
+    /// referral cap (1% of volume) and lpFeePips 0. any swapper that names a
     /// referrer (D44: its own wallet is fine) moved the whole protocol leg to
     /// that referrer, so the protocol earned 0 from the skim, and the 20%
     /// locker slot earned 0 because there was no lp fee to share.
@@ -224,10 +224,10 @@ contract V2FFactoryReviewTest is ForkBase {
         factory.setMinProtocolSkimShareBps(2000);
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
         c.mev = IArtCoinsFactoryV2.MevConfigV2(address(0), 0, 0); // no window, baseline only
-        c.fee.baselineSkimBps = 1000; // 1% of volume
+        c.fee.baselineSkimBps = 100; // 1% of volume
         c.fee.bountyBps = 8000; // old max accepted: BPS - minProtocolSkimShareBps
         c.fee.maxReferralBpsOfVolume = Constants.MAX_REFERRAL_CAP_OF_VOLUME; // 1%
-        c.fee.lpFee = 0;
+        c.fee.lpFeePips = 0;
 
         // V2F-01: the old attack config is refused because the 1% referral cap
         // cannot fit above a 20% floor with an 80% bounty.
@@ -238,18 +238,18 @@ contract V2FFactoryReviewTest is ForkBase {
         // the largest cap that fits: baseline 1000, bounty 5000, floor 2000
         // gives referral <= 1000 * (10000 - 5000 - 2000) / 10000 = 300 (0.3% of volume).
         c.fee.bountyBps = 5000;
-        c.fee.maxReferralBpsOfVolume = 301;
+        c.fee.maxReferralBpsOfVolume = 31;
         vm.prank(alice);
         vm.expectRevert(ArtCoinsFactoryV2.ReferralCapAboveProtocolFloor.selector);
         factory.deployToken{value: FEE}(c);
-        c.fee.maxReferralBpsOfVolume = 300;
-        c.fee.lpFee = 5000; // a nonzero lp fee so the protocol locker slot earns
+        c.fee.maxReferralBpsOfVolume = 30;
+        c.fee.lpFeePips = 5000; // a nonzero lp fee so the protocol locker slot earns
         vm.prank(alice);
         address token = factory.deployToken{value: FEE}(c);
         PoolKey memory key = _key(token);
 
         // control: no referrer, the protocol leg is 50% of the 1% baseline skim
-        uint256 base = 1 ether * 1000 / Constants.SKIM_DENOMINATOR;
+        uint256 base = 1 ether * 100 / Constants.BPS;
         uint256 floor = base * factory.minProtocolSkimShareBps() / Constants.BPS;
         uint256 p0 = protocolR.balance;
         swapExactIn(key, true, 1 ether, address(this), "");
@@ -262,7 +262,7 @@ contract V2FFactoryReviewTest is ForkBase {
         p0 = protocolR.balance;
         uint256 r0 = referrerEoa.balance;
         uint256 b0 = bounty.balance;
-        swapExactIn(key, true, 1 ether, address(this), _attribution(referrerEoa, 1000));
+        swapExactIn(key, true, 1 ether, address(this), _attribution(referrerEoa, 100));
         uint256 protocolWithRef = protocolR.balance - p0;
         uint256 referral = referrerEoa.balance - r0;
         assertGt(referral, 0, "referrer paid");

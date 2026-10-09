@@ -70,7 +70,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     /// @notice D52 / V2F-01: `maxReferralBpsOfVolume` could take the protocol
     ///         leg below `minProtocolSkimShareBps` of the baseline skim.
     error ReferralCapAboveProtocolFloor();
-    /// @notice A launch must earn some fee: both `lpFee` and `baselineSkimBps`
+    /// @notice A launch must earn some fee: both `lpFeePips` and `baselineSkimBps`
     ///         are zero, so the pool, the locker and the protocol earn nothing.
     error ZeroFeeLaunch();
     /// @notice No token deployer set yet (D38).
@@ -91,7 +91,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     /// @notice Reward slot count (project slots plus protocol slot) is 0 or above
     ///         `Constants.MAX_REWARD_PARTICIPANTS`, or a project slot has 0 bps.
     error InvalidRewardSlots();
-    /// @notice lpFee, baselineSkimBps or maxReferralBpsOfVolume above its Constants cap.
+    /// @notice lpFeePips, baselineSkimBps or maxReferralBpsOfVolume above its Constants cap.
     error FeeConfigOutOfBounds();
     /// @notice The hook answers a different PoolManager than the factory's.
     error PoolManagerMismatch(address hook);
@@ -417,9 +417,10 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     function _validateFee(FeeConfigV2 calldata f) internal view {
         if (f.bountyRecipient == address(0)) revert ZeroAddress();
         // a launch must earn some fee on one of the two legs.
-        if (f.lpFee == 0 && f.baselineSkimBps == 0) revert ZeroFeeLaunch();
+        if (f.lpFeePips == 0 && f.baselineSkimBps == 0) revert ZeroFeeLaunch();
         if (
-            f.lpFee > Constants.MAX_LP_FEE || f.baselineSkimBps > Constants.MAX_BASELINE_SKIM_BPS
+            f.lpFeePips > Constants.MAX_LP_FEE
+                || f.baselineSkimBps > Constants.MAX_BASELINE_SKIM_BPS
                 || f.maxReferralBpsOfVolume > Constants.MAX_REFERRAL_CAP_OF_VOLUME
         ) revert FeeConfigOutOfBounds();
         // D52: `bountyBps + minProtocolSkimShareBps <= BPS` (the hook refuses
@@ -431,17 +432,16 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         // forge-lint: disable-next-line(unsafe-typecast)
         if (f.bountyBps > maxBounty) revert BountyBpsTooHigh(f.bountyBps, uint16(maxBounty));
         // D52 / V2F-01: the referral cap must fit above the protocol floor.
-        // hook `_split` per swap, volume V (eth), all skim rates in
-        // SKIM_DENOMINATOR (D) units, shares in BPS:
-        //   base     = V * baselineSkimBps / D            (the baseline skim)
+        // hook `_split` per swap, volume V (eth), all skim rates in BPS:
+        //   base     = V * baselineSkimBps / BPS           (the baseline skim)
         //   protocol = base * (BPS - bountyBps) / BPS
         //   floor    = base * minProtocolSkimShareBps / BPS
-        //   referral <= V * maxReferralBpsOfVolume / D
+        //   referral <= V * maxReferralBpsOfVolume / BPS
         // referral <= protocol - floor for every V iff
         //   maxReferralBpsOfVolume * BPS
         //     <= baselineSkimBps * (BPS - bountyBps - minProtocolSkimShareBps).
-        // maxReferral and baseline share the D unit, so no D/BPS factor
-        // appears. the right side is >= 0 (bountyBps check above). per swap
+        // maxReferral and baseline share the BPS unit, so it cancels. the right
+        // side is >= 0 (bountyBps check above). per swap
         // floor rounding can still differ by a few wei; the hook's own clamp
         // (D52) is exact.
         if (
@@ -576,7 +576,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
             baselineSkimBps: c.fee.baselineSkimBps,
             bountyBps: c.fee.bountyBps,
             maxReferralBpsOfVolume: c.fee.maxReferralBpsOfVolume,
-            lpFee: c.fee.lpFee,
+            lpFeePips: c.fee.lpFeePips,
             bountyRecipient: c.fee.bountyRecipient,
             protocolRecipient: protocolRecipient
         });

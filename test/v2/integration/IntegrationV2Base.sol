@@ -31,14 +31,14 @@ abstract contract IntegrationV2Base is ForkStack {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
 
-    uint256 internal constant D = Constants.SKIM_DENOMINATOR;
+    uint256 internal constant D = Constants.BPS;
 
     // credits engine coin (CREDITS-ENGINE-INTERFACE.md section 4, example.json)
     uint24 internal constant LP_FEE = 5000;
-    uint24 internal constant BASELINE = 6000;
+    uint24 internal constant BASELINE = 600;
     uint16 internal constant BOUNTY_BPS = 8333;
-    uint24 internal constant MAX_REF = 250;
-    uint24 internal constant START_SKIM = 68_690;
+    uint24 internal constant MAX_REF = 25;
+    uint24 internal constant START_SKIM = 6869;
     uint32 internal constant WINDOW = 4140;
     uint16 internal constant PROTOCOL_BPS = 2000;
 
@@ -108,7 +108,7 @@ abstract contract IntegrationV2Base is ForkStack {
             extensionData: ""
         });
         c.fee = IArtCoinsFactoryV2.FeeConfigV2({
-            lpFee: LP_FEE,
+            lpFeePips: LP_FEE,
             baselineSkimBps: BASELINE,
             bountyBps: BOUNTY_BPS,
             maxReferralBpsOfVolume: MAX_REF,

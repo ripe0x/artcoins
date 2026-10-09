@@ -32,10 +32,10 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @notice Per pool fee config. The rates and caps are set once at init; the
     ///         coin admin may change `bountyRecipient` later.
     struct SkimConfig {
-        uint24 baselineSkimBps; // SKIM_DENOMINATOR units
+        uint24 baselineSkimBps; // BPS of volume
         uint16 bountyBps; // bounty share of the skim, BPS
-        uint24 maxReferralBpsOfVolume; // SKIM_DENOMINATOR units
-        uint24 lpFee; // uniswap v4 pips (1e6 units)
+        uint24 maxReferralBpsOfVolume; // BPS of volume
+        uint24 lpFeePips; // uniswap v4 pips (1e6 units)
         address payable bountyRecipient;
         address payable protocolRecipient;
     }

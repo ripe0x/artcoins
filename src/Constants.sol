@@ -11,22 +11,21 @@ library Constants {
     uint16 internal constant STACK_VERSION = 2;
 
     // ── denominators ──────────────────────────────────────────────────────
-    /// @notice Basis point denominator (10_000 = 100%).
+    /// @notice Basis point denominator (10_000 = 100%). Skim and referral rates,
+    ///         their caps, and the protocol floor are all in BPS of volume.
     uint256 internal constant BPS = 10_000;
-    /// @notice Skim denominator (100_000 = 100% of volume).
-    uint256 internal constant SKIM_DENOMINATOR = 100_000;
     /// @notice Uniswap v4 lp fee denominator (1_000_000 = 100%).
     uint256 internal constant FEE_DENOMINATOR = 1_000_000;
 
     // ── hook and pool fee config (frozen per pool, validated at init) ─────
-    /// @notice Max lp fee, 10% in 1e6 units.
+    /// @notice Max lp fee, 10% in pips (1e6 units).
     uint24 internal constant MAX_LP_FEE = 100_000;
-    /// @notice Anti sniper skim ceiling, 90% of volume in SKIM_DENOMINATOR units.
-    uint24 internal constant MAX_SKIM_BPS = 90_000;
-    /// @notice Baseline skim ceiling, 10% of volume.
-    uint24 internal constant MAX_BASELINE_SKIM_BPS = 10_000;
-    /// @notice Referral cap ceiling, 1% of volume.
-    uint24 internal constant MAX_REFERRAL_CAP_OF_VOLUME = 1000;
+    /// @notice Anti sniper skim ceiling, 90% of volume in BPS.
+    uint24 internal constant MAX_SKIM_BPS = 9000;
+    /// @notice Baseline skim ceiling, 10% of volume in BPS.
+    uint24 internal constant MAX_BASELINE_SKIM_BPS = 1000;
+    /// @notice Referral cap ceiling, 1% of volume in BPS.
+    uint24 internal constant MAX_REFERRAL_CAP_OF_VOLUME = 100;
     /// @notice Max bounty share of the skim, in BPS.
     uint16 internal constant MAX_BOUNTY_BPS = 9999;
 
@@ -41,8 +40,8 @@ library Constants {
     uint32 internal constant MIN_MEV_WINDOW = 1 minutes;
     uint32 internal constant DEFAULT_MEV_WINDOW = 69 minutes;
     uint32 internal constant MAX_MEV_WINDOW = 180 minutes;
-    /// @notice Default starting skim, in SKIM_DENOMINATOR units.
-    uint24 internal constant DEFAULT_START_SKIM_BPS = 68_690;
+    /// @notice Default starting skim, in BPS of volume.
+    uint24 internal constant DEFAULT_START_SKIM_BPS = 6869;
 
     // ── locker ────────────────────────────────────────────────────────────
     /// @notice Max reward slots (project slots plus the protocol slot).
@@ -128,7 +127,6 @@ library Constants {
             abi.encode(
                 STACK_VERSION,
                 BPS,
-                SKIM_DENOMINATOR,
                 FEE_DENOMINATOR,
                 MAX_LP_FEE,
                 MAX_SKIM_BPS,

@@ -306,10 +306,10 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
 
     function test_lpFeeZero_launch_skimProtocolStillPays() public onlyFork {
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _creditsConfig(treasury);
-        c.fee.lpFee = 0; // pure skim, no lp fee
+        c.fee.lpFeePips = 0; // pure skim, no lp fee
         address coin = _ownerLaunch(c);
         PoolKey memory key = _key(coin);
-        assertEq(v2.hook.skimConfig(key.toId()).lpFee, 0, "lp fee 0 frozen");
+        assertEq(v2.hook.skimConfig(key.toId()).lpFeePips, 0, "lp fee 0 frozen");
         (,,, uint24 poolFee) = readSlot0(key);
         assertEq(poolFee, 0, "pool runs with 0 lp fee");
 

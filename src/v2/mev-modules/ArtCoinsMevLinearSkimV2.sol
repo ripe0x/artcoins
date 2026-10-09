@@ -11,7 +11,7 @@ import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 /// @title  ArtCoinsMevLinearSkimV2
 /// @notice Anti sniper skim schedule for v2 pools. The skim decays linearly
 ///         from `startingSkimBps` to `endSkimBps` over `windowSeconds`, in
-///         `Constants.SKIM_DENOMINATOR` units. The hook reads
+///         BPS. The hook reads
 ///         `currentSkimBps` per swap and clamps the result itself (never below
 ///         the pool baseline, never above `MAX_SKIM_BPS`, expired at
 ///         `createdAt + MAX_MEV_WINDOW` whatever this module reports).

@@ -34,7 +34,7 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
 
     /// @dev protocolRecipient is injected by the factory.
     struct FeeConfigV2 {
-        uint24 lpFee;
+        uint24 lpFeePips;
         uint24 baselineSkimBps;
         uint16 bountyBps; // <= BPS minus minProtocolSkimShareBps
         uint24 maxReferralBpsOfVolume;

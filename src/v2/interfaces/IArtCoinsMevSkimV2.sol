@@ -25,7 +25,7 @@ interface IArtCoinsMevSkimV2 is IERC165, IConstantsBound {
     /// @param  config abi.encode(uint24 startingSkimBps, uint32 windowSeconds).
     function initialize(PoolId poolId, bytes calldata config) external;
 
-    /// @notice Current anti sniper skim (SKIM_DENOMINATOR units) and whether the window is open.
+    /// @notice Current anti sniper skim (BPS of volume) and whether the window is open.
     function currentSkimBps(PoolId poolId) external view returns (uint24 skimBps, bool active);
 
     /// @notice Timestamp at which the window closes (0 if never initialized).

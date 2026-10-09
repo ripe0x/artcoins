@@ -85,7 +85,7 @@ contract HV2CalldataHarness {
 contract HookV2ForkTest is HookV2ForkBase {
     using PoolIdLibrary for PoolKey;
 
-    uint256 internal constant D = Constants.SKIM_DENOMINATOR;
+    uint256 internal constant D = Constants.BPS;
 
     // ─── helpers ─────────────────────────────────────────────────────────
 
@@ -421,13 +421,13 @@ contract HookV2ForkTest is HookV2ForkBase {
         ArtCoinsMevLinearSkimV2 m = new ArtCoinsMevLinearSkimV2(address(hook));
         Launch memory l = _defaults(bountyEoa);
         l.module = address(m);
-        l.mevConfig = abi.encode(uint24(68_690), uint32(600));
+        l.mevConfig = abi.encode(uint24(6869), uint32(600));
         (PoolKey memory key,) = _launch(l);
         uint256 t0 = block.timestamp;
         assertEq(m.windowEnd(key.toId()), t0 + 600);
         assertEq(m.schedule(key.toId()).endSkimBps, BASELINE, "decays to the pool baseline");
 
-        assertEq(_skimOfBuy1Eth(key, bountyEoa), (1 ether * 68_690) / D);
+        assertEq(_skimOfBuy1Eth(key, bountyEoa), (1 ether * 6869) / D);
         vm.expectRevert();
         _modify(key, -2000, 2000, 1e18, bytes32(uint256(5)));
 
@@ -451,7 +451,7 @@ contract HookV2ForkTest is HookV2ForkBase {
             )
         );
         hook.initializeMevModule(
-            key, abi.encode(uint24(68_690), uint32(Constants.MAX_MEV_WINDOW + 1))
+            key, abi.encode(uint24(6869), uint32(Constants.MAX_MEV_WINDOW + 1))
         );
     }
 
@@ -546,7 +546,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         assertEq(c.baselineSkimBps, BASELINE);
         assertEq(c.bountyBps, BOUNTY_BPS);
         assertEq(c.maxReferralBpsOfVolume, MAX_REF);
-        assertEq(c.lpFee, LP_FEE);
+        assertEq(c.lpFeePips, LP_FEE);
         assertEq(c.bountyRecipient, bountyEoa);
         assertEq(c.protocolRecipient, protocolR);
 
@@ -618,7 +618,7 @@ contract HookV2ForkTest is HookV2ForkBase {
 
     function test_skimConfig_bounds() public {
         IArtCoinsHookV2.PoolInitParams memory p = _params(_defaults(bountyEoa), address(1));
-        p.skim.lpFee = Constants.MAX_LP_FEE + 1;
+        p.skim.lpFeePips = Constants.MAX_LP_FEE + 1;
         vm.expectRevert(IArtCoinsHookV2.LpFeeTooHigh.selector);
         hook.initializePool(p);
 
@@ -668,7 +668,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         PoolKey memory key = _launchSimple(bountyEoa);
         address ref = makeAddr("ref");
         uint256 p0 = protocolR.balance;
-        _swap(key, true, -1 ether, 0, _attribution(ref, 1000)); // asks 1%, cap 0.25%
+        _swap(key, true, -1 ether, 0, _attribution(ref, 100)); // asks 1%, cap 0.25%
         uint256 skim = (1 ether * uint256(BASELINE)) / D;
         uint256 referral = ((1 ether - skim) * uint256(MAX_REF)) / D;
         assertEq(ref.balance, referral, "pushed to the referrer (D41)");
@@ -681,7 +681,7 @@ contract HookV2ForkTest is HookV2ForkBase {
 
     function _checkSellReferral(PoolKey memory key, address ref) internal {
         uint256 r0 = ref.balance;
-        BalanceDelta d = _swap(key, false, -1 ether, 0, _attribution(ref, 250));
+        BalanceDelta d = _swap(key, false, -1 ether, 0, _attribution(ref, 25));
         uint256 net = uint256(int256(d.amount0())); // r - skim
         uint256 r = (net * D) / (D - uint256(BASELINE)); // +-1
         assertApproxEqAbs(ref.balance - r0, (r * uint256(MAX_REF)) / D, 1);
@@ -693,7 +693,7 @@ contract HookV2ForkTest is HookV2ForkBase {
     function test_referral_neverBelowProtocolFloor() public onlyFork {
         ArtCoinsTokenV2 t = _newToken(false, bountyEoa, address(hook));
         Launch memory l = _defaults(bountyEoa);
-        l.baseline = 1000; // 1% of volume
+        l.baseline = 100; // 1% of volume
         l.bountyBps = 7000;
         l.maxRef = Constants.MAX_REFERRAL_CAP_OF_VOLUME; // 1% of volume
         IArtCoinsHookV2.PoolInitParams memory p = _params(l, address(t));
@@ -705,8 +705,8 @@ contract HookV2ForkTest is HookV2ForkBase {
 
         address ref = makeAddr("floorRef");
         uint256 p0 = protocolR.balance;
-        _swap(k, true, -1 ether, 0, _attribution(ref, 1000));
-        uint256 skim = (1 ether * 1000) / D; // 0.01 eth, all baseline
+        _swap(k, true, -1 ether, 0, _attribution(ref, 100));
+        uint256 skim = (1 ether * 100) / D; // 0.01 eth, all baseline
         uint256 floor = (skim * 2000) / Constants.BPS; // 0.002 eth
         uint256 protocolLeg = skim - (skim * 7000) / Constants.BPS; // 0.003 eth
         assertEq(protocolR.balance - p0, floor, "protocol keeps exactly its floor");
@@ -723,7 +723,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         PoolKey memory key = _launchSimple(bountyEoa);
         uint256 p0 = protocolR.balance;
         uint256 r0 = address(swapRouter).balance;
-        _swap(key, true, -1 ether, 0, _attribution(address(swapRouter), 250));
+        _swap(key, true, -1 ether, 0, _attribution(address(swapRouter), 25));
         assertEq(address(swapRouter).balance, r0, "caller cannot name itself");
         (, uint256 protocol) = _legs((1 ether * uint256(BASELINE)) / D, BASELINE);
         assertEq(protocolR.balance - p0, protocol, "protocol leg intact");
@@ -734,7 +734,7 @@ contract HookV2ForkTest is HookV2ForkBase {
     function test_referral_rejectingReferrer_escrowed() public onlyFork {
         PoolKey memory key = _launchSimple(bountyEoa);
         HV2Rejecter ref = new HV2Rejecter();
-        _swap(key, true, -1 ether, 0, _attribution(address(ref), 250));
+        _swap(key, true, -1 ether, 0, _attribution(address(ref), 25));
         uint256 skim = (1 ether * uint256(BASELINE)) / D;
         assertEq(_escrowed(address(ref)), ((1 ether - skim) * uint256(MAX_REF)) / D);
     }
@@ -760,7 +760,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         Launch memory l = _defaults(bountyEoa);
         l.extension = address(ext);
         (PoolKey memory key,) = _launch(l);
-        bytes memory hd = _attribution(makeAddr("ref"), 100);
+        bytes memory hd = _attribution(makeAddr("ref"), 10);
         (int256 net0,) = _swapNet(key, true, -100 ether, TickMath.getSqrtPriceAtTick(-100), hd);
         assertEq(ext.swaps(), 1);
         // trader facing: fill plus fair skim (the refund comes back via escrow)

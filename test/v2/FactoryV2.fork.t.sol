@@ -141,10 +141,10 @@ contract FactoryV2ForkTest is ForkBase {
         c.pool.tickSpacing = TS;
 
         c.fee = IArtCoinsFactoryV2.FeeConfigV2({
-            lpFee: 5000,
-            baselineSkimBps: 6000,
+            lpFeePips: 5000,
+            baselineSkimBps: 600,
             bountyBps: 8333,
-            maxReferralBpsOfVolume: 250,
+            maxReferralBpsOfVolume: 25,
             bountyRecipient: bounty
         });
 
@@ -711,7 +711,7 @@ contract FactoryV2ForkTest is ForkBase {
 
         // fee caps
         c = _cfg();
-        c.fee.lpFee = Constants.MAX_LP_FEE + 1;
+        c.fee.lpFeePips = Constants.MAX_LP_FEE + 1;
         _expectRevertDeploy(
             c, abi.encodeWithSelector(ArtCoinsFactoryV2.FeeConfigOutOfBounds.selector)
         );
@@ -923,17 +923,17 @@ contract FactoryV2ForkTest is ForkBase {
     function test_referralCap_protocolFloor_boundary() public onlyFork {
         factory.setMinProtocolSkimShareBps(1000);
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        // baseline 6000, bounty 8000, floor 1000: room = 6000 * 1000 / 10000 = 600
-        c.fee.baselineSkimBps = 6000;
+        // baseline 600, bounty 8000, floor 1000: room = 600 * 1000 / 10000 = 60
+        c.fee.baselineSkimBps = 600;
         c.fee.bountyBps = 8000;
-        c.fee.maxReferralBpsOfVolume = 601;
+        c.fee.maxReferralBpsOfVolume = 61;
         _expectRevertDeploy(
             c, abi.encodeWithSelector(ArtCoinsFactoryV2.ReferralCapAboveProtocolFloor.selector)
         );
-        c.fee.maxReferralBpsOfVolume = 600; // boundary passes
+        c.fee.maxReferralBpsOfVolume = 60; // boundary passes
         address t = _deploy(alice, c);
         PoolId pid = factory.deploymentInfo(t).poolId;
-        assertEq(hook.skimConfig(pid).maxReferralBpsOfVolume, 600);
+        assertEq(hook.skimConfig(pid).maxReferralBpsOfVolume, 60);
         assertEq(hook.minProtocolShareBps(pid), 1000, "floor frozen on the pool");
 
         // bounty + floor > BPS fails in the factory before the hook's BadLegBps
@@ -949,7 +949,7 @@ contract FactoryV2ForkTest is ForkBase {
 
         // the reviewer's V2F-01 shape: baseline 1%, max bounty, max referral
         c = _cfg();
-        c.fee.baselineSkimBps = 1000;
+        c.fee.baselineSkimBps = 100;
         c.fee.bountyBps = 9000;
         c.fee.maxReferralBpsOfVolume = Constants.MAX_REFERRAL_CAP_OF_VOLUME;
         _expectRevertDeploy(
@@ -959,12 +959,12 @@ contract FactoryV2ForkTest is ForkBase {
         // with no floor the whole protocol leg is the room
         factory.setMinProtocolSkimShareBps(0);
         c = _cfg();
-        c.fee.baselineSkimBps = 1000;
+        c.fee.baselineSkimBps = 100;
         c.fee.bountyBps = 0;
-        c.fee.maxReferralBpsOfVolume = 1000; // = baseline
+        c.fee.maxReferralBpsOfVolume = 100; // = baseline
         c.token.salt = bytes32(uint256(41));
         assertEq(hook.minProtocolShareBps(factory.deploymentInfo(_deploy(alice, c)).poolId), 0);
-        c.fee.baselineSkimBps = 999;
+        c.fee.baselineSkimBps = 99;
         _expectRevertDeploy(
             c, abi.encodeWithSelector(ArtCoinsFactoryV2.ReferralCapAboveProtocolFloor.selector)
         );
@@ -974,20 +974,22 @@ contract FactoryV2ForkTest is ForkBase {
     function test_lpFeeZero_launches() public onlyFork {
         // lp fee 0 with a nonzero skim passes (pure skim pool).
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        c.fee.lpFee = 0;
-        c.fee.baselineSkimBps = 6000;
+        c.fee.lpFeePips = 0;
+        c.fee.baselineSkimBps = 600;
         address t = _deploy(alice, c);
-        assertEq(hook.skimConfig(factory.deploymentInfo(t).poolId).lpFee, 0, "lp fee 0 launched");
+        assertEq(
+            hook.skimConfig(factory.deploymentInfo(t).poolId).lpFeePips, 0, "lp fee 0 launched"
+        );
         // the protocol skim share floor (D52) still bounds referrals.
         c = _cfg();
-        c.fee.lpFee = Constants.MAX_LP_FEE;
+        c.fee.lpFeePips = Constants.MAX_LP_FEE;
         _deploy(alice, c);
     }
 
     /// a launch must earn some fee: both lp fee and baseline skim zero reverts.
     function test_zeroFeeLaunch_reverts() public onlyFork {
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        c.fee.lpFee = 0;
+        c.fee.lpFeePips = 0;
         c.fee.baselineSkimBps = 0;
         c.fee.bountyBps = 0;
         c.fee.maxReferralBpsOfVolume = 0;

@@ -63,7 +63,7 @@ library LaunchV2Lib {
         c.pool.tickIfToken0IsCoin = _i24(vm.parseJsonInt(j, ".pool.tickIfToken0IsCoin"));
         c.pool.tickSpacing = _i24(vm.parseJsonInt(j, ".pool.tickSpacing"));
 
-        c.fee.lpFee = _u24(vm.parseJsonUint(j, ".fee.lpFee"));
+        c.fee.lpFeePips = _u24(vm.parseJsonUint(j, ".fee.lpFeePips"));
         c.fee.baselineSkimBps = _u24(vm.parseJsonUint(j, ".fee.baselineSkimBps"));
         c.fee.bountyBps = _u16(vm.parseJsonUint(j, ".fee.bountyBps"));
         c.fee.maxReferralBpsOfVolume = _u24(vm.parseJsonUint(j, ".fee.maxReferralBpsOfVolume"));

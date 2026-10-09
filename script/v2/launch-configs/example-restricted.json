@@ -18,10 +18,10 @@
     "tickSpacing": 200
   },
   "fee": {
-    "lpFee": 5000,
-    "baselineSkimBps": 6000,
+    "lpFeePips": 5000,
+    "baselineSkimBps": 600,
     "bountyBps": 8333,
-    "maxReferralBpsOfVolume": 250,
+    "maxReferralBpsOfVolume": 25,
     "bountyRecipient": "0x7ea5000000000000000000000000000000000001"
   },
   "locker": {
@@ -32,7 +32,7 @@
     "positionBps": [5000, 3000, 2000]
   },
   "mev": {
-    "startingSkimBps": 68690,
+    "startingSkimBps": 6869,
     "windowSeconds": 4140
   },
   "restriction": {
