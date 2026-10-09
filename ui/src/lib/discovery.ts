@@ -24,8 +24,7 @@ export interface TokenRecord {
   name: string;
   symbol: string;
   image: string;
-  metadata: string;
-  context: string;
+  description: string;
   poolId: Hex;
   hook: Address;
   locker: Address;
@@ -98,8 +97,7 @@ async function scanV1(client: PublicClient, src: FactorySource, head: bigint): P
       name: cleanText(a.tokenName, MAX_NAME),
       symbol: cleanText(a.tokenSymbol, MAX_SYMBOL),
       image: a.tokenImage ?? '',
-      metadata: cleanText(a.tokenMetadata, MAX_DESCRIPTION),
-      context: cleanText(a.tokenContext, MAX_DESCRIPTION),
+      description: cleanText(a.tokenMetadata, MAX_DESCRIPTION),
       poolId: a.poolId,
       hook: a.poolHook,
       locker: a.locker,
@@ -136,14 +134,13 @@ async function scanV2(client: PublicClient, src: FactorySource, head: bigint): P
       name: cleanText(c.token.name, MAX_NAME),
       symbol: cleanText(c.token.symbol, MAX_SYMBOL),
       image: c.token.image,
-      metadata: cleanText(c.token.metadata, MAX_DESCRIPTION),
-      context: cleanText(c.token.context, MAX_DESCRIPTION),
+      description: cleanText(c.token.description, MAX_DESCRIPTION),
       poolId: a.poolId,
       hook: c.pool.hook,
       locker: c.locker.locker,
       mevModule: c.mev.module,
       tickSpacing: c.pool.tickSpacing,
-      startingTick: c.pool.tickIfToken0IsArtCoin,
+      startingTick: c.pool.tickIfToken0IsCoin,
       extensionsSupply: a.extensionsSupply ?? 0n,
       blockNumber: log.blockNumber,
       transactionHash: log.transactionHash,

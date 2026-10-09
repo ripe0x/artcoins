@@ -28,7 +28,6 @@ export FOUNDRY_PROFILE=ci
 | OWNER | `Addresses.OWNER` | owner of every owned contract, team fee recipient |
 | TREASURY | OWNER | `ProtocolFeeControllerV2` treasury |
 | TREASURY_BPS | 9000 | controller treasury share (Constants allow 4000..9000, the rest burns) |
-| REFERRAL_PAYOUT | 0 = the new escrow | factory referral payout. must have code. the escrow has no `notify`, so referral legs are credited to the referrer in the escrow (D16). the live 0xB03C… only accepts the v1 hook |
 | DEPLOY_FEE | 0.069 ether | factory deploy fee (wei) |
 | PROTOCOL_BPS | 2000 | factory default protocol slot |
 | MIN_PROTOCOL_SKIM_SHARE_BPS | 1000 | D52: protocol floor of every skim. caps launch `bountyBps` at `10000 - this` and the referral cap above the floor |
@@ -44,7 +43,7 @@ DRY_RUN=0 script/v2/deploy.sh <local|mainnet>
 
 | step | what |
 |---|---|
-| values | every required value of `env/<env>.env` is set. `env/mainnet.env` ships with `TREASURY`, `TREASURY_BPS`, `DEPLOY_FEE` and `PROTOCOL_BPS` empty and the wrapper refuses until they are set. `DEPLOY_FEE` is in wei. `REFERRAL_PAYOUT` may stay empty (the v2 escrow) |
+| values | every required value of `env/<env>.env` is set. `env/mainnet.env` ships with `TREASURY`, `TREASURY_BPS`, `DEPLOY_FEE` and `PROTOCOL_BPS` empty and the wrapper refuses until they are set. `DEPLOY_FEE` is in wei. |
 | guards | the rpc chain id equals `CHAIN_ID`. `WALLET_MODE=unlocked` needs a loopback rpc host that answers `anvil_nodeInfo` and an owner without code (on an anvil fork `cast rpc anvil_setCode <owner> 0x`). `REQUIRE_CLEAN_GIT=true` fetches `origin master` and needs HEAD equal to `origin/master`, or a tag that `git ls-remote` shows on origin at HEAD, and a clean tree. the git guards warn on a simulation and refuse on a broadcast |
 | build and simulation | `forge build` at profile ci, then `DeployV2Stack.s.sol` with `--sender $OWNER`. it must reach `post deploy asserts: ok` |
 | signer | `WALLET_MODE=account`: `cast wallet address --account $KEYSTORE` equals `OWNER`, then the operator types the last 6 hex digits of `OWNER` at the terminal |
@@ -142,7 +141,7 @@ the script prints the predicted token, msg.value (the deploy fee), configHash, t
 
 config fields map 1:1 to `IArtCoinsFactoryV2.DeploymentConfigV2`; hook, locker and mev module come from the target. `restriction.restricted` is a bool; when true, list extra allowlist entries in `restriction.allowed` (the factory seeds the stack escrow, this launch's locker and the launch extensions on top). not supported by the json: launch extensions, pool extension. `protocolBps` is the protocol slot passed to `deployTokenAsOwner`; project `rewardBps` must sum to `10000 - protocolBps`.
 
-`fee.lpFee` ranges from 0 to `MAX_LP_FEE` (100,000 pips); 0 is a pure skim pool with no lp fee. The protocol skim share floor (D52) secures the protocol leg regardless.
+`fee.lpFeePips` ranges from 0 to `MAX_LP_FEE` (100,000 pips); 0 is a pure skim pool with no lp fee. The protocol skim share floor (D52) secures the protocol leg regardless.
 
 anti sniper window split: while the mev module is active (the first `windowSeconds`, capped at 180 minutes), the hook charges `startingSkimBps` decaying to `baselineSkimBps`. The baseline portion of the skim splits bounty / protocol / referral as configured; the skim ABOVE the baseline goes entirely to the bounty recipient. Measured for a 0.1 eth in-window buy on the example config (start 68,690, baseline 6,000, bounty 8,333 bps): total skim 0.06869 eth, baseline portion 0.006 eth, bounty leg 0.0676898 eth, protocol leg 0.0010002 eth. The 0.06269 eth above the baseline is all bounty. The coin admin may repoint the bounty recipient after launch with `hook.setBountyRecipient` until `lockRecipients` or admin renounce.
 

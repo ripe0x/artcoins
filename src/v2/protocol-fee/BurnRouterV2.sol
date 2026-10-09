@@ -5,6 +5,7 @@ import {Constants} from "../../Constants.sol";
 import {IArtCoinsFeeEscrowV2} from "../interfaces/IArtCoinsFeeEscrowV2.sol";
 import {IArtCoinsHookV2} from "../interfaces/IArtCoinsHookV2.sol";
 import {IBurnRouterV2} from "../interfaces/IBurnRouterV2.sol";
+import {IBurnableCoin} from "../interfaces/IBurnableCoin.sol";
 import {IConstantsBound} from "../interfaces/IConstantsBound.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
@@ -21,33 +22,28 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
-import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
-interface IBurnableCoin {
-    function burn(uint256 amount) external;
-}
-
 /// @title  BurnRouterV2
-/// @notice Buys one v2 art coin with the native eth it holds and burns it.
-/// @dev    v1 differences (review LF-03, LF-04, LF-09, LF-12, DESIGN b6):
-///         - one burn per block across both entry points (`lastBurnBlock`),
-///           so the per call impact limit cannot be looped inside a tx.
-///         - the swap is exact input with a price limit `maxImpactBps` below
-///           the pre swap spot (owner bounded [BURN_IMPACT_MIN, MAX]); a big
-///           balance partial fills and drains over later blocks, never in one.
-///         - keeper reward is `min(consumed * KEEPER_REWARD_BPS / BPS, CAP)`
-///           on the eth the swap actually consumed, reserved before the swap
-///           and paid after it.
-///         - output must clear the caller's `minOut` and `spotFloorBps` of
-///           the spot implied output for the eth consumed; `floorFor` exposes
-///           the identical computation.
-///         - native eth quote, no weth. hook skim refunds (b3) credited to this
-///           router in the escrow are pulled by `claimRefund` and at the start
-///           of every burn.
-///         The coin is burned with the token's own `burn`; every coin this
-///         contract holds (including coin sent by the fee controller) is burned
-///         on the next successful burn.
+/// @notice Buys one art coin with the native eth it holds and burns the coin.
+/// @dev    Properties:
+///         - one burn per block across both entry points (`lastBurnBlock`).
+///         - the swap is exact input with a price limit `maxImpactBps` below the
+///           pre swap spot (owner bounded to [PRICE_IMPACT_MIN, PRICE_IMPACT_MAX]).
+///           A balance above the limit fills partially and drains over later blocks.
+///         - the offered eth is `min(balance - reward reserve, maxBurnPerCall)`.
+///         - keeper reward is `min(consumed * KEEPER_REWARD_BPS / BPS, KEEPER_REWARD_CAP)`
+///           on the eth the swap consumed, reserved before the swap and paid after it.
+///         - consumed eth excludes skim refunds the hook credited to this router
+///           in the escrow.
+///         - output must reach the caller's `minOut` and `spotFloorBps` of the spot
+///           output for the eth consumed, net of pool baseline skim and lp fee.
+///           `floorFor` exposes the same computation.
+///         - the quote currency is native eth. Escrow refunds are pulled by
+///           `claimRefund` and at the start of every burn.
+///         The coin is burned with its own `burn`. Every coin held, including
+///         coin sent by the fee controller, burns on the next successful burn.
 contract BurnRouterV2 is
     IBurnRouterV2,
     IConstantsBound,
@@ -59,35 +55,21 @@ contract BurnRouterV2 is
     using TransientStateLibrary for IPoolManager;
     using PoolIdLibrary for PoolKey;
 
-    /// @notice `unlockCallback` caller is not the PoolManager.
-    error NotPoolManager();
-    /// @notice The swap returned a delta with an unexpected sign or size.
-    error BadDelta();
-
-    /// @notice D31: `processBurnOpenTab` caller is not `openTabCaller`.
-    error NotOpenTabCaller();
-
-    event KeeperRewardFailed(address indexed caller, uint256 amount);
-    /// @notice D31: owner set the only address allowed to call `processBurnOpenTab`.
-    event OpenTabCallerSet(address indexed oldCaller, address indexed newCaller);
-    /// @notice D32: owner moved the output floor (bps of the spot implied output).
-    event SpotFloorBpsSet(uint256 oldBps, uint256 newBps);
-    /// @notice D50: the pool's known fees were (re)read from the hook.
-    event PoolFeesSynced(uint256 baselineSkimBps, uint256 lpFee);
-    /// @notice D40: owner moved the per burn eth cap.
-    event MaxBurnPerCallSet(uint256 oldMax, uint256 newMax);
-
-    /// @notice D40, D61: per burn eth cap bounds and default, read from `Constants`.
+    /// @inheritdoc IBurnRouterV2
     uint256 public constant MAX_BURN_PER_CALL_MIN = Constants.BURN_MAX_PER_CALL_MIN;
+    /// @inheritdoc IBurnRouterV2
     uint256 public constant MAX_BURN_PER_CALL_MAX = Constants.BURN_MAX_PER_CALL_MAX;
+    /// @inheritdoc IBurnRouterV2
     uint256 public constant DEFAULT_MAX_BURN_PER_CALL = Constants.BURN_MAX_PER_CALL_DEFAULT;
 
-    /// @notice Gas forwarded on the keeper reward push (no returndata copied).
+    /// @inheritdoc IBurnRouterV2
     uint256 public constant KEEPER_GAS = 50_000;
-    /// @notice Default minimum eth balance a burn needs.
+    /// @inheritdoc IBurnRouterV2
     uint96 public constant DEFAULT_MIN_PROCESS_THRESHOLD = 0.01 ether;
 
+    /// @inheritdoc IBurnRouterV2
     IPoolManager public immutable poolManager;
+    /// @inheritdoc IBurnRouterV2
     address public immutable feeEscrow;
 
     /// @inheritdoc IBurnRouterV2
@@ -100,35 +82,33 @@ contract BurnRouterV2 is
     uint16 public maxImpactBps;
     /// @inheritdoc IBurnRouterV2
     uint96 public minProcessThreshold;
-    /// @notice D32: output floor in bps of the spot implied output, owner
-    ///         tunable within [SPOT_FLOOR_MIN_BPS, SPOT_FLOOR_MAX_BPS].
+    /// @dev Output floor in bps of the fee net spot output. Owner tunable
+    ///      within [SPOT_FLOOR_MIN_BPS, SPOT_FLOOR_MAX_BPS] (5000 to 9500).
     uint16 internal _spotFloorBps;
-    /// @notice D31: the only caller of `processBurnOpenTab`; zero disables it.
+    /// @inheritdoc IBurnRouterV2
     address public openTabCaller;
-    /// @notice D40: most eth offered to the pool per burn, so a large balance
-    ///         drains over blocks instead of failing its floor.
+    /// @inheritdoc IBurnRouterV2
     uint256 public maxBurnPerCall;
-    /// @notice D50: pool baseline skim (SKIM_DENOMINATOR units) the floor nets out.
+    /// @inheritdoc IBurnRouterV2
     uint24 public poolBaselineSkimBps;
-    /// @notice D50: pool lp fee (FEE_DENOMINATOR units) the floor nets out.
+    /// @inheritdoc IBurnRouterV2
     uint24 public poolLpFee;
 
     constructor(address owner_, address poolManager_, address feeEscrow_) Ownable(owner_) {
         if (poolManager_ == address(0) || feeEscrow_ == address(0)) revert ZeroAddress();
         poolManager = IPoolManager(poolManager_);
         feeEscrow = feeEscrow_;
-        maxImpactBps = Constants.BURN_IMPACT_DEFAULT;
+        maxImpactBps = Constants.PRICE_IMPACT_DEFAULT;
         minProcessThreshold = DEFAULT_MIN_PROCESS_THRESHOLD;
-        _spotFloorBps = uint16(Constants.SPOT_FLOOR_BPS);
+        _spotFloorBps = uint16(Constants.BURN_SPOT_FLOOR_DEFAULT_BPS);
         maxBurnPerCall = DEFAULT_MAX_BURN_PER_CALL;
-        emit MaxImpactBpsSet(0, Constants.BURN_IMPACT_DEFAULT);
+        emit MaxImpactBpsSet(0, Constants.PRICE_IMPACT_DEFAULT);
         emit MinProcessThresholdSet(0, DEFAULT_MIN_PROCESS_THRESHOLD);
-        emit SpotFloorBpsSet(0, Constants.SPOT_FLOOR_BPS);
+        emit SpotFloorBpsSet(0, Constants.BURN_SPOT_FLOOR_DEFAULT_BPS);
         emit MaxBurnPerCallSet(0, DEFAULT_MAX_BURN_PER_CALL);
     }
 
-    /// @notice Burn budget arrives as plain eth (fee controller, escrow refunds,
-    ///         take of the swap is never eth here).
+    /// @notice Accepts the burn budget: eth from the fee controller and escrow refunds.
     receive() external payable {}
 
     // ── init ──────────────────────────────────────────────────────────────
@@ -142,6 +122,10 @@ contract BurnRouterV2 is
         {
             revert InvalidPoolKey();
         }
+        // the escrow and (when present) the pool hook this router binds to must
+        // report this build's constants hash. A hookless pool has nothing to check.
+        _checkConstants(feeEscrow);
+        if (address(key.hooks) != address(0)) _checkConstants(address(key.hooks));
         (uint160 spot,,,) = poolManager.getSlot0(key.toId());
         if (spot == 0) revert InvalidPoolKey();
         coin = coin_;
@@ -150,8 +134,7 @@ contract BurnRouterV2 is
         _syncFees(key);
     }
 
-    /// @notice D50: anyone re reads the pool's known fees from the hook.
-    ///         It can only set what the hook reports, so it is not gated.
+    /// @inheritdoc IBurnRouterV2
     function syncPoolFees() external {
         if (coin == address(0)) revert NotInitialized();
         _syncFees(_poolKey);
@@ -173,11 +156,9 @@ contract BurnRouterV2 is
     }
 
     /// @inheritdoc IBurnRouterV2
-    /// @dev D31: only `openTabCaller` (owner set, default none). Must run
-    ///      while that caller holds the PoolManager unlock; otherwise the
-    ///      PoolManager reverts `ManagerLocked`.
-    ///      Shares `lastBurnBlock` with `processBurn`, so an outer caller that
-    ///      moves the price cannot repeat the burn in the same block.
+    /// @dev `openTabCaller` is set by the owner and is zero by default. The call runs
+    ///      while that caller holds the PoolManager unlock, otherwise the PoolManager
+    ///      reverts `ManagerLocked`. It shares `lastBurnBlock` with `processBurn`.
     function processBurnOpenTab(uint256 minOut)
         external
         nonReentrant
@@ -198,6 +179,7 @@ contract BurnRouterV2 is
     }
 
     /// @notice v4 unlock callback for `processBurn`.
+    /// @dev Callable by the PoolManager only; reverts `NotPoolManager` otherwise.
     function unlockCallback(bytes calldata data) external returns (bytes memory) {
         if (msg.sender != address(poolManager)) revert NotPoolManager();
         (uint256 budget, uint160 spot) = abi.decode(data, (uint256, uint160));
@@ -212,29 +194,25 @@ contract BurnRouterV2 is
         return _poolKey;
     }
 
-    /// @notice Coin output floor a burn enforces for `ethIn` consumed at the
-    ///         current spot. Same computation as the enforced check (LF-12);
-    ///         the effective minimum is `max(minOut, floorFor(consumed))`.
+    /// @inheritdoc IBurnRouterV2
     function floorFor(uint256 ethIn) external view returns (uint256) {
         if (coin == address(0)) return 0;
         (uint160 spot,,,) = poolManager.getSlot0(_poolKey.toId());
         return _spotFloor(ethIn, spot);
     }
 
-    /// @notice D32: current output floor in bps.
+    /// @inheritdoc IBurnRouterV2
     function spotFloorBps() external view returns (uint256) {
         return _spotFloorBps;
     }
 
-    /// @notice Keeper reward for `consumed` eth.
+    /// @inheritdoc IBurnRouterV2
     function rewardFor(uint256 consumed) public pure returns (uint256 reward) {
         reward = (consumed * Constants.KEEPER_REWARD_BPS) / Constants.BPS;
         if (reward > Constants.KEEPER_REWARD_CAP) reward = Constants.KEEPER_REWARD_CAP;
     }
 
-    /// @notice What the next burn would offer the pool: balance plus pending
-    ///         escrow refunds (claimed first by every burn) minus the reward
-    ///         reserve, capped at `maxBurnPerCall`. Zero below `minProcessThreshold`.
+    /// @inheritdoc IBurnRouterV2
     function swapBudget() external view returns (uint256) {
         uint256 bal = address(this).balance
             + IArtCoinsFeeEscrowV2(feeEscrow).balances(address(this), address(0));
@@ -242,17 +220,30 @@ contract BurnRouterV2 is
         return _budget(bal);
     }
 
+    /// @inheritdoc IBurnRouterV2
+    uint16 public constant STACK_VERSION = Constants.STACK_VERSION;
+
     /// @inheritdoc IConstantsBound
     function constantsHash() external pure returns (bytes32) {
         return Constants.hash();
+    }
+
+    /// @dev `target.constantsHash()` must equal this build's hash.
+    function _checkConstants(address target) private view {
+        if (target == address(0)) revert ZeroAddress();
+        (bool ok, bytes memory ret) =
+            target.staticcall(abi.encodeCall(IConstantsBound.constantsHash, ()));
+        if (!ok || ret.length != 32 || abi.decode(ret, (bytes32)) != Constants.hash()) {
+            revert ConstantsMismatch(target);
+        }
     }
 
     // ── owner ─────────────────────────────────────────────────────────────
 
     /// @inheritdoc IBurnRouterV2
     function setMaxImpactBps(uint16 bps) external onlyOwner {
-        if (bps < Constants.BURN_IMPACT_MIN || bps > Constants.BURN_IMPACT_MAX) {
-            revert OutOfBounds(bps, Constants.BURN_IMPACT_MIN, Constants.BURN_IMPACT_MAX);
+        if (bps < Constants.PRICE_IMPACT_MIN || bps > Constants.PRICE_IMPACT_MAX) {
+            revert OutOfBounds(bps, Constants.PRICE_IMPACT_MIN, Constants.PRICE_IMPACT_MAX);
         }
         emit MaxImpactBpsSet(maxImpactBps, bps);
         maxImpactBps = bps;
@@ -267,8 +258,7 @@ contract BurnRouterV2 is
         minProcessThreshold = threshold;
     }
 
-    /// @notice D40: sets the per burn eth cap within
-    ///         [Constants.BURN_MAX_PER_CALL_MIN, Constants.BURN_MAX_PER_CALL_MAX].
+    /// @inheritdoc IBurnRouterV2
     function setMaxBurnPerCall(uint256 maxEth) external onlyOwner {
         if (maxEth < Constants.BURN_MAX_PER_CALL_MIN || maxEth > Constants.BURN_MAX_PER_CALL_MAX) {
             revert OutOfBounds(
@@ -279,13 +269,13 @@ contract BurnRouterV2 is
         maxBurnPerCall = maxEth;
     }
 
-    /// @notice D31: sets the only `processBurnOpenTab` caller; zero disables it.
+    /// @inheritdoc IBurnRouterV2
     function setOpenTabCaller(address caller) external onlyOwner {
         emit OpenTabCallerSet(openTabCaller, caller);
         openTabCaller = caller;
     }
 
-    /// @notice D32: sets the output floor within Constants bounds.
+    /// @inheritdoc IBurnRouterV2
     function setSpotFloorBps(uint256 bps) external onlyOwner {
         if (bps < Constants.SPOT_FLOOR_MIN_BPS || bps > Constants.SPOT_FLOOR_MAX_BPS) {
             revert OutOfBounds(bps, Constants.SPOT_FLOOR_MIN_BPS, Constants.SPOT_FLOOR_MAX_BPS);
@@ -295,7 +285,7 @@ contract BurnRouterV2 is
     }
 
     /// @inheritdoc IBurnRouterV2
-    /// @dev The coin and native eth (the burn budget) can never be rescued.
+    /// @dev Eth and the coin revert `CannotRescue`.
     function rescue(address token, address to, uint256 amount) external onlyOwner nonReentrant {
         if (to == address(0)) revert ZeroAddress();
         if (token == address(0) || token == coin) revert CannotRescue(token);
@@ -305,8 +295,8 @@ contract BurnRouterV2 is
 
     // ── internals ─────────────────────────────────────────────────────────
 
-    /// @dev Pacing first (effects before interactions), then refunds, then the
-    ///      threshold, then the reward reserve.
+    /// @dev Order: pacing check and `lastBurnBlock` write, refund claim, threshold
+    ///      check, reward reserve.
     function _preflight() internal returns (uint256 budget, uint160 spot, uint256 coinBefore) {
         if (coin == address(0)) revert NotInitialized();
         if (lastBurnBlock == block.number) revert AlreadyBurnedThisBlock();
@@ -331,7 +321,7 @@ contract BurnRouterV2 is
         if (b > cap) b = cap;
     }
 
-    /// @dev Pulls this router's escrow credit (b3 skim refunds). Never reverts.
+    /// @dev Pulls this router's escrow eth credit (skim refunds). A failed claim is skipped.
     function _claimRefund() internal returns (uint256 amount) {
         IArtCoinsFeeEscrowV2 escrow = IArtCoinsFeeEscrowV2(feeEscrow);
         if (escrow.balances(address(this), address(0)) == 0) return 0;
@@ -345,16 +335,14 @@ contract BurnRouterV2 is
     /// @dev Exact input eth (currency0) to coin (currency1). Buying the coin
     ///      lowers the price (coin per eth falls), so the limit is
     ///      spot / sqrt(1 + bps / BPS), rounded up: pre / post <= 1 + bps / BPS,
-    ///      which also bounds post / pre >= 1 - bps / BPS. The v1 linear
-    ///      `spot * (1 - x / 2)` let pre / post reach 1 + x + x^2 (LF-03, LF-09).
+    ///      which also bounds post / pre >= 1 - bps / BPS.
     ///      Must run inside an unlock. Settles and takes exactly this
     ///      router's net PoolManager deltas (read before and after the swap),
     ///      not the swap's returned delta: a hook that refunds over charged
-    ///      skim with `settleFor(router)` inside the swap (D42) lowers what is
+    ///      skim with `settleFor(router)` inside the swap lowers what is
     ///      owed without changing the returned delta. `ethIn` is the eth
     ///      actually consumed: what is owed minus any skim the hook refunded
-    ///      to this router in the escrow instead (the pre D42 shape and D42's
-    ///      fallback). Both shapes give the same `ethIn` (V2B-01, V2B-03).
+    ///      to this router in the escrow instead.
     function _swapAndSettle(uint256 budget, uint160 spot)
         internal
         returns (uint256 ethIn, uint256 coinOut)
@@ -398,7 +386,7 @@ contract BurnRouterV2 is
 
     /// @dev Checks output against `minOut` and the spot floor using the coin
     ///      actually received (balance delta), burns every coin held, pays the
-    ///      reward on consumed eth (net of any skim refund, V2B-03).
+    ///      reward on consumed eth (net of any skim refund).
     function _finish(
         uint256 ethIn,
         uint256 coinOut,
@@ -432,10 +420,10 @@ contract BurnRouterV2 is
         emit Burned(msg.sender, ethIn, burned, reward);
     }
 
-    /// @dev D50: the pool's known fees, read from `hook.skimConfig(poolId)`
+    /// @dev The pool fees, read from `hook.skimConfig(poolId)`
     ///      (zero for a hookless pool or a hook that does not answer), clamped
-    ///      to the Constants caps. `baselineSkimBps` in SKIM_DENOMINATOR units,
-    ///      `lpFee` in FEE_DENOMINATOR units.
+    ///      to the Constants caps. `baselineSkimBps` in BPS of volume,
+    ///      `lpFeePips` in pips (1/1,000,000).
     function _syncFees(PoolKey memory key) internal {
         uint256 s;
         uint256 f;
@@ -445,25 +433,24 @@ contract BurnRouterV2 is
                 IArtCoinsHookV2.SkimConfig memory cfg
             ) {
                 s = cfg.baselineSkimBps;
-                f = cfg.lpFee;
+                f = cfg.lpFeePips;
             } catch {}
             if (s > Constants.MAX_BASELINE_SKIM_BPS) s = Constants.MAX_BASELINE_SKIM_BPS;
             if (f > Constants.MAX_LP_FEE) f = Constants.MAX_LP_FEE;
         }
         poolBaselineSkimBps = uint24(s);
         poolLpFee = uint24(f);
-        emit PoolFeesSynced(s, f);
+        emit PoolFeesSynced(key.toId(), Currency.unwrap(key.currency1), s, f);
     }
 
-    /// @dev 1 - baseline skim - lp fee, in FEE_DENOMINATOR units (>= 80% by the caps).
+    /// @dev 1 - baseline skim - lp fee, in pips (at least 800,000 by the caps).
     function _netPpm() internal view returns (uint256) {
-        uint256 skimPpm =
-            uint256(poolBaselineSkimBps) * (Constants.FEE_DENOMINATOR / Constants.SKIM_DENOMINATOR);
+        uint256 skimPpm = uint256(poolBaselineSkimBps) * (Constants.FEE_DENOMINATOR / Constants.BPS);
         return Constants.FEE_DENOMINATOR - skimPpm - poolLpFee;
     }
 
     /// @dev Expected coin (currency1) for `ethIn` (currency0) at spot, times
-    ///      (1 - baseline skim - lp fee) (D50) times `spotFloorBps`.
+    ///      (1 - baseline skim - lp fee) times `spotFloorBps`.
     ///      price = token1 per token0.
     function _spotFloor(uint256 ethIn, uint160 sqrtPriceX96) internal view returns (uint256) {
         if (ethIn == 0 || sqrtPriceX96 == 0) return 0;

@@ -179,7 +179,7 @@ contract LockerV2ForkTest is ForkBase {
     function _poolConfig(address h) internal pure returns (IArtCoinsFactoryV2.PoolConfigV2 memory) {
         return IArtCoinsFactoryV2.PoolConfigV2({
             hook: h,
-            tickIfToken0IsArtCoin: START,
+            tickIfToken0IsCoin: START,
             tickSpacing: SPACING,
             extension: address(0),
             extensionData: ""
@@ -224,7 +224,7 @@ contract LockerV2ForkTest is ForkBase {
         IArtCoinsFactoryV2.LockerConfigV2 memory lc = _lockerConfig(recipients, bps, nPos);
         vm.startPrank(launcher);
         IERC20(coin).approve(address(locker), SUPPLY);
-        locker.placeLiquidity(lc, _poolConfig(hook), key, SUPPLY, coin, type(uint256).max);
+        locker.placeLiquidity(lc, _poolConfig(hook), key, SUPPLY, coin, false);
         vm.stopPrank();
     }
 
@@ -279,12 +279,7 @@ contract LockerV2ForkTest is ForkBase {
         vm.prank(launcher);
         vm.expectRevert(err);
         locker.placeLiquidity(
-            lc,
-            _poolConfig(address(key.hooks)),
-            key,
-            SUPPLY,
-            Currency.unwrap(key.currency1),
-            type(uint256).max
+            lc, _poolConfig(address(key.hooks)), key, SUPPLY, Currency.unwrap(key.currency1), false
         );
     }
 
@@ -297,7 +292,7 @@ contract LockerV2ForkTest is ForkBase {
         IArtCoinsFactoryV2.LockerConfigV2 memory lc = _lockerConfig(r, b, 1);
         PoolKey memory key = _key(address(0xC01), hook);
         vm.expectRevert(IArtCoinsLpLockerV2.NotLauncher.selector);
-        locker.placeLiquidity(lc, _poolConfig(hook), key, SUPPLY, address(0xC01), type(uint256).max);
+        locker.placeLiquidity(lc, _poolConfig(hook), key, SUPPLY, address(0xC01), false);
     }
 
     /// @dev FT-10: array length mismatch reverts instead of truncating.
@@ -417,7 +412,7 @@ contract LockerV2ForkTest is ForkBase {
         PoolKey memory key = _key(address(0xC01), hook);
         key.currency0 = Currency.wrap(WETH);
         _expectPlaceRevert(
-            lc, key, abi.encodeWithSelector(ArtCoinsLpLockerV2.UnsupportedPoolKey.selector)
+            lc, key, abi.encodeWithSelector(IArtCoinsLpLockerV2.UnsupportedPoolKey.selector)
         );
         // hook with a different constants set
         address wrong = _etchHook(address(new WrongHashHook()));
@@ -435,26 +430,18 @@ contract LockerV2ForkTest is ForkBase {
     function test_lockerV2_ownerSetters_bounded() public {
         vm.startPrank(owner);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IArtCoinsLpLockerV2.KeeperRewardBpsOutOfBounds.selector, 201, 200
-            )
+            abi.encodeWithSelector(IArtCoinsLpLockerV2.OutOfBounds.selector, 201, 0, 200)
         );
         locker.setKeeperRewardBps(201);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IArtCoinsLpLockerV2.KeeperRewardCapOutOfBounds.selector,
-                0.05 ether + 1,
-                0.001 ether,
-                0.05 ether
+                IArtCoinsLpLockerV2.OutOfBounds.selector, 0.05 ether + 1, 0.001 ether, 0.05 ether
             )
         );
         locker.setKeeperRewardCap(0.05 ether + 1);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IArtCoinsLpLockerV2.KeeperRewardCapOutOfBounds.selector,
-                0.001 ether - 1,
-                0.001 ether,
-                0.05 ether
+                IArtCoinsLpLockerV2.OutOfBounds.selector, 0.001 ether - 1, 0.001 ether, 0.05 ether
             )
         );
         locker.setKeeperRewardCap(0.001 ether - 1);
@@ -483,7 +470,7 @@ contract LockerV2ForkTest is ForkBase {
         locker.rescue(address(t), address(0xBAD), 5e18);
         address posm = address(locker.positionManager());
         vm.startPrank(owner);
-        vm.expectRevert(ArtCoinsLpLockerV2.RescueForbidden.selector);
+        vm.expectRevert(IArtCoinsLpLockerV2.RescueForbidden.selector);
         locker.rescue(posm, owner, 1);
         vm.expectRevert(IArtCoinsLpLockerV2.ZeroAddress.selector);
         locker.rescue(address(t), address(0), 1);
@@ -535,12 +522,7 @@ contract LockerV2ForkTest is ForkBase {
         vm.prank(launcher);
         vm.expectRevert(IArtCoinsLpLockerV2.TokenAlreadyHasRewards.selector);
         locker.placeLiquidity(
-            lc,
-            _poolConfig(hook),
-            _key(address(coin), hook),
-            SUPPLY,
-            address(coin),
-            type(uint256).max
+            lc, _poolConfig(hook), _key(address(coin), hook), SUPPLY, address(coin), false
         );
     }
 
@@ -788,7 +770,7 @@ contract LockerV2ForkTest is ForkBase {
         UnlockAttacker attacker = new UnlockAttacker(
             IPoolManager(POOL_MANAGER), IPositionManager(POSITION_MANAGER), locker
         );
-        vm.expectRevert(ArtCoinsLpLockerV2.PoolManagerUnlocked.selector);
+        vm.expectRevert(IArtCoinsLpLockerV2.PoolManagerUnlocked.selector);
         attacker.attack(key, address(coin), 100_000, 120_000);
         // the v1 open tab entry point does not exist
         (bool ok,) = address(locker)

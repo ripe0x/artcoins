@@ -35,8 +35,8 @@ import {IConstantsBound} from "./interfaces/IConstantsBound.sol";
 ///
 ///         Frozen at construction: name, symbol, supply, launcher, canonical
 ///         hook, pool id, PoolManager. The coin admin manages the allowlist,
-///         may call `unrestrict` once, may `lock` the allowlist and the switch,
-///         and may change the cosmetic fields (image, metadata, renderer).
+///         may call `unrestrict` once, may `lockAllowlist` the allowlist and the
+///         switch, and may change the cosmetic fields (image, description, renderer).
 /// @dev    Deployed by `ArtCoinsDeployerV2` via CREATE2. The whole supply is
 ///         minted to the launcher (the factory).
 contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
@@ -55,18 +55,16 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
     bytes32 private constant _ALLOWANCE_SLOT = keccak256("artcoins.tokenV2.transferAllowance");
 
     /// @notice String caps in bytes, enforced at construction and in every
-    ///         setter. The factory checks the same caps before deploying.
-    uint256 public constant MAX_NAME_BYTES = 64;
-    uint256 public constant MAX_SYMBOL_BYTES = 16;
-    uint256 public constant MAX_IMAGE_BYTES = 2048;
-    uint256 public constant MAX_METADATA_BYTES = 4096;
-    uint256 public constant MAX_CONTEXT_BYTES = 4096;
-    /// @notice `StringTooLong.field` codes.
-    uint8 public constant FIELD_NAME = 0;
-    uint8 public constant FIELD_SYMBOL = 1;
-    uint8 public constant FIELD_IMAGE = 2;
-    uint8 public constant FIELD_METADATA = 3;
-    uint8 public constant FIELD_CONTEXT = 4;
+    ///         setter. Values are defined in `Constants`.
+    uint256 public constant MAX_NAME_BYTES = Constants.MAX_NAME_BYTES;
+    uint256 public constant MAX_SYMBOL_BYTES = Constants.MAX_SYMBOL_BYTES;
+    uint256 public constant MAX_IMAGE_BYTES = Constants.MAX_IMAGE_BYTES;
+    uint256 public constant MAX_DESCRIPTION_BYTES = Constants.MAX_DESCRIPTION_BYTES;
+    /// @notice `StringTooLong.field` codes, defined in `Constants`.
+    uint8 public constant FIELD_NAME = Constants.FIELD_NAME;
+    uint8 public constant FIELD_SYMBOL = Constants.FIELD_SYMBOL;
+    uint8 public constant FIELD_IMAGE = Constants.FIELD_IMAGE;
+    uint8 public constant FIELD_DESCRIPTION = Constants.FIELD_DESCRIPTION;
 
     // ── immutables ────────────────────────────────────────────────────────
 
@@ -78,23 +76,20 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
     address public immutable poolManager;
     /// @inheritdoc IArtCoinsTokenV2
     address public immutable launcher;
-    address private immutable _originalAdmin;
 
     // ── storage ───────────────────────────────────────────────────────────
 
     string private _name;
     string private _symbol;
-    string private _metadata;
-    string private _context;
+    string private _description;
     string private _image;
     address private _admin;
-    bool private _verified;
     address private _metadataRenderer;
 
     /// @inheritdoc IArtCoinsTokenV2
     bool public restricted;
     /// @inheritdoc IArtCoinsTokenV2
-    bool public locked;
+    bool public allowlistLocked;
     /// @inheritdoc IArtCoinsTokenV2
     bool public recipientsLocked;
 
@@ -131,16 +126,13 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
         _cap(t.name, MAX_NAME_BYTES, FIELD_NAME);
         _cap(t.symbol, MAX_SYMBOL_BYTES, FIELD_SYMBOL);
         _cap(t.image, MAX_IMAGE_BYTES, FIELD_IMAGE);
-        _cap(t.metadata, MAX_METADATA_BYTES, FIELD_METADATA);
-        _cap(t.context, MAX_CONTEXT_BYTES, FIELD_CONTEXT);
+        _cap(t.description, MAX_DESCRIPTION_BYTES, FIELD_DESCRIPTION);
 
         _name = t.name;
         _symbol = t.symbol;
-        _originalAdmin = t.tokenAdmin;
         _admin = t.tokenAdmin;
         _image = t.image;
-        _metadata = t.metadata;
-        _context = t.context;
+        _description = t.description;
         _metadataRenderer = t.renderer;
         launcher = launcher_;
 
@@ -161,6 +153,9 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
         if (r.restricted) {
             uint256 n = r.allowed.length;
             if (n > Constants.MAX_ALLOWED) revert RestrictionConfigInvalid();
+            for (uint256 i; i < pinned.length; ++i) {
+                _pinned[pinned[i]] = true;
+            }
             for (uint256 i; i < n; ++i) {
                 address a = r.allowed[i];
                 if (a == address(0)) revert RestrictionConfigInvalid();
@@ -169,10 +164,7 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
                 // without consuming the per swap allowance.
                 if (a == canon.poolManager || a == canon.hook) revert AllowedForbidden(a);
                 _allowed[a] = true;
-                emit AllowedSet(a, true);
-            }
-            for (uint256 i; i < pinned.length; ++i) {
-                _pinned[pinned[i]] = true;
+                emit AllowedSet(a, true, _pinned[a]);
             }
         } else if (r.allowed.length != 0 || pinned.length != 0) {
             // an unrestricted coin carries no allowlist.
@@ -272,38 +264,37 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
     /// @inheritdoc IArtCoinsTokenV2
     function setAllowed(address account, bool allowed) external {
         if (msg.sender != _admin) revert NotAdmin();
-        if (locked) revert AlreadyLocked();
+        if (allowlistLocked) revert AllowlistAlreadyLocked();
         if (account == address(0)) revert ZeroAddress();
         if (account == poolManager || account == canonicalHook) revert AllowedForbidden(account);
-        // a factory seeded entry stays on the list for the life of the coin.
         if (_pinned[account] && !allowed) revert AllowedPinned(account);
         _allowed[account] = allowed;
-        emit AllowedSet(account, allowed);
+        emit AllowedSet(account, allowed, _pinned[account]);
     }
 
     /// @inheritdoc IArtCoinsTokenV2
     function unrestrict() external {
         if (msg.sender != _admin) revert NotAdmin();
-        if (locked) revert AlreadyLocked();
+        if (allowlistLocked) revert AllowlistAlreadyLocked();
         if (!restricted) revert NotRestricted();
         restricted = false;
         emit Unrestricted();
     }
 
     /// @inheritdoc IArtCoinsTokenV2
-    function lock() external {
+    function lockAllowlist() external {
         if (msg.sender != _admin) revert NotAdmin();
-        if (locked) revert AlreadyLocked();
-        locked = true;
-        emit Locked();
+        if (allowlistLocked) revert AllowlistAlreadyLocked();
+        allowlistLocked = true;
+        emit AllowlistLocked();
     }
 
     /// @inheritdoc IArtCoinsTokenV2
-    /// @dev The hook and locker read this flag to freeze the bounty and reward
-    ///      recipient setters. One way.
+    /// @dev The hook and locker read `recipientsLocked` to freeze the bounty and
+    ///      reward recipient setters.
     function lockRecipients() external {
         if (msg.sender != _admin) revert NotAdmin();
-        if (recipientsLocked) revert AlreadyLocked();
+        if (recipientsLocked) revert RecipientsAlreadyLocked();
         recipientsLocked = true;
         emit RecipientsLocked();
     }
@@ -319,6 +310,11 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
     }
 
     /// @inheritdoc IArtCoinsTokenV2
+    function isTransferRestricted(address from, address to) external view returns (bool) {
+        return restricted && !_allowed[from] && !_allowed[to];
+    }
+
+    /// @inheritdoc IArtCoinsTokenV2
     function launcherVersion() external pure returns (uint16) {
         return Constants.STACK_VERSION;
     }
@@ -328,7 +324,7 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
         return Constants.hash();
     }
 
-    // ── admin and metadata (as v1) ────────────────────────────────────────
+    // ── admin and metadata ──────────────────────────────────────────────────
 
     /// @inheritdoc IArtCoinsTokenV2
     function updateAdmin(address admin_) external {
@@ -340,11 +336,10 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
     }
 
     /// @inheritdoc IArtCoinsTokenV2
-    /// @dev Freezes the image, metadata, renderer, the allowlist and the
-    ///      restriction switch in their current state: the admin only functions
-    ///      (`setAllowed`, `unrestrict`, `lock`, `lockRecipients`, the metadata
-    ///      setters) all require the admin, which becomes 0. The hook and locker
-    ///      recipient setters key on `admin()`, so they freeze too.
+    /// @dev Freezes every admin only function (`setAllowed`, `unrestrict`,
+    ///      `lockAllowlist`, `lockRecipients`, the metadata setters): each
+    ///      requires the admin, which becomes the zero address. The hook and
+    ///      locker recipient setters key on `admin()`, so they freeze too.
     function renounceAdmin() external {
         if (msg.sender != _admin) revert NotAdmin();
         address oldAdmin = _admin;
@@ -363,11 +358,11 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
     }
 
     /// @inheritdoc IArtCoinsTokenV2
-    function updateMetadata(string calldata metadata_) external {
+    function updateDescription(string calldata description_) external {
         if (msg.sender != _admin) revert NotAdmin();
-        _cap(metadata_, MAX_METADATA_BYTES, FIELD_METADATA);
-        _metadata = metadata_;
-        emit UpdateMetadata(metadata_);
+        _cap(description_, MAX_DESCRIPTION_BYTES, FIELD_DESCRIPTION);
+        _description = description_;
+        emit UpdateDescription(description_);
         emit ContractURIUpdated();
     }
 
@@ -379,14 +374,6 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
         _metadataRenderer = renderer_;
         emit MetadataRendererUpdated(renderer_);
         emit ContractURIUpdated();
-    }
-
-    /// @inheritdoc IArtCoinsTokenV2
-    function verify() external {
-        if (msg.sender != _originalAdmin) revert NotOriginalAdmin();
-        if (_verified) revert AlreadyVerified();
-        _verified = true;
-        emit Verified(msg.sender, address(this));
     }
 
     /// @inheritdoc IArtCoinsTokenV2
@@ -414,7 +401,7 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
             '","symbol":"',
             LibString.escapeJSON(_symbol),
             '","description":"',
-            LibString.escapeJSON(_metadata),
+            LibString.escapeJSON(_description),
             '","image":"',
             LibString.escapeJSON(_image),
             '"}'
@@ -428,33 +415,18 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
     }
 
     /// @inheritdoc IArtCoinsTokenV2
-    function originalAdmin() external view returns (address) {
-        return _originalAdmin;
-    }
-
-    /// @inheritdoc IArtCoinsTokenV2
     function imageUrl() external view returns (string memory) {
         return _image;
     }
 
     /// @inheritdoc IArtCoinsTokenV2
-    function metadata() external view returns (string memory) {
-        return _metadata;
-    }
-
-    /// @inheritdoc IArtCoinsTokenV2
-    function context() external view returns (string memory) {
-        return _context;
+    function description() external view returns (string memory) {
+        return _description;
     }
 
     /// @inheritdoc IArtCoinsTokenV2
     function metadataRenderer() external view returns (address) {
         return _metadataRenderer;
-    }
-
-    /// @inheritdoc IArtCoinsTokenV2
-    function isVerified() external view returns (bool) {
-        return _verified;
     }
 
     /// @notice ERC-165: erc20, erc165, IArtCoinsTokenV2.

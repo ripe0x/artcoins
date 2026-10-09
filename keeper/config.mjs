@@ -216,7 +216,7 @@ export function loadConfig(env = process.env, reg = readRegistry(env.REGISTRY_PA
       layer: { combinedWeth: envAmount(env, 'KLAYER_MIN_COMBINED_WETH', '0.01') },
       v2: {
         accruedPaired: envAmount(env, 'KV2_MIN_PAIRED_ETH', '0.02'),
-        accruedArtCoin: envAmount(env, 'KV2_MIN_COIN', '10000'),
+        accruedCoin: envAmount(env, 'KV2_MIN_COIN', '10000'),
       },
     },
     v2: { live: v2Live, keeper: kV2, coins: v2Coins },

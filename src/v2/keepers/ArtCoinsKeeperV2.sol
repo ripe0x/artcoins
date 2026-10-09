@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import {Constants} from "../../Constants.sol";
 import {IArtCoinsFactoryV2} from "../interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsKeeperV2} from "../interfaces/IArtCoinsKeeperV2.sol";
 import {IArtCoinsLpLockerV2} from "../interfaces/IArtCoinsLpLockerV2.sol";
@@ -11,18 +12,20 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 /// @title  ArtCoinsKeeperV2
 /// @notice Permissionless, stateless, ownerless keeper for any v2 art coin. One call collects the coin's locker
 ///         rewards, flushes (and optionally converts) every locker reward recipient that is a fee swapper,
-///         then forwards every wei and coin it received to the caller. Holds nothing between calls.
-/// @dev    Step gas values are floors, not caps (D49). Before a step `gasleft()` must exceed floor plus margin or
+///         then forwards every wei it received to the caller, and the coin it received when the coin allows the transfer; a restricted coin's reward stays in the keeper.
+/// @dev    Step gas values are floors, not caps. Before a step `gasleft()` must exceed floor plus margin or
 ///         the call reverts `InsufficientGas(step)`; the step then gets all remaining gas, so a collect that
 ///         grows past the old figure still runs. A step that reverts with `gasleft()` back under its floor is out
 ///         of gas and reports `InsufficientGas(step)`. Otherwise the revert is real: collect bubbles its revert
 ///         data, flush and convert are swallowed and reported (`FlushSkipped`, `ConvertSkipped`) so one idle or
 ///         broken slot does not block the rest (`NothingToFlush`, `ConvertTooEarly` are the common ones). Revert
-///         data is copied up to 256 bytes (no return bomb). The floor figures are the v1 measurements (collect
-///         658k for 14 positions, convert 299k, flush 72k) with room added, to be re measured on the v2 stack.
+///         data is copied up to 256 bytes (no return bomb). The floor figures are collect 658k for 14
+///         positions, convert 299k, flush 72k, each with room added.
 ///         Recipients are the locker's frozen reward list (bounded by Constants.MAX_REWARD_PARTICIPANTS).
 contract ArtCoinsKeeperV2 is IArtCoinsKeeperV2, ReentrancyGuardTransient {
     address public immutable factory;
+    /// @inheritdoc IArtCoinsKeeperV2
+    uint16 public constant STACK_VERSION = Constants.STACK_VERSION;
 
     // step ids used by `InsufficientGas`
     uint8 internal constant STEP_COLLECT = 1;
@@ -35,24 +38,9 @@ contract ArtCoinsKeeperV2 is IArtCoinsKeeperV2, ReentrancyGuardTransient {
     uint256 internal constant CONVERT_GAS = 400_000;
     uint256 internal constant PROBE_GAS = 30_000; // erc165 recommends 30k for supportsInterface
     uint256 internal constant MARGIN = 50_000;
+    /// @dev Gas reserved for the bookkeeping after each step call (63/64 rule).
+    uint256 internal constant POST_CALL_RESERVE = 20_000;
     uint256 internal constant MAX_REASON = 256;
-
-    /// @dev gas shortfall for `step` (1 collect, 2 flush, 3 convert, 4 erc165 probe).
-    error InsufficientGas(uint8 step);
-    error ZeroAddress();
-    error CoinTransferFailed();
-
-    /// @notice One fee swapper serviced. `flushed` and `converted` are gross eth, 0 when the step reverted.
-    event SwapperServiced(
-        address indexed token, address indexed swapper, uint256 flushed, uint256 converted
-    );
-    /// @notice A swapper's `convert` reverted for a reason other than gas (too early, nothing to convert, ...).
-    event ConvertSkipped(address indexed token, address indexed swapper, bytes reason);
-    /// @notice A swapper's `flushPaired` reverted for a reason other than gas (usually `NothingToFlush`).
-    event FlushSkipped(address indexed token, address indexed swapper, bytes reason);
-    /// @notice A restricted coin's keeper reward coin was not forwarded to the
-    ///         caller (the keeper is not on the coin allowlist); it stays here.
-    event CoinForwardSkipped(address indexed token, uint256 amount);
 
     constructor(address factory_) {
         if (factory_ == address(0)) revert ZeroAddress();
@@ -110,7 +98,7 @@ contract ArtCoinsKeeperV2 is IArtCoinsKeeperV2, ReentrancyGuardTransient {
         uint256 eth = address(this).balance;
         if (eth > 0) {
             (bool ok,) = msg.sender.call{value: eth}("");
-            if (!ok) revert EthTransferFailed();
+            if (!ok) revert NativeTransferFailed();
         }
         // A restricted coin forwards coin to the caller only through its own
         // transfer rule. The keeper is not on the coin allowlist, so a coin push
@@ -142,7 +130,7 @@ contract ArtCoinsKeeperV2 is IArtCoinsKeeperV2, ReentrancyGuardTransient {
     ///         fees are not readable through the locker interface, so they are not included; run on a schedule.
     /// @return swappers Reward recipients that are fee swappers.
     /// @return accruedPaired Sum of eth held plus escrowed across them (what `flushPaired` drains).
-    /// @return accruedArtCoin Sum of coin held plus escrowed across them (what `convert` can swap).
+    /// @return accruedCoin Sum of coin held plus escrowed across them (what `convert` can swap).
     /// @return nextConvertibleBlock Earliest block at which any of them can convert (0 when none).
     function preview(address token)
         external
@@ -150,7 +138,7 @@ contract ArtCoinsKeeperV2 is IArtCoinsKeeperV2, ReentrancyGuardTransient {
         returns (
             uint256 swappers,
             uint256 accruedPaired,
-            uint256 accruedArtCoin,
+            uint256 accruedCoin,
             uint256 nextConvertibleBlock
         )
     {
@@ -163,8 +151,8 @@ contract ArtCoinsKeeperV2 is IArtCoinsKeeperV2, ReentrancyGuardTransient {
             try IFeeAutoSwapperV2(r).accruedPaired() returns (uint256 p) {
                 accruedPaired += p;
             } catch {}
-            try IFeeAutoSwapperV2(r).accruedArtCoin() returns (uint256 c) {
-                accruedArtCoin += c;
+            try IFeeAutoSwapperV2(r).accruedCoin() returns (uint256 c) {
+                accruedCoin += c;
             } catch {}
             try IFeeAutoSwapperV2(r).nextConvertibleBlock() returns (uint256 b) {
                 if (nextConvertibleBlock == 0 || b < nextConvertibleBlock) {
@@ -179,7 +167,7 @@ contract ArtCoinsKeeperV2 is IArtCoinsKeeperV2, ReentrancyGuardTransient {
     function _lockerOf(address token) internal view returns (IArtCoinsLpLockerV2) {
         IArtCoinsFactoryV2.DeploymentInfoV2 memory info =
             IArtCoinsFactoryV2(factory).deploymentInfo(token);
-        if (info.token != token || info.locker == address(0)) revert NotArtCoin(token);
+        if (info.token != token || info.locker == address(0)) revert NotCoin(token);
         return IArtCoinsLpLockerV2(info.locker);
     }
 
@@ -207,10 +195,11 @@ contract ArtCoinsKeeperV2 is IArtCoinsKeeperV2, ReentrancyGuardTransient {
         }
     }
 
-    /// @dev Reverts rather than skips on a gas shortfall (63/64 rule plus 20k for the work after the call).
+    /// @dev Reverts rather than skips on a gas shortfall (63/64 rule plus the
+    ///      reserve for the work after the call).
     function _gas(uint8 step, uint256 cost) internal view returns (uint256 g) {
         g = cost + MARGIN;
-        if (gasleft() < g + g / 63 + 20_000) revert InsufficientGas(step);
+        if (gasleft() < g + g / 63 + POST_CALL_RESERVE) revert InsufficientGas(step);
     }
 
     /// @dev erc165 probe, gas capped, copies at most one word of returndata. A recipient that is an eoa, has

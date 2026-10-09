@@ -25,11 +25,11 @@
  *
  * The hook routes the referral leg according to:
  *
- *   referral = min(volume × min(att.referralBps, maxReferralBpsOfVolume) / 100_000,
+ *   referral = min(volume × min(att.referralBps, maxReferralBpsOfVolume) / 10_000,
  *                  protocolShare)
  *
  * where `maxReferralBpsOfVolume` is set at pool initialization (PC's
- * launch ships 250 = 0.25% of volume). For non-PC coins the cap is
+ * launch ships 25 = 0.25% of volume). For non-PC coins the cap is
  * whatever the launching script supplied. The referrer is credited
  * immediately for coins with `permanentCollection == address(0)` and
  * only after `pc.acquisitionCount() > 0` for coins that wire a PC.
@@ -37,11 +37,13 @@
 
 import { encodeAbiParameters, getAddress, isAddress, type Hex } from 'viem';
 
-/** Default referral bps requested by the UI (in 100k-denom; 250 = 0.25%
- *  of volume). The hook clamps against the per-pool
+/** Default referral bps requested by the UI (bps of volume; 25 = 0.25%). The hook clamps against the per-pool
  *  `maxReferralBpsOfVolume` cap so this is just a "request whatever the
  *  hook allows" default. */
-export const DEFAULT_REFERRAL_BPS_OF_VOLUME = 250;
+export const DEFAULT_REFERRAL_BPS_OF_VOLUME = 25;
+
+/** The v1 hook reads `referralBps` out of 100_000, so the same 0.25% default is 250 there. */
+export const V1_DEFAULT_REFERRAL_OF_VOLUME = 250;
 
 const POOL_SWAP_DATA_ABI = [
   {

@@ -55,16 +55,15 @@ library LaunchV2Lib {
         c.token.symbol = vm.parseJsonString(j, ".token.symbol");
         c.token.salt = vm.parseJsonBytes32(j, ".token.salt");
         c.token.image = vm.parseJsonString(j, ".token.image");
-        c.token.metadata = vm.parseJsonString(j, ".token.metadata");
-        c.token.context = vm.parseJsonString(j, ".token.context");
+        c.token.description = vm.parseJsonString(j, ".token.description");
         c.token.totalSupply = vm.parseJsonUint(j, ".token.totalSupply");
         c.token.renderer = vm.parseJsonAddress(j, ".token.renderer");
 
         c.pool.hook = t.hook;
-        c.pool.tickIfToken0IsArtCoin = _i24(vm.parseJsonInt(j, ".pool.tickIfToken0IsArtCoin"));
+        c.pool.tickIfToken0IsCoin = _i24(vm.parseJsonInt(j, ".pool.tickIfToken0IsCoin"));
         c.pool.tickSpacing = _i24(vm.parseJsonInt(j, ".pool.tickSpacing"));
 
-        c.fee.lpFee = _u24(vm.parseJsonUint(j, ".fee.lpFee"));
+        c.fee.lpFeePips = _u24(vm.parseJsonUint(j, ".fee.lpFeePips"));
         c.fee.baselineSkimBps = _u24(vm.parseJsonUint(j, ".fee.baselineSkimBps"));
         c.fee.bountyBps = _u16(vm.parseJsonUint(j, ".fee.bountyBps"));
         c.fee.maxReferralBpsOfVolume = _u24(vm.parseJsonUint(j, ".fee.maxReferralBpsOfVolume"));
@@ -125,7 +124,6 @@ library LaunchV2Lib {
             "preflight: mev module bound to another hook"
         );
         require(f.protocolRecipient() != address(0), "preflight: protocol recipient unset");
-        require(f.referralPayout().code.length != 0, "preflight: referral payout has no code");
         value = f.deployFee();
         require(
             value == 0 || f.teamFeeRecipient() != address(0), "preflight: team fee recipient unset"
@@ -167,7 +165,7 @@ library LaunchV2Lib {
         returns (PoolId poolId)
     {
         IArtCoinsFactoryV2 f = IArtCoinsFactoryV2(t.factory);
-        require(f.isArtCoin(token), "launch: not an art coin");
+        require(f.isCoin(token), "launch: not an art coin");
         IArtCoinsFactoryV2.DeploymentInfoV2 memory info = f.deploymentInfo(token);
         poolId = info.poolId;
         require(

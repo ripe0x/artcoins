@@ -10,7 +10,7 @@ import {LibString} from "solady/utils/LibString.sol";
 
 /// @title  ExampleOnChainRendererV2
 /// @notice Reference on-chain svg renderer. Fork it for custom art.
-/// @dev    Differences from v1 (review R1, R2): name and symbol reach the svg only
+/// @dev    Name and symbol reach the svg only
 ///         through `SvgText.text`, which truncates on a utf8 boundary, sanitises
 ///         and escapes `& < > " '`, so a hostile name cannot close the text node
 ///         or break the xml. json fields use `SvgText.jsonText` (bounded, valid
@@ -32,7 +32,7 @@ contract ExampleOnChainRendererV2 is IMetadataRenderer {
             '","symbol":"',
             SvgText.jsonText(symbol, SvgText.SYMBOL_MAX),
             '","description":"',
-            SvgText.jsonText(t.metadata(), SvgText.DESC_MAX),
+            SvgText.jsonText(t.description(), SvgText.DESC_MAX),
             '","image":"data:image/svg+xml;base64,',
             Base64.encode(bytes(svg)),
             '","external_url":"',

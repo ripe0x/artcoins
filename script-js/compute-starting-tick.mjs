@@ -6,7 +6,7 @@
  * ----------
  * Uniswap v4 prices are token1/token0 in raw units. Both ArtCoinsToken and
  * WETH have 18 decimals, so the raw price ratio equals the human-readable
- * price ratio. The factory accepts `tickIfToken0IsArtCoins` — i.e. "the
+ * price ratio. The factory accepts `tickIfToken0IsCoins` — i.e. "the
  * tick you would use if your token were token0". The hook/locker handles
  * the negation when WETH actually sorts into slot 0, so this calculator
  * only needs to *report* the actual sort order; the on-chain code adapts.
@@ -14,7 +14,7 @@
  * Math
  * ----
  *   priceArtCoinInETH = targetFdvUsd / (totalSupply * ethUsd)
- *   tickIfToken0IsArtCoin = floor( log(priceArtCoinInETH) / log(1.0001) )
+ *   tickIfToken0IsCoin = floor( log(priceArtCoinInETH) / log(1.0001) )
  *
  * Then we round to the nearest multiple of tickSpacing, recompute the
  * implied FDV, and emit the four absolute LP ranges using the offsets
@@ -110,7 +110,7 @@ console.log(`eth/usd:         $${fmtUsd(ethUsd)}`);
 console.log(`tickSpacing:     ${tickSpacing}`);
 console.log('');
 console.log(`raw tick:        ${rawTick.toFixed(4)}`);
-console.log(`rounded tick:    ${startingTick}  (= tickIfToken0IsArtCoins)`);
+console.log(`rounded tick:    ${startingTick}  (= tickIfToken0IsCoins)`);
 console.log(`implied FDV:     $${fmtUsd(computedFdvUsd)}  (drift: ${fmtPct((computedFdvUsd - targetFdvUsd) / targetFdvUsd)})`);
 console.log('');
 console.log('LP ranges (absolute ticks if artCoin is token0):');

@@ -282,7 +282,7 @@ contract DevBuyV2ForkTest is Test {
     function test_refundRecipientThatRejectsEthReverts() public onlyFork {
         _shallowPool();
         address rejecter = address(new RejectsEth());
-        vm.expectRevert(IArtCoinsUniv4EthDevBuyV2.EthRefundFailed.selector);
+        vm.expectRevert(IArtCoinsUniv4EthDevBuyV2.NativeTransferFailed.selector);
         _launch(40 ether, _data(buyer, rejecter, 1e18));
         assertEq(coin.balanceOf(buyer), 0, "whole launch reverted");
     }

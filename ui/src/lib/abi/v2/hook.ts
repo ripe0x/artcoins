@@ -3,6 +3,19 @@
 export const hookV2Abi = [
   {
     "type": "function",
+    "name": "STACK_VERSION",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "constantsHash",
     "inputs": [],
     "outputs": [
@@ -99,7 +112,7 @@ export const hookV2Abi = [
             "internalType": "address"
           },
           {
-            "name": "tickIfToken0IsArtCoin",
+            "name": "tickIfToken0IsCoin",
             "type": "int24",
             "internalType": "int24"
           },
@@ -149,7 +162,7 @@ export const hookV2Abi = [
                 "internalType": "uint24"
               },
               {
-                "name": "lpFee",
+                "name": "lpFeePips",
                 "type": "uint24",
                 "internalType": "uint24"
               },
@@ -162,16 +175,6 @@ export const hookV2Abi = [
                 "name": "protocolRecipient",
                 "type": "address",
                 "internalType": "address payable"
-              },
-              {
-                "name": "referralPayout",
-                "type": "address",
-                "internalType": "address payable"
-              },
-              {
-                "name": "quoteToken",
-                "type": "address",
-                "internalType": "address"
               }
             ]
           },
@@ -253,6 +256,25 @@ export const hookV2Abi = [
         "name": "",
         "type": "bool",
         "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "minProtocolShareBps",
+    "inputs": [
+      {
+        "name": "poolId",
+        "type": "bytes32",
+        "internalType": "PoolId"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
       }
     ],
     "stateMutability": "view"
@@ -458,7 +480,7 @@ export const hookV2Abi = [
             "internalType": "uint24"
           },
           {
-            "name": "lpFee",
+            "name": "lpFeePips",
             "type": "uint24",
             "internalType": "uint24"
           },
@@ -471,21 +493,36 @@ export const hookV2Abi = [
             "name": "protocolRecipient",
             "type": "address",
             "internalType": "address payable"
-          },
-          {
-            "name": "referralPayout",
-            "type": "address",
-            "internalType": "address payable"
-          },
-          {
-            "name": "quoteToken",
-            "type": "address",
-            "internalType": "address"
           }
         ]
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "BountyRecipientSet",
+    "inputs": [
+      {
+        "name": "poolId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "PoolId"
+      },
+      {
+        "name": "oldRecipient",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newRecipient",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
   },
   {
     "type": "event",
@@ -658,6 +695,49 @@ export const hookV2Abi = [
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
+      },
+      {
+        "name": "locker",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "mevModule",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "extension",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "tickSpacing",
+        "type": "int24",
+        "indexed": false,
+        "internalType": "int24"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ProtocolFloorInitialized",
+    "inputs": [
+      {
+        "name": "poolId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "PoolId"
+      },
+      {
+        "name": "minProtocolShareBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
       }
     ],
     "anonymous": false
@@ -719,7 +799,7 @@ export const hookV2Abi = [
             "internalType": "uint24"
           },
           {
-            "name": "lpFee",
+            "name": "lpFeePips",
             "type": "uint24",
             "internalType": "uint24"
           },
@@ -732,16 +812,6 @@ export const hookV2Abi = [
             "name": "protocolRecipient",
             "type": "address",
             "internalType": "address payable"
-          },
-          {
-            "name": "referralPayout",
-            "type": "address",
-            "internalType": "address payable"
-          },
-          {
-            "name": "quoteToken",
-            "type": "address",
-            "internalType": "address"
           }
         ]
       }
@@ -871,6 +941,11 @@ export const hookV2Abi = [
   },
   {
     "type": "error",
+    "name": "BountyBpsTooHigh",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "BountyRecipientZero",
     "inputs": []
   },
@@ -892,8 +967,14 @@ export const hookV2Abi = [
   },
   {
     "type": "error",
-    "name": "EthTransferFailed",
-    "inputs": []
+    "name": "EscrowNotCoreDepositor",
+    "inputs": [
+      {
+        "name": "escrow",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   },
   {
     "type": "error",
@@ -933,29 +1014,18 @@ export const hookV2Abi = [
   },
   {
     "type": "error",
-    "name": "NotLauncher",
+    "name": "NativeTransferFailed",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "ParamOutOfBounds",
-    "inputs": [
-      {
-        "name": "value",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "min",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "max",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
+    "name": "NotCoinAdmin",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotLauncher",
+    "inputs": []
   },
   {
     "type": "error",
@@ -964,12 +1034,39 @@ export const hookV2Abi = [
   },
   {
     "type": "error",
-    "name": "QuoteTokenMustBeNative",
+    "name": "RecipientCannotReceive",
+    "inputs": [
+      {
+        "name": "recipient",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "RecipientCheckFailed",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "ReferralPayoutZero",
+    "name": "RecipientsLocked",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SkimExceedsInt128",
+    "inputs": [
+      {
+        "name": "value",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UnknownPool",
     "inputs": []
   },
   {

@@ -5,13 +5,13 @@ import { decodeFunctionData, encodeFunctionData, toFunctionSelector, getAbiItem,
 import { escrowV2Abi } from '../src/lib/abi/v2/escrow';
 import { factoryV2Abi } from '../src/lib/abi/v2/factory';
 import * as C from '../src/lib/constants';
-import { buildLaunchConfigV2, percentToBps, percentToSkim, validateLaunch, type LaunchContext } from '../src/lib/encodeV2';
+import { buildLaunchConfigV2, percentToBps, validateLaunch, type LaunchContext } from '../src/lib/encodeV2';
 import { escrowClaimBlock, escrowClaimCall } from '../src/lib/escrowClaim';
 import {
   foldAllowed,
   parseAllowedInput,
   seededAllowedCount,
-  maxReferralCapSkim,
+  maxReferralCapBps,
   referralCapWithinFloor,
   STRING_CAPS,
   stringCapIssue,
@@ -49,17 +49,16 @@ const errorsOf = (f: LaunchForm, c: LaunchContext, field: string) =>
 
 // ── drift guards against the solidity sources ───────────────────────────────────────────────────
 
-test('string caps equal ArtCoinsTokenV2.MAX_*_BYTES in the contract source', (t) => {
-  const src = new URL('../../src/v2/ArtCoinsTokenV2.sol', import.meta.url);
+test('string caps equal Constants.MAX_*_BYTES in the contract source', (t) => {
+  const src = new URL('../../src/Constants.sol', import.meta.url);
   if (!existsSync(src)) return t.skip('contract source not found');
   const text = readFileSync(src, 'utf8');
-  const read = (n: string) => Number(new RegExp(`uint256 public constant ${n} = (\\d+);`).exec(text)?.[1]);
+  const read = (n: string) => Number(new RegExp(`uint256 internal constant ${n} = (\\d+);`).exec(text)?.[1]);
   assert.equal(STRING_CAPS.name, read('MAX_NAME_BYTES'));
   assert.equal(STRING_CAPS.symbol, read('MAX_SYMBOL_BYTES'));
   assert.equal(STRING_CAPS.image, read('MAX_IMAGE_BYTES'));
-  assert.equal(STRING_CAPS.metadata, read('MAX_METADATA_BYTES'));
-  assert.equal(STRING_CAPS.context, read('MAX_CONTEXT_BYTES'));
-  assert.deepEqual(STRING_CAPS, { name: 64, symbol: 16, image: 2048, metadata: 4096, context: 4096 });
+  assert.equal(STRING_CAPS.description, read('MAX_DESCRIPTION_BYTES'));
+  assert.deepEqual(STRING_CAPS, { name: 64, symbol: 16, image: 2048, description: 4096 });
 });
 
 test('fee constants the rules use equal src/Constants.sol', (t) => {
@@ -98,7 +97,7 @@ test('name cap is 64 bytes: 64 ascii pass, 65 fail, 32 two byte chars pass, 33 f
 });
 
 test('every field cap boundary: at the cap passes, one byte over fails', () => {
-  for (const f of ['name', 'symbol', 'image', 'metadata', 'context'] as const) {
+  for (const f of ['name', 'symbol', 'image', 'description'] as const) {
     const cap = STRING_CAPS[f];
     assert.equal(stringCapIssue(f, 'x'.repeat(cap)), null, `${f} at cap`);
     assert.notEqual(stringCapIssue(f, 'x'.repeat(cap + 1)), null, `${f} over cap`);
@@ -113,10 +112,9 @@ test('validateLaunch rejects each over cap string with its own field', () => {
   f.token.name = '日'.repeat(22);
   f.token.symbol = '😀'.repeat(5);
   f.token.image = `https://x.test/${'a'.repeat(2048)}`;
-  f.token.metadata = 'm'.repeat(4097);
-  f.token.context = 'c'.repeat(4097);
+  f.token.description = 'm'.repeat(4097);
   const c = ctx();
-  for (const field of ['name', 'symbol', 'image', 'metadata', 'context']) {
+  for (const field of ['name', 'symbol', 'image', 'description']) {
     assert.equal(errorsOf(f, c, `token.${field}`).length, 1, field);
   }
   assert.throws(() => buildLaunchConfigV2(f, c));
@@ -136,28 +134,28 @@ const solidityOk = (cap: number, baseline: number, bounty: number, min: number):
 };
 
 test('referral cap maximum: worked values', () => {
-  // live coin 111 style fees, protocol floor 10% of the skim: 6000 * (10000 - 8333 - 1000) / 10000 = 400.2
-  assert.equal(maxReferralCapSkim(6000, 8333, 1000), 400);
+  // live coin 111 style fees, protocol floor 10% of the skim: 600 * (10000 - 8333 - 1000) / 10000 = 40.02
+  assert.equal(maxReferralCapBps(600, 8333, 1000), 40);
   // floor 16.67% with bounty 83.33%: the two take the whole skim, no room left for a referral
-  assert.equal(maxReferralCapSkim(6000, 8333, 1667), 0);
-  // no bounty, no floor: room is the whole skim, 6000 * 10000 / 10000 = 6000, clamped to the 1% ceiling
-  assert.equal(maxReferralCapSkim(6000, 0, 0), C.MAX_REFERRAL_CAP_OF_VOLUME);
-  // half the skim to the bounty, 10% floor: 10000 * 4000 / 10000 = 4000 -> clamp 1000
-  assert.equal(maxReferralCapSkim(10_000, 5000, 1000), 1000);
-  // 2% baseline, 50% bounty, 10% floor: 2000 * 4000 / 10000 = 800
-  assert.equal(maxReferralCapSkim(2000, 5000, 1000), 800);
+  assert.equal(maxReferralCapBps(600, 8333, 1667), 0);
+  // no bounty, no floor: room is the whole skim, 600 * 10000 / 10000 = 600, clamped to the 1% ceiling
+  assert.equal(maxReferralCapBps(600, 0, 0), C.MAX_REFERRAL_CAP_OF_VOLUME);
+  // half the skim to the bounty, 10% floor: 1000 * 4000 / 10000 = 400 -> clamp 100
+  assert.equal(maxReferralCapBps(1000, 5000, 1000), 100);
+  // 2% baseline, 50% bounty, 10% floor: 200 * 4000 / 10000 = 80
+  assert.equal(maxReferralCapBps(200, 5000, 1000), 80);
   // no baseline skim, nothing to carve a referral from
-  assert.equal(maxReferralCapSkim(0, 0, 0), 0);
+  assert.equal(maxReferralCapBps(0, 0, 0), 0);
   // bounty past the floor: no room, never negative
-  assert.equal(maxReferralCapSkim(6000, 9500, 1000), 0);
+  assert.equal(maxReferralCapBps(600, 9500, 1000), 0);
 });
 
 test('referral cap maximum is tight: the max passes the factory expression, one more fails (unless clamped)', () => {
   let checked = 0;
-  for (const baseline of [0, 1, 500, 2500, 6000, 9999, 10_000]) {
+  for (const baseline of [0, 1, 50, 250, 600, 999, 1000]) {
     for (const bounty of [0, 1, 2500, 5000, 8333, 8999, 9000, 9999]) {
       for (const min of [0, 1000, 1667, 5000]) {
-        const max = maxReferralCapSkim(baseline, bounty, min);
+        const max = maxReferralCapBps(baseline, bounty, min);
         const ok = solidityOk(max, baseline, bounty, min);
         assert.equal(referralCapWithinFloor(max, baseline, bounty, min), ok);
         if (BPS - bounty - min >= 0) assert.ok(ok, `max ${max} must pass for ${baseline}/${bounty}/${min}`);
@@ -173,8 +171,8 @@ test('referral cap maximum is tight: the max passes the factory expression, one 
 });
 
 test('referralCapWithinFloor equals the solidity expression on a grid, including negative room', () => {
-  for (const cap of [0, 1, 250, 400, 401, 1000]) {
-    for (const baseline of [0, 1000, 6000, 10_000]) {
+  for (const cap of [0, 1, 25, 40, 41, 100]) {
+    for (const baseline of [0, 100, 600, 1000]) {
       for (const bounty of [0, 5000, 8333, 9000, 9999]) {
         for (const min of [0, 1000, 1667, 3000]) {
           assert.equal(referralCapWithinFloor(cap, baseline, bounty, min), solidityOk(cap, baseline, bounty, min));
@@ -188,9 +186,9 @@ test('validateLaunch: referral cap above the maximum is an error, at the maximum
   const c = ctx();
   const f = form(); // baseline 6%, bounty 83.33%, cap 0.25%
   assert.equal(errorsOf(f, c, 'pool.referralCap').length, 0);
-  f.pool.referralCapPercent = 0.4; // 400, the maximum for 6000 / 8333 / 1000
+  f.pool.referralCapPercent = 0.4; // 40 bps, the maximum for 600 / 8333 / 1000
   assert.equal(errorsOf(f, c, 'pool.referralCap').length, 0);
-  f.pool.referralCapPercent = 0.401; // 401
+  f.pool.referralCapPercent = 0.41; // 41 bps
   const errs = errorsOf(f, c, 'pool.referralCap');
   assert.equal(errs.length, 1);
   assert.match(errs[0].message, /maximum of 0\.4% of volume/);
@@ -198,14 +196,14 @@ test('validateLaunch: referral cap above the maximum is an error, at the maximum
   // a higher protocol floor lowers the maximum for the same form: bounty 8333 + floor 1667 leaves no room
   const g = form();
   g.pool.bountyPercent = 80;
-  g.pool.referralCapPercent = 0.4; // room at floor 1000 = 1000, 6000 * 1000 / 10000 = 600, ok
+  g.pool.referralCapPercent = 0.4; // room at floor 1000 = 1000, 600 * 1000 / 10000 = 60, ok
   assert.equal(errorsOf(g, ctx({ minProtocolSkimShareBps: 1000 }), 'pool.referralCap').length, 0);
-  assert.equal(errorsOf(g, ctx({ minProtocolSkimShareBps: 1900 }), 'pool.referralCap').length, 1); // room 100 -> 60
+  assert.equal(errorsOf(g, ctx({ minProtocolSkimShareBps: 1900 }), 'pool.referralCap').length, 1); // room 100 -> 6
 });
 
 test('built config always satisfies the factory referral expression at the maximum', () => {
   const f = form();
-  f.pool.referralCapPercent = maxReferralCapSkim(percentToSkim(f.pool.baselineSkimPercent), percentToBps(f.pool.bountyPercent), 1000) / 1000;
+  f.pool.referralCapPercent = maxReferralCapBps(percentToBps(f.pool.baselineSkimPercent), percentToBps(f.pool.bountyPercent), 1000) / 100;
   const built = buildLaunchConfigV2(f, ctx());
   const { baselineSkimBps, bountyBps, maxReferralBpsOfVolume } = built.config.fee;
   assert.ok(solidityOk(maxReferralBpsOfVolume, baselineSkimBps, bountyBps, 1000));

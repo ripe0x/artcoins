@@ -16,31 +16,29 @@ import {IBurnRouterV2} from "../../src/v2/interfaces/IBurnRouterV2.sol";
 import {IConstantsBound} from "../../src/v2/interfaces/IConstantsBound.sol";
 import {IFeeAutoSwapperV2} from "../../src/v2/interfaces/IFeeAutoSwapperV2.sol";
 import {IProtocolFeeControllerV2} from "../../src/v2/interfaces/IProtocolFeeControllerV2.sol";
-import {IReferralPayoutForHook} from "../../src/v2/interfaces/IReferralPayoutForHook.sol";
 
 /// @notice Pins `Constants`. Any edit to a constant must update the literals
 ///         here; any edit to a hashed constant also changes the golden hash.
 contract ConstantsV2Test is Test {
     /// @dev Update only together with an intended change to a hashed constant.
     bytes32 internal constant GOLDEN_HASH =
-        0x8c029d0c45f69829f04e7020a96e6c57953f2308ed768ab002a1e4be0f372ed1;
+        0x69b6027a6426e4db8d91e06f74d3977b5d6e616067cf30c29f74d7c785ae4027;
 
     function _literalHash() internal pure returns (bytes32) {
         bytes32 pool = keccak256(
             abi.encode(
                 uint16(2), // STACK_VERSION
                 uint256(10_000), // BPS
-                uint256(100_000), // SKIM_DENOMINATOR
                 uint256(1_000_000), // FEE_DENOMINATOR
                 uint24(100_000), // MAX_LP_FEE
-                uint24(90_000), // MAX_SKIM_BPS
-                uint24(10_000), // MAX_BASELINE_SKIM_BPS
-                uint24(1000), // MAX_REFERRAL_CAP_OF_VOLUME
+                uint24(9000), // MAX_SKIM_BPS
+                uint24(1000), // MAX_BASELINE_SKIM_BPS
+                uint24(100), // MAX_REFERRAL_CAP_OF_VOLUME
                 uint16(9999), // MAX_BOUNTY_BPS
                 uint32(60), // MIN_MEV_WINDOW
                 uint32(4140), // DEFAULT_MEV_WINDOW
                 uint32(10_800), // MAX_MEV_WINDOW
-                uint24(68_690) // DEFAULT_START_SKIM_BPS
+                uint24(6869) // DEFAULT_START_SKIM_BPS
             )
         );
         bytes32 delivery = keccak256(
@@ -65,7 +63,7 @@ contract ConstantsV2Test is Test {
             abi.encode(
                 uint256(50), // KEEPER_REWARD_BPS
                 uint256(1e16), // KEEPER_REWARD_CAP
-                uint256(8000) // SPOT_FLOOR_BPS
+                uint256(8000) // BURN_SPOT_FLOOR_DEFAULT_BPS
             )
         );
         return keccak256(abi.encode(pool, delivery, launch, keeper));
@@ -86,18 +84,17 @@ contract ConstantsV2Test is Test {
     /// @dev Pins every value, hashed or not.
     function test_literals_all() public pure {
         assertEq(Constants.BPS, 10_000);
-        assertEq(Constants.SKIM_DENOMINATOR, 100_000);
         assertEq(Constants.FEE_DENOMINATOR, 1_000_000);
         assertEq(Constants.MAX_LP_FEE, 100_000);
-        assertEq(Constants.MAX_SKIM_BPS, 90_000);
-        assertEq(Constants.MAX_BASELINE_SKIM_BPS, 10_000);
-        assertEq(Constants.MAX_REFERRAL_CAP_OF_VOLUME, 1000);
+        assertEq(Constants.MAX_SKIM_BPS, 9000);
+        assertEq(Constants.MAX_BASELINE_SKIM_BPS, 1000);
+        assertEq(Constants.MAX_REFERRAL_CAP_OF_VOLUME, 100);
         assertEq(Constants.MAX_BOUNTY_BPS, 9999);
         assertEq(Constants.PUSH_GAS_MAX, 150_000);
         assertEq(Constants.MIN_MEV_WINDOW, 1 minutes);
         assertEq(Constants.DEFAULT_MEV_WINDOW, 69 minutes);
         assertEq(Constants.MAX_MEV_WINDOW, 180 minutes);
-        assertEq(Constants.DEFAULT_START_SKIM_BPS, 68_690);
+        assertEq(Constants.DEFAULT_START_SKIM_BPS, 6869);
         assertEq(Constants.MAX_REWARD_PARTICIPANTS, 7);
         assertEq(Constants.MAX_LP_POSITIONS, 14);
         assertEq(Constants.LOCKER_KEEPER_BPS_MAX, 200);
@@ -113,14 +110,14 @@ contract ConstantsV2Test is Test {
         assertEq(Constants.DEAD, 0x000000000000000000000000000000000000dEaD);
         assertEq(Constants.KEEPER_REWARD_BPS, 50);
         assertEq(Constants.KEEPER_REWARD_CAP, 0.01 ether);
-        assertEq(Constants.SPOT_FLOOR_BPS, 8000);
+        assertEq(Constants.BURN_SPOT_FLOOR_DEFAULT_BPS, 8000);
         assertEq(Constants.SWAPPER_SLIPPAGE_MIN, 50);
         assertEq(Constants.SWAPPER_SLIPPAGE_MAX, 1000);
         assertEq(Constants.SWAPPER_MIN_BLOCKS_MIN, 1);
         assertEq(Constants.SWAPPER_MIN_BLOCKS_MAX, 50_400);
-        assertEq(Constants.BURN_IMPACT_MIN, 25);
-        assertEq(Constants.BURN_IMPACT_DEFAULT, 100);
-        assertEq(Constants.BURN_IMPACT_MAX, 300);
+        assertEq(Constants.PRICE_IMPACT_MIN, 25);
+        assertEq(Constants.PRICE_IMPACT_DEFAULT, 100);
+        assertEq(Constants.PRICE_IMPACT_MAX, 300);
         assertEq(Constants.BURN_THRESHOLD_FLOOR, 0.001 ether);
         assertEq(Constants.BURN_MAX_PER_CALL_MIN, 0.1 ether);
         assertEq(Constants.BURN_MAX_PER_CALL_MAX, 100 ether);
@@ -129,7 +126,6 @@ contract ConstantsV2Test is Test {
         assertEq(Constants.PFC_MIN_BURN_BPS, 1000);
         assertEq(Constants.MAX_GLYPHS, 256);
         assertEq(Constants.RENDER_GAS_BUDGET, 8_000_000);
-        assertEq(Constants.HOOK_SIZE_HEADROOM_MIN, 1024);
         assertEq(Constants.LEG_BOUNTY, 0);
         assertEq(Constants.LEG_PROTOCOL, 1);
         assertEq(Constants.LEG_REFERRAL, 2);
@@ -139,8 +135,8 @@ contract ConstantsV2Test is Test {
     function test_bounds_ordering() public pure {
         assertLt(Constants.MIN_MEV_WINDOW, Constants.DEFAULT_MEV_WINDOW);
         assertLt(Constants.DEFAULT_MEV_WINDOW, Constants.MAX_MEV_WINDOW);
-        assertLt(Constants.BURN_IMPACT_MIN, Constants.BURN_IMPACT_DEFAULT);
-        assertLt(Constants.BURN_IMPACT_DEFAULT, Constants.BURN_IMPACT_MAX);
+        assertLt(Constants.PRICE_IMPACT_MIN, Constants.PRICE_IMPACT_DEFAULT);
+        assertLt(Constants.PRICE_IMPACT_DEFAULT, Constants.PRICE_IMPACT_MAX);
         assertLt(Constants.BURN_MAX_PER_CALL_MIN, Constants.BURN_MAX_PER_CALL_DEFAULT);
         assertLt(Constants.BURN_MAX_PER_CALL_DEFAULT, Constants.BURN_MAX_PER_CALL_MAX);
         assertLt(Constants.LOCKER_KEEPER_CAP_MIN, Constants.LOCKER_KEEPER_CAP_MAX);
@@ -151,7 +147,7 @@ contract ConstantsV2Test is Test {
         // skim: baseline and starting skim within the anti sniper ceiling, all within 100%
         assertLe(Constants.MAX_BASELINE_SKIM_BPS, Constants.MAX_SKIM_BPS);
         assertLe(Constants.DEFAULT_START_SKIM_BPS, Constants.MAX_SKIM_BPS);
-        assertLt(Constants.MAX_SKIM_BPS, Constants.SKIM_DENOMINATOR);
+        assertLt(Constants.MAX_SKIM_BPS, Constants.BPS);
         assertLe(Constants.MAX_REFERRAL_CAP_OF_VOLUME, Constants.MAX_BASELINE_SKIM_BPS);
         assertLt(Constants.MAX_BOUNTY_BPS, Constants.BPS);
         assertLt(Constants.MAX_LP_FEE, Constants.FEE_DENOMINATOR);
@@ -160,13 +156,11 @@ contract ConstantsV2Test is Test {
         assertLt(Constants.MAX_EXTENSION_BPS, Constants.BPS);
         assertLe(Constants.LOCKER_KEEPER_BPS_MAX, Constants.BPS);
         assertLe(Constants.KEEPER_REWARD_BPS, Constants.BPS);
-        assertLe(Constants.SPOT_FLOOR_BPS, Constants.BPS);
+        assertLe(Constants.BURN_SPOT_FLOOR_DEFAULT_BPS, Constants.BPS);
         assertLe(
             uint256(Constants.PFC_MIN_TREASURY_BPS) + Constants.PFC_MIN_BURN_BPS, Constants.BPS
         );
-        assertLt(Constants.BURN_IMPACT_MAX, Constants.BPS);
-        // ci gate fits under EIP-170
-        assertLt(Constants.HOOK_SIZE_HEADROOM_MIN, 24_576);
+        assertLt(Constants.PRICE_IMPACT_MAX, Constants.BPS);
     }
 
     /// @dev Interface ids used for erc165 checks are stable and non zero.
@@ -184,6 +178,5 @@ contract ConstantsV2Test is Test {
         assertTrue(type(IBurnRouterV2).interfaceId != bytes4(0));
         assertTrue(type(IProtocolFeeControllerV2).interfaceId != bytes4(0));
         assertTrue(type(IArtCoinsKeeperV2).interfaceId != bytes4(0));
-        assertTrue(type(IReferralPayoutForHook).interfaceId != bytes4(0));
     }
 }

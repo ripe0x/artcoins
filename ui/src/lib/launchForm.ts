@@ -14,8 +14,7 @@ export function defaultLaunchForm(protocolBps = 2_000): LaunchForm {
       admin: '',
       totalSupply: '1000000000',
       image: '',
-      metadata: '',
-      context: '',
+      description: '',
       renderer: '',
     },
     pool: {

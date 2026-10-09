@@ -73,14 +73,14 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
     function test_locker_setRewardRecipient_protocolSlotFrozen() public onlyFork {
         (address coin,) = _launchCredits();
         vm.prank(admin);
-        vm.expectRevert(ArtCoinsLpLockerV2.ProtocolSlotFrozen.selector);
+        vm.expectRevert(IArtCoinsLpLockerV2.ProtocolSlotFrozen.selector);
         v2.locker.setRewardRecipient(coin, 1, makeAddr("rc.x"));
     }
 
     function test_locker_setRewardRecipient_nonAdminReverts() public onlyFork {
         (address coin,) = _launchCredits();
         vm.prank(stranger);
-        vm.expectRevert(ArtCoinsLpLockerV2.NotCoinAdmin.selector);
+        vm.expectRevert(IArtCoinsLpLockerV2.NotCoinAdmin.selector);
         v2.locker.setRewardRecipient(coin, 0, makeAddr("rc.x"));
     }
 
@@ -101,7 +101,7 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
         for (uint256 i; i < bad.length; ++i) {
             vm.prank(admin);
             vm.expectRevert(
-                abi.encodeWithSelector(ArtCoinsLpLockerV2.RecipientCannotReceive.selector, bad[i])
+                abi.encodeWithSelector(IArtCoinsLpLockerV2.RecipientCannotReceive.selector, bad[i])
             );
             v2.locker.setRewardRecipient(coin, 0, bad[i]);
         }
@@ -133,7 +133,7 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
             address esc = i == 0 ? hookEscrow : address(escrow2);
             vm.prank(admin);
             vm.expectRevert(
-                abi.encodeWithSelector(ArtCoinsHookV2.RecipientCannotReceive.selector, esc)
+                abi.encodeWithSelector(IArtCoinsHookV2.RecipientCannotReceive.selector, esc)
             );
             v2.hook.setBountyRecipient(pid, payable(esc));
         }
@@ -142,7 +142,7 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
             address esc = i == 0 ? address(escrow2) : hookEscrow;
             vm.prank(admin);
             vm.expectRevert(
-                abi.encodeWithSelector(ArtCoinsLpLockerV2.RecipientCannotReceive.selector, esc)
+                abi.encodeWithSelector(IArtCoinsLpLockerV2.RecipientCannotReceive.selector, esc)
             );
             v2.locker.setRewardRecipient(coin, 0, esc);
         }
@@ -163,7 +163,7 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
         for (uint256 i; i < 3; ++i) {
             vm.mockCallRevert(on[i], reads[i], "");
             vm.prank(admin);
-            vm.expectRevert(ArtCoinsHookV2.RecipientCheckFailed.selector);
+            vm.expectRevert(IArtCoinsHookV2.RecipientCheckFailed.selector);
             v2.hook.setBountyRecipient(pid, payable(ok));
             vm.clearMockedCalls();
         }
@@ -177,7 +177,7 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
         // factory.tokenDeployer()
         vm.mockCallRevert(address(v2.factory), abi.encodeWithSignature("tokenDeployer()"), "");
         vm.prank(admin);
-        vm.expectRevert(ArtCoinsLpLockerV2.RecipientCheckFailed.selector);
+        vm.expectRevert(IArtCoinsLpLockerV2.RecipientCheckFailed.selector);
         v2.locker.setRewardRecipient(coin, 0, ok);
         vm.clearMockedCalls();
 
@@ -186,7 +186,7 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
             address(v2.hook), abi.encodeWithSelector(IArtCoinsHookV2.poolInfo.selector, pid), ""
         );
         vm.prank(admin);
-        vm.expectRevert(ArtCoinsLpLockerV2.RecipientCheckFailed.selector);
+        vm.expectRevert(IArtCoinsLpLockerV2.RecipientCheckFailed.selector);
         v2.locker.setRewardRecipient(coin, 0, ok);
         vm.clearMockedCalls();
 
@@ -195,7 +195,7 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
             address(v2.hook), abi.encodeWithSelector(IArtCoinsHookV2.globals.selector), ""
         );
         vm.prank(admin);
-        vm.expectRevert(ArtCoinsLpLockerV2.RecipientCheckFailed.selector);
+        vm.expectRevert(IArtCoinsLpLockerV2.RecipientCheckFailed.selector);
         v2.locker.setRewardRecipient(coin, 0, ok);
         vm.clearMockedCalls();
     }
@@ -217,7 +217,7 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
         for (uint256 i; i < bad.length; ++i) {
             vm.prank(admin);
             vm.expectRevert(
-                abi.encodeWithSelector(ArtCoinsHookV2.RecipientCannotReceive.selector, bad[i])
+                abi.encodeWithSelector(IArtCoinsHookV2.RecipientCannotReceive.selector, bad[i])
             );
             v2.hook.setBountyRecipient(pid, payable(bad[i]));
         }
@@ -247,7 +247,7 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
 
         // the recorded protocol slot (index 1) is frozen
         vm.prank(admin);
-        vm.expectRevert(ArtCoinsLpLockerV2.ProtocolSlotFrozen.selector);
+        vm.expectRevert(IArtCoinsLpLockerV2.ProtocolSlotFrozen.selector);
         v2.locker.setRewardRecipient(coin, 1, makeAddr("rc.x"));
 
         // the project slot (index 0) is editable despite equalling the protocol recipient
@@ -260,7 +260,7 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
     function test_locker_setRewardRecipient_outOfRangeReverts() public onlyFork {
         (address coin,) = _launchCredits();
         vm.prank(admin);
-        vm.expectRevert(ArtCoinsLpLockerV2.RewardIndexOutOfRange.selector);
+        vm.expectRevert(IArtCoinsLpLockerV2.RewardIndexOutOfRange.selector);
         v2.locker.setRewardRecipient(coin, 2, makeAddr("rc.x"));
     }
 
@@ -276,7 +276,7 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
         vm.prank(admin);
         _token(coin).lockRecipients();
         vm.prank(admin);
-        vm.expectRevert(ArtCoinsLpLockerV2.RecipientsLocked.selector);
+        vm.expectRevert(IArtCoinsLpLockerV2.RecipientsLocked.selector);
         v2.locker.setRewardRecipient(coin, 0, makeAddr("rc.x"));
     }
 
@@ -285,7 +285,7 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
         vm.prank(admin);
         _token(coin).renounceAdmin();
         vm.prank(admin);
-        vm.expectRevert(ArtCoinsLpLockerV2.NotCoinAdmin.selector);
+        vm.expectRevert(IArtCoinsLpLockerV2.NotCoinAdmin.selector);
         v2.locker.setRewardRecipient(coin, 0, makeAddr("rc.x"));
     }
 
@@ -298,7 +298,7 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
         vm.expectRevert();
         v2.hook.setBountyRecipient(key.toId(), payable(makeAddr("rc.b")));
         vm.prank(admin);
-        vm.expectRevert(ArtCoinsLpLockerV2.RecipientsLocked.selector);
+        vm.expectRevert(IArtCoinsLpLockerV2.RecipientsLocked.selector);
         v2.locker.setRewardRecipient(coin, 0, makeAddr("rc.x"));
     }
 
@@ -306,10 +306,10 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
 
     function test_lpFeeZero_launch_skimProtocolStillPays() public onlyFork {
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _creditsConfig(treasury);
-        c.fee.lpFee = 0; // pure skim, no lp fee
+        c.fee.lpFeePips = 0; // pure skim, no lp fee
         address coin = _ownerLaunch(c);
         PoolKey memory key = _key(coin);
-        assertEq(v2.hook.skimConfig(key.toId()).lpFee, 0, "lp fee 0 frozen");
+        assertEq(v2.hook.skimConfig(key.toId()).lpFeePips, 0, "lp fee 0 frozen");
         (,,, uint24 poolFee) = readSlot0(key);
         assertEq(poolFee, 0, "pool runs with 0 lp fee");
 

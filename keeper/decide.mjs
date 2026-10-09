@@ -44,7 +44,7 @@ export function combinedLayerWeth(p, controllerWeth) {
 export function decideV2(p, t, timer) {
   const reasons = [];
   if (p.accruedPaired > t.accruedPaired) reasons.push('accrued_paired');
-  if (p.accruedArtCoin > t.accruedArtCoin) reasons.push('accrued_coin');
+  if (p.accruedCoin > t.accruedCoin) reasons.push('accrued_coin');
   if (weeklyDue(timer.lastRunAt, timer.now, timer.weeklySeconds)) reasons.push('weekly');
   return { run: reasons.length > 0, reasons, alerts: [] };
 }
@@ -206,7 +206,7 @@ export function argsV2(token, servicedEvents, slippageBps, m, impactBps = 100) {
   const per = [];
   for (const e of converting) {
     const sw = m.swappers.find((x) => x.address.toLowerCase() === e.swapper.toLowerCase());
-    const amountIn = sw ? min(sw.accruedArtCoin, sw.maxStepIn || sw.accruedArtCoin) : 0n;
+    const amountIn = sw ? min(sw.accruedCoin, sw.maxStepIn || sw.accruedCoin) : 0n;
     const spotNet = sw ? spotNetOut(amountIn, sw, false) : 0n; // v2 pools: eth is currency0, the coin currency1
     per.push({ swapper: e.swapper, simulated: e.converted, ...floorQuote(e.converted, spotNet, slippageBps, impactBps) });
   }
@@ -234,7 +234,7 @@ export function triggerMetrics(kind, reasons, p) {
       if (r === 'combined_weth') out[r] = combinedLayerWeth(p, p.controllerWeth ?? 0n);
     } else {
       if (r === 'accrued_paired') out[r] = p.accruedPaired;
-      if (r === 'accrued_coin') out[r] = p.accruedArtCoin;
+      if (r === 'accrued_coin') out[r] = p.accruedCoin;
     }
   }
   return out;
@@ -269,7 +269,7 @@ export function pendingValueWei(kind, p, m) {
   }
   if (kind === 'v2') {
     let coin = 0n;
-    for (const sw of m?.swappers || []) coin += spotNetOut(sw.accruedArtCoin, sw, false);
+    for (const sw of m?.swappers || []) coin += spotNetOut(sw.accruedCoin, sw, false);
     return p.accruedPaired + coin;
   }
   return null;

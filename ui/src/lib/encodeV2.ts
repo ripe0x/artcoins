@@ -1,10 +1,8 @@
 // Builds the `DeploymentConfigV2` the v2 factory takes (src/v2/interfaces/IArtCoinsFactoryV2.sol).
 // Units follow the contracts:
-//   lpFee                      pips, 1_000_000 = 100% (Constants.FEE_DENOMINATOR), max 100_000
-//   baselineSkimBps, start skim, maxReferralBpsOfVolume
-//                              Constants.SKIM_DENOMINATOR = 100_000 = 100% of volume
-//   bountyBps, rewardBps, positionBps, extensionBps
-//                              Constants.BPS = 10_000
+//   lpFeePips                  pips, 1_000_000 = 100% (Constants.FEE_DENOMINATOR), max 100_000
+//   baselineSkimBps, start skim, maxReferralBpsOfVolume, bountyBps, rewardBps, positionBps, extensionBps
+//                              Constants.BPS = 10_000 = 100%
 //   ticks                      token0 frame (coin as currency0). The coin is always currency1 against
 //                              native eth, the contracts mirror them: pool tick = -tick
 // The v1 encoder (encode.ts) stays only for the legacy event reader and the deploy fee tooling.
@@ -37,14 +35,13 @@ import {
   MIN_TICK,
   MIN_TOKEN_SUPPLY,
   SECONDS_PER_DAY,
-  SKIM_DENOMINATOR,
   VAULT_MIN_LOCKUP_DAYS,
   VAULT_MIN_VESTING_DAYS,
   ZERO_ADDRESS,
 } from './constants';
 import type { LaunchForm } from './types';
 import {
-  maxReferralCapSkim,
+  maxReferralCapBps,
   parseAllowedInput,
   referralCapWithinFloor,
   seededAllowedCount,
@@ -59,20 +56,19 @@ export interface TokenConfigV2 {
   symbol: string;
   salt: Hex;
   image: string;
-  metadata: string;
-  context: string;
+  description: string;
   totalSupply: bigint;
   renderer: Address;
 }
 export interface PoolConfigV2 {
   hook: Address;
-  tickIfToken0IsArtCoin: number;
+  tickIfToken0IsCoin: number;
   tickSpacing: number;
   extension: Address;
   extensionData: Hex;
 }
 export interface FeeConfigV2 {
-  lpFee: number;
+  lpFeePips: number;
   baselineSkimBps: number;
   bountyBps: number;
   maxReferralBpsOfVolume: number;
@@ -154,12 +150,10 @@ export class LaunchConfigError extends Error {
 
 /** percent of the swap amount to pips (1% = 10_000) */
 export const percentToPips = (pct: number): number => Math.round(pct * (FEE_DENOMINATOR / 100));
-/** percent of volume to skim units (1% = 1_000) */
-export const percentToSkim = (pct: number): number => Math.round(pct * (SKIM_DENOMINATOR / 100));
 /** percent to bps (1% = 100) */
 export const percentToBps = (pct: number): number => Math.round(pct * (BPS / 100));
 export const pipsToPercent = (pips: number): number => pips / (FEE_DENOMINATOR / 100);
-export const skimToPercent = (skim: number): number => skim / (SKIM_DENOMINATOR / 100);
+export const bpsToPercent = (bps: number): number => bps / (BPS / 100);
 
 /** whole coins (string) to wei, '' or 0 means 0 = the factory default supply. Exact, no float. */
 export function supplyToWei(whole: string): bigint {
@@ -253,8 +247,7 @@ export function validateLaunch(form: LaunchForm, ctx: LaunchContext): Issue[] {
     ['name', token.name.trim()],
     ['symbol', token.symbol.trim()],
     ['image', token.image.trim()],
-    ['metadata', token.metadata],
-    ['context', token.context],
+    ['description', token.description],
   ] as const) {
     const issue = stringCapIssue(field, value);
     if (issue) out.push(err(`token.${field}`, issue));
@@ -280,24 +273,24 @@ export function validateLaunch(form: LaunchForm, ctx: LaunchContext): Issue[] {
 
   // fees
   const lpFee = percentToPips(pool.lpFeePercent);
-  const baseline = percentToSkim(pool.baselineSkimPercent);
+  const baseline = percentToBps(pool.baselineSkimPercent);
   const bounty = percentToBps(pool.bountyPercent);
-  const refCap = percentToSkim(pool.referralCapPercent);
+  const refCap = percentToBps(pool.referralCapPercent);
   if (lpFee < 0 || lpFee > MAX_LP_FEE) out.push(err('pool.lpFee', `lp fee must be 0 to ${MAX_LP_FEE / 10_000}%`));
   if (lpFee === 0 && baseline === 0) out.push(err('pool.baselineSkim', 'set an lp fee or a baseline skim above 0, a pool with neither earns nothing'));
-  if (baseline < 0 || baseline > MAX_BASELINE_SKIM_BPS) out.push(err('pool.baselineSkim', `baseline skim must be 0 to ${MAX_BASELINE_SKIM_BPS / 1_000}% of volume`));
-  if (refCap < 0 || refCap > MAX_REFERRAL_CAP_OF_VOLUME) out.push(err('pool.referralCap', `referral cap must be 0 to ${MAX_REFERRAL_CAP_OF_VOLUME / 1_000}% of volume`));
+  if (baseline < 0 || baseline > MAX_BASELINE_SKIM_BPS) out.push(err('pool.baselineSkim', `baseline skim must be 0 to ${MAX_BASELINE_SKIM_BPS / 100}% of volume`));
+  if (refCap < 0 || refCap > MAX_REFERRAL_CAP_OF_VOLUME) out.push(err('pool.referralCap', `referral cap must be 0 to ${MAX_REFERRAL_CAP_OF_VOLUME / 100}% of volume`));
   const maxBounty = maxBountyBps(ctx.minProtocolSkimShareBps);
   if (bounty < 0 || bounty > maxBounty) out.push(err('pool.bounty', `bounty share must be 0 to ${maxBounty / 100}% (the protocol keeps at least ${ctx.minProtocolSkimShareBps / 100}% of the skim)`));
   // referral cap: the referral leg is carved from the protocol leg and may not take it below the floor
   const bountyOk = bounty >= 0 && bounty <= maxBounty;
   if (bountyOk && refCap >= 0 && refCap <= MAX_REFERRAL_CAP_OF_VOLUME && baseline >= 0 && baseline <= MAX_BASELINE_SKIM_BPS) {
     if (!referralCapWithinFloor(refCap, baseline, bounty, ctx.minProtocolSkimShareBps)) {
-      const capMax = maxReferralCapSkim(baseline, bounty, ctx.minProtocolSkimShareBps);
+      const capMax = maxReferralCapBps(baseline, bounty, ctx.minProtocolSkimShareBps);
       out.push(
         err(
           'pool.referralCap',
-          `referral cap is above the maximum of ${capMax / 1_000}% of volume for these fees (baseline skim x (100% - bounty share - protocol floor of ${ctx.minProtocolSkimShareBps / 100}%)). Lower the cap, the bounty share, or raise the baseline skim`
+          `referral cap is above the maximum of ${capMax / 100}% of volume for these fees (baseline skim x (100% - bounty share - protocol floor of ${ctx.minProtocolSkimShareBps / 100}%)). Lower the cap, the bounty share, or raise the baseline skim`
         )
       );
     }
@@ -309,9 +302,9 @@ export function validateLaunch(form: LaunchForm, ctx: LaunchContext): Issue[] {
   if (mev.enabled) {
     if (isZeroAddr(ctx.mevModule)) out.push(err('mev', 'no anti sniper module is configured for this stack, turn it off'));
     const secs = Math.round(mev.windowMin * 60);
-    const start = percentToSkim(mev.startPercent);
+    const start = percentToBps(mev.startPercent);
     if (secs < MIN_MEV_WINDOW || secs > MAX_MEV_WINDOW) out.push(err('mev.window', `window must be ${MIN_MEV_WINDOW / 60} to ${MAX_MEV_WINDOW / 60} minutes`));
-    if (start > MAX_SKIM_BPS) out.push(err('mev.start', `starting skim must be at most ${MAX_SKIM_BPS / 1_000}% of volume`));
+    if (start > MAX_SKIM_BPS) out.push(err('mev.start', `starting skim must be at most ${MAX_SKIM_BPS / 100}% of volume`));
     if (start < baseline) out.push(err('mev.start', 'starting skim must be at least the baseline skim'));
   }
 
@@ -437,25 +430,24 @@ export function buildLaunchConfigV2(form: LaunchForm, ctx: LaunchContext): Built
     symbol: token.symbol.trim(),
     salt: ctx.salt,
     image: token.image.trim(),
-    metadata: token.metadata,
-    context: token.context,
+    description: token.description,
     totalSupply: supplyToWei(token.totalSupply),
     renderer: token.renderer.trim() ? parseAddress(token.renderer)! : ZERO_ADDRESS,
   };
 
   const poolConfig: PoolConfigV2 = {
     hook: ctx.hook,
-    tickIfToken0IsArtCoin: pool.startingTick,
+    tickIfToken0IsCoin: pool.startingTick,
     tickSpacing: pool.tickSpacing,
     extension: ctx.poolExtension ?? ZERO_ADDRESS,
     extensionData: '0x',
   };
 
   const fee: FeeConfigV2 = {
-    lpFee: percentToPips(pool.lpFeePercent),
-    baselineSkimBps: percentToSkim(pool.baselineSkimPercent),
+    lpFeePips: percentToPips(pool.lpFeePercent),
+    baselineSkimBps: percentToBps(pool.baselineSkimPercent),
     bountyBps: percentToBps(pool.bountyPercent),
-    maxReferralBpsOfVolume: percentToSkim(pool.referralCapPercent),
+    maxReferralBpsOfVolume: percentToBps(pool.referralCapPercent),
     bountyRecipient,
   };
 
@@ -469,7 +461,7 @@ export function buildLaunchConfigV2(form: LaunchForm, ctx: LaunchContext): Built
   };
 
   const mevConfig: MevConfigV2 = mev.enabled
-    ? { module: ctx.mevModule, startingSkimBps: percentToSkim(mev.startPercent), windowSeconds: Math.round(mev.windowMin * 60) }
+    ? { module: ctx.mevModule, startingSkimBps: percentToBps(mev.startPercent), windowSeconds: Math.round(mev.windowMin * 60) }
     : { module: ZERO_ADDRESS, startingSkimBps: 0, windowSeconds: 0 };
 
   const restrictionConfig: RestrictionConfigV2 = restriction.restricted

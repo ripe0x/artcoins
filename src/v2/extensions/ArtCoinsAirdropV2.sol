@@ -18,20 +18,19 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 /// @notice Escrows a launch allocation and lets leaves of a frozen merkle tree
 ///         claim it with a lockup then linear vesting.
 ///
-///         What is frozen at launch (D7): root, sweep recipient, lockup,
+///         What is frozen at launch: root, sweep recipient, lockup,
 ///         vesting, supply. There is no owner, no admin, no root update, no
-///         sweep redirect. Fixes against the v1 review:
-///         - A1: an empty root is rejected, and tranches are keyed by
+///         sweep redirect. Guarantees:
+///         - an empty root is rejected, and tranches are keyed by
 ///           `(token, extensionIndex)`, so two airdrop entries in one launch
 ///           cannot overwrite each other.
-///         - A2: the root can never be replaced. v1 let the admin swap it one
-///           day after the lockup while nothing was claimed.
-///         - A3: the sweep recipient must be nonzero and is fixed; the sweep
+///         - the root can never be replaced.
+///         - the sweep recipient must be nonzero and is fixed; the sweep
 ///           itself is permissionless and only ever pays that recipient.
 ///         - leaves are double hashed exactly as OpenZeppelin's
 ///           StandardMerkleTree (the openzeppelin merkle-tree js package), types
 ///           `["address","uint256"]`, so a leaf cannot collide with an inner node.
-///         - A4: claimed amounts are tracked per leaf, not per address, so an
+///         - claimed amounts are tracked per leaf, not per address, so an
 ///           address with two leaves is paid both. The cap that the total
 ///           claimed never exceeds the tranche supply still holds, so an over
 ///           allocated tree pays first come first served. The tree builder
@@ -79,7 +78,8 @@ contract ArtCoinsAirdropV2 is ReentrancyGuard, IArtCoinsAirdropV2 {
         IArtCoinsFactoryV2.ExtensionConfigV2 calldata e = config.extensions[extensionIndex];
         if (e.extension != address(this)) revert WrongExtensionEntry();
         if (e.msgValue != 0 || msg.value != 0) revert InvalidMsgValue();
-        if (e.extensionBps == 0 || extensionSupply == 0) revert InvalidAirdropBps();
+        if (e.extensionBps == 0) revert InvalidAirdropBps();
+        if (extensionSupply == 0) revert ZeroExtensionSupply();
         if (e.extensionData.length != 128) revert InvalidExtensionData();
 
         (address sweepRecipient, bytes32 root, uint256 lockup, uint256 vesting) =
@@ -221,6 +221,7 @@ contract ArtCoinsAirdropV2 is ReentrancyGuard, IArtCoinsAirdropV2 {
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return interfaceId == type(IArtCoinsExtensionV2).interfaceId
+            || interfaceId == type(IArtCoinsAirdropV2).interfaceId
             || interfaceId == type(IConstantsBound).interfaceId
             || interfaceId == type(IERC165).interfaceId;
     }

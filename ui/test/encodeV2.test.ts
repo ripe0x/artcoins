@@ -10,7 +10,6 @@ import {
   maxBountyBps,
   percentToBps,
   percentToPips,
-  percentToSkim,
   validateLaunch,
   type LaunchContext,
 } from '../src/lib/encodeV2';
@@ -52,33 +51,32 @@ test('deployToken selector and tuple signature match the compiled interface arti
   const entry = Object.entries(ids).find(([sig]) => sig.startsWith('deployToken('));
   assert.ok(entry);
   assert.equal(selector, entry![1]);
-  assert.equal(selector, 'c816d5b9');
+  assert.equal(selector, '85090ac9');
 });
 
 test('default form builds a config that encodes and decodes through the factory abi', () => {
   const c = ctx();
   const built = buildLaunchConfigV2(form(), c);
   const data = encodeFunctionData({ abi: factoryV2Abi, functionName: 'deployToken', args: [built.config] });
-  assert.equal(data.slice(0, 10), '0xc816d5b9');
+  assert.equal(data.slice(0, 10), '0x85090ac9');
   const back = decodeFunctionData({ abi: factoryV2Abi, data });
   assert.equal(back.functionName, 'deployToken');
   const cfg = (back.args as readonly unknown[])[0] as typeof built.config;
   assert.equal(cfg.token.tokenAdmin, '0x1111111111111111111111111111111111111111');
   assert.equal(cfg.token.renderer, '0x0000000000000000000000000000000000000000');
-  assert.equal(cfg.pool.tickIfToken0IsArtCoin, -230400);
+  assert.equal(cfg.pool.tickIfToken0IsCoin, -230400);
   assert.equal(cfg.pool.tickSpacing, 200);
 });
 
-test('units: pips, skim denominator, bps, window seconds', () => {
+test('units: pips, bps, window seconds', () => {
   const { config } = buildLaunchConfigV2(form(), ctx());
-  assert.equal(config.fee.lpFee, 5000); // 0.5% in 1e6 pips
-  assert.equal(config.fee.baselineSkimBps, 6000); // 6% of 1e5
+  assert.equal(config.fee.lpFeePips, 5000); // 0.5% in 1e6 pips
+  assert.equal(config.fee.baselineSkimBps, 600); // 6% in bps
   assert.equal(config.fee.bountyBps, 8333);
-  assert.equal(config.fee.maxReferralBpsOfVolume, 250);
-  assert.equal(config.mev.startingSkimBps, 68_690);
+  assert.equal(config.fee.maxReferralBpsOfVolume, 25);
+  assert.equal(config.mev.startingSkimBps, 6_869);
   assert.equal(config.mev.windowSeconds, 69 * 60);
   assert.equal(percentToPips(10), 100_000);
-  assert.equal(percentToSkim(1), 1_000);
   assert.equal(percentToBps(1), 100);
 });
 

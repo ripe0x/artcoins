@@ -66,7 +66,7 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
                 poolFee: key.fee,
                 tickSpacing: key.tickSpacing,
                 endRecipient: end,
-                artCoin: coin,
+                coin: coin,
                 maxSlippageBps: 500,
                 minBlocksBetweenConverts: 1,
                 maxStepIn: step
@@ -155,7 +155,7 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
         assertLe(ethIn, r.maxBurnPerCall());
 
         vm.roll(block.number + 1);
-        r.setMaxImpactBps(Constants.BURN_IMPACT_MAX);
+        r.setMaxImpactBps(Constants.PRICE_IMPACT_MAX);
         r.setSpotFloorBps(Constants.SPOT_FLOOR_MIN_BPS);
         r.setMaxBurnPerCall(r.MAX_BURN_PER_CALL_MAX());
         (, burned) = r.processBurn(0);
@@ -259,10 +259,10 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
     ///         no spot floor catches it; the D39 impact cap bounds it instead
     ///         (`test_swapperV2_sandwich_boundedByImpactCap`).
     function test_swapperV2_feeAwareFloor_chargesBeyondKnownFees() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(false, 9000);
-        assertEq(hook.skimConfig(key.toId()).baselineSkimBps, 9000);
-        FeeAutoSwapperV2 three = _swapperBelieving(key, token, 6000);
-        FeeAutoSwapperV2 six = _swapperBelieving(key, token, 3000);
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(false, 900);
+        assertEq(hook.skimConfig(key.toId()).baselineSkimBps, 900);
+        FeeAutoSwapperV2 three = _swapperBelieving(key, token, 600);
+        FeeAutoSwapperV2 six = _swapperBelieving(key, token, 300);
         vm.roll(block.number + 1);
 
         assertGt(three.convert(0), 0, "3% beyond known fees: within the 95% tolerance");
@@ -271,7 +271,7 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
 
         // anyone resyncs to the hook's real 9%; the floor follows
         six.syncPoolFees();
-        assertEq(six.poolBaselineSkimBps(), 9000);
+        assertEq(six.poolBaselineSkimBps(), 900);
         assertGt(six.convert(0), 0, "converts once the known fees are right");
     }
 
@@ -283,7 +283,7 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
         assertEq(r.poolLpFee(), LP_FEE);
         (uint160 p,,,) = pm.getSlot0(key.toId());
         uint256 raw = FullMath.mulDiv(FullMath.mulDiv(1 ether, p, 1 << 96), p, 1 << 96);
-        uint256 netPpm = 1e6 - uint256(BASELINE) * 10 - LP_FEE;
+        uint256 netPpm = 1e6 - uint256(BASELINE) * 100 - LP_FEE;
         assertEq(r.floorFor(1 ether), FullMath.mulDiv(raw, netPpm * 8000, 1e6 * 1e4));
         r.setSpotFloorBps(9500);
         _fund(address(r), 1 ether);

@@ -85,7 +85,7 @@ contract HV2CalldataHarness {
 contract HookV2ForkTest is HookV2ForkBase {
     using PoolIdLibrary for PoolKey;
 
-    uint256 internal constant D = Constants.SKIM_DENOMINATOR;
+    uint256 internal constant D = Constants.BPS;
 
     // ─── helpers ─────────────────────────────────────────────────────────
 
@@ -421,13 +421,13 @@ contract HookV2ForkTest is HookV2ForkBase {
         ArtCoinsMevLinearSkimV2 m = new ArtCoinsMevLinearSkimV2(address(hook));
         Launch memory l = _defaults(bountyEoa);
         l.module = address(m);
-        l.mevConfig = abi.encode(uint24(68_690), uint32(600));
+        l.mevConfig = abi.encode(uint24(6869), uint32(600));
         (PoolKey memory key,) = _launch(l);
         uint256 t0 = block.timestamp;
         assertEq(m.windowEnd(key.toId()), t0 + 600);
         assertEq(m.schedule(key.toId()).endSkimBps, BASELINE, "decays to the pool baseline");
 
-        assertEq(_skimOfBuy1Eth(key, bountyEoa), (1 ether * 68_690) / D);
+        assertEq(_skimOfBuy1Eth(key, bountyEoa), (1 ether * 6869) / D);
         vm.expectRevert();
         _modify(key, -2000, 2000, 1e18, bytes32(uint256(5)));
 
@@ -444,14 +444,14 @@ contract HookV2ForkTest is HookV2ForkBase {
         PoolKey memory key = hook.initializePool(_params(l, address(token)));
         vm.expectRevert(
             abi.encodeWithSelector(
-                IArtCoinsMevSkimV2.WindowOutOfBounds.selector,
+                IArtCoinsMevSkimV2.OutOfBounds.selector,
                 Constants.MAX_MEV_WINDOW + 1,
                 Constants.MIN_MEV_WINDOW,
                 Constants.MAX_MEV_WINDOW
             )
         );
         hook.initializeMevModule(
-            key, abi.encode(uint24(68_690), uint32(Constants.MAX_MEV_WINDOW + 1))
+            key, abi.encode(uint24(6869), uint32(Constants.MAX_MEV_WINDOW + 1))
         );
     }
 
@@ -546,11 +546,9 @@ contract HookV2ForkTest is HookV2ForkBase {
         assertEq(c.baselineSkimBps, BASELINE);
         assertEq(c.bountyBps, BOUNTY_BPS);
         assertEq(c.maxReferralBpsOfVolume, MAX_REF);
-        assertEq(c.lpFee, LP_FEE);
+        assertEq(c.lpFeePips, LP_FEE);
         assertEq(c.bountyRecipient, bountyEoa);
         assertEq(c.protocolRecipient, protocolR);
-        assertEq(c.referralPayout, address(payout));
-        assertEq(c.quoteToken, address(0));
 
         // a pool id nobody launched is not official
         assertFalse(hook.isOfficialPool(PoolId.wrap(bytes32(uint256(1)))));
@@ -620,7 +618,7 @@ contract HookV2ForkTest is HookV2ForkBase {
 
     function test_skimConfig_bounds() public {
         IArtCoinsHookV2.PoolInitParams memory p = _params(_defaults(bountyEoa), address(1));
-        p.skim.lpFee = Constants.MAX_LP_FEE + 1;
+        p.skim.lpFeePips = Constants.MAX_LP_FEE + 1;
         vm.expectRevert(IArtCoinsHookV2.LpFeeTooHigh.selector);
         hook.initializePool(p);
 
@@ -631,7 +629,7 @@ contract HookV2ForkTest is HookV2ForkBase {
 
         p = _params(_defaults(bountyEoa), address(1));
         p.skim.bountyBps = Constants.MAX_BOUNTY_BPS + 1;
-        vm.expectRevert(IArtCoinsHookV2.BadLegBps.selector);
+        vm.expectRevert(IArtCoinsHookV2.BountyBpsTooHigh.selector);
         hook.initializePool(p);
 
         p = _params(_defaults(bountyEoa), address(1));
@@ -648,28 +646,17 @@ contract HookV2ForkTest is HookV2ForkBase {
         vm.expectRevert(IArtCoinsHookV2.ProtocolRecipientZero.selector);
         hook.initializePool(p);
 
-        // H3: a codeless referral payout would revert referred swaps
-        p = _params(_defaults(bountyEoa), address(1));
-        p.skim.referralPayout = payable(makeAddr("eoaPayout"));
-        vm.expectRevert(IArtCoinsHookV2.ReferralPayoutZero.selector);
-        hook.initializePool(p);
-
         // V2H-08: recipients that can never receive eth
         p = _params(_defaults(address(hook)), address(1));
         vm.expectRevert(
-            abi.encodeWithSelector(ArtCoinsHookV2.RecipientCannotReceive.selector, address(hook))
+            abi.encodeWithSelector(IArtCoinsHookV2.RecipientCannotReceive.selector, address(hook))
         );
         hook.initializePool(p);
         p = _params(_defaults(bountyEoa), address(1));
         p.skim.protocolRecipient = payable(POOL_MANAGER);
         vm.expectRevert(
-            abi.encodeWithSelector(ArtCoinsHookV2.RecipientCannotReceive.selector, POOL_MANAGER)
+            abi.encodeWithSelector(IArtCoinsHookV2.RecipientCannotReceive.selector, POOL_MANAGER)
         );
-        hook.initializePool(p);
-
-        p = _params(_defaults(bountyEoa), address(1));
-        p.skim.quoteToken = address(2);
-        vm.expectRevert(IArtCoinsHookV2.QuoteTokenMustBeNative.selector);
         hook.initializePool(p);
     }
 
@@ -681,11 +668,10 @@ contract HookV2ForkTest is HookV2ForkBase {
         PoolKey memory key = _launchSimple(bountyEoa);
         address ref = makeAddr("ref");
         uint256 p0 = protocolR.balance;
-        _swap(key, true, -1 ether, 0, _attribution(ref, 1000)); // asks 1%, cap 0.25%
+        _swap(key, true, -1 ether, 0, _attribution(ref, 100)); // asks 1%, cap 0.25%
         uint256 skim = (1 ether * uint256(BASELINE)) / D;
         uint256 referral = ((1 ether - skim) * uint256(MAX_REF)) / D;
         assertEq(ref.balance, referral, "pushed to the referrer (D41)");
-        assertEq(payout.credited(ref), 0, "payout not called during the swap");
         (, uint256 protocol) = _legs(skim, BASELINE);
         assertEq(protocolR.balance - p0, protocol - referral, "referral comes out of protocol");
 
@@ -695,7 +681,7 @@ contract HookV2ForkTest is HookV2ForkBase {
 
     function _checkSellReferral(PoolKey memory key, address ref) internal {
         uint256 r0 = ref.balance;
-        BalanceDelta d = _swap(key, false, -1 ether, 0, _attribution(ref, 250));
+        BalanceDelta d = _swap(key, false, -1 ether, 0, _attribution(ref, 25));
         uint256 net = uint256(int256(d.amount0())); // r - skim
         uint256 r = (net * D) / (D - uint256(BASELINE)); // +-1
         assertApproxEqAbs(ref.balance - r0, (r * uint256(MAX_REF)) / D, 1);
@@ -707,7 +693,7 @@ contract HookV2ForkTest is HookV2ForkBase {
     function test_referral_neverBelowProtocolFloor() public onlyFork {
         ArtCoinsTokenV2 t = _newToken(false, bountyEoa, address(hook));
         Launch memory l = _defaults(bountyEoa);
-        l.baseline = 1000; // 1% of volume
+        l.baseline = 100; // 1% of volume
         l.bountyBps = 7000;
         l.maxRef = Constants.MAX_REFERRAL_CAP_OF_VOLUME; // 1% of volume
         IArtCoinsHookV2.PoolInitParams memory p = _params(l, address(t));
@@ -719,8 +705,8 @@ contract HookV2ForkTest is HookV2ForkBase {
 
         address ref = makeAddr("floorRef");
         uint256 p0 = protocolR.balance;
-        _swap(k, true, -1 ether, 0, _attribution(ref, 1000));
-        uint256 skim = (1 ether * 1000) / D; // 0.01 eth, all baseline
+        _swap(k, true, -1 ether, 0, _attribution(ref, 100));
+        uint256 skim = (1 ether * 100) / D; // 0.01 eth, all baseline
         uint256 floor = (skim * 2000) / Constants.BPS; // 0.002 eth
         uint256 protocolLeg = skim - (skim * 7000) / Constants.BPS; // 0.003 eth
         assertEq(protocolR.balance - p0, floor, "protocol keeps exactly its floor");
@@ -737,7 +723,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         PoolKey memory key = _launchSimple(bountyEoa);
         uint256 p0 = protocolR.balance;
         uint256 r0 = address(swapRouter).balance;
-        _swap(key, true, -1 ether, 0, _attribution(address(swapRouter), 250));
+        _swap(key, true, -1 ether, 0, _attribution(address(swapRouter), 25));
         assertEq(address(swapRouter).balance, r0, "caller cannot name itself");
         (, uint256 protocol) = _legs((1 ether * uint256(BASELINE)) / D, BASELINE);
         assertEq(protocolR.balance - p0, protocol, "protocol leg intact");
@@ -748,7 +734,7 @@ contract HookV2ForkTest is HookV2ForkBase {
     function test_referral_rejectingReferrer_escrowed() public onlyFork {
         PoolKey memory key = _launchSimple(bountyEoa);
         HV2Rejecter ref = new HV2Rejecter();
-        _swap(key, true, -1 ether, 0, _attribution(address(ref), 250));
+        _swap(key, true, -1 ether, 0, _attribution(address(ref), 25));
         uint256 skim = (1 ether * uint256(BASELINE)) / D;
         assertEq(_escrowed(address(ref)), ((1 ether - skim) * uint256(MAX_REF)) / D);
     }
@@ -774,7 +760,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         Launch memory l = _defaults(bountyEoa);
         l.extension = address(ext);
         (PoolKey memory key,) = _launch(l);
-        bytes memory hd = _attribution(makeAddr("ref"), 100);
+        bytes memory hd = _attribution(makeAddr("ref"), 10);
         (int256 net0,) = _swapNet(key, true, -100 ether, TickMath.getSqrtPriceAtTick(-100), hd);
         assertEq(ext.swaps(), 1);
         // trader facing: fill plus fair skim (the refund comes back via escrow)
@@ -877,7 +863,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         address payable newBounty = payable(makeAddr("newBounty"));
 
         vm.expectEmit(true, true, true, true, address(hook));
-        emit ArtCoinsHookV2.BountyRecipientSet(pid, bountyEoa, newBounty);
+        emit IArtCoinsHookV2.BountyRecipientSet(pid, bountyEoa, newBounty);
         assertEq(token.admin(), address(this), "admin is this test contract");
         hook.setBountyRecipient(pid, newBounty);
         assertEq(hook.skimConfig(pid).bountyRecipient, newBounty, "config updated");
@@ -893,7 +879,7 @@ contract HookV2ForkTest is HookV2ForkBase {
     function test_setBountyRecipient_nonAdminReverts() public onlyFork {
         (PoolKey memory key,) = _launch(_defaults(bountyEoa));
         vm.prank(makeAddr("stranger"));
-        vm.expectRevert(ArtCoinsHookV2.NotCoinAdmin.selector);
+        vm.expectRevert(IArtCoinsHookV2.NotCoinAdmin.selector);
         hook.setBountyRecipient(key.toId(), payable(makeAddr("x")));
     }
 
@@ -905,7 +891,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         address[4] memory bad = [address(token), address(hook), POOL_MANAGER, address(escrow)];
         for (uint256 i; i < bad.length; ++i) {
             vm.expectRevert(
-                abi.encodeWithSelector(ArtCoinsHookV2.RecipientCannotReceive.selector, bad[i])
+                abi.encodeWithSelector(IArtCoinsHookV2.RecipientCannotReceive.selector, bad[i])
             );
             hook.setBountyRecipient(pid, payable(bad[i]));
         }
@@ -916,7 +902,7 @@ contract HookV2ForkTest is HookV2ForkBase {
     function test_setBountyRecipient_unknownPoolReverts() public {
         PoolKey memory fake;
         fake.tickSpacing = 1;
-        vm.expectRevert(ArtCoinsHookV2.UnknownPool.selector);
+        vm.expectRevert(IArtCoinsHookV2.UnknownPool.selector);
         hook.setBountyRecipient(fake.toId(), payable(bountyEoa));
     }
 
@@ -924,14 +910,14 @@ contract HookV2ForkTest is HookV2ForkBase {
         (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(_defaults(bountyEoa));
         token.lockRecipients();
         assertTrue(token.recipientsLocked());
-        vm.expectRevert(ArtCoinsHookV2.RecipientsLocked.selector);
+        vm.expectRevert(IArtCoinsHookV2.RecipientsLocked.selector);
         hook.setBountyRecipient(key.toId(), payable(makeAddr("x")));
     }
 
     function test_setBountyRecipient_renounceFreezes() public onlyFork {
         (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(_defaults(bountyEoa));
         token.renounceAdmin();
-        vm.expectRevert(ArtCoinsHookV2.NotCoinAdmin.selector);
+        vm.expectRevert(IArtCoinsHookV2.NotCoinAdmin.selector);
         hook.setBountyRecipient(key.toId(), payable(makeAddr("x")));
     }
 
@@ -962,12 +948,12 @@ contract HookV2ForkTest is HookV2ForkBase {
         // turn every failed push into a swap revert
         ArtCoinsFeeEscrowV2 e2 = new ArtCoinsFeeEscrowV2(address(this));
         vm.expectRevert(
-            abi.encodeWithSelector(ArtCoinsHookV2.EscrowNotCoreDepositor.selector, address(e2))
+            abi.encodeWithSelector(IArtCoinsHookV2.EscrowNotCoreDepositor.selector, address(e2))
         );
         hook.setFeeEscrow(address(e2));
         e2.addDepositor(address(hook), false);
         vm.expectRevert(
-            abi.encodeWithSelector(ArtCoinsHookV2.EscrowNotCoreDepositor.selector, address(e2))
+            abi.encodeWithSelector(IArtCoinsHookV2.EscrowNotCoreDepositor.selector, address(e2))
         );
         hook.setFeeEscrow(address(e2));
         ArtCoinsFeeEscrowV2 e3 = new ArtCoinsFeeEscrowV2(address(this));
@@ -1074,7 +1060,7 @@ contract HookV2RealLockerTest is HookV2ForkBase {
         if (restricted) t.setAllowed(address(rl), true);
         IArtCoinsHookV2.PoolInitParams memory p = _params(l, address(t));
         p.locker = address(rl);
-        p.tickIfToken0IsArtCoin = START;
+        p.tickIfToken0IsCoin = START;
         k = hook.initializePool(p);
 
         IArtCoinsFactoryV2.LockerConfigV2 memory lc;
@@ -1091,11 +1077,11 @@ contract HookV2RealLockerTest is HookV2ForkBase {
         lc.positionBps[0] = 10_000;
         IArtCoinsFactoryV2.PoolConfigV2 memory pc;
         pc.hook = address(hook);
-        pc.tickIfToken0IsArtCoin = START;
+        pc.tickIfToken0IsCoin = START;
         pc.tickSpacing = TS;
         uint256 supply = 500_000_000e18;
         t.approve(address(rl), supply);
-        rl.placeLiquidity(lc, pc, k, supply, address(t), type(uint256).max); // through the PositionManager
+        rl.placeLiquidity(lc, pc, k, supply, address(t), false); // through the PositionManager
         hook.initializeMevModule(k, "");
 
         // trade both ways so the position earns eth and coin fees

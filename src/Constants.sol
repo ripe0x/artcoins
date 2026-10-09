@@ -11,22 +11,21 @@ library Constants {
     uint16 internal constant STACK_VERSION = 2;
 
     // ── denominators ──────────────────────────────────────────────────────
-    /// @notice Basis point denominator (10_000 = 100%).
+    /// @notice Basis point denominator (10_000 = 100%). Skim and referral rates,
+    ///         their caps, and the protocol floor are all in BPS of volume.
     uint256 internal constant BPS = 10_000;
-    /// @notice Skim denominator (100_000 = 100% of volume).
-    uint256 internal constant SKIM_DENOMINATOR = 100_000;
     /// @notice Uniswap v4 lp fee denominator (1_000_000 = 100%).
     uint256 internal constant FEE_DENOMINATOR = 1_000_000;
 
     // ── hook and pool fee config (frozen per pool, validated at init) ─────
-    /// @notice Max lp fee, 10% in 1e6 units.
+    /// @notice Max lp fee, 10% in pips (1e6 units).
     uint24 internal constant MAX_LP_FEE = 100_000;
-    /// @notice Anti sniper skim ceiling, 90% of volume in SKIM_DENOMINATOR units.
-    uint24 internal constant MAX_SKIM_BPS = 90_000;
-    /// @notice Baseline skim ceiling, 10% of volume.
-    uint24 internal constant MAX_BASELINE_SKIM_BPS = 10_000;
-    /// @notice Referral cap ceiling, 1% of volume.
-    uint24 internal constant MAX_REFERRAL_CAP_OF_VOLUME = 1000;
+    /// @notice Anti sniper skim ceiling, 90% of volume in BPS.
+    uint24 internal constant MAX_SKIM_BPS = 9000;
+    /// @notice Baseline skim ceiling, 10% of volume in BPS.
+    uint24 internal constant MAX_BASELINE_SKIM_BPS = 1000;
+    /// @notice Referral cap ceiling, 1% of volume in BPS.
+    uint24 internal constant MAX_REFERRAL_CAP_OF_VOLUME = 100;
     /// @notice Max bounty share of the skim, in BPS.
     uint16 internal constant MAX_BOUNTY_BPS = 9999;
 
@@ -41,8 +40,8 @@ library Constants {
     uint32 internal constant MIN_MEV_WINDOW = 1 minutes;
     uint32 internal constant DEFAULT_MEV_WINDOW = 69 minutes;
     uint32 internal constant MAX_MEV_WINDOW = 180 minutes;
-    /// @notice Default starting skim, in SKIM_DENOMINATOR units.
-    uint24 internal constant DEFAULT_START_SKIM_BPS = 68_690;
+    /// @notice Default starting skim, in BPS of volume.
+    uint24 internal constant DEFAULT_START_SKIM_BPS = 6869;
 
     // ── locker ────────────────────────────────────────────────────────────
     /// @notice Max reward slots (project slots plus the protocol slot).
@@ -53,6 +52,8 @@ library Constants {
     uint256 internal constant LOCKER_KEEPER_BPS_MAX = 200;
     uint256 internal constant LOCKER_KEEPER_CAP_MIN = 0.001 ether;
     uint256 internal constant LOCKER_KEEPER_CAP_MAX = 0.05 ether;
+    /// @notice Initial locker keeper reward cap (not a setter bound, not hashed).
+    uint256 internal constant LOCKER_KEEPER_CAP_DEFAULT = 0.01 ether;
 
     // ── factory ───────────────────────────────────────────────────────────
     /// @notice Supply used when `TokenConfigV2.totalSupply == 0`.
@@ -73,12 +74,27 @@ library Constants {
     /// @notice Burn sink.
     address internal constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
+    // ── token strings (not hashed) ────────────────────────────────────────
+    /// @notice String caps in bytes, enforced by the token at construction and
+    ///         in every setter, and by the factory before deploying.
+    uint256 internal constant MAX_NAME_BYTES = 64;
+    uint256 internal constant MAX_SYMBOL_BYTES = 16;
+    uint256 internal constant MAX_IMAGE_BYTES = 2048;
+    uint256 internal constant MAX_DESCRIPTION_BYTES = 4096;
+    /// @notice `StringTooLong.field` codes.
+    uint8 internal constant FIELD_NAME = 0;
+    uint8 internal constant FIELD_SYMBOL = 1;
+    uint8 internal constant FIELD_IMAGE = 2;
+    uint8 internal constant FIELD_DESCRIPTION = 3;
+
     // ── keepers, swapper, burn router ─────────────────────────────────────
     /// @notice Keeper reward on consumed amounts, capped.
     uint256 internal constant KEEPER_REWARD_BPS = 50;
     uint256 internal constant KEEPER_REWARD_CAP = 0.01 ether;
-    /// @notice Post swap output floor against spot, in BPS.
-    uint256 internal constant SPOT_FLOOR_BPS = 8000;
+    /// @notice Burn router initial fee net spot floor, in BPS. The swapper's
+    ///         convert floor default (9500) is contract local; both are owner
+    ///         tunable within [SPOT_FLOOR_MIN_BPS, SPOT_FLOOR_MAX_BPS].
+    uint256 internal constant BURN_SPOT_FLOOR_DEFAULT_BPS = 8000;
     uint256 internal constant SPOT_FLOOR_MIN_BPS = 5000;
     uint256 internal constant SPOT_FLOOR_MAX_BPS = 9500;
     /// @notice Fee swapper owner bounds.
@@ -86,10 +102,11 @@ library Constants {
     uint256 internal constant SWAPPER_SLIPPAGE_MAX = 1000;
     uint256 internal constant SWAPPER_MIN_BLOCKS_MIN = 1;
     uint256 internal constant SWAPPER_MIN_BLOCKS_MAX = 50_400;
-    /// @notice Burn router owner bounds (price impact per block, in BPS).
-    uint16 internal constant BURN_IMPACT_MIN = 25;
-    uint16 internal constant BURN_IMPACT_DEFAULT = 100;
-    uint16 internal constant BURN_IMPACT_MAX = 300;
+    /// @notice Per block price impact bounds, in BPS, for the swapper convert
+    ///         and the burn router.
+    uint16 internal constant PRICE_IMPACT_MIN = 25;
+    uint16 internal constant PRICE_IMPACT_DEFAULT = 100;
+    uint16 internal constant PRICE_IMPACT_MAX = 300;
     uint256 internal constant BURN_THRESHOLD_FLOOR = 0.001 ether;
     /// @notice Burn router per call eth cap bounds and default (not hashed).
     uint256 internal constant BURN_MAX_PER_CALL_MIN = 0.1 ether;
@@ -106,8 +123,6 @@ library Constants {
     uint256 internal constant RENDER_GAS_BUDGET = 8_000_000;
 
     // ── informational (not hashed) ────────────────────────────────────────
-    /// @notice CI gate: minimum hook runtime headroom under EIP-170 at the ci profile.
-    uint256 internal constant HOOK_SIZE_HEADROOM_MIN = 1024;
     /// @notice `leg` codes in the hook `FeeDelivered` event.
     uint8 internal constant LEG_BOUNTY = 0;
     uint8 internal constant LEG_PROTOCOL = 1;
@@ -127,7 +142,6 @@ library Constants {
             abi.encode(
                 STACK_VERSION,
                 BPS,
-                SKIM_DENOMINATOR,
                 FEE_DENOMINATOR,
                 MAX_LP_FEE,
                 MAX_SKIM_BPS,
@@ -163,6 +177,7 @@ library Constants {
     }
 
     function _hashKeeper() private pure returns (bytes32) {
-        return keccak256(abi.encode(KEEPER_REWARD_BPS, KEEPER_REWARD_CAP, SPOT_FLOOR_BPS));
+        return
+            keccak256(abi.encode(KEEPER_REWARD_BPS, KEEPER_REWARD_CAP, BURN_SPOT_FLOOR_DEFAULT_BPS));
     }
 }

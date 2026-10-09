@@ -13,12 +13,12 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 /// @title  ArtCoinsFeeEscrowV2
 /// @notice Fallback store for fees whose push failed. Balances are keyed by
 ///         (feeOwner, token), `token == address(0)` is native eth. Credited
-///         balances are owed: the owner can only rescue `balance - totalOwed`.
-/// @dev    Claims are permissionless pushes to the fee owner unless the fee
-///         owner opted into `selfClaimOnly` (contracts that cannot move an
-///         erc20 balance pushed to them, e.g. `FeeAutoSwapperV2`, opt in).
-///         Core depositors (hook, locker) can never be removed, so their push
-///         fallback cannot be bricked by the owner.
+///         balances are owed: the owner can rescue at most `balance - totalOwed`.
+/// @dev    `claim` pays the fee owner and is callable by anyone unless the fee
+///         owner set `selfClaimOnly` (`FeeAutoSwapperV2` sets it).
+///         `claimTo` is callable by the fee owner only.
+///         Core depositors (hook, locker) are permanent, so the push fallback
+///         of those contracts stays available.
 contract ArtCoinsFeeEscrowV2 is IArtCoinsFeeEscrowV2, Ownable2Step, ReentrancyGuardTransient {
     /// @inheritdoc IArtCoinsFeeEscrowV2
     mapping(address feeOwner => mapping(address token => uint256)) public balances;
@@ -38,6 +38,9 @@ contract ArtCoinsFeeEscrowV2 is IArtCoinsFeeEscrowV2, Ownable2Step, ReentrancyGu
         _;
     }
 
+    /// @inheritdoc IArtCoinsFeeEscrowV2
+    uint16 public constant STACK_VERSION = Constants.STACK_VERSION;
+
     /// @inheritdoc IConstantsBound
     function constantsHash() external pure returns (bytes32) {
         return Constants.hash();
@@ -47,7 +50,7 @@ contract ArtCoinsFeeEscrowV2 is IArtCoinsFeeEscrowV2, Ownable2Step, ReentrancyGu
 
     /// @inheritdoc IArtCoinsFeeEscrowV2
     /// @dev Credits the amount actually received (balance delta). A zero
-    ///      amount is a no op so a depositor never reverts on dust.
+    ///      amount returns without effect.
     function storeFees(address feeOwner, address token, uint256 amount)
         external
         onlyDepositor
@@ -65,9 +68,8 @@ contract ArtCoinsFeeEscrowV2 is IArtCoinsFeeEscrowV2, Ownable2Step, ReentrancyGu
     }
 
     /// @inheritdoc IArtCoinsFeeEscrowV2
-    /// @dev No reentrancy lock: this makes no external call, and a lock would
-    ///      revert a core depositor's fallback when it runs inside a claim
-    ///      callback.
+    /// @dev Makes no external call. A reentrancy lock would revert a core
+    ///      depositor's fallback that runs inside a claim callback.
     function storeFeesNative(address feeOwner) external payable onlyDepositor {
         if (feeOwner == address(0)) revert ZeroRecipient();
         if (msg.value == 0) revert ZeroNativeDeposit();
@@ -105,9 +107,9 @@ contract ArtCoinsFeeEscrowV2 is IArtCoinsFeeEscrowV2, Ownable2Step, ReentrancyGu
         emit SelfClaimOnlySet(msg.sender, on);
     }
 
-    /// @dev Effects before the transfer. Native uses a full gas call (the
-    ///      claimer pays its own gas; a failed push reverts with no loss).
-    ///      Erc20 uses a plain `transfer` with the standard return check.
+    /// @dev State is updated before the transfer. Native eth is sent with all
+    ///      remaining gas and a failed send reverts the claim. Erc20 uses
+    ///      `SafeTransferLib.safeTransfer`.
     function _payout(address feeOwner, address token, address recipient) private {
         if (feeOwner == address(0)) revert ZeroRecipient();
         uint256 amount = balances[feeOwner][token];
@@ -128,9 +130,8 @@ contract ArtCoinsFeeEscrowV2 is IArtCoinsFeeEscrowV2, Ownable2Step, ReentrancyGu
     // ── owner ─────────────────────────────────────────────────────────────
 
     /// @inheritdoc IArtCoinsFeeEscrowV2
-    /// @dev A core depositor cannot be downgraded to non core (that would
-    ///      open a remove path). Re adding a non core depositor as core
-    ///      upgrades it.
+    /// @dev A core depositor keeps core status. Re adding a non core depositor
+    ///      as core upgrades it.
     function addDepositor(address depositor, bool core) external onlyOwner {
         if (depositor == address(0)) revert ZeroAddress();
         if (isCoreDepositor[depositor] && !core) revert CoreDepositor(depositor);

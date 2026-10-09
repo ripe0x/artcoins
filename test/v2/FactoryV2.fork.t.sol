@@ -27,7 +27,6 @@ import {
     FV2Extension,
     FV2HashStub,
     FV2NoErc165Module,
-    FV2Payout,
     FV2RevertingReceiver,
     FV2ToggleModule,
     FV2WrongHashModule
@@ -68,7 +67,6 @@ contract FactoryV2ForkTest is ForkBase {
     address internal locker;
     ArtCoinsLpLockerV2 internal realLocker;
     ArtCoinsMevLinearSkimV2 internal mev;
-    FV2Payout internal payout;
 
     address payable internal protocolR = payable(makeAddr("fv2.protocolRecipient"));
     address internal team = makeAddr("fv2.team");
@@ -113,7 +111,6 @@ contract FactoryV2ForkTest is ForkBase {
         // real locker (D37 skips the erc20 approve to permit2 for solady tokens)
         locker = address(realLocker);
         mev = new ArtCoinsMevLinearSkimV2(address(hook));
-        payout = new FV2Payout();
 
         hook.setLauncher(address(factory), true);
         // D46: the launch placement adds on a taxed canonical pool; the deploy
@@ -124,9 +121,7 @@ contract FactoryV2ForkTest is ForkBase {
         factory.setHook(address(hook), true);
         factory.setLocker(locker, true);
         factory.setMevModule(address(mev), true);
-        factory.setEscrow(address(escrow), true);
         factory.setProtocolRecipient(protocolR);
-        factory.setReferralPayout(payable(address(payout)));
         factory.setTeamFeeRecipient(team);
         factory.setDeprecated(false);
     }
@@ -139,18 +134,17 @@ contract FactoryV2ForkTest is ForkBase {
         c.token.symbol = "FV2";
         c.token.salt = bytes32(uint256(1));
         c.token.image = "ipfs://image";
-        c.token.metadata = "{}";
-        c.token.context = "f1";
+        c.token.description = "{}";
 
         c.pool.hook = address(hook);
-        c.pool.tickIfToken0IsArtCoin = START;
+        c.pool.tickIfToken0IsCoin = START;
         c.pool.tickSpacing = TS;
 
         c.fee = IArtCoinsFactoryV2.FeeConfigV2({
-            lpFee: 5000,
-            baselineSkimBps: 6000,
+            lpFeePips: 5000,
+            baselineSkimBps: 600,
             bountyBps: 8333,
-            maxReferralBpsOfVolume: 250,
+            maxReferralBpsOfVolume: 25,
             bountyRecipient: bounty
         });
 
@@ -218,7 +212,7 @@ contract FactoryV2ForkTest is ForkBase {
         assertEq(predicted.code.length, 0, "not yet deployed");
         address token = _deploy(alice, c);
         assertEq(token, predicted, "predict");
-        assertTrue(factory.isArtCoin(token), "isArtCoin");
+        assertTrue(factory.isCoin(token), "isCoin");
         assertEq(factory.configHash(c), keccak256(abi.encode(c)), "configHash");
 
         IArtCoinsFactoryV2.DeploymentInfoV2 memory info = factory.deploymentInfo(token);
@@ -284,7 +278,7 @@ contract FactoryV2ForkTest is ForkBase {
         e.fee.bountyBps = 1;
         assertTrue(factory.predictToken(alice, c) != factory.predictToken(alice, e), "fee");
         e = _cfg();
-        e.pool.tickIfToken0IsArtCoin = START + TS;
+        e.pool.tickIfToken0IsCoin = START + TS;
         assertTrue(factory.predictToken(alice, c) != factory.predictToken(alice, e), "pool");
 
         address a = _deploy(alice, d);
@@ -374,10 +368,6 @@ contract FactoryV2ForkTest is ForkBase {
             abi.encodeWithSelector(IConstantsBound.ConstantsMismatch.selector, address(badHash))
         );
         factory.setLocker(address(badHash), true);
-        vm.expectRevert(
-            abi.encodeWithSelector(IConstantsBound.ConstantsMismatch.selector, address(badHash))
-        );
-        factory.setEscrow(address(badHash), true);
 
         // no code at all is a mismatch, not a raw revert
         address eoa = makeAddr("fv2.eoa");
@@ -412,9 +402,7 @@ contract FactoryV2ForkTest is ForkBase {
         // injected recipients
         IArtCoinsHookV2.SkimConfig memory s = hook.skimConfig(info.poolId);
         assertEq(s.protocolRecipient, protocolR);
-        assertEq(s.referralPayout, address(payout));
         assertEq(s.bountyRecipient, bounty);
-        assertEq(s.quoteToken, address(0));
         // the module window started in the launch tx
         assertEq(mev.windowEnd(info.poolId), block.timestamp + Constants.DEFAULT_MEV_WINDOW);
     }
@@ -473,14 +461,14 @@ contract FactoryV2ForkTest is ForkBase {
         factory.setDeployFee(0);
         vm.prank(alice);
         address t = factory.deployToken(_cfg());
-        assertTrue(factory.isArtCoin(t));
+        assertTrue(factory.isCoin(t));
         // a recipient that refuses eth reverts the launch (the owner picked it)
         factory.setDeployFee(FEE);
         factory.setTeamFeeRecipient(address(new FV2RevertingReceiver()));
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
         c.token.salt = bytes32(uint256(9));
         _expectRevertDeploy(
-            c, abi.encodeWithSelector(IArtCoinsFactoryV2.EthTransferFailed.selector)
+            c, abi.encodeWithSelector(IArtCoinsFactoryV2.NativeTransferFailed.selector)
         );
     }
 
@@ -489,11 +477,11 @@ contract FactoryV2ForkTest is ForkBase {
         _expectRevertDeploy(_cfg(), abi.encodeWithSelector(IArtCoinsFactoryV2.Deprecated.selector));
         // owner bypasses, both entries
         address t = factory.deployToken{value: FEE}(_cfg());
-        assertTrue(factory.isArtCoin(t));
+        assertTrue(factory.isCoin(t));
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
         c.token.salt = bytes32(uint256(7));
         address t2 = factory.deployTokenAsOwner{value: FEE}(c, PROTOCOL_BPS);
-        assertTrue(factory.isArtCoin(t2));
+        assertTrue(factory.isCoin(t2));
         factory.setDeprecated(false);
         IArtCoinsFactoryV2.DeploymentConfigV2 memory d = _cfg();
         d.token.salt = bytes32(uint256(8));
@@ -723,7 +711,7 @@ contract FactoryV2ForkTest is ForkBase {
 
         // fee caps
         c = _cfg();
-        c.fee.lpFee = Constants.MAX_LP_FEE + 1;
+        c.fee.lpFeePips = Constants.MAX_LP_FEE + 1;
         _expectRevertDeploy(
             c, abi.encodeWithSelector(ArtCoinsFactoryV2.FeeConfigOutOfBounds.selector)
         );
@@ -820,18 +808,18 @@ contract FactoryV2ForkTest is ForkBase {
         assertEq(f.tokenDeployer(), address(0));
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c;
         c.token.tokenAdmin = admin;
-        vm.expectRevert(ArtCoinsFactoryV2.DeployerNotSet.selector);
+        vm.expectRevert(IArtCoinsFactoryV2.DeployerNotSet.selector);
         f.deployToken(c); // owner bypasses the deprecated gate, then hits the deployer check
-        vm.expectRevert(ArtCoinsFactoryV2.DeployerNotSet.selector);
+        vm.expectRevert(IArtCoinsFactoryV2.DeployerNotSet.selector);
         f.predictToken(alice, c);
 
         // bound to another factory, no code, zero
         vm.expectRevert(
-            abi.encodeWithSelector(ArtCoinsFactoryV2.InvalidDeployer.selector, address(deployer))
+            abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidDeployer.selector, address(deployer))
         );
         f.setTokenDeployer(address(deployer));
         address noCode = makeAddr("fv2.noCodeDeployer");
-        vm.expectRevert(abi.encodeWithSelector(ArtCoinsFactoryV2.InvalidDeployer.selector, noCode));
+        vm.expectRevert(abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidDeployer.selector, noCode));
         f.setTokenDeployer(noCode);
         vm.expectRevert(IArtCoinsFactoryV2.ZeroAddress.selector);
         f.setTokenDeployer(address(0));
@@ -843,7 +831,7 @@ contract FactoryV2ForkTest is ForkBase {
         f.setTokenDeployer(address(d));
 
         vm.expectEmit(true, true, false, false, address(f));
-        emit ArtCoinsFactoryV2.TokenDeployerSet(address(0), address(d));
+        emit IArtCoinsFactoryV2.TokenDeployerSet(address(0), address(d));
         f.setTokenDeployer(address(d));
         assertEq(f.tokenDeployer(), address(d));
         assertEq(d.factory(), address(f));
@@ -935,17 +923,17 @@ contract FactoryV2ForkTest is ForkBase {
     function test_referralCap_protocolFloor_boundary() public onlyFork {
         factory.setMinProtocolSkimShareBps(1000);
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        // baseline 6000, bounty 8000, floor 1000: room = 6000 * 1000 / 10000 = 600
-        c.fee.baselineSkimBps = 6000;
+        // baseline 600, bounty 8000, floor 1000: room = 600 * 1000 / 10000 = 60
+        c.fee.baselineSkimBps = 600;
         c.fee.bountyBps = 8000;
-        c.fee.maxReferralBpsOfVolume = 601;
+        c.fee.maxReferralBpsOfVolume = 61;
         _expectRevertDeploy(
             c, abi.encodeWithSelector(ArtCoinsFactoryV2.ReferralCapAboveProtocolFloor.selector)
         );
-        c.fee.maxReferralBpsOfVolume = 600; // boundary passes
+        c.fee.maxReferralBpsOfVolume = 60; // boundary passes
         address t = _deploy(alice, c);
         PoolId pid = factory.deploymentInfo(t).poolId;
-        assertEq(hook.skimConfig(pid).maxReferralBpsOfVolume, 600);
+        assertEq(hook.skimConfig(pid).maxReferralBpsOfVolume, 60);
         assertEq(hook.minProtocolShareBps(pid), 1000, "floor frozen on the pool");
 
         // bounty + floor > BPS fails in the factory before the hook's BadLegBps
@@ -961,7 +949,7 @@ contract FactoryV2ForkTest is ForkBase {
 
         // the reviewer's V2F-01 shape: baseline 1%, max bounty, max referral
         c = _cfg();
-        c.fee.baselineSkimBps = 1000;
+        c.fee.baselineSkimBps = 100;
         c.fee.bountyBps = 9000;
         c.fee.maxReferralBpsOfVolume = Constants.MAX_REFERRAL_CAP_OF_VOLUME;
         _expectRevertDeploy(
@@ -971,12 +959,12 @@ contract FactoryV2ForkTest is ForkBase {
         // with no floor the whole protocol leg is the room
         factory.setMinProtocolSkimShareBps(0);
         c = _cfg();
-        c.fee.baselineSkimBps = 1000;
+        c.fee.baselineSkimBps = 100;
         c.fee.bountyBps = 0;
-        c.fee.maxReferralBpsOfVolume = 1000; // = baseline
+        c.fee.maxReferralBpsOfVolume = 100; // = baseline
         c.token.salt = bytes32(uint256(41));
         assertEq(hook.minProtocolShareBps(factory.deploymentInfo(_deploy(alice, c)).poolId), 0);
-        c.fee.baselineSkimBps = 999;
+        c.fee.baselineSkimBps = 99;
         _expectRevertDeploy(
             c, abi.encodeWithSelector(ArtCoinsFactoryV2.ReferralCapAboveProtocolFloor.selector)
         );
@@ -986,20 +974,22 @@ contract FactoryV2ForkTest is ForkBase {
     function test_lpFeeZero_launches() public onlyFork {
         // lp fee 0 with a nonzero skim passes (pure skim pool).
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        c.fee.lpFee = 0;
-        c.fee.baselineSkimBps = 6000;
+        c.fee.lpFeePips = 0;
+        c.fee.baselineSkimBps = 600;
         address t = _deploy(alice, c);
-        assertEq(hook.skimConfig(factory.deploymentInfo(t).poolId).lpFee, 0, "lp fee 0 launched");
+        assertEq(
+            hook.skimConfig(factory.deploymentInfo(t).poolId).lpFeePips, 0, "lp fee 0 launched"
+        );
         // the protocol skim share floor (D52) still bounds referrals.
         c = _cfg();
-        c.fee.lpFee = Constants.MAX_LP_FEE;
+        c.fee.lpFeePips = Constants.MAX_LP_FEE;
         _deploy(alice, c);
     }
 
     /// a launch must earn some fee: both lp fee and baseline skim zero reverts.
     function test_zeroFeeLaunch_reverts() public onlyFork {
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        c.fee.lpFee = 0;
+        c.fee.lpFeePips = 0;
         c.fee.baselineSkimBps = 0;
         c.fee.bountyBps = 0;
         c.fee.maxReferralBpsOfVolume = 0;
@@ -1007,23 +997,21 @@ contract FactoryV2ForkTest is ForkBase {
         _expectRevertDeploy(c, abi.encodeWithSelector(ArtCoinsFactoryV2.ZeroFeeLaunch.selector));
     }
 
-    /// D30: string caps are checked before any deploy work, same error as the token.
+    /// String caps are checked before any deploy work, same error as the token.
     function test_tokenStrings_capPasses_capPlusOneReverts() public onlyFork {
         ArtCoinsTokenV2 ref = ArtCoinsTokenV2(_deploy(alice, _cfg()));
-        uint256[5] memory caps = [
+        uint256[4] memory caps = [
             ref.MAX_NAME_BYTES(),
             ref.MAX_SYMBOL_BYTES(),
             ref.MAX_IMAGE_BYTES(),
-            ref.MAX_METADATA_BYTES(),
-            ref.MAX_CONTEXT_BYTES()
+            ref.MAX_DESCRIPTION_BYTES()
         ];
         assertEq(caps[0], 64);
         assertEq(caps[1], 16);
         assertEq(caps[2], 2048);
         assertEq(caps[3], 4096);
-        assertEq(caps[4], 4096);
 
-        for (uint8 f; f < 5; ++f) {
+        for (uint8 f; f < 4; ++f) {
             IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
             c.token.salt = bytes32(uint256(100 + f));
             _setString(c, f, string(new bytes(caps[f] + 1)));
@@ -1034,13 +1022,13 @@ contract FactoryV2ForkTest is ForkBase {
         // every field at its cap at once
         IArtCoinsFactoryV2.DeploymentConfigV2 memory ok = _cfg();
         ok.token.salt = bytes32(uint256(200));
-        for (uint8 f; f < 5; ++f) {
+        for (uint8 f; f < 4; ++f) {
             _setString(ok, f, string(_filled(caps[f])));
         }
         ArtCoinsTokenV2 t = ArtCoinsTokenV2(_deploy(alice, ok));
         assertEq(bytes(t.name()).length, 64);
         assertEq(bytes(t.symbol()).length, 16);
-        assertEq(bytes(t.context()).length, 4096);
+        assertEq(bytes(t.description()).length, 4096);
     }
 
     function _filled(uint256 n) internal pure returns (bytes memory b) {
@@ -1057,8 +1045,7 @@ contract FactoryV2ForkTest is ForkBase {
         if (f == 0) c.token.name = v;
         else if (f == 1) c.token.symbol = v;
         else if (f == 2) c.token.image = v;
-        else if (f == 3) c.token.metadata = v;
-        else c.token.context = v;
+        else c.token.description = v;
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -1106,12 +1093,11 @@ contract FactoryV2ForkTest is ForkBase {
         assertEq(got.locker.rewardRecipients[0], project);
 
         // the remaining non indexed fields
-        (, bytes32 h, address pr, address rp,,,,) = abi.decode(
+        (, bytes32 h, address pr,,,,) = abi.decode(
             _createdData(logs),
             (
                 uint16,
                 bytes32,
-                address,
                 address,
                 uint16,
                 uint256,
@@ -1121,7 +1107,6 @@ contract FactoryV2ForkTest is ForkBase {
         );
         assertEq(h, factory.configHash(c));
         assertEq(pr, protocolR);
-        assertEq(rp, address(payout));
     }
 
     /// FT-09: floor dust from the extension shares goes to the pool, never to the team.
@@ -1230,8 +1215,6 @@ contract FactoryV2ForkTest is ForkBase {
         vm.expectRevert(IArtCoinsFactoryV2.ZeroAddress.selector);
         factory.setProtocolRecipient(payable(address(0)));
         vm.expectRevert(IArtCoinsFactoryV2.ZeroAddress.selector);
-        factory.setReferralPayout(payable(address(0)));
-        vm.expectRevert(IArtCoinsFactoryV2.ZeroAddress.selector);
         factory.setHook(address(0), true);
 
         vm.expectRevert(ArtCoinsFactoryV2.RenounceDisabled.selector);
@@ -1256,8 +1239,6 @@ contract FactoryV2ForkTest is ForkBase {
         vm.expectRevert(err);
         factory.setProtocolRecipient(payable(alice));
         vm.expectRevert(err);
-        factory.setReferralPayout(payable(alice));
-        vm.expectRevert(err);
         factory.setTeamFeeRecipient(alice);
         vm.expectRevert(err);
         factory.setHook(alice, false);
@@ -1267,8 +1248,6 @@ contract FactoryV2ForkTest is ForkBase {
         factory.setMevModule(alice, false);
         vm.expectRevert(err);
         factory.setExtension(alice, false);
-        vm.expectRevert(err);
-        factory.setEscrow(alice, false);
         vm.expectRevert(err);
         factory.rescue(address(0), alice, 0);
         vm.stopPrank();
@@ -1331,12 +1310,11 @@ contract FactoryV2ForkTest is ForkBase {
             sender = address(uint160(uint256(l.topics[1])));
             token = address(uint160(uint256(l.topics[2])));
             poolId = l.topics[3];
-            (version,,,, protocolBps, poolSupply, extensionsSupply, config) = abi.decode(
+            (version,,, protocolBps, poolSupply, extensionsSupply, config) = abi.decode(
                 l.data,
                 (
                     uint16,
                     bytes32,
-                    address,
                     address,
                     uint16,
                     uint256,

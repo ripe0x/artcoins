@@ -28,7 +28,7 @@ export default function TokenConfigForm({ value, onChange, connectedAddress, iss
         </Field>
       </div>
 
-      <Field label="Token admin" hint={`Can update the image and metadata. Defaults to your connected wallet${connectedAddress ? '' : ' (connect one)'}.`}>
+      <Field label="Token admin" hint={`Can update the image and description. Defaults to your connected wallet${connectedAddress ? '' : ' (connect one)'}.`}>
         <input type="text" className={inputClass} placeholder={connectedAddress ?? '0x...'} value={value.admin} onChange={(e) => set('admin', e.target.value)} />
       </Field>
 
@@ -46,16 +46,8 @@ export default function TokenConfigForm({ value, onChange, connectedAddress, iss
         {!imageOk && <p className="text-xs text-red-400 mt-1">This url scheme is not accepted. Use https, ipfs, ar or a data:image url.</p>}
       </Field>
 
-      <Field label="Description" hint={<ByteCount value={value.metadata} cap={STRING_CAPS.metadata} />}>
-        <textarea className={`${inputClass} resize-none`} rows={3} placeholder="Describe your token..." value={value.metadata} onChange={(e) => set('metadata', e.target.value)} />
-      </Field>
-
-      <Field label="Context" hint={
-          <>
-            Free text stored with the token, for example a link or a short json. <ByteCount value={value.context} cap={STRING_CAPS.context} />
-          </>
-        }>
-        <input type="text" className={inputClass} placeholder="Optional context string" value={value.context} onChange={(e) => set('context', e.target.value)} />
+      <Field label="Description" hint={<ByteCount value={value.description} cap={STRING_CAPS.description} />}>
+        <textarea className={`${inputClass} resize-none`} rows={3} placeholder="Describe your token..." value={value.description} onChange={(e) => set('description', e.target.value)} />
       </Field>
 
       <Field label="Metadata renderer (optional)" hint="A renderer contract that builds the token's on chain json. Leave empty for the default. It is fixed at launch.">

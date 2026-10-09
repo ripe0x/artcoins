@@ -8,8 +8,8 @@ interface IRenderableTokenV2 {
     function name() external view returns (string memory);
     function symbol() external view returns (string memory);
     function totalSupply() external view returns (uint256);
-    /// @notice Free form description, set by the token admin.
-    function metadata() external view returns (string memory);
+    /// @notice Free form description, set by the coin admin.
+    function description() external view returns (string memory);
     /// @notice Image url, set by the token admin.
     function imageUrl() external view returns (string memory);
 }

@@ -139,7 +139,7 @@ test('after setDeprecated(false) the form validates and a launch succeeds', asyn
   launched = ev.args.token;
   launchedPool = ev.args.poolId;
   await expect(page.getByText(launched!, { exact: true })).toBeVisible();
-  expect(await pub.readContract({ address: v2.factory, abi: factoryV2Abi, functionName: 'isArtCoin', args: [launched!] })).toBe(true);
+  expect(await pub.readContract({ address: v2.factory, abi: factoryV2Abi, functionName: 'isCoin', args: [launched!] })).toBe(true);
   const cfg = ev.args.config;
   expect(cfg.token.name).toBe('E2E Launch');
   expect(cfg.token.symbol).toBe('E2EL');

@@ -50,7 +50,7 @@ test('v2: FlushSkipped and SwapperServiced, quote from the serviced events', () 
   const s = servicedFrom(d);
   assert.deepEqual(s.map((x) => x.converted), [5_000_000n]);
   // KR-03: the swapper's own floor from a market read (price 1, no fees) sits under the simulated output
-  const market = { swappers: [{ address: s[0].swapper, accruedArtCoin: 5_000_000n, maxStepIn: 10n ** 30n, sqrtPriceX96: 1n << 96n, lpFeePpm: 0, skimPpm: 0 }] };
+  const market = { swappers: [{ address: s[0].swapper, accruedCoin: 5_000_000n, maxStepIn: 10n ** 30n, sqrtPriceX96: 1n << 96n, lpFeePpm: 0, skimPpm: 0 }] };
   assert.deepEqual(argsV2(tok, s, 100, market).args, [tok, true, 4_950_000n]);
   assert.deepEqual(argsV2(tok, s, 100, null).args, [tok, false, 0n]); // no independent floor, no convert
 });

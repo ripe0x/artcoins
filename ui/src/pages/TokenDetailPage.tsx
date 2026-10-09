@@ -15,6 +15,7 @@ import RecipientsPanel from '../components/RecipientsPanel';
 import { uniswapTokenUrl } from '../lib/config';
 import { stateViewAbi } from '../lib/abi';
 import { tokenV1Abi } from '../lib/abi/v1/token';
+import { tokenV2Abi } from '../lib/abi/v2/token';
 import { hookV1Abi } from '../lib/abi/v1/hook';
 import { hookV2Abi } from '../lib/abi/v2/hook';
 import { lockerV1Abi } from '../lib/abi/v1/locker';
@@ -25,7 +26,8 @@ import { factoryV2Abi } from '../lib/abi/v2/factory';
 import { parseContractURI, resolveImage } from '../lib/metadata';
 import { computePoolId, priceFromSqrtX96, type PoolKey } from '../lib/pool';
 import { cleanText, MAX_DESCRIPTION, MAX_NAME, MAX_SYMBOL } from '../lib/security';
-import { feeSummary, normalizeSkim, skimPercent, feePercent } from '../lib/poolReads';
+import { BPS } from '../lib/constants';
+import { feeSummary, normalizeSkim, skimPercent, feePercent, V1_SKIM_DENOMINATOR } from '../lib/poolReads';
 import { shortAddr, formatSupply, formatDuration, formatPrice } from '../lib/format';
 import { useToken } from '../lib/useTokens';
 import { useAddressesOrNull } from '../lib/useChain';
@@ -91,8 +93,9 @@ export default function TokenDetailPage() {
       { address: t, abi: tokenV1Abi, functionName: 'totalSupply' },
       { address: t, abi: tokenV1Abi, functionName: 'admin' },
       { address: t, abi: tokenV1Abi, functionName: 'imageUrl' },
-      { address: t, abi: tokenV1Abi, functionName: 'metadata' },
-      { address: t, abi: tokenV1Abi, functionName: 'isVerified' },
+      record.version === 2
+        ? { address: t, abi: tokenV2Abi, functionName: 'description' }
+        : { address: t, abi: tokenV1Abi, functionName: 'metadata' },
       { address: t, abi: tokenV1Abi, functionName: 'metadataRenderer' },
       { address: record.hook, abi: record.version === 2 ? hookV2Abi : hookV1Abi, functionName: 'skimConfig', args: [poolId] },
     ] as const;
@@ -112,9 +115,8 @@ export default function TokenDetailPage() {
   const currentAdmin = r(3) as Address | undefined;
   const imageUrl = r(4) as string | undefined;
   const metadataText = r(5) as string | undefined;
-  const creatorConfirmed = r(6) as boolean | undefined;
-  const metadataRenderer = r(7) as Address | undefined;
-  const skim = normalizeSkim(r(8));
+  const metadataRenderer = r(6) as Address | undefined;
+  const skim = normalizeSkim(r(7));
 
   // contractURI() can be an on chain renderer (~180M gas, hundreds of kB). It is read alone with its own gas
   // limit and a timeout, never in the multicall above, so a slow or refusing rpc cannot hold the token card.
@@ -136,13 +138,13 @@ export default function TokenDetailPage() {
     contracts:
       record && record.version === 2
         ? ([
-            { address: record.factory, abi: factoryV2Abi, functionName: 'isArtCoin', args: [record.token] },
+            { address: record.factory, abi: factoryV2Abi, functionName: 'isCoin', args: [record.token] },
           ] as const)
         : [],
     allowFailure: true,
     query: { enabled: !!record && record.version === 2 },
   });
-  const isArtCoin = v2Data?.[0]?.result as boolean | undefined;
+  const isCoin = v2Data?.[0]?.result as boolean | undefined;
 
   // ── 3. anti sniper state ──
   // the legacy stack's mev modules are older contracts with other abis: no anti sniper reads for them
@@ -165,6 +167,7 @@ export default function TokenDetailPage() {
     query: { enabled: !!mevAddr && !!poolId, refetchInterval: 10_000 },
   });
   const md = mevData as readonly { result?: unknown }[] | undefined;
+  const skimDenom = record?.version === 2 ? BPS : V1_SKIM_DENOMINATOR;
   let mevSkimBps: number | undefined;
   let mevActive = false;
   let mevEnd: number | undefined;
@@ -237,7 +240,7 @@ export default function TokenDetailPage() {
   const shownSymbol = cleanText(symbol ?? record.symbol, MAX_SYMBOL);
   const image = resolveImage(contractURI, imageUrl ?? record.image);
   const parsedMeta = parseContractURI(contractURI);
-  const description = cleanText(metadataText || (typeof parsedMeta?.description === 'string' ? parsedMeta.description : '') || record.metadata, MAX_DESCRIPTION);
+  const description = cleanText(metadataText || (typeof parsedMeta?.description === 'string' ? parsedMeta.description : '') || record.description, MAX_DESCRIPTION);
   const etherscanToken = explorerUrl(chainId, record.token);
 
   return (
@@ -283,7 +286,7 @@ export default function TokenDetailPage() {
               {shownName} <span className="text-zinc-500 font-normal">({shownSymbol})</span>
             </h1>
             <OfficialBadge version={record.version} legacy={record.legacy} />
-            {record.version === 2 && isArtCoin === false && (
+            {record.version === 2 && isCoin === false && (
               <span className="px-2 py-0.5 text-xs rounded-full bg-red-600/20 text-red-300 border border-red-600/30">factory does not list this token</span>
             )}
             {record.lookalike && (
@@ -313,7 +316,7 @@ export default function TokenDetailPage() {
           feeSummary={skim ? feeSummary(skim) : undefined}
           mevActive={mevActive}
           attribution={!record.legacy}
-          mevSkimPercent={mevSkimBps !== undefined ? skimPercent(mevSkimBps) : undefined}
+          mevSkimPercent={mevSkimBps !== undefined ? skimPercent(mevSkimBps, skimDenom) : undefined}
         />
       )}
       {!rewardsLoading && poolKey && !poolMatches && (
@@ -330,10 +333,10 @@ export default function TokenDetailPage() {
           <div>
             <p className="text-sm font-medium text-violet-200">Anti-sniper skim active</p>
             <p className="text-xs text-violet-300/80 mt-1">
-              Current skim: <strong>{skimPercent(mevSkimBps).toFixed(2)}%</strong> of volume, decaying to the baseline{mevRemaining !== undefined ? ` in ${formatDuration(mevRemaining)}` : ''}.
+              Current skim: <strong>{skimPercent(mevSkimBps, skimDenom).toFixed(2)}%</strong> of volume, decaying to the baseline{mevRemaining !== undefined ? ` in ${formatDuration(mevRemaining)}` : ''}.
             </p>
           </div>
-          <div className="text-2xl font-bold text-violet-100">{skimPercent(mevSkimBps).toFixed(2)}%</div>
+          <div className="text-2xl font-bold text-violet-100">{skimPercent(mevSkimBps, skimDenom).toFixed(2)}%</div>
         </div>
       )}
 
@@ -359,10 +362,6 @@ export default function TokenDetailPage() {
               )
             }
           />
-          <InfoRow
-            label="Creator flag"
-            value={<span title="Set by the token's own admin. It is not a trust signal.">{creatorConfirmed ? 'admin set the verified flag' : 'not set'}</span>}
-          />
         </InfoCard>
 
         {record.version === 2 && <RestrictionPanel token={record.token} admin={currentAdmin} fromBlock={record.blockNumber} />}
@@ -385,7 +384,7 @@ export default function TokenDetailPage() {
           {record.startingTick !== null && supplyWhole !== undefined && (
             <InfoRow label="Launch fdv" value={`${impliedFdvEth(record.startingTick, supplyWhole).toLocaleString(undefined, { maximumFractionDigits: 2 })} ETH`} />
           )}
-          {skim && <InfoRow label="Fees" value={`${feePercent(skim.lpFee).toFixed(2)}% lp + ${skimPercent(skim.baselineSkimBps).toFixed(2)}% skim`} />}
+          {skim && <InfoRow label="Fees" value={`${feePercent(skim.lpFeePips).toFixed(2)}% lp + ${skimPercent(skim.baselineSkimBps, skimDenom).toFixed(2)}% skim`} />}
           {poolKey && <InfoRow label="Tick spacing" value={poolKey.tickSpacing} />}
           <InfoRow label="Hook" value={<CopyableAddress address={record.hook} explorerUrl={explorerUrl(chainId, record.hook)} />} />
           <InfoRow label="Pool ID" value={<span className="font-mono text-xs">{shortAddr(record.poolId)}</span>} />
@@ -396,11 +395,11 @@ export default function TokenDetailPage() {
         <InfoCard title="Fee distribution">
           {skim ? (
             <div className="space-y-3 text-sm">
-              <div className="flex justify-between"><span className="text-zinc-400">LP fee</span><span>{feePercent(skim.lpFee).toFixed(2)}% of the swap</span></div>
-              <div className="flex justify-between"><span className="text-zinc-400">Baseline skim</span><span>{skimPercent(skim.baselineSkimBps).toFixed(2)}% of volume</span></div>
+              <div className="flex justify-between"><span className="text-zinc-400">LP fee</span><span>{feePercent(skim.lpFeePips).toFixed(2)}% of the swap</span></div>
+              <div className="flex justify-between"><span className="text-zinc-400">Baseline skim</span><span>{skimPercent(skim.baselineSkimBps, skimDenom).toFixed(2)}% of volume</span></div>
               <div className="flex justify-between"><span className="text-zinc-400">Bounty share of skim</span><span>{(skim.bountyBps / 100).toFixed(2)}%</span></div>
               <div className="flex justify-between"><span className="text-zinc-400">Protocol share of skim</span><span>{(100 - skim.bountyBps / 100).toFixed(2)}%</span></div>
-              <div className="flex justify-between"><span className="text-zinc-400">Referral cap</span><span>{skimPercent(skim.maxReferralBpsOfVolume).toFixed(2)}% of volume, paid from the protocol share</span></div>
+              <div className="flex justify-between"><span className="text-zinc-400">Referral cap</span><span>{skimPercent(skim.maxReferralBpsOfVolume, skimDenom).toFixed(2)}% of volume, paid from the protocol share</span></div>
               <div className="flex justify-between"><span className="text-zinc-400">Bounty recipient</span><CopyableAddress address={skim.bountyRecipient} explorerUrl={explorerUrl(chainId, skim.bountyRecipient)} /></div>
             </div>
           ) : (
@@ -437,7 +436,7 @@ export default function TokenDetailPage() {
           <InfoCard title="Anti-sniper">
             <InfoRow label="Module" value={<CopyableAddress address={mevAddr} explorerUrl={explorerUrl(chainId, mevAddr)} />} />
             <InfoRow label="Status" value={md ? (mevActive ? 'Active' : 'Completed') : '…'} />
-            {mevSkimBps !== undefined && <InfoRow label="Current skim" value={`${skimPercent(mevSkimBps).toFixed(2)}% of volume`} />}
+            {mevSkimBps !== undefined && <InfoRow label="Current skim" value={`${skimPercent(mevSkimBps, skimDenom).toFixed(2)}% of volume`} />}
             {mevRemaining !== undefined && mevActive && <InfoRow label="Time remaining" value={formatDuration(mevRemaining)} />}
           </InfoCard>
         )}

@@ -41,6 +41,14 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {console2} from "forge-std/console2.sol";
 
+/// @notice A contract that reports this build's constants hash, for wiring a
+///         setter whose target only needs to pass the IConstantsBound check.
+contract I1ConstantsStub {
+    function constantsHash() external pure returns (bytes32) {
+        return Constants.hash();
+    }
+}
+
 contract IntegrationV2ForkTest is IntegrationV2Base {
     using PoolIdLibrary for PoolKey;
 
@@ -67,11 +75,10 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         // owner launch of the credits engine coin while deprecated
         address coin1 = _ownerLaunch(c);
         PoolId pid1 = _pid(coin1);
-        assertTrue(v2.factory.isArtCoin(coin1), "coin1 recorded");
+        assertTrue(v2.factory.isCoin(coin1), "coin1 recorded");
         IArtCoinsHookV2.SkimConfig memory sc = v2.hook.skimConfig(pid1);
         assertEq(sc.bountyRecipient, address(treasury), "bounty = treasury");
         assertEq(sc.protocolRecipient, address(v2.controller), "protocol injected");
-        assertEq(sc.referralPayout, address(v2.escrow), "referral payout = escrow (D57)");
         assertFalse(_token(coin1).restricted(), "credits coin is not restricted");
         address[] memory rr = v2.locker.rewardRecipients(coin1);
         assertEq(rr.length, 2, "project slot + protocol slot");
@@ -146,8 +153,8 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         assertFalse(info.restricted);
         assertEq(info.createdAt, uint40(vm.getBlockTimestamp()));
         assertTrue(v2.hook.isOfficialPool(pid), "official pool");
-        assertTrue(v2.factory.isArtCoin(coin), "factory.isArtCoin");
-        assertFalse(v2.factory.isArtCoin(address(treasury)));
+        assertTrue(v2.factory.isCoin(coin), "factory.isCoin");
+        assertFalse(v2.factory.isCoin(address(treasury)));
         assertEq(_token(coin).launcherVersion(), 2, "token.launcherVersion() == 2");
         assertEq(_token(coin).launcher(), address(v2.factory));
         assertEq(v2.factory.STACK_VERSION(), 2);
@@ -182,7 +189,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
                 uint16 stackVersion,
                 bytes32 cfgHash,
                 address protocolRecipient,
-                address referralPayout,
                 uint16 protocolBps,
                 uint256 poolSupply,
                 uint256 extensionsSupply,
@@ -192,7 +198,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
                 (
                     uint16,
                     bytes32,
-                    address,
                     address,
                     uint16,
                     uint256,
@@ -204,7 +209,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
             assertEq(cfgHash, h, "event configHash");
             assertEq(keccak256(abi.encode(cfg)), cfgHash, "event config hashes to configHash");
             assertEq(protocolRecipient, address(v2.controller));
-            assertEq(referralPayout, address(v2.escrow));
             assertEq(protocolBps, PROTOCOL_BPS);
             assertEq(poolSupply, Constants.DEFAULT_TOKEN_SUPPLY);
             assertEq(extensionsSupply, 0);
@@ -234,7 +238,7 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         );
         bytes memory b = abi.encode(
             t.restricted(),
-            t.locked(),
+            t.allowlistLocked(),
             t.canonicalHook(),
             t.canonicalPoolId(),
             t.poolManager(),
@@ -243,11 +247,11 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         );
         bytes memory c = abi.encode(
             sw.endRecipient(),
-            sw.artCoin(),
+            sw.coin(),
             sw.poolKey(),
             sw.feeEscrow(),
             v2.factory.deploymentInfo(coin),
-            v2.factory.isArtCoin(coin)
+            v2.factory.isCoin(coin)
         );
         return keccak256(bytes.concat(a, b, c));
     }
@@ -280,7 +284,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         v2.factory.setDefaultProtocolFeeBps(Constants.MAX_PROTOCOL_FEE_BPS);
         v2.factory.setMinProtocolSkimShareBps(uint16(Constants.BPS));
         v2.factory.setProtocolRecipient(payable(other));
-        v2.factory.setReferralPayout(payable(address(otherContract)));
         v2.factory.setTeamFeeRecipient(other);
         address[] memory da = new address[](1);
         da[0] = address(otherContract);
@@ -289,7 +292,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         v2.factory.setHook(address(v2.hook), false);
         v2.factory.setLocker(address(v2.locker), false);
         v2.factory.setMevModule(address(v2.mev), false);
-        v2.factory.setEscrow(address(v2.escrow), false);
         // hook: globals only
         escrow2.addDepositor(address(v2.hook), true);
         escrow2.addDepositor(address(v2.locker), true);
@@ -308,15 +310,16 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         // protocol fee controller, burn router (protocol side, not per coin)
         v2.controller.setSplit(Constants.PFC_MIN_TREASURY_BPS);
         v2.controller.setTreasury(other);
-        v2.controller.setBurnRouter(other);
-        v2.burnRouter.setMaxImpactBps(Constants.BURN_IMPACT_MAX);
+        v2.controller.setBurnRouter(address(new I1ConstantsStub())); // valid-hash target
+
+        v2.burnRouter.setMaxImpactBps(Constants.PRICE_IMPACT_MAX);
         v2.burnRouter.setMinProcessThreshold(type(uint96).max);
         v2.burnRouter.setOpenTabCaller(other);
         // the coin's fee swapper: tunables only
         sw.setMaxSlippageBps(Constants.SWAPPER_SLIPPAGE_MAX);
         sw.setMinBlocksBetweenConverts(Constants.SWAPPER_MIN_BLOCKS_MAX);
         sw.setMaxStepIn(1);
-        sw.setMaxImpactBps(Constants.BURN_IMPACT_MAX);
+        sw.setMaxImpactBps(Constants.PRICE_IMPACT_MAX);
         sw.setSpotFloorBps(Constants.SPOT_FLOOR_MIN_BPS);
         vm.stopPrank();
 
@@ -398,7 +401,7 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
 
         // hook: holds nothing between swaps, so its rescue has nothing to take
         assertEq(address(v2.hook).balance, 0);
-        vm.expectRevert(IArtCoinsHookV2.EthTransferFailed.selector);
+        vm.expectRevert(IArtCoinsHookV2.NativeTransferFailed.selector);
         v2.hook.rescue(address(0), LIVE_OWNER, 1);
         vm.expectRevert();
         v2.hook.rescueClaims(key.currency0, LIVE_OWNER, 1);
@@ -406,7 +409,7 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         // locker: the lp position nfts are not rescuable, it holds no fees
         uint256 positionId = v2.locker.tokenRewards(coin).positionId;
         address posm = address(v2.locker.positionManager()); // read before expectRevert
-        vm.expectRevert(ArtCoinsLpLockerV2.RescueForbidden.selector);
+        vm.expectRevert(IArtCoinsLpLockerV2.RescueForbidden.selector);
         v2.locker.rescue(posm, LIVE_OWNER, positionId);
         assertEq(address(v2.locker).balance, 0);
         assertEq(IERC20(coin).balanceOf(address(v2.locker)), 0);

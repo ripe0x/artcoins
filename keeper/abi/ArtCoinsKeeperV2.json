@@ -5,6 +5,19 @@
   },
   {
     "type": "function",
+    "name": "STACK_VERSION",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "collectAndForward",
     "inputs": [
       {
@@ -61,7 +74,7 @@
         "internalType": "uint256"
       },
       {
-        "name": "accruedArtCoin",
+        "name": "accruedCoin",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -211,11 +224,6 @@
   },
   {
     "type": "error",
-    "name": "EthTransferFailed",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "InsufficientGas",
     "inputs": [
       {
@@ -227,7 +235,12 @@
   },
   {
     "type": "error",
-    "name": "NotArtCoin",
+    "name": "NativeTransferFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotCoin",
     "inputs": [
       {
         "name": "token",

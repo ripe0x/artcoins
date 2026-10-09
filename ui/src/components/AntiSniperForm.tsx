@@ -58,8 +58,8 @@ export default function AntiSniperForm({ value, onChange, issues, baselinePercen
             <label className="block text-sm font-medium text-zinc-300 mb-1.5">
               Starting skim: <span className="text-violet-400 font-semibold">{value.startPercent}%</span> of volume
             </label>
-            <input type="range" min={baselinePercent} max={MAX_SKIM_BPS / 1_000} step={0.01} value={value.startPercent} onChange={(e) => set('startPercent', Number(e.target.value))} className="w-full accent-violet-500" />
-            <p className={hintClass}>Decays linearly to the {baselinePercent}% baseline over the window. The maximum is {MAX_SKIM_BPS / 1_000}%.</p>
+            <input type="range" min={baselinePercent} max={MAX_SKIM_BPS / 100} step={0.01} value={value.startPercent} onChange={(e) => set('startPercent', Number(e.target.value))} className="w-full accent-violet-500" />
+            <p className={hintClass}>Decays linearly to the {baselinePercent}% baseline over the window. The maximum is {MAX_SKIM_BPS / 100}%.</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-zinc-300 mb-1.5">

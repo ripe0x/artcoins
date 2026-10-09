@@ -16,6 +16,19 @@ export const tokenV2Abi = [
   },
   {
     "type": "function",
+    "name": "allowlistLocked",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "burn",
     "inputs": [
       {
@@ -73,7 +86,7 @@ export const tokenV2Abi = [
   },
   {
     "type": "function",
-    "name": "context",
+    "name": "contractURI",
     "inputs": [],
     "outputs": [
       {
@@ -86,7 +99,7 @@ export const tokenV2Abi = [
   },
   {
     "type": "function",
-    "name": "contractURI",
+    "name": "description",
     "inputs": [],
     "outputs": [
       {
@@ -168,8 +181,19 @@ export const tokenV2Abi = [
   },
   {
     "type": "function",
-    "name": "isVerified",
-    "inputs": [],
+    "name": "isTransferRestricted",
+    "inputs": [
+      {
+        "name": "from",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "to",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
     "outputs": [
       {
         "name": "",
@@ -207,7 +231,7 @@ export const tokenV2Abi = [
   },
   {
     "type": "function",
-    "name": "lock",
+    "name": "lockAllowlist",
     "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
@@ -221,46 +245,7 @@ export const tokenV2Abi = [
   },
   {
     "type": "function",
-    "name": "locked",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "metadata",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "string",
-        "internalType": "string"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "metadataRenderer",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "originalAdmin",
     "inputs": [],
     "outputs": [
       {
@@ -396,6 +381,19 @@ export const tokenV2Abi = [
   },
   {
     "type": "function",
+    "name": "updateDescription",
+    "inputs": [
+      {
+        "name": "description_",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "updateImage",
     "inputs": [
       {
@@ -404,26 +402,6 @@ export const tokenV2Abi = [
         "internalType": "string"
       }
     ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "updateMetadata",
-    "inputs": [
-      {
-        "name": "metadata_",
-        "type": "string",
-        "internalType": "string"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "verify",
-    "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
@@ -455,19 +433,25 @@ export const tokenV2Abi = [
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
+      },
+      {
+        "name": "pinned",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
       }
     ],
     "anonymous": false
   },
   {
     "type": "event",
-    "name": "ContractURIUpdated",
+    "name": "AllowlistLocked",
     "inputs": [],
     "anonymous": false
   },
   {
     "type": "event",
-    "name": "Locked",
+    "name": "ContractURIUpdated",
     "inputs": [],
     "anonymous": false
   },
@@ -517,6 +501,19 @@ export const tokenV2Abi = [
   },
   {
     "type": "event",
+    "name": "UpdateDescription",
+    "inputs": [
+      {
+        "name": "description",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "UpdateImage",
     "inputs": [
       {
@@ -524,38 +521,6 @@ export const tokenV2Abi = [
         "type": "string",
         "indexed": false,
         "internalType": "string"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "UpdateMetadata",
-    "inputs": [
-      {
-        "name": "metadata",
-        "type": "string",
-        "indexed": false,
-        "internalType": "string"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "Verified",
-    "inputs": [
-      {
-        "name": "admin",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "token",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -584,12 +549,7 @@ export const tokenV2Abi = [
   },
   {
     "type": "error",
-    "name": "AlreadyLocked",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "AlreadyVerified",
+    "name": "AllowlistAlreadyLocked",
     "inputs": []
   },
   {
@@ -614,12 +574,12 @@ export const tokenV2Abi = [
   },
   {
     "type": "error",
-    "name": "NotOriginalAdmin",
+    "name": "NotRestricted",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "NotRestricted",
+    "name": "RecipientsAlreadyLocked",
     "inputs": []
   },
   {

@@ -4,8 +4,8 @@ import { usePublicClient, useWaitForTransactionReceipt, useWriteContract } from 
 import { useQueryClient } from '@tanstack/react-query';
 import { formatEther, parseEventLogs, type Address } from 'viem';
 import { factoryV2Abi } from '../lib/abi/v2/factory';
-import { buildLaunchConfigV2, percentToBps, percentToSkim, validateLaunch, type LaunchContext } from '../lib/encodeV2';
-import { maxReferralCapSkim, parseAllowedInput } from '../lib/launchRules';
+import { buildLaunchConfigV2, percentToBps, validateLaunch, type LaunchContext } from '../lib/encodeV2';
+import { maxReferralCapBps, parseAllowedInput } from '../lib/launchRules';
 import type { LaunchForm } from '../lib/types';
 import type { V2Stack } from '../lib/v2';
 import type { FactoryState } from '../lib/factoryState';
@@ -158,7 +158,7 @@ export default function ReviewAndDeploy({ form, ctx, v2, state, pageBlock, suppl
           <Row label="Bounty share of skim" value={pct(form.pool.bountyPercent)} />
           <Row
             label="Referral cap"
-            value={`${pct(form.pool.referralCapPercent, 3)} of volume (maximum for these fees ${pct(maxReferralCapSkim(percentToSkim(form.pool.baselineSkimPercent), percentToBps(form.pool.bountyPercent), ctx.minProtocolSkimShareBps) / 1_000, 3)}), paid to the referrer on each swap`}
+            value={`${pct(form.pool.referralCapPercent, 3)} of volume (maximum for these fees ${pct(maxReferralCapBps(percentToBps(form.pool.baselineSkimPercent), percentToBps(form.pool.bountyPercent), ctx.minProtocolSkimShareBps) / 100, 3)}), paid to the referrer on each swap`}
           />
           <Row label="Protocol keeps at least" value={`${pct(ctx.minProtocolSkimShareBps / 100)} of the skim`} />
           <Row label="Anti sniper" value={mev.enabled ? `${pct(mev.startPercent)} decaying to ${pct(form.pool.baselineSkimPercent)} over ${mev.windowMin} min` : 'Off'} />

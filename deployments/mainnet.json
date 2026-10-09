@@ -1381,7 +1381,7 @@
       "deployedAt": "2026-10-07",
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
-        "repoPath": "src/v2/keepers/CollectFlushKeeperV1.sol",
+        "repoPath": "src/legacy/keepers/CollectFlushKeeperV1.sol",
         "commit": "f756b1e9d2ba3c349687a5447575f4cd31124d52",
         "bytecodeMatch": "verified",
         "profile": "default",

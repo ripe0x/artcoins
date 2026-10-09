@@ -7,7 +7,10 @@ import {Constants} from "../../src/Constants.sol";
 import {IBurnRouterV2} from "../../src/v2/interfaces/IBurnRouterV2.sol";
 import {BurnRouterV2} from "../../src/v2/protocol-fee/BurnRouterV2.sol";
 
+import {IConstantsBound} from "../../src/v2/interfaces/IConstantsBound.sol";
+
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
@@ -51,8 +54,14 @@ contract OpenTabCaller is IUnlockCallback {
     receive() external payable {}
 }
 
+/// @notice A hook built against a different `Constants` set.
+contract BRWrongHashHook {
+    function constantsHash() external pure returns (bytes32) {
+        return keccak256("wrong");
+    }
+}
+
 /// @title  BurnRouterV2ForkTest
-/// @notice DESIGN b6, review LF-03, LF-04, LF-09, LF-12.
 /// Run: /tmp/claude-0/forge.sh test --match-path test/v2/BurnRouterV2.fork.t.sol -vv
 contract BurnRouterV2ForkTest is P1Base {
     BurnRouterV2 internal router;
@@ -127,9 +136,9 @@ contract BurnRouterV2ForkTest is P1Base {
         _fund(2 ether);
         assertEq(router.openTabCaller(), address(0));
         OpenTabCaller caller = new OpenTabCaller(pm, router);
-        vm.expectRevert(BurnRouterV2.NotOpenTabCaller.selector);
+        vm.expectRevert(IBurnRouterV2.NotOpenTabCaller.selector);
         caller.go();
-        vm.expectRevert(BurnRouterV2.NotOpenTabCaller.selector);
+        vm.expectRevert(IBurnRouterV2.NotOpenTabCaller.selector);
         router.processBurnOpenTab(0);
     }
 
@@ -137,7 +146,7 @@ contract BurnRouterV2ForkTest is P1Base {
         _fund(2 ether);
         OpenTabCaller caller = new OpenTabCaller(pm, router);
         vm.expectEmit(true, true, false, false, address(router));
-        emit BurnRouterV2.OpenTabCallerSet(address(0), address(caller));
+        emit IBurnRouterV2.OpenTabCallerSet(address(0), address(caller));
         router.setOpenTabCaller(address(caller));
         caller.go();
         assertGt(caller.lastEthIn(), 0, "gated caller burns");
@@ -148,10 +157,10 @@ contract BurnRouterV2ForkTest is P1Base {
         OpenTabCaller allowed = new OpenTabCaller(pm, router);
         OpenTabCaller other = new OpenTabCaller(pm, router);
         router.setOpenTabCaller(address(allowed));
-        vm.expectRevert(BurnRouterV2.NotOpenTabCaller.selector);
+        vm.expectRevert(IBurnRouterV2.NotOpenTabCaller.selector);
         other.go();
         vm.prank(attacker);
-        vm.expectRevert(BurnRouterV2.NotOpenTabCaller.selector);
+        vm.expectRevert(IBurnRouterV2.NotOpenTabCaller.selector);
         router.processBurnOpenTab(0);
 
         // owner only, and zero disables again
@@ -161,7 +170,7 @@ contract BurnRouterV2ForkTest is P1Base {
         );
         router.setOpenTabCaller(attacker);
         router.setOpenTabCaller(address(0));
-        vm.expectRevert(BurnRouterV2.NotOpenTabCaller.selector);
+        vm.expectRevert(IBurnRouterV2.NotOpenTabCaller.selector);
         allowed.go();
     }
 
@@ -174,7 +183,7 @@ contract BurnRouterV2ForkTest is P1Base {
     }
 
     function test_burnV2_spotFloor_bounds() public {
-        assertEq(router.spotFloorBps(), Constants.SPOT_FLOOR_BPS, "default 80%");
+        assertEq(router.spotFloorBps(), Constants.BURN_SPOT_FLOOR_DEFAULT_BPS, "default 80%");
         uint256 lo = Constants.SPOT_FLOOR_MIN_BPS;
         uint256 hi = Constants.SPOT_FLOOR_MAX_BPS;
         vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, lo - 1, lo, hi));
@@ -182,7 +191,7 @@ contract BurnRouterV2ForkTest is P1Base {
         vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, hi + 1, lo, hi));
         router.setSpotFloorBps(hi + 1);
         vm.expectEmit(false, false, false, true, address(router));
-        emit BurnRouterV2.SpotFloorBpsSet(Constants.SPOT_FLOOR_BPS, lo);
+        emit IBurnRouterV2.SpotFloorBpsSet(Constants.BURN_SPOT_FLOOR_DEFAULT_BPS, lo);
         router.setSpotFloorBps(lo);
         assertEq(router.spotFloorBps(), lo);
         router.setSpotFloorBps(hi);
@@ -199,7 +208,9 @@ contract BurnRouterV2ForkTest is P1Base {
     function test_burnV2_hooklessPool_rawSpotFloor() public {
         assertEq(router.poolBaselineSkimBps(), 0);
         assertEq(router.poolLpFee(), 0);
-        assertEq(router.floorFor(1 ether), _expectedFloor(1 ether, Constants.SPOT_FLOOR_BPS));
+        assertEq(
+            router.floorFor(1 ether), _expectedFloor(1 ether, Constants.BURN_SPOT_FLOOR_DEFAULT_BPS)
+        );
         router.syncPoolFees();
         BurnRouterV2 r = new BurnRouterV2(address(this), address(pm), address(escrow));
         vm.expectRevert(IBurnRouterV2.NotInitialized.selector);
@@ -208,7 +219,9 @@ contract BurnRouterV2ForkTest is P1Base {
 
     /// @notice The floor the view reports and the burn enforces uses the stored bps.
     function test_burnV2_spotFloor_usesStoredValue() public {
-        assertEq(router.floorFor(1 ether), _expectedFloor(1 ether, Constants.SPOT_FLOOR_BPS));
+        assertEq(
+            router.floorFor(1 ether), _expectedFloor(1 ether, Constants.BURN_SPOT_FLOOR_DEFAULT_BPS)
+        );
         router.setSpotFloorBps(Constants.SPOT_FLOOR_MAX_BPS);
         assertEq(router.floorFor(1 ether), _expectedFloor(1 ether, Constants.SPOT_FLOOR_MAX_BPS));
         router.setSpotFloorBps(Constants.SPOT_FLOOR_MIN_BPS);
@@ -309,9 +322,9 @@ contract BurnRouterV2ForkTest is P1Base {
     }
 
     function test_burnV2_impact_bounds() public {
-        assertEq(router.maxImpactBps(), Constants.BURN_IMPACT_DEFAULT);
-        uint16 lo = Constants.BURN_IMPACT_MIN;
-        uint16 hi = Constants.BURN_IMPACT_MAX;
+        assertEq(router.maxImpactBps(), Constants.PRICE_IMPACT_DEFAULT);
+        uint16 lo = Constants.PRICE_IMPACT_MIN;
+        uint16 hi = Constants.PRICE_IMPACT_MAX;
         vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, lo - 1, lo, hi));
         router.setMaxImpactBps(lo - 1);
         vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, hi + 1, lo, hi));
@@ -349,6 +362,15 @@ contract BurnRouterV2ForkTest is P1Base {
         bad = key;
         bad.fee = 3000; // not initialized
         vm.expectRevert(IBurnRouterV2.InvalidPoolKey.selector);
+        r.initialize(address(coin), bad);
+
+        // A9-03: the hook the router binds to must report this build's constants hash
+        address wrongHook = address(new BRWrongHashHook());
+        bad = key;
+        bad.hooks = IHooks(wrongHook);
+        vm.expectRevert(
+            abi.encodeWithSelector(IConstantsBound.ConstantsMismatch.selector, wrongHook)
+        );
         r.initialize(address(coin), bad);
 
         vm.prank(attacker);
@@ -421,7 +443,7 @@ contract BurnRouterV2ForkTest is P1Base {
         vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, hi + 1, lo, hi));
         router.setMaxBurnPerCall(hi + 1);
         vm.expectEmit(false, false, false, true, address(router));
-        emit BurnRouterV2.MaxBurnPerCallSet(5 ether, lo);
+        emit IBurnRouterV2.MaxBurnPerCallSet(5 ether, lo);
         router.setMaxBurnPerCall(lo);
 
         _fund(1 ether);
@@ -440,7 +462,7 @@ contract BurnRouterV2ForkTest is P1Base {
     }
 
     function test_burnV2_unlockCallback_onlyPoolManager() public {
-        vm.expectRevert(BurnRouterV2.NotPoolManager.selector);
+        vm.expectRevert(IBurnRouterV2.NotPoolManager.selector);
         router.unlockCallback(abi.encode(uint256(1), uint160(1)));
     }
 }

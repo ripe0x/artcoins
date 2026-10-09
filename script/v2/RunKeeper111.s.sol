@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {CollectFlushKeeperV1} from "../../src/v2/keepers/CollectFlushKeeperV1.sol";
+import {CollectFlushKeeperV1} from "../../src/legacy/keepers/CollectFlushKeeperV1.sol";
 import {Script, console2} from "forge-std/Script.sol";
 
 /// @notice Deploys `CollectFlushKeeperV1` pinned to the live coin 111 stack. Dry run unless the operator

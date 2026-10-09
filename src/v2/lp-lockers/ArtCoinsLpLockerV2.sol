@@ -7,6 +7,7 @@ import {IArtCoinsHookV2} from "../interfaces/IArtCoinsHookV2.sol";
 import {IArtCoinsLpLockerV2} from "../interfaces/IArtCoinsLpLockerV2.sol";
 import {IArtCoinsTokenV2} from "../interfaces/IArtCoinsTokenV2.sol";
 import {IConstantsBound} from "../interfaces/IConstantsBound.sol";
+import {IFactoryTokenDeployer} from "../interfaces/IFactoryTokenDeployer.sol";
 import {FeeDelivery} from "../libraries/FeeDelivery.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
@@ -25,75 +26,45 @@ import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmounts.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
-/// @dev Minimal read of the factory for the reward recipient reject set.
-interface IFactoryTokenDeployer {
-    function tokenDeployer() external view returns (address);
-}
-
 /// @title  ArtCoinsLpLockerV2
-/// @notice Holds each v2 coin's launch liquidity forever (no decrease path) and
-///         splits collected lp fees. The split bps are set once at launch; the
-///         coin admin may change a project reward recipient, the protocol slot
-///         stays frozen. Shares are pushed (eth with a gas cap, coin with a
+/// @notice Holds each v2 coin's launch liquidity (no decrease path) and
+///         splits collected lp fees. The split bps are set once at launch. The
+///         coin admin may change a reward recipient until the coin locks its
+///         recipients or renounces its admin. The protocol slot is fixed at
+///         launch and is the last reward element when present. Shares are pushed (eth with a gas cap, coin with a
 ///         plain transfer); a failed push is credited to the recipient in the
 ///         fee escrow.
-/// @dev    Native eth paired pools only (D17): currency0 is eth, currency1 is
+/// @dev    Native eth paired pools only: currency0 is eth, currency1 is
 ///         the coin. The locker holds nothing between calls; any balance is
 ///         stray and rescuable.
-///         LF-01: there is no "without unlock" collect. `collectRewards` opens
-///         its own PositionManager unlock, refuses to run while the
-///         PoolManager is already unlocked, and sizes amounts from its own
-///         balance deltas.
+///         `collectRewards` opens its own PositionManager unlock, reverts
+///         while the PoolManager is already unlocked, and sizes amounts from
+///         its own balance deltas.
 contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuardTransient {
     using TransientStateLibrary for IPoolManager;
     using PoolIdLibrary for PoolKey;
-
-    // ── additive errors (not in the frozen interface) ─────────────────────
-
-    /// @notice `collectRewards` was called while the PoolManager is unlocked
-    ///         by someone else (LF-01 attack shape).
-    error PoolManagerUnlocked();
-    /// @notice Pool key is not a native eth pair of `token` with the configured
-    ///         hook and tick spacing.
-    error UnsupportedPoolKey();
-    /// @notice Rescue target is the PositionManager (lp nfts are never movable).
-    error RescueForbidden();
-    /// @notice Native eth may only arrive from the PoolManager.
-    error UnexpectedEth();
-    /// @notice The caller is not the coin's current admin.
-    error NotCoinAdmin();
-    /// @notice The coin's recipients are frozen (the coin called `lockRecipients`
-    ///         or renounced its admin).
-    error RecipientsLocked();
-    /// @notice `setRewardRecipient` index is past the reward slots.
-    error RewardIndexOutOfRange();
-    /// @notice The protocol reward slot is frozen; the coin admin changes the
-    ///         project slots.
-    error ProtocolSlotFrozen();
-    /// @notice A reward recipient the factory launch checks reject for this role:
-    ///         the coin, this locker, its fee escrow, the pool hook's fee escrow,
-    ///         the pool's hook, the PoolManager, the PositionManager, the pool's
-    ///         mev module, the factory or its token deployer.
-    error RecipientCannotReceive(address recipient);
-    /// @notice A reject-set lookup (token deployer, pool mev module or pool hook
-    ///         fee escrow) reverted, so the recipient could not be verified. The
-    ///         setter refuses the change rather than skip a check.
-    error RecipientCheckFailed();
 
     /// @notice Gas forwarded on each native reward push. A recipient that
     ///         needs more is credited in the escrow instead.
     uint256 public constant PUSH_GAS = Constants.PUSH_GAS_MAX;
 
+    /// @notice PositionManager that holds the launch positions.
     IPositionManager public immutable positionManager;
+    /// @notice Uniswap v4 PoolManager of `positionManager`.
     IPoolManager public immutable poolManager;
+    /// @notice Permit2 used to approve coin transfers into `positionManager`.
     IPermit2 public immutable permit2;
 
     /// @inheritdoc IArtCoinsLpLockerV2
     uint256 public keeperRewardBps;
     /// @inheritdoc IArtCoinsLpLockerV2
-    uint256 public keeperRewardCap = 0.01 ether;
+    uint256 public keeperRewardCap = Constants.LOCKER_KEEPER_CAP_DEFAULT;
     /// @inheritdoc IArtCoinsLpLockerV2
     address public feeEscrow;
+    /// @dev Every fee escrow this locker has been wired to, set in the
+    ///      constructor and in `setFeeEscrow`. A reward recipient can never be
+    ///      one of them, so a rotated-out escrow stays rejected.
+    mapping(address => bool) internal _knownEscrow;
     /// @inheritdoc IArtCoinsLpLockerV2
     mapping(address launcher => bool) public isLauncher;
 
@@ -103,6 +74,10 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     ///      launch data. `setRewardRecipient` refuses this slot.
     mapping(address token => uint256) internal _protocolSlotPlusOne;
 
+    /// @param owner_           Owner (Ownable2Step).
+    /// @param positionManager_ Uniswap v4 PositionManager.
+    /// @param permit2_         Permit2.
+    /// @param feeEscrow_       Fee escrow; must report this build's `constantsHash()`.
     constructor(address owner_, address positionManager_, address permit2_, address feeEscrow_)
         Ownable(owner_)
     {
@@ -118,6 +93,9 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         if (msg.sender != address(poolManager)) revert UnexpectedEth();
     }
 
+    /// @inheritdoc IArtCoinsLpLockerV2
+    uint16 public constant STACK_VERSION = Constants.STACK_VERSION;
+
     /// @inheritdoc IConstantsBound
     function constantsHash() external pure returns (bytes32) {
         return Constants.hash();
@@ -129,24 +107,19 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     /// @dev Pulls `poolSupply` of `token` from the launcher (prior approval),
     ///         mints coin only positions below the starting price and freezes
     ///         the split. Rounding dust of the coin is sent to `Constants.DEAD`.
-    ///         `protocolSlotIndex` is the reward slot the launcher appended for
-    ///         the protocol (frozen against `setRewardRecipient`);
-    ///         `type(uint256).max` means no protocol slot.
+    ///         When `hasProtocolSlot` the last reward element is the protocol
+    ///         slot, frozen against `setRewardRecipient`.
     function placeLiquidity(
         IArtCoinsFactoryV2.LockerConfigV2 calldata lockerConfig,
         IArtCoinsFactoryV2.PoolConfigV2 calldata poolConfig,
         PoolKey calldata poolKey,
         uint256 poolSupply,
         address token,
-        uint256 protocolSlotIndex
+        bool hasProtocolSlot
     ) external nonReentrant returns (uint256 positionId) {
         if (!isLauncher[msg.sender]) revert NotLauncher();
         if (token == address(0)) revert ZeroAddress();
         if (_tokenRewards[token].numPositions != 0) revert TokenAlreadyHasRewards();
-        if (
-            protocolSlotIndex != type(uint256).max
-                && protocolSlotIndex >= lockerConfig.rewardRecipients.length
-        ) revert RewardIndexOutOfRange();
 
         address hook = address(poolKey.hooks);
         if (
@@ -157,13 +130,12 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
 
         _validateRewards(lockerConfig.rewardRecipients, lockerConfig.rewardBps);
         uint256 numPositions =
-            _validatePositions(lockerConfig, poolConfig.tickIfToken0IsArtCoin, poolKey.tickSpacing);
+            _validatePositions(lockerConfig, poolConfig.tickIfToken0IsCoin, poolKey.tickSpacing);
 
         uint256 balBefore = SafeTransferLib.balanceOf(token, address(this));
         SafeTransferLib.safeTransferFrom(token, msg.sender, address(this), poolSupply);
 
-        positionId =
-            _mint(lockerConfig, poolConfig.tickIfToken0IsArtCoin, poolKey, poolSupply, token);
+        positionId = _mint(lockerConfig, poolConfig.tickIfToken0IsCoin, poolKey, poolSupply, token);
 
         // send any coin left after placement (rounding dust) to the burn sink
         uint256 balAfter = SafeTransferLib.balanceOf(token, address(this));
@@ -178,8 +150,9 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         info.numPositions = numPositions;
         info.rewardBps = lockerConfig.rewardBps;
         info.rewardRecipients = lockerConfig.rewardRecipients;
-        if (protocolSlotIndex != type(uint256).max) {
-            _protocolSlotPlusOne[token] = protocolSlotIndex + 1;
+        // the protocol slot, when present, is the last reward element.
+        if (hasProtocolSlot) {
+            _protocolSlotPlusOne[token] = lockerConfig.rewardRecipients.length;
         }
 
         emit TokenRewardAdded({
@@ -192,7 +165,8 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
             rewardRecipients: lockerConfig.rewardRecipients,
             tickLower: lockerConfig.tickLower,
             tickUpper: lockerConfig.tickUpper,
-            positionBps: lockerConfig.positionBps
+            positionBps: lockerConfig.positionBps,
+            hasProtocolSlot: hasProtocolSlot
         });
     }
 
@@ -207,7 +181,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         if (h != Constants.hash()) revert ConstantsMismatch(target);
     }
 
-    /// @dev FT-10: every array length is checked, nothing is truncated.
+    /// @dev every array length is checked, nothing is truncated.
     function _validateRewards(address[] calldata recipients, uint16[] calldata bps) private view {
         uint256 n = bps.length;
         if (n != recipients.length) revert MismatchedRewardArrays();
@@ -216,7 +190,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         uint256 total;
         for (uint256 i; i < n; ++i) {
             if (bps[i] == 0) revert ZeroRewardAmount();
-            // LF-05: a zero recipient would strand its share; the locker
+            // a zero recipient would strand its share; the locker
             // itself cannot receive eth and would trap the coin side.
             if (recipients[i] == address(0) || recipients[i] == address(this)) {
                 revert ZeroAddress();
@@ -255,7 +229,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
 
     function _mint(
         IArtCoinsFactoryV2.LockerConfigV2 calldata cfg,
-        int24 tickIfToken0IsArtCoin,
+        int24 tickIfToken0IsCoin,
         PoolKey calldata poolKey,
         uint256 poolSupply,
         address token
@@ -263,7 +237,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         uint256 n = cfg.tickLower.length;
         bytes memory actions = new bytes(n + 1);
         bytes[] memory params = new bytes[](n + 1);
-        uint160 sqrtStart = TickMath.getSqrtPriceAtTick(-tickIfToken0IsArtCoin);
+        uint160 sqrtStart = TickMath.getSqrtPriceAtTick(-tickIfToken0IsCoin);
 
         for (uint256 i; i < n; ++i) {
             actions[i] = bytes1(uint8(Actions.MINT_POSITION));
@@ -293,7 +267,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         actions[n] = bytes1(uint8(Actions.SETTLE_PAIR));
         params[n] = abi.encode(poolKey.currency0, poolKey.currency1);
 
-        // D37: solady tokens (ArtCoinsTokenV2) fix the Permit2 allowance at
+        // solady tokens (ArtCoinsTokenV2) fix the Permit2 allowance at
         // infinity and revert any approve to it; skip the erc20 approve and
         // its reset for them. Other tokens get the exact amount, reset after.
         bool fixedInfinite =
@@ -321,14 +295,14 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     }
 
     /// @dev Collect path shared by `collectRewards` and `setRewardRecipient`.
-    ///      Refuses to run inside a foreign unlock (LF-01), pays the keeper, and
+    ///      Refuses to run inside a foreign unlock, pays the keeper, and
     ///      pushes every current recipient share. Callers hold the reentrancy
     ///      lock.
     function _collectAndDistribute(address token) private {
         TokenRewardInfoV2 storage info = _tokenRewards[token];
         uint256 n = info.numPositions;
         if (n == 0) revert TokenNotFound();
-        // LF-01: never run inside a foreign unlock, where PositionManager
+        // never run inside a foreign unlock, where PositionManager
         // deltas are shared with whoever holds the lock.
         if (poolManager.isUnlocked()) revert PoolManagerUnlocked();
 
@@ -449,11 +423,12 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
 
     /// @dev Reverts `RecipientCannotReceive` when `r` is a stack contract that
     ///      cannot hold a reward. Resolves the factory from the coin, the token
-    ///      deployer from the factory and the mev module from the pool's hook;
-    ///      an unreachable read is skipped.
+    ///      deployer from the factory and the mev module from the pool's hook. A
+    ///      read that reverts fails closed with `RecipientCheckFailed`: the
+    ///      change is refused.
     function _rejectRewardRecipient(address token, PoolKey memory key, address r) private view {
         if (
-            r == token || r == address(this) || r == feeEscrow || r == address(key.hooks)
+            r == token || r == address(this) || _knownEscrow[r] || r == address(key.hooks)
                 || r == address(poolManager) || r == address(positionManager)
         ) revert RecipientCannotReceive(r);
         address factory = IArtCoinsTokenV2(token).launcher();
@@ -493,7 +468,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     /// @inheritdoc IArtCoinsLpLockerV2
     function setKeeperRewardBps(uint256 newBps) external onlyOwner {
         if (newBps > Constants.LOCKER_KEEPER_BPS_MAX) {
-            revert KeeperRewardBpsOutOfBounds(newBps, Constants.LOCKER_KEEPER_BPS_MAX);
+            revert OutOfBounds(newBps, 0, Constants.LOCKER_KEEPER_BPS_MAX);
         }
         emit KeeperRewardBpsSet(keeperRewardBps, newBps);
         keeperRewardBps = newBps;
@@ -502,7 +477,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     /// @inheritdoc IArtCoinsLpLockerV2
     function setKeeperRewardCap(uint256 newCap) external onlyOwner {
         if (newCap < Constants.LOCKER_KEEPER_CAP_MIN || newCap > Constants.LOCKER_KEEPER_CAP_MAX) {
-            revert KeeperRewardCapOutOfBounds(
+            revert OutOfBounds(
                 newCap, Constants.LOCKER_KEEPER_CAP_MIN, Constants.LOCKER_KEEPER_CAP_MAX
             );
         }
@@ -522,6 +497,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         _checkConstants(escrow);
         emit FeeEscrowSet(feeEscrow, escrow);
         feeEscrow = escrow;
+        _knownEscrow[escrow] = true;
     }
 
     /// @inheritdoc IArtCoinsLpLockerV2
@@ -540,7 +516,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         if (token == address(positionManager)) revert RescueForbidden();
         if (token == address(0)) {
             (bool ok,) = payable(to).call{value: amount}("");
-            if (!ok) revert EthTransferFailed();
+            if (!ok) revert NativeTransferFailed();
         } else {
             SafeTransferLib.safeTransfer(token, to, amount);
         }

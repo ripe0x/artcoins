@@ -22,7 +22,7 @@ if (id.toLowerCase() !== t.poolId.toLowerCase()) throw new Error('pool id mismat
 
 const skim = normalizeSkim(await client.readContract({ address: t.hook, abi: hookV1Abi, functionName: 'skimConfig', args: [t.poolId] }));
 console.log('skim', skim);
-if (!skim || skim.baselineSkimBps !== 6000 || skim.bountyBps !== 8333 || skim.maxReferralBpsOfVolume !== 250 || skim.lpFee !== 5000) throw new Error('unexpected skim config');
+if (!skim || skim.baselineSkimBps !== 6000 || skim.bountyBps !== 8333 || skim.maxReferralBpsOfVolume !== 250 || skim.lpFeePips !== 5000) throw new Error('unexpected skim config');
 
 console.log('mev currentSkimBps', await client.readContract({ address: t.mevModule, abi: mevLinearSkimV1Abi, functionName: 'currentSkimBps', args: [t.poolId] }));
 console.log('mev operational', await client.readContract({ address: t.mevModule, abi: mevLinearSkimV1Abi, functionName: 'operational', args: [t.poolId] }));

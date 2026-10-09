@@ -21,7 +21,7 @@ import {ArtCoinsHookV2} from "../../../src/v2/hooks/ArtCoinsHookV2.sol";
 import {IArtCoinsFactoryV2} from "../../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsHookV2} from "../../../src/v2/interfaces/IArtCoinsHookV2.sol";
 import {ArtCoinsMevLinearSkimV2} from "../../../src/v2/mev-modules/ArtCoinsMevLinearSkimV2.sol";
-import {HV2ConstantsStub, HV2ReferralPayout, HV2SwapSeqRouter, IHV2Erc20} from "./HookV2Mocks.sol";
+import {HV2ConstantsStub, HV2SwapSeqRouter, IHV2Erc20} from "./HookV2Mocks.sol";
 
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
@@ -53,9 +53,9 @@ abstract contract HookV2ForkBase is Test {
     uint256 internal constant LIQ = 1000e18;
 
     // default pool fee config (coin 111 live values)
-    uint24 internal constant BASELINE = 6000;
+    uint24 internal constant BASELINE = 600;
     uint16 internal constant BOUNTY_BPS = 8333;
-    uint24 internal constant MAX_REF = 250;
+    uint24 internal constant MAX_REF = 25;
     uint24 internal constant LP_FEE = 5000;
 
     bool internal onFork;
@@ -70,7 +70,6 @@ abstract contract HookV2ForkBase is Test {
     ArtCoinsPoolExtensionAllowlist internal allowlist;
     ArtCoinsHookV2 internal hook;
     HV2ConstantsStub internal lockerStub;
-    HV2ReferralPayout internal payout;
     address payable internal protocolR = payable(makeAddr("protocolRecipient"));
     address payable internal bountyEoa = payable(makeAddr("bountyEoa"));
     uint256 internal tokenNonce;
@@ -83,7 +82,6 @@ abstract contract HookV2ForkBase is Test {
         uint24 maxRef;
         address module;
         address extension;
-        address referralPayout;
         bytes mevConfig;
     }
 
@@ -119,7 +117,6 @@ abstract contract HookV2ForkBase is Test {
         hook.setLauncher(address(this), true);
 
         lockerStub = new HV2ConstantsStub(Constants.hash());
-        payout = new HV2ReferralPayout();
 
         if (onFork) {
             swapRouter = new PoolSwapTest(pm);
@@ -145,7 +142,6 @@ abstract contract HookV2ForkBase is Test {
         l.baseline = BASELINE;
         l.bountyBps = BOUNTY_BPS;
         l.maxRef = MAX_REF;
-        l.referralPayout = address(payout);
     }
 
     function _newToken(bool restricted, address, address hook_)
@@ -189,7 +185,7 @@ abstract contract HookV2ForkBase is Test {
         returns (IArtCoinsHookV2.PoolInitParams memory p)
     {
         p.token = token;
-        p.tickIfToken0IsArtCoin = 0;
+        p.tickIfToken0IsCoin = 0;
         p.tickSpacing = TS;
         p.locker = address(lockerStub);
         p.mevModule = l.module;
@@ -198,11 +194,9 @@ abstract contract HookV2ForkBase is Test {
             baselineSkimBps: l.baseline,
             bountyBps: l.bountyBps,
             maxReferralBpsOfVolume: l.maxRef,
-            lpFee: LP_FEE,
+            lpFeePips: LP_FEE,
             bountyRecipient: payable(l.bounty),
-            protocolRecipient: protocolR,
-            referralPayout: payable(l.referralPayout),
-            quoteToken: address(0)
+            protocolRecipient: protocolR
         });
     }
 

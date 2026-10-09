@@ -20,7 +20,7 @@ import {
   coinIsCurrency0,
   priceImpactPercent,
 } from '../lib/swap';
-import { encodeSwapHookData } from '../lib/attribution';
+import { encodeSwapHookData, V1_DEFAULT_REFERRAL_OF_VOLUME } from '../lib/attribution';
 import { getV2Stack } from '../lib/v2';
 import { useReferrer } from '../lib/useReferrer';
 import { latestChainTimestamp, permit2Expiration as permit2ExpirationFor, sellApprovalSteps } from '../lib/chainClock';
@@ -94,8 +94,12 @@ export default function SwapWidget({ tokenAddress, tokenSymbol, poolKey, feeSumm
   const isV2Pool = !!v2Hook && poolKey.hooks.toLowerCase() === v2Hook.toLowerCase();
   const refundTo = isV2Pool ? address : undefined;
   const hookData: Hex = useMemo(
-    () => (attribution ? encodeSwapHookData({ referrer: referrer.referrer ?? undefined, refundTo }) : '0x'),
-    [attribution, referrer.referrer, refundTo]
+    () => (attribution ? encodeSwapHookData({
+        referrer: referrer.referrer ?? undefined,
+        refundTo,
+        referralBpsOfVolume: isV2Pool ? undefined : V1_DEFAULT_REFERRAL_OF_VOLUME,
+      }) : '0x'),
+    [attribution, referrer.referrer, refundTo, isV2Pool]
   );
 
   // ── balances ────────────────────────────────────────────────────────

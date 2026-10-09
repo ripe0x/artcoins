@@ -37,8 +37,8 @@ contract MevLinearSkimV2Test is Test {
     PoolId internal constant POOL = PoolId.wrap(bytes32(uint256(0xA11CE)));
     PoolId internal constant POOL2 = PoolId.wrap(bytes32(uint256(0xB0B)));
 
-    uint24 internal constant START = 68_690;
-    uint24 internal constant END = 6000;
+    uint24 internal constant START = 6869;
+    uint24 internal constant END = 600;
     uint32 internal constant WINDOW = 69 minutes;
     uint256 internal constant T0 = 1_800_000_000;
 
@@ -66,7 +66,7 @@ contract MevLinearSkimV2Test is Test {
         uint32 over = Constants.MAX_MEV_WINDOW + 1;
         vm.expectRevert(
             abi.encodeWithSelector(
-                IArtCoinsMevSkimV2.WindowOutOfBounds.selector,
+                IArtCoinsMevSkimV2.OutOfBounds.selector,
                 over,
                 Constants.MIN_MEV_WINDOW,
                 Constants.MAX_MEV_WINDOW
@@ -79,7 +79,7 @@ contract MevLinearSkimV2Test is Test {
         uint32 under = Constants.MIN_MEV_WINDOW - 1;
         vm.expectRevert(
             abi.encodeWithSelector(
-                IArtCoinsMevSkimV2.WindowOutOfBounds.selector,
+                IArtCoinsMevSkimV2.OutOfBounds.selector,
                 under,
                 Constants.MIN_MEV_WINDOW,
                 Constants.MAX_MEV_WINDOW
@@ -116,12 +116,12 @@ contract MevLinearSkimV2Test is Test {
 
     function test_mevV2_endAboveStart_reverts() public {
         vm.expectRevert(IArtCoinsMevSkimV2.InvalidConfig.selector);
-        hookMock.init(mod, POOL, _cfg3(5000, WINDOW, 5001));
+        hookMock.init(mod, POOL, _cfg3(500, WINDOW, 501));
     }
 
     function test_mevV2_endAboveBaselineCap_reverts() public {
         vm.expectRevert(IArtCoinsMevSkimV2.InvalidConfig.selector);
-        hookMock.init(mod, POOL, _cfg3(60_000, WINDOW, Constants.MAX_BASELINE_SKIM_BPS + 1));
+        hookMock.init(mod, POOL, _cfg3(6000, WINDOW, Constants.MAX_BASELINE_SKIM_BPS + 1));
     }
 
     function test_mevV2_badConfigLength_reverts() public {
@@ -211,7 +211,7 @@ contract MevLinearSkimV2Test is Test {
         (s, a) = mod.currentSkimBps(POOL);
         uint24 mid = uint24(uint256(START) - (uint256(START - END) * (WINDOW / 2)) / WINDOW);
         assertEq(s, mid, "t=50%");
-        assertEq(s, 37_345, "t=50% literal");
+        assertEq(s, 3735, "t=50% literal");
         assertTrue(a);
 
         vm.warp(T0 + WINDOW - 1);
@@ -261,9 +261,7 @@ contract MevLinearSkimV2Test is Test {
     function test_mevV2_startTimeIsInitTime_andEventsEmitted() public {
         vm.warp(T0 + 123);
         vm.expectEmit(true, false, false, true, address(mod));
-        emit IArtCoinsMevSkimV2.MevConfigInitialized(POOL, START, WINDOW, uint40(T0 + 123));
-        vm.expectEmit(true, false, false, true, address(mod));
-        emit ArtCoinsMevLinearSkimV2.MevEndSkimSet(POOL, END);
+        emit IArtCoinsMevSkimV2.MevConfigInitialized(POOL, START, END, WINDOW, uint40(T0 + 123));
         _init3();
         ArtCoinsMevLinearSkimV2.SkimSchedule memory s = mod.schedule(POOL);
         assertEq(s.startTime, T0 + 123);

@@ -1,5 +1,5 @@
 // Form state for the v2 launch flow. Percent fields are human units; encodeV2.ts converts to the
-// contract units (pips for the lp fee, 1e5 skim denominator, bps).
+// contract units (pips for the lp fee, bps for skims and shares).
 
 export interface TokenFormState {
   name: string;
@@ -9,8 +9,7 @@ export interface TokenFormState {
   /** whole tokens, '' or '0' = factory default (1B) */
   totalSupply: string;
   image: string;
-  metadata: string;
-  context: string;
+  description: string;
   /** metadata renderer, '' = none (default on chain json) */
   renderer: string;
 }
@@ -18,16 +17,16 @@ export interface TokenFormState {
 export interface PoolFormState {
   /** v4 tick spacing. Positions and the starting tick must be multiples of it */
   tickSpacing: number;
-  /** `tickIfToken0IsArtCoin`: the starting tick as if the coin were currency0. The coin is always
+  /** `tickIfToken0IsCoin`: the starting tick as if the coin were currency0. The coin is always
    *  currency1 against native eth, the contracts mirror it (pool tick = -startingTick). */
   startingTick: number;
   /** lp fee, percent of the swap amount (pips / 10_000). Max 10 */
   lpFeePercent: number;
-  /** baseline skim, percent of volume (skim units / 1_000). Max 10 */
+  /** baseline skim, percent of volume (bps / 100). Max 10 */
   baselineSkimPercent: number;
   /** bounty share of the skim, percent (bps / 100). The rest is the protocol side */
   bountyPercent: number;
-  /** referral cap, percent of volume (skim units / 1_000). Max 1 */
+  /** referral cap, percent of volume (bps / 100). Max 1 */
   referralCapPercent: number;
   /** receives the bounty share, defaults to the connected wallet */
   bountyRecipient: string;

@@ -11,7 +11,7 @@ import InfoCard from './InfoCard';
 import InfoRow from './InfoRow';
 import { inputClass } from './formStyles';
 
-const allowedSet = parseAbiItem('event AllowedSet(address indexed account, bool allowed)');
+const allowedSet = parseAbiItem('event AllowedSet(address indexed account, bool allowed, bool pinned)');
 
 interface Props {
   token: Address;
@@ -21,7 +21,7 @@ interface Props {
   fromBlock: bigint;
 }
 
-/** Restriction status of a v2 coin, with the admin controls (setAllowed, unrestrict, lock). */
+/** Restriction status of a v2 coin, with the admin controls (setAllowed, unrestrict, lockAllowlist). */
 export default function RestrictionPanel({ token, admin, fromBlock }: Props) {
   const gate = useWalletGate();
   const client = usePublicClient();
@@ -29,7 +29,7 @@ export default function RestrictionPanel({ token, admin, fromBlock }: Props) {
   const { data, refetch } = useReadContracts({
     contracts: [
       { ...base, functionName: 'restricted' },
-      { ...base, functionName: 'locked' },
+      { ...base, functionName: 'allowlistLocked' },
     ],
     allowFailure: true,
     query: { staleTime: 15_000 },
@@ -56,7 +56,7 @@ export default function RestrictionPanel({ token, admin, fromBlock }: Props) {
   const isAdmin = !!gate.address && !!admin && gate.address.toLowerCase() === admin.toLowerCase();
   const busy = isPending || confirming;
 
-  const send = async (fn: 'setAllowed' | 'unrestrict' | 'lock', args?: readonly [Address, boolean], confirmText?: string) => {
+  const send = async (fn: 'setAllowed' | 'unrestrict' | 'lockAllowlist', args?: readonly [Address, boolean], confirmText?: string) => {
     if (!client || !gate.address) return;
     if (confirmText && !window.confirm(confirmText)) return;
     setError(null);
@@ -91,7 +91,7 @@ export default function RestrictionPanel({ token, admin, fromBlock }: Props) {
     <InfoCard title="Transfer restriction">
       <InfoRow label="Restriction" value={status} />
       {restricted && <InfoRow label="Allowlist entries" value={allowlist ? allowlist.length : '...'} />}
-      <InfoRow label="Locked" value={locked === undefined ? '...' : locked ? 'yes, the allowlist and the switch are frozen' : 'no'} />
+      <InfoRow label="Allowlist locked" value={locked === undefined ? '...' : locked ? 'yes, the allowlist and the switch are frozen' : 'no'} />
       {isAdmin && locked === false && (
         <div className="mt-3 space-y-3 border-t border-zinc-800 pt-3 text-xs text-zinc-400">
           {restricted && (
@@ -118,13 +118,13 @@ export default function RestrictionPanel({ token, admin, fromBlock }: Props) {
             <button
               type="button"
               disabled={busy}
-              onClick={() => void send('lock', undefined, 'Lock the allowlist and the restriction switch? This is permanent. Entries can no longer change and the coin can no longer be unrestricted.')}
+              onClick={() => void send('lockAllowlist', undefined, 'Lock the allowlist and the restriction switch? This is permanent. Entries can no longer change and the coin can no longer be unrestricted.')}
               className="rounded border border-amber-600 px-3 py-1 text-amber-300 disabled:opacity-40"
             >
-              Lock
+              Lock allowlist
             </button>
           </div>
-          <p>Unrestrict and lock are permanent.</p>
+          <p>Unrestrict and lock allowlist are permanent.</p>
           {busy && <p>Waiting for the transaction...</p>}
           {error && <p className="text-red-400 break-words">{error}</p>}
         </div>

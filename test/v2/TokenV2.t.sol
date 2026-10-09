@@ -271,16 +271,16 @@ contract TokenV2Test is TokenV2Base {
         ArtCoinsTokenV2 token = _restricted(new address[](0));
         vm.prank(address(0xDEAD));
         vm.expectRevert(IArtCoinsTokenV2.NotAdmin.selector);
-        token.lock();
+        token.lockAllowlist();
 
-        token.lock();
-        assertTrue(token.locked());
-        vm.expectRevert(IArtCoinsTokenV2.AlreadyLocked.selector);
+        token.lockAllowlist();
+        assertTrue(token.allowlistLocked());
+        vm.expectRevert(IArtCoinsTokenV2.AllowlistAlreadyLocked.selector);
         token.setAllowed(address(0xA11CE), true);
-        vm.expectRevert(IArtCoinsTokenV2.AlreadyLocked.selector);
+        vm.expectRevert(IArtCoinsTokenV2.AllowlistAlreadyLocked.selector);
         token.unrestrict();
-        vm.expectRevert(IArtCoinsTokenV2.AlreadyLocked.selector);
-        token.lock();
+        vm.expectRevert(IArtCoinsTokenV2.AllowlistAlreadyLocked.selector);
+        token.lockAllowlist();
     }
 
     function test_constructor_unrestrictedRejectsAllowlist() public {
@@ -303,7 +303,7 @@ contract TokenV2Test is TokenV2Base {
         assertFalse(token.isAllowed(address(0xC0C0)));
     }
 
-    // ── metadata and admin (unchanged behavior) ─────────────────────────────
+    // ── metadata and admin ───────────────────────────────────────────────────
 
     function test_metadata_defaultUri() public {
         ArtCoinsTokenV2 token = _plain();

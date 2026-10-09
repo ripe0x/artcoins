@@ -26,7 +26,6 @@ import {ArtCoinsLpLockerV2} from "../../../../src/v2/lp-lockers/ArtCoinsLpLocker
 import {ArtCoinsMevLinearSkimV2} from "../../../../src/v2/mev-modules/ArtCoinsMevLinearSkimV2.sol";
 import {ArtCoinsDeployerV2} from "../../../../src/v2/utils/ArtCoinsDeployerV2.sol";
 import {ForkBase} from "../../harness/ForkBase.sol";
-import {FV2Payout} from "../../mocks/FactoryV2Mocks.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
@@ -78,7 +77,6 @@ contract V2FFactoryReviewTest is ForkBase {
     ArtCoinsMevLinearSkimV2 internal mev;
     ArtCoinsVaultV2 internal vault;
     ArtCoinsUniv4EthDevBuyV2 internal devBuy;
-    FV2Payout internal payout;
 
     address payable internal protocolR = payable(makeAddr("v2f.protocolRecipient"));
     address internal team = makeAddr("v2f.team");
@@ -117,7 +115,6 @@ contract V2FFactoryReviewTest is ForkBase {
         escrow.addDepositor(address(locker), true);
         locker.setLauncher(address(factory), true);
         mev = new ArtCoinsMevLinearSkimV2(address(hook));
-        payout = new FV2Payout();
         vault = new ArtCoinsVaultV2(address(factory));
         devBuy = new ArtCoinsUniv4EthDevBuyV2(address(factory), POOL_MANAGER);
 
@@ -128,7 +125,6 @@ contract V2FFactoryReviewTest is ForkBase {
         factory.setExtension(address(vault), true);
         factory.setExtension(address(devBuy), true);
         factory.setProtocolRecipient(protocolR);
-        factory.setReferralPayout(payable(address(payout)));
         factory.setTeamFeeRecipient(team);
         factory.setDeprecated(false);
     }
@@ -141,18 +137,17 @@ contract V2FFactoryReviewTest is ForkBase {
         c.token.symbol = "V2F";
         c.token.salt = bytes32(uint256(7));
         c.token.image = "ipfs://image";
-        c.token.metadata = "{}";
-        c.token.context = "v2f";
+        c.token.description = "{}";
 
         c.pool.hook = address(hook);
-        c.pool.tickIfToken0IsArtCoin = START;
+        c.pool.tickIfToken0IsCoin = START;
         c.pool.tickSpacing = TS;
 
         c.fee = IArtCoinsFactoryV2.FeeConfigV2({
-            lpFee: 5000,
-            baselineSkimBps: 6000,
+            lpFeePips: 5000,
+            baselineSkimBps: 600,
             bountyBps: 8333,
-            maxReferralBpsOfVolume: 250,
+            maxReferralBpsOfVolume: 25,
             bountyRecipient: bounty
         });
 
@@ -217,7 +212,7 @@ contract V2FFactoryReviewTest is ForkBase {
     /// original attack: the owner sets minProtocolSkimShareBps = 2000 ("the
     /// protocol keeps at least 20% of the skim", ui encodeV2.ts:288). a public
     /// launcher picks the max bounty the factory allowed (8000), the max
-    /// referral cap (1% of volume) and lpFee 0. any swapper that names a
+    /// referral cap (1% of volume) and lpFeePips 0. any swapper that names a
     /// referrer (D44: its own wallet is fine) moved the whole protocol leg to
     /// that referrer, so the protocol earned 0 from the skim, and the 20%
     /// locker slot earned 0 because there was no lp fee to share.
@@ -229,10 +224,10 @@ contract V2FFactoryReviewTest is ForkBase {
         factory.setMinProtocolSkimShareBps(2000);
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
         c.mev = IArtCoinsFactoryV2.MevConfigV2(address(0), 0, 0); // no window, baseline only
-        c.fee.baselineSkimBps = 1000; // 1% of volume
+        c.fee.baselineSkimBps = 100; // 1% of volume
         c.fee.bountyBps = 8000; // old max accepted: BPS - minProtocolSkimShareBps
         c.fee.maxReferralBpsOfVolume = Constants.MAX_REFERRAL_CAP_OF_VOLUME; // 1%
-        c.fee.lpFee = 0;
+        c.fee.lpFeePips = 0;
 
         // V2F-01: the old attack config is refused because the 1% referral cap
         // cannot fit above a 20% floor with an 80% bounty.
@@ -243,18 +238,18 @@ contract V2FFactoryReviewTest is ForkBase {
         // the largest cap that fits: baseline 1000, bounty 5000, floor 2000
         // gives referral <= 1000 * (10000 - 5000 - 2000) / 10000 = 300 (0.3% of volume).
         c.fee.bountyBps = 5000;
-        c.fee.maxReferralBpsOfVolume = 301;
+        c.fee.maxReferralBpsOfVolume = 31;
         vm.prank(alice);
         vm.expectRevert(ArtCoinsFactoryV2.ReferralCapAboveProtocolFloor.selector);
         factory.deployToken{value: FEE}(c);
-        c.fee.maxReferralBpsOfVolume = 300;
-        c.fee.lpFee = 5000; // a nonzero lp fee so the protocol locker slot earns
+        c.fee.maxReferralBpsOfVolume = 30;
+        c.fee.lpFeePips = 5000; // a nonzero lp fee so the protocol locker slot earns
         vm.prank(alice);
         address token = factory.deployToken{value: FEE}(c);
         PoolKey memory key = _key(token);
 
         // control: no referrer, the protocol leg is 50% of the 1% baseline skim
-        uint256 base = 1 ether * 1000 / Constants.SKIM_DENOMINATOR;
+        uint256 base = 1 ether * 100 / Constants.BPS;
         uint256 floor = base * factory.minProtocolSkimShareBps() / Constants.BPS;
         uint256 p0 = protocolR.balance;
         swapExactIn(key, true, 1 ether, address(this), "");
@@ -267,7 +262,7 @@ contract V2FFactoryReviewTest is ForkBase {
         p0 = protocolR.balance;
         uint256 r0 = referrerEoa.balance;
         uint256 b0 = bounty.balance;
-        swapExactIn(key, true, 1 ether, address(this), _attribution(referrerEoa, 1000));
+        swapExactIn(key, true, 1 ether, address(this), _attribution(referrerEoa, 100));
         uint256 protocolWithRef = protocolR.balance - p0;
         uint256 referral = referrerEoa.balance - r0;
         assertGt(referral, 0, "referrer paid");
@@ -346,8 +341,7 @@ contract V2FFactoryReviewTest is ForkBase {
             c.token.name = _filled(64);
             c.token.symbol = _filled(16);
             c.token.image = _filled(2048);
-            c.token.metadata = _filled(4096);
-            c.token.context = _filled(4096);
+            c.token.description = _filled(4096);
         }
         if (slots) {
             c.locker.rewardRecipients = new address[](6);
@@ -409,7 +403,7 @@ contract V2FFactoryReviewTest is ForkBase {
             _maxCfg(true, true, true, true);
         console2.log("token creationCode bytes", type(ArtCoinsTokenV2).creationCode.length);
         (address token, uint256 total) = _measure(c, v, "max: every cap at its limit");
-        assertTrue(factory.isArtCoin(token));
+        assertTrue(factory.isCoin(token));
         assertLt(total, TX_GAS_CAP, "the heaviest launch fits under the EIP-7825 cap");
     }
 

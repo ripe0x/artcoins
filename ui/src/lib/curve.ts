@@ -46,16 +46,16 @@ export function tickToPrice(tick: number): number {
 }
 
 /**
- * Coin price in eth at the starting tick. `tickIfToken0IsArtCoin` is the tick with the coin as
+ * Coin price in eth at the starting tick. `tickIfToken0IsCoin` is the tick with the coin as
  * currency0, so price token1/token0 = eth per coin = 1.0001^tick.
  */
-export function startPriceEthPerCoin(tickIfToken0IsArtCoin: number): number {
-  return tickToPrice(tickIfToken0IsArtCoin);
+export function startPriceEthPerCoin(tickIfToken0IsCoin: number): number {
+  return tickToPrice(tickIfToken0IsCoin);
 }
 
 /** implied fully diluted value in eth at the starting price, `supply` in whole coins */
-export function impliedFdvEth(tickIfToken0IsArtCoin: number, supplyWholeCoins: number): number {
-  return startPriceEthPerCoin(tickIfToken0IsArtCoin) * supplyWholeCoins;
+export function impliedFdvEth(tickIfToken0IsCoin: number, supplyWholeCoins: number): number {
+  return startPriceEthPerCoin(tickIfToken0IsCoin) * supplyWholeCoins;
 }
 
 export interface CurvePosition {
