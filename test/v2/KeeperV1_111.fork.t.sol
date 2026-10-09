@@ -5,7 +5,7 @@ import {RunKeeper111} from "../../script/v2/RunKeeper111.s.sol";
 import {IArtCoinsFeeLocker} from "../../src/interfaces/IArtCoinsFeeLocker.sol";
 import {IArtCoinsLpLocker} from "../../src/interfaces/IArtCoinsLpLocker.sol";
 import {IFeeAutoSwapper} from "../../src/interfaces/IFeeAutoSwapper.sol";
-import {CollectFlushKeeperV1} from "../../src/v2/keepers/CollectFlushKeeperV1.sol";
+import {CollectFlushKeeperV1} from "../../src/legacy/keepers/CollectFlushKeeperV1.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";

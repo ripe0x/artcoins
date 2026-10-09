@@ -4,7 +4,7 @@ pragma solidity ^0.8.26;
 // targets the SUPERSEDED legacy stack (LAYER: locker 0x75BE, fee locker 0x1143, controller 0x5fDc, routers).
 // mainnet runs are refused unless ALLOW_SUPERSEDED=1. addresses come from script/Addresses.sol (registry).
 
-import {CollectFlushKeeperLayer} from "../../src/v2/keepers/CollectFlushKeeperLayer.sol";
+import {CollectFlushKeeperLayer} from "../../src/legacy/keepers/CollectFlushKeeperLayer.sol";
 import {Addresses} from "../Addresses.sol";
 import {Script, console2} from "forge-std/Script.sol";
 

@@ -5,7 +5,7 @@ import {Addresses} from "../../script/Addresses.sol";
 import {RunKeeperLayer} from "../../script/v2/RunKeeperLayer.s.sol";
 import {IArtCoinsFeeLocker} from "../../src/interfaces/IArtCoinsFeeLocker.sol";
 import {IArtCoinsLpLocker} from "../../src/interfaces/IArtCoinsLpLocker.sol";
-import {CollectFlushKeeperLayer} from "../../src/v2/keepers/CollectFlushKeeperLayer.sol";
+import {CollectFlushKeeperLayer} from "../../src/legacy/keepers/CollectFlushKeeperLayer.sol";
 import {ForkBase} from "./harness/ForkBase.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
