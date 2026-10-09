@@ -17,7 +17,7 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 /// @notice Protocol fee recipient. Splits what it holds between `treasury`
 ///         and `burnRouter`; each share stays at or above its Constants
 ///         minimum. Delivery is push with escrow fallback (FeeDelivery).
-/// @dev    v1 differences (review LF-10, DESIGN section 2):
+/// @dev    Properties:
 ///         - split is owner settable within [PFC_MIN_TREASURY_BPS,
 ///           BPS - PFC_MIN_BURN_BPS].
 ///         - `setBurnRouter` no longer calls the old router, so a broken
@@ -127,7 +127,7 @@ contract ProtocolFeeControllerV2 is
     }
 
     /// @inheritdoc IProtocolFeeControllerV2
-    /// @dev No call into the old router (LF-10): rotation always works.
+    /// @dev No call into the old router: rotation always works.
     function setBurnRouter(address burnRouter_) external onlyOwner {
         if (burnRouter_ == address(0)) revert ZeroAddress();
         emit BurnRouterSet(burnRouter, burnRouter_);

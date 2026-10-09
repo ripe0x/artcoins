@@ -23,14 +23,13 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 ///         own native eth pool inside the launch tx. The swap goes straight to
 ///         the PoolManager (`unlock` then `swap`, `settle` eth, `take` coin to
 ///         the recipient). v2 pools are always native eth against the coin, so
-///         there is no wrap and no intermediate hop (the v1 hop leg and its
-///         caller chosen minimum on a public pool are gone).
+///         there is no wrap and no intermediate hop.
 ///
 ///         Pool key: the factory hands the key of the pool it just created to
 ///         `receiveTokens`. It is checked against the launch config (hook) and
 ///         the coin (currency0 native, currency1 the coin).
 ///
-///         D1, slippage: `minTokenOut` must be nonzero (`ZeroMinOut`). A floor
+///         Slippage: `minTokenOut` must be nonzero (`ZeroMinOut`). A floor
 ///         derived from the pool starting price would be wrong for any buy that
 ///         moves the price, which on a fresh pool is most of them, so the
 ///         deployer supplies the floor and the ui computes it from the exact

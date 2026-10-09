@@ -27,7 +27,7 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
 /// @title  BurnRouterV2
 /// @notice Buys one v2 art coin with the native eth it holds and burns it.
-/// @dev    v1 differences (review LF-03, LF-04, LF-09, LF-12, DESIGN b6):
+/// @dev    Properties:
 ///         - one burn per block across both entry points (`lastBurnBlock`),
 ///           so the per call impact limit cannot be looped inside a tx.
 ///         - the swap is exact input with a price limit `maxImpactBps` below
@@ -61,22 +61,22 @@ contract BurnRouterV2 is
     /// @notice The swap returned a delta with an unexpected sign or size.
     error BadDelta();
 
-    /// @notice D31: `processBurnOpenTab` caller is not `openTabCaller`.
+    /// @notice `processBurnOpenTab` caller is not `openTabCaller`.
     error NotOpenTabCaller();
 
     event KeeperRewardFailed(address indexed caller, uint256 amount);
-    /// @notice D31: owner set the only address allowed to call `processBurnOpenTab`.
+    /// @notice owner set the only address allowed to call `processBurnOpenTab`.
     event OpenTabCallerSet(address indexed oldCaller, address indexed newCaller);
-    /// @notice D32: owner moved the output floor (bps of the spot implied output).
+    /// @notice owner moved the output floor (bps of the spot implied output).
     event SpotFloorBpsSet(uint256 oldBps, uint256 newBps);
-    /// @notice D50: the pool's known fees were (re)read from the hook.
+    /// @notice the pool's known fees were (re)read from the hook.
     event PoolFeesSynced(
         PoolId indexed poolId, address indexed coin, uint256 baselineSkimBps, uint256 lpFeePips
     );
-    /// @notice D40: owner moved the per burn eth cap.
+    /// @notice owner moved the per burn eth cap.
     event MaxBurnPerCallSet(uint256 oldMax, uint256 newMax);
 
-    /// @notice D40, D61: per burn eth cap bounds and default, read from `Constants`.
+    /// @notice per burn eth cap bounds and default, read from `Constants`.
     uint256 public constant MAX_BURN_PER_CALL_MIN = Constants.BURN_MAX_PER_CALL_MIN;
     uint256 public constant MAX_BURN_PER_CALL_MAX = Constants.BURN_MAX_PER_CALL_MAX;
     uint256 public constant DEFAULT_MAX_BURN_PER_CALL = Constants.BURN_MAX_PER_CALL_DEFAULT;
@@ -99,17 +99,17 @@ contract BurnRouterV2 is
     uint16 public maxImpactBps;
     /// @inheritdoc IBurnRouterV2
     uint96 public minProcessThreshold;
-    /// @notice D32: output floor in bps of the spot implied output, owner
+    /// @notice output floor in bps of the spot implied output, owner
     ///         tunable within [SPOT_FLOOR_MIN_BPS, SPOT_FLOOR_MAX_BPS].
     uint16 internal _spotFloorBps;
-    /// @notice D31: the only caller of `processBurnOpenTab`; zero disables it.
+    /// @notice the only caller of `processBurnOpenTab`; zero disables it.
     address public openTabCaller;
-    /// @notice D40: most eth offered to the pool per burn, so a large balance
+    /// @notice most eth offered to the pool per burn, so a large balance
     ///         drains over blocks instead of failing its floor.
     uint256 public maxBurnPerCall;
-    /// @notice D50: pool baseline skim (BPS of volume) the floor nets out.
+    /// @notice pool baseline skim (BPS of volume) the floor nets out.
     uint24 public poolBaselineSkimBps;
-    /// @notice D50: pool lp fee (FEE_DENOMINATOR units) the floor nets out.
+    /// @notice pool lp fee (FEE_DENOMINATOR units) the floor nets out.
     uint24 public poolLpFee;
 
     constructor(address owner_, address poolManager_, address feeEscrow_) Ownable(owner_) {
@@ -118,11 +118,11 @@ contract BurnRouterV2 is
         feeEscrow = feeEscrow_;
         maxImpactBps = Constants.PRICE_IMPACT_DEFAULT;
         minProcessThreshold = DEFAULT_MIN_PROCESS_THRESHOLD;
-        _spotFloorBps = uint16(Constants.SPOT_FLOOR_BPS);
+        _spotFloorBps = uint16(Constants.BURN_SPOT_FLOOR_DEFAULT_BPS);
         maxBurnPerCall = DEFAULT_MAX_BURN_PER_CALL;
         emit MaxImpactBpsSet(0, Constants.PRICE_IMPACT_DEFAULT);
         emit MinProcessThresholdSet(0, DEFAULT_MIN_PROCESS_THRESHOLD);
-        emit SpotFloorBpsSet(0, Constants.SPOT_FLOOR_BPS);
+        emit SpotFloorBpsSet(0, Constants.BURN_SPOT_FLOOR_DEFAULT_BPS);
         emit MaxBurnPerCallSet(0, DEFAULT_MAX_BURN_PER_CALL);
     }
 
@@ -149,7 +149,7 @@ contract BurnRouterV2 is
         _syncFees(key);
     }
 
-    /// @notice D50: anyone re reads the pool's known fees from the hook.
+    /// @notice anyone re reads the pool's known fees from the hook.
     ///         It can only set what the hook reports, so it is not gated.
     function syncPoolFees() external {
         if (coin == address(0)) revert NotInitialized();
@@ -172,7 +172,7 @@ contract BurnRouterV2 is
     }
 
     /// @inheritdoc IBurnRouterV2
-    /// @dev D31: only `openTabCaller` (owner set, default none). Must run
+    /// @dev only `openTabCaller` (owner set, default none). Must run
     ///      while that caller holds the PoolManager unlock; otherwise the
     ///      PoolManager reverts `ManagerLocked`.
     ///      Shares `lastBurnBlock` with `processBurn`, so an outer caller that
@@ -212,7 +212,7 @@ contract BurnRouterV2 is
     }
 
     /// @notice Coin output floor a burn enforces for `ethIn` consumed at the
-    ///         current spot. Same computation as the enforced check (LF-12);
+    ///         current spot. Same computation as the enforced check;
     ///         the effective minimum is `max(minOut, floorFor(consumed))`.
     function floorFor(uint256 ethIn) external view returns (uint256) {
         if (coin == address(0)) return 0;
@@ -220,7 +220,7 @@ contract BurnRouterV2 is
         return _spotFloor(ethIn, spot);
     }
 
-    /// @notice D32: current output floor in bps.
+    /// @notice current output floor in bps.
     function spotFloorBps() external view returns (uint256) {
         return _spotFloorBps;
     }
@@ -269,7 +269,7 @@ contract BurnRouterV2 is
         minProcessThreshold = threshold;
     }
 
-    /// @notice D40: sets the per burn eth cap within
+    /// @notice sets the per burn eth cap within
     ///         [Constants.BURN_MAX_PER_CALL_MIN, Constants.BURN_MAX_PER_CALL_MAX].
     function setMaxBurnPerCall(uint256 maxEth) external onlyOwner {
         if (maxEth < Constants.BURN_MAX_PER_CALL_MIN || maxEth > Constants.BURN_MAX_PER_CALL_MAX) {
@@ -281,13 +281,13 @@ contract BurnRouterV2 is
         maxBurnPerCall = maxEth;
     }
 
-    /// @notice D31: sets the only `processBurnOpenTab` caller; zero disables it.
+    /// @notice sets the only `processBurnOpenTab` caller; zero disables it.
     function setOpenTabCaller(address caller) external onlyOwner {
         emit OpenTabCallerSet(openTabCaller, caller);
         openTabCaller = caller;
     }
 
-    /// @notice D32: sets the output floor within Constants bounds.
+    /// @notice sets the output floor within Constants bounds.
     function setSpotFloorBps(uint256 bps) external onlyOwner {
         if (bps < Constants.SPOT_FLOOR_MIN_BPS || bps > Constants.SPOT_FLOOR_MAX_BPS) {
             revert OutOfBounds(bps, Constants.SPOT_FLOOR_MIN_BPS, Constants.SPOT_FLOOR_MAX_BPS);
@@ -347,16 +347,14 @@ contract BurnRouterV2 is
     /// @dev Exact input eth (currency0) to coin (currency1). Buying the coin
     ///      lowers the price (coin per eth falls), so the limit is
     ///      spot / sqrt(1 + bps / BPS), rounded up: pre / post <= 1 + bps / BPS,
-    ///      which also bounds post / pre >= 1 - bps / BPS. The v1 linear
-    ///      `spot * (1 - x / 2)` let pre / post reach 1 + x + x^2 (LF-03, LF-09).
+    ///      which also bounds post / pre >= 1 - bps / BPS.
     ///      Must run inside an unlock. Settles and takes exactly this
     ///      router's net PoolManager deltas (read before and after the swap),
     ///      not the swap's returned delta: a hook that refunds over charged
-    ///      skim with `settleFor(router)` inside the swap (D42) lowers what is
+    ///      skim with `settleFor(router)` inside the swap lowers what is
     ///      owed without changing the returned delta. `ethIn` is the eth
     ///      actually consumed: what is owed minus any skim the hook refunded
-    ///      to this router in the escrow instead (the pre D42 shape and D42's
-    ///      fallback). Both shapes give the same `ethIn` (V2B-01, V2B-03).
+    ///      to this router in the escrow instead.
     function _swapAndSettle(uint256 budget, uint160 spot)
         internal
         returns (uint256 ethIn, uint256 coinOut)
@@ -400,7 +398,7 @@ contract BurnRouterV2 is
 
     /// @dev Checks output against `minOut` and the spot floor using the coin
     ///      actually received (balance delta), burns every coin held, pays the
-    ///      reward on consumed eth (net of any skim refund, V2B-03).
+    ///      reward on consumed eth (net of any skim refund).
     function _finish(
         uint256 ethIn,
         uint256 coinOut,
@@ -434,7 +432,7 @@ contract BurnRouterV2 is
         emit Burned(msg.sender, ethIn, burned, reward);
     }
 
-    /// @dev D50: the pool's known fees, read from `hook.skimConfig(poolId)`
+    /// @dev the pool's known fees, read from `hook.skimConfig(poolId)`
     ///      (zero for a hookless pool or a hook that does not answer), clamped
     ///      to the Constants caps. `baselineSkimBps` in BPS of volume,
     ///      `lpFeePips` in FEE_DENOMINATOR units.
@@ -464,7 +462,7 @@ contract BurnRouterV2 is
     }
 
     /// @dev Expected coin (currency1) for `ethIn` (currency0) at spot, times
-    ///      (1 - baseline skim - lp fee) (D50) times `spotFloorBps`.
+    ///      (1 - baseline skim - lp fee) times `spotFloorBps`.
     ///      price = token1 per token0.
     function _spotFloor(uint256 ethIn, uint160 sqrtPriceX96) internal view returns (uint256) {
         if (ethIn == 0 || sqrtPriceX96 == 0) return 0;

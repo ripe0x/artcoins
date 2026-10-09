@@ -22,12 +22,11 @@ import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 ///         - Each pool is configured once, in the launch transaction, and the
 ///           config is frozen after that.
 ///         - The module never touches the lp fee. It has no `beforeSwap` and
-///           does not answer the v1 `IArtCoinsMevModuleBase` or
-///           `IArtCoinsMevModule` interface ids, so it can never be enabled as a
-///           fee dialing module (review finding H9).
+///           answers only the IArtCoinsMevSkimV2 erc-165 id, so it can never be
+///           enabled as a fee dialing module.
 ///         - The window bounds are `Constants.MIN_MEV_WINDOW` and
 ///           `Constants.MAX_MEV_WINDOW`, the same cap the hook enforces
-///           (review finding H8).
+///          .
 ///
 ///         Config encoding for `initialize`:
 ///         - `abi.encode(uint24 startingSkimBps, uint32 windowSeconds)` (64 bytes,

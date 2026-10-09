@@ -69,7 +69,7 @@ interface IArtCoinsHookV2 is IConstantsBound {
         address extension; // 0 for none, must be on the extension allowlist
         bytes extensionData;
         SkimConfig skim;
-        /// @dev Additive (D52): protocol leg floor, BPS of the baseline skim.
+        /// @dev Additive: protocol leg floor, BPS of the baseline skim.
         ///      A referral is paid only from the protocol leg above it.
         uint16 minProtocolShareBps;
     }

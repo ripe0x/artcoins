@@ -403,7 +403,7 @@ contract FeeAutoSwapperV2ForkTest is P1Base {
 
     function test_swapperV2_spotFloor_bounds() public {
         assertEq(swapper.spotFloorBps(), 9500, "D39 default 95%");
-        assertEq(swapper.DEFAULT_SPOT_FLOOR_BPS(), 9500);
+        assertEq(swapper.CONVERT_SPOT_FLOOR_DEFAULT_BPS(), 9500);
         uint256 lo = Constants.SPOT_FLOOR_MIN_BPS;
         uint256 hi = Constants.SPOT_FLOOR_MAX_BPS;
         vm.expectRevert(

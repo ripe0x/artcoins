@@ -27,16 +27,16 @@ import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmo
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
 /// @title  ArtCoinsLpLockerV2
-/// @notice Holds each v2 coin's launch liquidity forever (no decrease path) and
+/// @notice Holds each v2 coin's launch liquidity (no decrease path) and
 ///         splits collected lp fees. The split bps are set once at launch; the
 ///         coin admin may change a project reward recipient, the protocol slot
 ///         stays frozen. Shares are pushed (eth with a gas cap, coin with a
 ///         plain transfer); a failed push is credited to the recipient in the
 ///         fee escrow.
-/// @dev    Native eth paired pools only (D17): currency0 is eth, currency1 is
+/// @dev    Native eth paired pools only: currency0 is eth, currency1 is
 ///         the coin. The locker holds nothing between calls; any balance is
 ///         stray and rescuable.
-///         LF-01: there is no "without unlock" collect. `collectRewards` opens
+///         there is no "without unlock" collect. `collectRewards` opens
 ///         its own PositionManager unlock, refuses to run while the
 ///         PoolManager is already unlocked, and sizes amounts from its own
 ///         balance deltas.
@@ -47,7 +47,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     // ── additive errors (not in the frozen interface) ─────────────────────
 
     /// @notice `collectRewards` was called while the PoolManager is unlocked
-    ///         by someone else (LF-01 attack shape).
+    ///         by someone else.
     error PoolManagerUnlocked();
     /// @notice Pool key is not a native eth pair of `token` with the configured
     ///         hook and tick spacing.
@@ -202,7 +202,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         if (h != Constants.hash()) revert ConstantsMismatch(target);
     }
 
-    /// @dev FT-10: every array length is checked, nothing is truncated.
+    /// @dev every array length is checked, nothing is truncated.
     function _validateRewards(address[] calldata recipients, uint16[] calldata bps) private view {
         uint256 n = bps.length;
         if (n != recipients.length) revert MismatchedRewardArrays();
@@ -211,7 +211,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         uint256 total;
         for (uint256 i; i < n; ++i) {
             if (bps[i] == 0) revert ZeroRewardAmount();
-            // LF-05: a zero recipient would strand its share; the locker
+            // a zero recipient would strand its share; the locker
             // itself cannot receive eth and would trap the coin side.
             if (recipients[i] == address(0) || recipients[i] == address(this)) {
                 revert ZeroAddress();
@@ -288,7 +288,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         actions[n] = bytes1(uint8(Actions.SETTLE_PAIR));
         params[n] = abi.encode(poolKey.currency0, poolKey.currency1);
 
-        // D37: solady tokens (ArtCoinsTokenV2) fix the Permit2 allowance at
+        // solady tokens (ArtCoinsTokenV2) fix the Permit2 allowance at
         // infinity and revert any approve to it; skip the erc20 approve and
         // its reset for them. Other tokens get the exact amount, reset after.
         bool fixedInfinite =
@@ -316,14 +316,14 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     }
 
     /// @dev Collect path shared by `collectRewards` and `setRewardRecipient`.
-    ///      Refuses to run inside a foreign unlock (LF-01), pays the keeper, and
+    ///      Refuses to run inside a foreign unlock, pays the keeper, and
     ///      pushes every current recipient share. Callers hold the reentrancy
     ///      lock.
     function _collectAndDistribute(address token) private {
         TokenRewardInfoV2 storage info = _tokenRewards[token];
         uint256 n = info.numPositions;
         if (n == 0) revert TokenNotFound();
-        // LF-01: never run inside a foreign unlock, where PositionManager
+        // never run inside a foreign unlock, where PositionManager
         // deltas are shared with whoever holds the lock.
         if (poolManager.isUnlocked()) revert PoolManagerUnlocked();
 

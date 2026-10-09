@@ -18,20 +18,19 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 /// @notice Escrows a launch allocation and lets leaves of a frozen merkle tree
 ///         claim it with a lockup then linear vesting.
 ///
-///         What is frozen at launch (D7): root, sweep recipient, lockup,
+///         What is frozen at launch: root, sweep recipient, lockup,
 ///         vesting, supply. There is no owner, no admin, no root update, no
-///         sweep redirect. Fixes against the v1 review:
-///         - A1: an empty root is rejected, and tranches are keyed by
+///         sweep redirect. Guarantees:
+///         - an empty root is rejected, and tranches are keyed by
 ///           `(token, extensionIndex)`, so two airdrop entries in one launch
 ///           cannot overwrite each other.
-///         - A2: the root can never be replaced. v1 let the admin swap it one
-///           day after the lockup while nothing was claimed.
-///         - A3: the sweep recipient must be nonzero and is fixed; the sweep
+///         - the root can never be replaced.
+///         - the sweep recipient must be nonzero and is fixed; the sweep
 ///           itself is permissionless and only ever pays that recipient.
 ///         - leaves are double hashed exactly as OpenZeppelin's
 ///           StandardMerkleTree (the openzeppelin merkle-tree js package), types
 ///           `["address","uint256"]`, so a leaf cannot collide with an inner node.
-///         - A4: claimed amounts are tracked per leaf, not per address, so an
+///         - claimed amounts are tracked per leaf, not per address, so an
 ///           address with two leaves is paid both. The cap that the total
 ///           claimed never exceeds the tranche supply still holds, so an over
 ///           allocated tree pays first come first served. The tree builder

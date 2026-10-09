@@ -9,9 +9,7 @@ import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
 import {DynamicBufferLib} from "solady/utils/DynamicBufferLib.sol";
 import {LibString} from "solady/utils/LibString.sol";
 
-/// @notice Any contract that counts buys and sells per token. The v1
-///         `LiquidityLayerCounterPoolExtension` implements it, so does any
-///         other counter with this one view.
+/// @notice Any contract that counts buys and sells per token behind this one view.
 interface IBuySellCounter {
     function countsForToken(address token) external view returns (uint128 buys, uint128 sells);
 }
@@ -27,19 +25,18 @@ interface ISpriteToken {
 /// @title  SpriteRendererV2
 /// @notice ERC-7572 renderer that overlays a deterministic `+` / `−` glyph pattern
 ///         on a token's base art, scaled to the buy and sell counts of an
-///         `IBuySellCounter`. Generic port of the v1 liquidity layer sprite
-///         renderer: nothing here is specific to that coin, the counter is a
-///         constructor argument behind a one function interface.
+///         `IBuySellCounter`. Nothing here is specific to a coin; the counter
+///         is a constructor argument behind a one function interface.
 ///
-/// @dev    Differences from v1:
+/// @dev    Properties:
 ///         - the base image url goes into the `href` attribute through
-///           `SvgText.attrUrl` (review R3): escaped, sanitised, dropped when longer
+///           `SvgText.attrUrl`: escaped, sanitised, dropped when longer
 ///           than `SvgText.URL_MAX`.
 ///         - name, symbol and the animation url base go into json through
 ///           `SvgText` and `LibString.escapeJSON`.
 ///         - glyph layers are built with `DynamicBufferLib` (linear), not
 ///           `string.concat` in a loop (quadratic); each glyph type is capped at
-///           `Constants.MAX_GLYPHS` (256, v1 used 200).
+///           `Constants.MAX_GLYPHS` (256).
 ///         - no owner: counter, glyph cap and the animation url base are fixed
 ///           at construction. Redeploy to change them, the token admin repoints
 ///           the token with `setMetadataRenderer`.
@@ -157,7 +154,7 @@ contract SpriteRendererV2 is IMetadataRenderer {
     /// @dev `count` elements `<text x="X" y="Y">G</text>` written straight into one
     ///      preallocated buffer (at most 32 bytes per element), no per glyph
     ///      allocation. Position is `keccak256(abi.encode(token, typeSalt, i))`
-    ///      as in v1. `glyph` is at most 3 bytes (`+` or the minus sign).
+    ///      `glyph` is at most 3 bytes (`+` or the minus sign).
     function _glyphs(address token, uint256 count, uint256 typeSalt, bytes memory glyph)
         internal
         pure

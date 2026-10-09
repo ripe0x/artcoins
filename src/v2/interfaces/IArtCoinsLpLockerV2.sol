@@ -6,8 +6,8 @@ import {IConstantsBound} from "./IConstantsBound.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
 /// @title  IArtCoinsLpLockerV2
-/// @notice Holds a coin's launch liquidity forever and splits collected lp
-///         fees. The split bps are set once at launch; the coin admin may
+/// @notice Holds a coin's launch liquidity with no decrease path and splits
+///         collected lp fees. The split bps are set once at launch; the coin admin may
 ///         change a project reward recipient, the protocol slot stays frozen.
 ///         Rewards are pushed; a failed push is credited in the fee escrow.
 ///         There is no liquidity decrease path.

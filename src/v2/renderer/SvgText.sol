@@ -23,14 +23,14 @@ import {LibString} from "solady/utils/LibString.sol";
 ///         `text` and `attr` then escape `& < > " '` with solady
 ///         `LibString.escapeHTML` (covers all five), so the output is safe in a
 ///         text node and in a single or double quoted attribute value. The json
-///         helpers apply `LibString.escapeJSON`, the same helper v1 uses.
+///         helpers apply `LibString.escapeJSON`.
 ///
 ///         Not covered: an escaped url is still a url. Consumers that follow
 ///         `href` values are their own responsibility (an svg rendered through
 ///         `<img>` does not execute scripts or load external resources).
 library SvgText {
-    /// @dev Caps follow decision D30 (token name 64, symbol 16, image url 2048,
-    ///      metadata 4096). The token bounds its own strings; these caps are the
+    /// @dev Caps: token name 64, symbol 16, image url 2048, description 4096
+    ///      bytes. The token bounds its own strings; these caps are the
     ///      defensive second line so render gas stays provable.
     /// @dev json `name` field.
     uint256 internal constant NAME_MAX = 64;

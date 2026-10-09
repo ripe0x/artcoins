@@ -78,8 +78,10 @@ library Constants {
     /// @notice Keeper reward on consumed amounts, capped.
     uint256 internal constant KEEPER_REWARD_BPS = 50;
     uint256 internal constant KEEPER_REWARD_CAP = 0.01 ether;
-    /// @notice Post swap output floor against spot, in BPS.
-    uint256 internal constant SPOT_FLOOR_BPS = 8000;
+    /// @notice Burn router initial fee net spot floor, in BPS. The swapper's
+    ///         convert floor default (9500) is contract local; both are owner
+    ///         tunable within [SPOT_FLOOR_MIN_BPS, SPOT_FLOOR_MAX_BPS].
+    uint256 internal constant BURN_SPOT_FLOOR_DEFAULT_BPS = 8000;
     uint256 internal constant SPOT_FLOOR_MIN_BPS = 5000;
     uint256 internal constant SPOT_FLOOR_MAX_BPS = 9500;
     /// @notice Fee swapper owner bounds.
@@ -162,6 +164,7 @@ library Constants {
     }
 
     function _hashKeeper() private pure returns (bytes32) {
-        return keccak256(abi.encode(KEEPER_REWARD_BPS, KEEPER_REWARD_CAP, SPOT_FLOOR_BPS));
+        return
+            keccak256(abi.encode(KEEPER_REWARD_BPS, KEEPER_REWARD_CAP, BURN_SPOT_FLOOR_DEFAULT_BPS));
     }
 }

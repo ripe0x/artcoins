@@ -31,7 +31,7 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 ///         coin. `convert` swaps the coin side fees to eth on the coin's own
 ///         pool; `flushPaired` forwards the eth side. Both forward the WHOLE
 ///         eth balance to the frozen `endRecipient` (push, escrow fallback).
-/// @dev    v1 differences (review LF-02, LF-07, LF-08, DESIGN b5):
+/// @dev    Properties:
 ///         - payouts are balance based, never ledger based, so eth that a
 ///           third party pushed in (escrow claim, direct send, selfdestruct)
 ///           always leaves on the next call. invariant: eth balance is 0 after
@@ -68,20 +68,20 @@ contract FeeAutoSwapperV2 is
     /// @notice `unlockCallback` caller is not the PoolManager.
     error NotPoolManager();
 
-    /// @notice D39: a second `convert` in the same block.
+    /// @notice a second `convert` in the same block.
     error AlreadyConvertedThisBlock();
 
-    /// @notice D32: owner moved the output floor (bps of the spot implied output).
+    /// @notice owner moved the output floor (bps of the spot implied output).
     event SpotFloorBpsSet(uint256 oldBps, uint256 newBps);
-    /// @notice D50: the pool's known fees were (re)read from the hook.
+    /// @notice the pool's known fees were (re)read from the hook.
     event PoolFeesSynced(
         PoolId indexed poolId, address indexed coin, uint256 baselineSkimBps, uint256 lpFeePips
     );
-    /// @notice D39: owner moved the per convert price impact cap.
+    /// @notice owner moved the per convert price impact cap.
     event MaxImpactBpsSet(uint256 oldBps, uint256 newBps);
 
-    /// @notice D39: default output floor, 95% of the spot implied output.
-    uint256 public constant DEFAULT_SPOT_FLOOR_BPS = 9500;
+    /// @notice Initial convert output floor, 95% of the fee net spot output.
+    uint256 public constant CONVERT_SPOT_FLOOR_DEFAULT_BPS = 9500;
 
     /// @notice Constructor parameter bundle.
     /// @dev `coin` may be zero; the deployer then binds it via `setup`.
@@ -125,16 +125,16 @@ contract FeeAutoSwapperV2 is
     uint256 public maxStepIn;
     /// @notice Block of the last successful `convert`.
     uint256 public lastConvertBlock;
-    /// @notice Output floor in bps of the spot implied output (D32), owner
+    /// @notice Output floor in bps of the spot implied output, owner
     ///         tunable within [SPOT_FLOOR_MIN_BPS, SPOT_FLOOR_MAX_BPS].
     uint256 public spotFloorBps;
-    /// @notice D39: price impact cap per convert in bps, owner tunable within
+    /// @notice price impact cap per convert in bps, owner tunable within
     ///         [PRICE_IMPACT_MIN, PRICE_IMPACT_MAX]. The swap's price limit is
     ///         the tighter of this and `maxSlippageBps`.
     uint256 public maxImpactBps;
-    /// @notice D50: pool baseline skim (BPS of volume) the floor nets out.
+    /// @notice pool baseline skim (BPS of volume) the floor nets out.
     uint24 public poolBaselineSkimBps;
-    /// @notice D50: pool lp fee (FEE_DENOMINATOR units) the floor nets out.
+    /// @notice pool lp fee (FEE_DENOMINATOR units) the floor nets out.
     uint24 public poolLpFee;
 
     constructor(Config memory c) Ownable(c.owner) {
@@ -159,12 +159,12 @@ contract FeeAutoSwapperV2 is
         maxSlippageBps = c.maxSlippageBps;
         minBlocksBetweenConverts = c.minBlocksBetweenConverts;
         maxStepIn = c.maxStepIn;
-        spotFloorBps = DEFAULT_SPOT_FLOOR_BPS;
+        spotFloorBps = CONVERT_SPOT_FLOOR_DEFAULT_BPS;
         maxImpactBps = Constants.PRICE_IMPACT_DEFAULT;
         emit MaxSlippageBpsSet(0, c.maxSlippageBps);
         emit MinBlocksBetweenConvertsSet(0, c.minBlocksBetweenConverts);
         emit MaxStepInSet(0, c.maxStepIn);
-        emit SpotFloorBpsSet(0, DEFAULT_SPOT_FLOOR_BPS);
+        emit SpotFloorBpsSet(0, CONVERT_SPOT_FLOOR_DEFAULT_BPS);
         emit MaxImpactBpsSet(0, Constants.PRICE_IMPACT_DEFAULT);
 
         // b5: a third party can no longer push escrowed fees into this contract.
@@ -199,7 +199,7 @@ contract FeeAutoSwapperV2 is
         _syncFees(_key(coin_));
     }
 
-    /// @notice D50: anyone re reads the pool's known fees from the hook.
+    /// @notice anyone re reads the pool's known fees from the hook.
     ///         It can only set what the hook reports, so it is not gated.
     function syncPoolFees() external {
         if (!_finalized) revert NotFinalized();
@@ -214,9 +214,9 @@ contract FeeAutoSwapperV2 is
     ///      partial fills, the rest waits); the output must clear both the
     ///      caller's `minOut` and `spotFloorBps` of the spot implied output
     ///      for the input actually consumed; at most `maxStepIn` per call; one
-    ///      convert per block, then `minBlocksBetweenConverts` pacing (D39).
+    ///      convert per block, then `minBlocksBetweenConverts` pacing.
     ///      A caller can still move the spot before calling in the same tx
-    ///      (V2B-02); the impact cap bounds how much coin the swapper sells
+    ///     ; the impact cap bounds how much coin the swapper sells
     ///      into that moved price, so the sandwich gain per call is about the
     ///      cap times the consumed value, against the attacker's round trip
     ///      fees. Not prevented: keepers should pass an off chain `minOut`.
@@ -271,8 +271,7 @@ contract FeeAutoSwapperV2 is
 
         // coin is currency1 (native eth sorts first), selling it raises the
         // price. limit = spot * sqrt(1 + bps / BPS), rounded down, so the
-        // realized price move never exceeds bps = min(impact, slippage) (the
-        // v1 linear approximation overshot by bps^2 / 4).
+        // realized price move never exceeds bps = min(impact, slippage).
         uint256 bps = maxImpactBps < maxSlippageBps ? maxImpactBps : maxSlippageBps;
         uint256 factor = FixedPointMathLib.sqrt((Constants.BPS + bps) * 1e36 / Constants.BPS);
         uint256 c = FullMath.mulDiv(uint256(spot), factor, 1e18);
@@ -329,7 +328,7 @@ contract FeeAutoSwapperV2 is
     }
 
     /// @notice The output floor `convert` enforces for `artIn` consumed at the
-    ///         current spot. Same code path as the enforced check (LF-12).
+    ///         current spot. Same code path as the enforced check.
     function floorFor(uint256 artIn) external view returns (uint256) {
         if (coin == address(0)) return 0;
         (uint160 spot,,,) = poolManager.getSlot0(_key(coin).toId());
@@ -374,7 +373,7 @@ contract FeeAutoSwapperV2 is
         maxStepIn = maxIn;
     }
 
-    /// @notice D39: sets the per convert price impact cap within the burn
+    /// @notice sets the per convert price impact cap within the burn
     ///         impact bounds.
     function setMaxImpactBps(uint256 bps) external onlyOwner {
         if (bps < Constants.PRICE_IMPACT_MIN || bps > Constants.PRICE_IMPACT_MAX) {
@@ -384,7 +383,7 @@ contract FeeAutoSwapperV2 is
         maxImpactBps = bps;
     }
 
-    /// @notice D32: sets the output floor within Constants bounds.
+    /// @notice sets the output floor within Constants bounds.
     function setSpotFloorBps(uint256 bps) external onlyOwner {
         if (bps < Constants.SPOT_FLOOR_MIN_BPS || bps > Constants.SPOT_FLOOR_MAX_BPS) {
             revert OutOfBounds(bps, Constants.SPOT_FLOOR_MIN_BPS, Constants.SPOT_FLOOR_MAX_BPS);
@@ -450,7 +449,7 @@ contract FeeAutoSwapperV2 is
     }
 
     /// @dev Expected eth for `artIn` coin (currency1) at spot, times
-    ///      (1 - baseline skim - lp fee) (D50) times `spotFloorBps`.
+    ///      (1 - baseline skim - lp fee) times `spotFloorBps`.
     ///      price = token1 per token0, so eth = artIn / price.
     ///      Two mulDivs avoid overflow at extreme prices.
     function _spotFloor(uint256 artIn, uint160 sqrtPriceX96) internal view returns (uint256) {
@@ -462,7 +461,7 @@ contract FeeAutoSwapperV2 is
         );
     }
 
-    /// @dev D50: the pool's known fees, read from `hook.skimConfig(poolId)`
+    /// @dev the pool's known fees, read from `hook.skimConfig(poolId)`
     ///      (zero for a hookless pool or a hook that does not answer), clamped
     ///      to the Constants caps. `baselineSkimBps` in BPS of volume,
     ///      `lpFeePips` in FEE_DENOMINATOR units.

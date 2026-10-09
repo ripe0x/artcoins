@@ -10,7 +10,7 @@ import {LibString} from "solady/utils/LibString.sol";
 
 /// @title  ExampleOnChainRendererV2
 /// @notice Reference on-chain svg renderer. Fork it for custom art.
-/// @dev    Differences from v1 (review R1, R2): name and symbol reach the svg only
+/// @dev    Name and symbol reach the svg only
 ///         through `SvgText.text`, which truncates on a utf8 boundary, sanitises
 ///         and escapes `& < > " '`, so a hostile name cannot close the text node
 ///         or break the xml. json fields use `SvgText.jsonText` (bounded, valid

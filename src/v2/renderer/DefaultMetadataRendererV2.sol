@@ -10,7 +10,7 @@ import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
 /// @title  DefaultMetadataRendererV2
 /// @notice Reads the token fields and returns an ERC-7572 json data uri. No svg,
 ///         no html, no state, no owner.
-/// @dev    Differences from v1: every field is bounded (`SvgText` caps), cleaned to
+/// @dev    Every field is bounded (`SvgText` caps), cleaned to
 ///         valid utf8 and then json escaped, so the json is well formed for any
 ///         bytes and the gas is bounded by the caps, not by what the token admin
 ///         stored. An image url longer than `SvgText.URL_MAX` is dropped.

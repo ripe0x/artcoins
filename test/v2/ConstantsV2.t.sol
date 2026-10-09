@@ -63,7 +63,7 @@ contract ConstantsV2Test is Test {
             abi.encode(
                 uint256(50), // KEEPER_REWARD_BPS
                 uint256(1e16), // KEEPER_REWARD_CAP
-                uint256(8000) // SPOT_FLOOR_BPS
+                uint256(8000) // BURN_SPOT_FLOOR_DEFAULT_BPS
             )
         );
         return keccak256(abi.encode(pool, delivery, launch, keeper));
@@ -110,7 +110,7 @@ contract ConstantsV2Test is Test {
         assertEq(Constants.DEAD, 0x000000000000000000000000000000000000dEaD);
         assertEq(Constants.KEEPER_REWARD_BPS, 50);
         assertEq(Constants.KEEPER_REWARD_CAP, 0.01 ether);
-        assertEq(Constants.SPOT_FLOOR_BPS, 8000);
+        assertEq(Constants.BURN_SPOT_FLOOR_DEFAULT_BPS, 8000);
         assertEq(Constants.SWAPPER_SLIPPAGE_MIN, 50);
         assertEq(Constants.SWAPPER_SLIPPAGE_MAX, 1000);
         assertEq(Constants.SWAPPER_MIN_BLOCKS_MIN, 1);
@@ -156,7 +156,7 @@ contract ConstantsV2Test is Test {
         assertLt(Constants.MAX_EXTENSION_BPS, Constants.BPS);
         assertLe(Constants.LOCKER_KEEPER_BPS_MAX, Constants.BPS);
         assertLe(Constants.KEEPER_REWARD_BPS, Constants.BPS);
-        assertLe(Constants.SPOT_FLOOR_BPS, Constants.BPS);
+        assertLe(Constants.BURN_SPOT_FLOOR_DEFAULT_BPS, Constants.BPS);
         assertLe(
             uint256(Constants.PFC_MIN_TREASURY_BPS) + Constants.PFC_MIN_BURN_BPS, Constants.BPS
         );

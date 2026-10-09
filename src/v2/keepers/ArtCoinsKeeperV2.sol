@@ -13,14 +13,14 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 /// @notice Permissionless, stateless, ownerless keeper for any v2 art coin. One call collects the coin's locker
 ///         rewards, flushes (and optionally converts) every locker reward recipient that is a fee swapper,
 ///         then forwards every wei and coin it received to the caller. Holds nothing between calls.
-/// @dev    Step gas values are floors, not caps (D49). Before a step `gasleft()` must exceed floor plus margin or
+/// @dev    Step gas values are floors, not caps. Before a step `gasleft()` must exceed floor plus margin or
 ///         the call reverts `InsufficientGas(step)`; the step then gets all remaining gas, so a collect that
 ///         grows past the old figure still runs. A step that reverts with `gasleft()` back under its floor is out
 ///         of gas and reports `InsufficientGas(step)`. Otherwise the revert is real: collect bubbles its revert
 ///         data, flush and convert are swallowed and reported (`FlushSkipped`, `ConvertSkipped`) so one idle or
 ///         broken slot does not block the rest (`NothingToFlush`, `ConvertTooEarly` are the common ones). Revert
-///         data is copied up to 256 bytes (no return bomb). The floor figures are the v1 measurements (collect
-///         658k for 14 positions, convert 299k, flush 72k) with room added, to be re measured on the v2 stack.
+///         data is copied up to 256 bytes (no return bomb). The floor figures are collect 658k for 14
+///         positions, convert 299k, flush 72k, each with room added.
 ///         Recipients are the locker's frozen reward list (bounded by Constants.MAX_REWARD_PARTICIPANTS).
 contract ArtCoinsKeeperV2 is IArtCoinsKeeperV2, ReentrancyGuardTransient {
     address public immutable factory;
@@ -184,7 +184,7 @@ contract ArtCoinsKeeperV2 is IArtCoinsKeeperV2, ReentrancyGuardTransient {
     function _lockerOf(address token) internal view returns (IArtCoinsLpLockerV2) {
         IArtCoinsFactoryV2.DeploymentInfoV2 memory info =
             IArtCoinsFactoryV2(factory).deploymentInfo(token);
-        if (info.token != token || info.locker == address(0)) revert NotArtCoin(token);
+        if (info.token != token || info.locker == address(0)) revert NotCoin(token);
         return IArtCoinsLpLockerV2(info.locker);
     }
 

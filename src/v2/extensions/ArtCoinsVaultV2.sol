@@ -17,17 +17,16 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 /// @notice Locks a launch allocation behind a cliff then releases it linearly
 ///         to a beneficiary fixed in the launch tx.
 ///
-///         Schedule (as v1): nothing before `lockupEnd`; from `lockupEnd`
+///         Schedule: nothing before `lockupEnd`; from `lockupEnd`
 ///         the allocation vests linearly and is fully vested at
 ///         `vestingEnd = lockupEnd + vestingDuration`. Rounds down, monotone,
 ///         exactly 100% at the end.
 ///
-///         Frozen at launch (D7): beneficiary, cliff, vesting, amount. There is
+///         Frozen at launch: beneficiary, cliff, vesting, amount. There is
 ///         no owner, no admin, no `editAllocationAdmin` and no early unlock.
-///         Fixes against the v1 review:
-///         - V1: a zero beneficiary reverts at launch (v1 let the admin be
-///           set to zero, bricking claims).
-///         - V2: the `AllocationClaimed` remaining amount is
+///         Guarantees:
+///         - a zero beneficiary reverts at launch.
+///         - the `AllocationClaimed` remaining amount is
 ///           `amountTotal - amountClaimed` after the claim.
 ///         - claim is callable by anyone and always pays the beneficiary, so a
 ///           beneficiary that is a contract needs no key to trigger it.

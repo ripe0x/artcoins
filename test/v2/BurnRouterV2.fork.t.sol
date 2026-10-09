@@ -174,7 +174,7 @@ contract BurnRouterV2ForkTest is P1Base {
     }
 
     function test_burnV2_spotFloor_bounds() public {
-        assertEq(router.spotFloorBps(), Constants.SPOT_FLOOR_BPS, "default 80%");
+        assertEq(router.spotFloorBps(), Constants.BURN_SPOT_FLOOR_DEFAULT_BPS, "default 80%");
         uint256 lo = Constants.SPOT_FLOOR_MIN_BPS;
         uint256 hi = Constants.SPOT_FLOOR_MAX_BPS;
         vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, lo - 1, lo, hi));
@@ -182,7 +182,7 @@ contract BurnRouterV2ForkTest is P1Base {
         vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, hi + 1, lo, hi));
         router.setSpotFloorBps(hi + 1);
         vm.expectEmit(false, false, false, true, address(router));
-        emit BurnRouterV2.SpotFloorBpsSet(Constants.SPOT_FLOOR_BPS, lo);
+        emit BurnRouterV2.SpotFloorBpsSet(Constants.BURN_SPOT_FLOOR_DEFAULT_BPS, lo);
         router.setSpotFloorBps(lo);
         assertEq(router.spotFloorBps(), lo);
         router.setSpotFloorBps(hi);
@@ -199,7 +199,9 @@ contract BurnRouterV2ForkTest is P1Base {
     function test_burnV2_hooklessPool_rawSpotFloor() public {
         assertEq(router.poolBaselineSkimBps(), 0);
         assertEq(router.poolLpFee(), 0);
-        assertEq(router.floorFor(1 ether), _expectedFloor(1 ether, Constants.SPOT_FLOOR_BPS));
+        assertEq(
+            router.floorFor(1 ether), _expectedFloor(1 ether, Constants.BURN_SPOT_FLOOR_DEFAULT_BPS)
+        );
         router.syncPoolFees();
         BurnRouterV2 r = new BurnRouterV2(address(this), address(pm), address(escrow));
         vm.expectRevert(IBurnRouterV2.NotInitialized.selector);
@@ -208,7 +210,9 @@ contract BurnRouterV2ForkTest is P1Base {
 
     /// @notice The floor the view reports and the burn enforces uses the stored bps.
     function test_burnV2_spotFloor_usesStoredValue() public {
-        assertEq(router.floorFor(1 ether), _expectedFloor(1 ether, Constants.SPOT_FLOOR_BPS));
+        assertEq(
+            router.floorFor(1 ether), _expectedFloor(1 ether, Constants.BURN_SPOT_FLOOR_DEFAULT_BPS)
+        );
         router.setSpotFloorBps(Constants.SPOT_FLOOR_MAX_BPS);
         assertEq(router.floorFor(1 ether), _expectedFloor(1 ether, Constants.SPOT_FLOOR_MAX_BPS));
         router.setSpotFloorBps(Constants.SPOT_FLOOR_MIN_BPS);

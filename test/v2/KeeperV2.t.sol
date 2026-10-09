@@ -163,7 +163,7 @@ contract KeeperV2Test is Test {
 
     function test_keeperV2_nonArtCoin_reverts() public {
         address stranger = address(0xDEAD1);
-        vm.expectRevert(abi.encodeWithSelector(IArtCoinsKeeperV2.NotArtCoin.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(IArtCoinsKeeperV2.NotCoin.selector, stranger));
         keeper.collectAndForward(stranger, true, 0);
         assertEq(locker.collectCalls(), 0);
     }
@@ -171,19 +171,19 @@ contract KeeperV2Test is Test {
     function test_keeperV2_mismatchedRecord_reverts() public {
         address key = address(0xDEAD2);
         factory.registerMismatched(key, address(coin), address(locker));
-        vm.expectRevert(abi.encodeWithSelector(IArtCoinsKeeperV2.NotArtCoin.selector, key));
+        vm.expectRevert(abi.encodeWithSelector(IArtCoinsKeeperV2.NotCoin.selector, key));
         keeper.collectAndForward(key, true, 0);
     }
 
     function test_keeperV2_zeroLockerRecord_reverts() public {
         address t = address(0xDEAD3);
         factory.register(t, address(0));
-        vm.expectRevert(abi.encodeWithSelector(IArtCoinsKeeperV2.NotArtCoin.selector, t));
+        vm.expectRevert(abi.encodeWithSelector(IArtCoinsKeeperV2.NotCoin.selector, t));
         keeper.collectAndForward(t, true, 0);
     }
 
     function test_keeperV2_preview_nonArtCoin_reverts() public {
-        vm.expectRevert(abi.encodeWithSelector(IArtCoinsKeeperV2.NotArtCoin.selector, address(1)));
+        vm.expectRevert(abi.encodeWithSelector(IArtCoinsKeeperV2.NotCoin.selector, address(1)));
         keeper.preview(address(1));
     }
 

@@ -33,7 +33,7 @@ interface IHookPoolManager {
 ///         (factory, sender, full config): salt = keccak256(abi.encode(sender, configHash(c))).
 ///
 ///         Launch flow (`deployToken`, `deployTokenAsOwner`):
-///         1. deprecated gate (owner bypasses); token deployer set (D38).
+///         1. deprecated gate (owner bypasses); token deployer set.
 ///         2. config validated against `Constants` and factory state.
 ///         3. `msg.value >= deployFee + sum(extension msgValue)`; the excess is
 ///            refunded to the sender at the end of the call.
@@ -41,13 +41,13 @@ interface IHookPoolManager {
 ///         5. `hook.initializePool` with the skim config; protocolRecipient is
 ///            injected from factory storage. The token's canonical hook, pool id,
 ///            PoolManager and `restricted` flag are checked against the pool just
-///            created (FT-06).
+///            created.
 ///         6. launch record (`isCoin`, `deploymentInfo`) written.
 ///         7. pool supply approved to the locker, `placeLiquidity` with the
 ///            protocol slot appended; the locker must pull exactly the pool supply.
 ///         8. extensions: each gets exactly its own `msgValue` and its own
 ///            supply share, and must pull exactly that share.
-///         9. `hook.initializeMevModule`, always (after extensions, as v1: a
+///         9. `hook.initializeMevModule`, always (after extensions: a
 ///            launch extension such as a dev buy is the deployer's own action;
 ///            the call also runs the pool extension's post locker setup).
 ///         10. `TokenCreatedV2` with the full config; deploy fee pushed to
@@ -65,15 +65,15 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     // ── additive errors (not in the frozen interface) ────────────────────
 
-    /// @notice Parallel arrays of different lengths (FT-10).
+    /// @notice Parallel arrays of different lengths.
     error ArrayLengthMismatch();
-    /// @notice D52 / V2F-01: `maxReferralBpsOfVolume` could take the protocol
+    /// @notice `maxReferralBpsOfVolume` could take the protocol
     ///         leg below `minProtocolSkimShareBps` of the baseline skim.
     error ReferralCapAboveProtocolFloor();
     /// @notice A launch must earn some fee: both `lpFeePips` and `baselineSkimBps`
     ///         are zero, so the pool, the locker and the protocol earn nothing.
     error ZeroFeeLaunch();
-    /// @notice No token deployer set yet (D38).
+    /// @notice No token deployer set yet.
     error DeployerNotSet();
     /// @notice A restricted launch's hook has no fee escrow set, so the seeded
     ///         allowlist cannot be assembled.
@@ -84,7 +84,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     // ── additive events (not in the frozen interface) ────────────────────
 
-    /// @notice D38: the token deployer pointer changed.
+    /// @notice the token deployer pointer changed.
     event TokenDeployerSet(address indexed oldDeployer, address indexed newDeployer);
     /// @notice Position count is 0 or above `Constants.MAX_LP_POSITIONS`, or position bps do not sum to BPS.
     error InvalidPositions();
@@ -97,7 +97,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     error PoolManagerMismatch(address hook);
     /// @notice An extension or the locker did not pull exactly its share.
     error SupplyNotPulled(address puller);
-    /// @notice Ownership cannot be renounced (FT-13).
+    /// @notice Ownership cannot be renounced.
     error RenounceDisabled();
 
     // ── immutables ────────────────────────────────────────────────────────
@@ -119,7 +119,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     /// @notice The Uniswap v4 PoolManager every enabled hook must answer.
     address public immutable poolManager;
-    /// @notice CREATE2 token deployer (D38): its own contract, bound to this
+    /// @notice CREATE2 token deployer: its own contract, bound to this
     ///         factory at its construction, wired with `setTokenDeployer`.
     ///         Replacing it changes every future token address (the deployer is
     ///         the CREATE2 origin), so `predictToken` answers for the current one.
@@ -175,7 +175,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     /// @param poolManager_   Uniswap v4 PoolManager.
     /// @param protocolBps_   Initial `defaultProtocolFeeBps` (<= MAX_PROTOCOL_FEE_BPS).
     /// @param deployFee_     Initial `deployFee` (<= MAX_DEPLOY_FEE).
-    /// @dev   Ships deprecated and without a token deployer. Deploy order (D38):
+    /// @dev   Ships deprecated and without a token deployer. Deploy order:
     ///        factory, then `new ArtCoinsDeployerV2(factory)`, then
     ///        `setTokenDeployer`, then the remaining wiring, then `setDeprecated(false)`.
     constructor(address owner_, address poolManager_, uint16 protocolBps_, uint256 deployFee_)
@@ -210,7 +210,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     }
 
     /// @inheritdoc IArtCoinsFactoryV2
-    /// @dev Owner only (FT-03). `protocolBps` in [0, MAX_PROTOCOL_FEE_BPS]; 0 appends no protocol slot.
+    /// @dev Owner only. `protocolBps` in [0, MAX_PROTOCOL_FEE_BPS]; 0 appends no protocol slot.
     function deployTokenAsOwner(DeploymentConfigV2 calldata c, uint16 protocolBps)
         external
         payable
@@ -405,7 +405,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         return _validateExtensions(c.extensions, supply);
     }
 
-    /// @dev D30: the token's own string caps, checked up front so a long
+    /// @dev the token's own string caps, checked up front so a long
     ///      field fails with the token's `StringTooLong(field, len)` before any
     ///      deploy work. Field codes match `ArtCoinsTokenV2.FIELD_*`.
     function _validateStrings(TokenConfigV2 calldata t) internal pure {
@@ -428,7 +428,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
                 || f.baselineSkimBps > Constants.MAX_BASELINE_SKIM_BPS
                 || f.maxReferralBpsOfVolume > Constants.MAX_REFERRAL_CAP_OF_VOLUME
         ) revert FeeConfigOutOfBounds();
-        // D52: `bountyBps + minProtocolSkimShareBps <= BPS` (the hook refuses
+        // `bountyBps + minProtocolSkimShareBps <= BPS` (the hook refuses
         // more at init with `BadLegBps`); this cap fails it first with
         // `BountyBpsTooHigh(bountyBps, max)`.
         uint256 maxBounty = Constants.BPS - minProtocolSkimShareBps;
@@ -436,7 +436,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         // casting to uint16 is safe: maxBounty <= MAX_BOUNTY_BPS (9999)
         // forge-lint: disable-next-line(unsafe-typecast)
         if (f.bountyBps > maxBounty) revert BountyBpsTooHigh(f.bountyBps, uint16(maxBounty));
-        // D52 / V2F-01: the referral cap must fit above the protocol floor.
+        // the referral cap must fit above the protocol floor.
         // hook `_split` per swap, volume V (eth), all skim rates in BPS:
         //   base     = V * baselineSkimBps / BPS           (the baseline skim)
         //   protocol = base * (BPS - bountyBps) / BPS
@@ -448,7 +448,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         // maxReferral and baseline share the BPS unit, so it cancels. the right
         // side is >= 0 (bountyBps check above). per swap
         // floor rounding can still differ by a few wei; the hook's own clamp
-        // (D52) is exact.
+        // is exact.
         if (
             uint256(f.maxReferralBpsOfVolume) * Constants.BPS
                 > uint256(f.baselineSkimBps)
@@ -459,7 +459,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     function _validateLocker(LockerConfigV2 calldata l, uint16 protocolBps) internal view {
         if (!enabledLockers[l.locker]) revert LockerNotEnabled();
 
-        // reward split (FT-10: lengths must match before the protocol slot is appended)
+        // reward split (lengths must match before the protocol slot is appended)
         uint256 n = l.rewardRecipients.length;
         if (n != l.rewardBps.length) revert ArrayLengthMismatch();
         uint256 slots = n + (protocolBps == 0 ? 0 : 1);
@@ -585,14 +585,14 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
             bountyRecipient: c.fee.bountyRecipient,
             protocolRecipient: protocolRecipient
         });
-        // D52: the hook freezes the protocol floor per pool and caps each
+        // the hook freezes the protocol floor per pool and caps each
         // referral at `protocol - floor`; `_validateFee` already made the
         // launch's referral cap fit above it.
         p.minProtocolShareBps = minProtocolSkimShareBps;
         return IArtCoinsHookV2(c.pool.hook).initializePool(p);
     }
 
-    /// @dev FT-06: the token's canonical pool must be the pool this factory just created.
+    /// @dev the token's canonical pool must be the pool this factory just created.
     ///      The token derives it from the same hook, tickSpacing and PoolManager, so
     ///      this is a cross check that also catches a hook that keys pools differently.
     function _checkCanonical(DeploymentConfigV2 calldata c, address token, PoolId poolId)
@@ -723,7 +723,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     /// @inheritdoc IArtCoinsFactoryV2
     /// @dev Enabling checks `constantsHash()` and that the hook's PoolManager is ours.
-    ///      Disabling never calls the target (FT-04).
+    ///      Disabling never calls the target.
     function setHook(address hook, bool enabled) external onlyOwner {
         if (hook == address(0)) revert ZeroAddress();
         if (enabled) {
@@ -746,7 +746,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     /// @inheritdoc IArtCoinsFactoryV2
     /// @dev Enabling requires `supportsInterface(type(IArtCoinsMevSkimV2).interfaceId)`
-    ///      (refuses v1 lp fee modules, D22) and a matching `constantsHash()`.
+    ///      (refuses lp fee modules) and a matching `constantsHash()`.
     function setMevModule(address module, bool enabled) external onlyOwner {
         if (module == address(0)) revert ZeroAddress();
         if (enabled) {
@@ -789,7 +789,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         emit DefaultAllowedSet(accounts);
     }
 
-    /// @notice D38: points the factory at a token deployer bound to it.
+    /// @notice points the factory at a token deployer bound to it.
     /// @dev    The deployer must have code, answer `factory() == this` and a
     ///         matching `constantsHash()`. Never 0: launches would revert anyway,
     ///         use `setDeprecated` to stop public launches.
@@ -826,7 +826,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     /// @inheritdoc IArtCoinsFactoryV2
     /// @dev <= BPS. Launch bountyBps is capped at min(MAX_BOUNTY_BPS, BPS - this),
-    ///      and the referral cap must fit above this floor (D52).
+    ///      and the referral cap must fit above this floor.
     function setMinProtocolSkimShareBps(uint16 bps) external onlyOwner {
         if (bps > Constants.BPS) revert MinProtocolSkimShareTooHigh();
         emit MinProtocolSkimShareBpsSet(minProtocolSkimShareBps, bps);
@@ -857,7 +857,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         emit Rescued(token, to, amount);
     }
 
-    /// @notice Disabled: an ownerless factory would freeze allowlists and rescue (FT-13).
+    /// @notice Disabled: an ownerless factory would freeze allowlists and rescue.
     function renounceOwnership() public view override onlyOwner {
         revert RenounceDisabled();
     }

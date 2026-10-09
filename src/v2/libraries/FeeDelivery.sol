@@ -7,7 +7,7 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 /// @title  FeeDelivery
 /// @notice Push a fee to its recipient; if the push fails, credit the
 ///         recipient in the fee escrow instead. Shared by the v2 hook, locker,
-///         fee swapper and protocol fee controller (DESIGN d1).
+///         fee swapper and protocol fee controller.
 /// @dev    Invariant: once the calling contract is an escrow depositor (and,
 ///         for erc20, the token lets the escrow pull from the caller), every
 ///         wei reaches `to` or `to`'s escrow balance. The exceptions are an

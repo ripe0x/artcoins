@@ -87,12 +87,12 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
 
     /// @dev Gas for the mev module view reads. The module is factory enabled
     ///      and does two storage reads; a failed read falls back to the
-    ///      baseline skim and an open add lock (fail open, as v1). The cap is
+    ///      baseline skim and an open add lock (fail open). The cap is
     ///      far above the module's need, so a caller cannot starve the read
     ///      and still complete the swap (63/64 rule).
     uint256 private constant _MODULE_GAS = 100_000;
     /// @dev Gas forwarded on a fee push: 0, so the recipient runs on the EVM's
-    ///      2,300 stipend only (D41). Passing 2,300 here would give it 4,600.
+    ///      2,300 stipend only. Passing 2,300 here would give it 4,600.
     ///      Under 2,300 a recipient cannot send value or write storage, so it
     ///      cannot `take`, `mint`, `burn` or `settle` on the PoolManager.
     uint256 private constant _PUSH_GAS = 0;
@@ -141,7 +141,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
 
     mapping(PoolId => PoolInfo) internal _info;
     mapping(PoolId => SkimConfig) internal _skim;
-    /// @dev D52: per pool protocol leg floor, BPS of the baseline skim.
+    /// @dev per pool protocol leg floor, BPS of the baseline skim.
     mapping(PoolId => uint16) internal _minProtocolShareBps;
     /// @dev Set once by `initializeMevModule`: the window started and the
     ///      extension finished its post locker setup.
@@ -179,7 +179,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         _checkConstants(p.locker);
         if (p.mevModule != address(0)) _checkConstants(p.mevModule);
         _validateSkim(p.skim);
-        // D52: bounty plus the protocol floor fit inside the baseline skim.
+        // bounty plus the protocol floor fit inside the baseline skim.
         if (uint256(p.skim.bountyBps) + p.minProtocolShareBps > Constants.BPS) revert BadLegBps();
 
         key = PoolKey({
@@ -272,7 +272,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
 
     // ── v4 callbacks ──────────────────────────────────────────────────────
 
-    /// @dev d3: no pool on this hook is created except through `initializePool`.
+    /// @dev No pool on this hook is created except through `initializePool`.
     function _beforeInitialize(address, PoolKey calldata, uint160)
         internal
         pure
@@ -393,10 +393,9 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
             address escrow = _globals.feeEscrow;
             uint256 over = charged - skim;
             if (over != 0) {
-                // b3: the unfilled share goes to the escrow, credited to the
-                // hookData refund address or else the PoolManager caller.
-                // D42/D51 (refund inside the swap) cannot be done without
-                // breaking routers: see the contract natspec.
+                // the unfilled share goes to the escrow, credited to the
+                // hookData refund address or else the PoolManager caller. A
+                // refund inside the swap would break routers; see the header.
                 address to = HookCalldata.refundTo(hookData);
                 if (to == address(0)) to = sender;
                 IArtCoinsFeeEscrowV2(escrow).storeFeesNative{value: over}(to);
@@ -443,14 +442,14 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
 
         uint256 referral;
         address referrer = att.referrer;
-        // H13: the PoolManager caller cannot name itself. D44: a router user
+        // the PoolManager caller cannot name itself. A router user
         // naming its own wallet is accepted, bounded by the frozen per pool
         // cap (<= 1% of volume, <= the protocol share above its floor).
         if (referrer != address(0) && referrer != sender) {
             uint256 cap = cfg.maxReferralBpsOfVolume;
             if (att.referralBps < cap) cap = att.referralBps;
             referral = (volume * cap) / Constants.BPS;
-            // D52: never below the pool's protocol floor (BPS of the baseline
+            // never below the pool's protocol floor (BPS of the baseline
             // skim, the factory's unit for `minProtocolSkimShareBps`).
             uint256 floor = (base * _minProtocolShareBps[pid]) / Constants.BPS;
             uint256 room = protocol > floor ? protocol - floor : 0;
@@ -565,7 +564,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         if (r == address(this) || r == address(poolManager)) revert RecipientCannotReceive(r);
     }
 
-    /// @dev d5: `target.constantsHash()` must equal this build's hash.
+    /// @dev `target.constantsHash()` must equal this build's hash.
     function _checkConstants(address target) private view {
         if (target == address(0)) revert ZeroAddress();
         (bool ok, bytes memory ret) =
@@ -692,7 +691,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         return _info[poolId];
     }
 
-    /// @notice D52 protocol leg floor of a pool (BPS of the baseline skim).
+    /// @notice Protocol leg floor of a pool (BPS of the baseline skim).
     function minProtocolShareBps(PoolId poolId) external view returns (uint16) {
         return _minProtocolShareBps[poolId];
     }
@@ -726,7 +725,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     }
 
     /// @inheritdoc BaseHook
-    /// @dev DESIGN section 5, low 14 address bits 0x28CC. Liquidity needs only
+    /// @dev The hook address low 14 bits are 0x28CC. Liquidity needs only
     ///      `beforeAddLiquidity` for the anti sniper window; the restriction
     ///      allowance is granted in `afterSwap`, so the add and remove liquidity
     ///      callbacks are not used.
