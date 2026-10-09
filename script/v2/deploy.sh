@@ -7,7 +7,8 @@
 #   script/v2/deploy.sh <local|mainnet>                simulation only (DRY_RUN defaults to 1)
 #   DRY_RUN=0 script/v2/deploy.sh <local|mainnet>      broadcast
 #
-# Order: required values, rpc chain id, wallet and git guards, warm ci build, dry run, signer check and typed
+# Order: required values, rpc chain id, wallet and git guards, warm ci build, dry run, per transaction gas
+# estimate and balance check, signer check and typed
 # confirmation (WALLET_MODE=account), broadcast (--slow), readback, record at $RECORD, verify-v2.sh (VERIFY=full|chain).
 #
 # Env file values: CHAIN_ID RPC_DEFAULT FOUNDRY_PROFILE WALLET_MODE (account|unlocked) KEYSTORE OWNER
@@ -119,6 +120,25 @@ SIM=$(mktemp -t v2-sim.XXXXXX)
 forge script "$SCRIPT" --sender "$OWNER" | tee "$SIM"
 grep -q 'post deploy asserts: ok' "$SIM" || die "dry run did not reach the post deploy asserts (see $SIM)"
 rm -f "$SIM"
+
+# --- per transaction gas estimate, printed before any keystore prompt
+DRY_JSON="$BROADCAST_DIR/DeployV2Stack.s.sol/$CHAIN_ID/dry-run/run-latest.json"
+[ -f "$DRY_JSON" ] || die "dry run record $DRY_JSON not found"
+gas_price=$(cast gas-price) || die "cannot read the gas price"
+balance=$(cast balance "$OWNER") || die "cannot read the OWNER balance"
+echo "== gas estimate (gas price $(cast from-wei "$gas_price" gwei) gwei) =="
+printf '%-4s %-8s %-60s %12s %14s\n' "#" "type" "contract or call" "gas limit" "eth"
+jq -r '.transactions | to_entries[] | [.key + 1, .value.transactionType, (.value.contractName // "") + (if .value.function then " " + .value.function else "" end), .value.transaction.gas] | @tsv' "$DRY_JSON" |
+  while IFS=$'\t' read -r i type label gas; do
+    g=$(cast to-dec "$gas")
+    printf '%-4s %-8s %-60.60s %12s %14s\n' "$i" "$type" "$label" "$g" "$(cast from-wei "$((g * gas_price))")"
+  done
+total_gas=$(jq -r '[.transactions[].transaction.gas] | map(ltrimstr("0x")) | .[]' "$DRY_JSON" |
+  while read -r h; do echo $((16#$h)); done | awk '{s += $1} END {printf "%d", s}')
+total_wei=$((total_gas * gas_price))
+echo "total    $(jq '.transactions | length' "$DRY_JSON") txs, gas $total_gas, about $(cast from-wei "$total_wei") eth at the current gas price"
+echo "OWNER    balance $(cast from-wei "$balance") eth"
+[ "$(echo "$balance >= $total_wei" | bc)" = 1 ] || soft "OWNER balance is below the estimated cost"
 if [ "$DRY_RUN" = 1 ]; then echo "DRY_RUN=1: simulation complete"; exit 0; fi
 
 # --- signer check and typed confirmation
