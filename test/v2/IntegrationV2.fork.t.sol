@@ -41,6 +41,14 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {console2} from "forge-std/console2.sol";
 
+/// @notice A contract that reports this build's constants hash, for wiring a
+///         setter whose target only needs to pass the IConstantsBound check.
+contract I1ConstantsStub {
+    function constantsHash() external pure returns (bytes32) {
+        return Constants.hash();
+    }
+}
+
 contract IntegrationV2ForkTest is IntegrationV2Base {
     using PoolIdLibrary for PoolKey;
 
@@ -302,7 +310,8 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         // protocol fee controller, burn router (protocol side, not per coin)
         v2.controller.setSplit(Constants.PFC_MIN_TREASURY_BPS);
         v2.controller.setTreasury(other);
-        v2.controller.setBurnRouter(other);
+        v2.controller.setBurnRouter(address(new I1ConstantsStub())); // valid-hash target
+
         v2.burnRouter.setMaxImpactBps(Constants.PRICE_IMPACT_MAX);
         v2.burnRouter.setMinProcessThreshold(type(uint96).max);
         v2.burnRouter.setOpenTabCaller(other);
