@@ -613,9 +613,12 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         info.hook = c.pool.hook;
         info.locker = c.locker.locker;
         info.mevModule = c.mev.module;
+        info.escrow = IArtCoinsHookV2(c.pool.hook).globals().feeEscrow;
         info.poolId = poolId;
+        info.configHash = keccak256(abi.encode(c));
         info.version = STACK_VERSION;
         info.launchedAt = uint40(block.timestamp);
+        info.restricted = c.restriction.restricted;
         for (uint256 i; i < c.extensions.length; ++i) {
             info.extensions.push(c.extensions[i].extension);
         }

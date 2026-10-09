@@ -134,6 +134,7 @@ contract ArtCoinsVaultV2 is ReentrancyGuard, IArtCoinsVaultV2 {
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return interfaceId == type(IArtCoinsExtensionV2).interfaceId
+            || interfaceId == type(IArtCoinsVaultV2).interfaceId
             || interfaceId == type(IConstantsBound).interfaceId
             || interfaceId == type(IERC165).interfaceId;
     }

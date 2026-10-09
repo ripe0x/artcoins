@@ -3,19 +3,18 @@ pragma solidity ^0.8.26;
 
 /// @title  HookCalldata
 /// @notice Tolerant, bounds checked parser for the swap `hookData` the v2 hook
-///         accepts (unchanged from v1):
-///           hookData = abi.encode(PoolSwapData{bytes mevModuleSwapData, bytes poolExtensionSwapData})
-///           mevModuleSwapData = "" or abi.encode(address refundTo) (v2: no module reads it)
-///           poolExtensionSwapData = abi.encode(PCSwapData{PCAttribution attribution, bytes extensionPayload})
-///           PCAttribution = (bytes32 sourceId, address referrer, bytes16 campaignId, uint24 referralBps)
-/// @dev    Replaces v1's three external decode helpers and their try/catch
-///         self calls. Never reverts: every offset and length is checked
-///         against the calldata bounds before it is used, every sum is
-///         bounded by a small multiple of `hookData.length`, so no checked
-///         arithmetic can overflow. Malformed input yields an empty extension
-///         payload and/or an empty attribution, never a swap revert.
-///         Values abi.decode would reject (dirty high bits) yield an empty
-///         attribution, as v1's try/catch did.
+///         accepts:
+///           hookData = abi.encode(SwapData{bytes mevModuleSwapData, bytes poolExtensionSwapData})
+///           mevModuleSwapData = "" or abi.encode(address refundTo)
+///           poolExtensionSwapData = abi.encode(ExtensionSwapData{Attribution attribution, bytes extensionPayload})
+///           Attribution = (bytes32 sourceId, address referrer, bytes16 campaignId, uint24 referralBps)
+///         `referralBps` is BPS of volume, capped by the pool's maxReferralBpsOfVolume.
+/// @dev    Never reverts: every offset and length is checked against the
+///         calldata bounds before it is used, every sum is bounded by a small
+///         multiple of `hookData.length`, so no checked arithmetic can
+///         overflow. Malformed input yields an empty extension payload and/or
+///         an empty attribution, never a swap revert. Values abi.decode would
+///         reject (dirty high bits) yield an empty attribution.
 library HookCalldata {
     struct Attribution {
         bytes32 sourceId;

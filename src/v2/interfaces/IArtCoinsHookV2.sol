@@ -12,6 +12,19 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 ///         once at init; the coin admin may later change the bounty recipient.
 ///         Fee legs are pushed with a zero gas call and fall back to the fee
 ///         escrow.
+///
+///         Swap `hookData` (all parts optional, never reverts the swap):
+///           abi.encode(bytes mevModuleSwapData, bytes poolExtensionSwapData)
+///         mevModuleSwapData names the refund address for the over charge on a
+///         price limited fill: empty, or exactly 32 bytes encoding one address
+///         with clean high bits, else the refund goes to the PoolManager caller.
+///         poolExtensionSwapData is
+///           abi.encode(Attribution attribution, bytes extensionPayload),
+///           Attribution = (bytes32 sourceId, address referrer, bytes16
+///           campaignId, uint24 referralBps), where referralBps is BPS of
+///           volume, capped by the pool's maxReferralBpsOfVolume.
+///         Malformed input yields an empty attribution and refund address; the
+///         swap never reverts on it.
 interface IArtCoinsHookV2 is IConstantsBound {
     // ── types ─────────────────────────────────────────────────────────────
 

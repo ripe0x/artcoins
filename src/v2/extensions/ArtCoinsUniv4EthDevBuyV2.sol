@@ -182,6 +182,7 @@ contract ArtCoinsUniv4EthDevBuyV2 is ReentrancyGuard, IUnlockCallback, IArtCoins
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return interfaceId == type(IArtCoinsExtensionV2).interfaceId
+            || interfaceId == type(IArtCoinsUniv4EthDevBuyV2).interfaceId
             || interfaceId == type(IConstantsBound).interfaceId
             || interfaceId == type(IERC165).interfaceId;
     }

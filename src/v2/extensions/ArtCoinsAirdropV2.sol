@@ -222,6 +222,7 @@ contract ArtCoinsAirdropV2 is ReentrancyGuard, IArtCoinsAirdropV2 {
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return interfaceId == type(IArtCoinsExtensionV2).interfaceId
+            || interfaceId == type(IArtCoinsAirdropV2).interfaceId
             || interfaceId == type(IConstantsBound).interfaceId
             || interfaceId == type(IERC165).interfaceId;
     }

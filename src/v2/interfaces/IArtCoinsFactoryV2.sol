@@ -89,9 +89,12 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
         address hook;
         address locker;
         address mevModule;
+        address escrow; // the pool's fee escrow (the hook's at launch)
         PoolId poolId;
+        bytes32 configHash; // keccak256(abi.encode(launch config))
         uint16 version;
         uint40 launchedAt;
+        bool restricted; // the coin's launch restriction flag
         address[] extensions;
     }
 
@@ -177,7 +180,11 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
         payable
         returns (address token);
 
-    /// @notice Address `deployToken(c)` yields when called by `sender`.
+    /// @notice Address `deployToken(c)` yields when called by `sender`. The
+    ///         result depends on the full config and, for a restricted launch,
+    ///         on the owner `defaultAllowed` set, the hook's fee escrow and the
+    ///         current token deployer, since those are folded into the token's
+    ///         constructor arguments.
     function predictToken(address sender, DeploymentConfigV2 calldata c)
         external
         view
@@ -190,6 +197,8 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
 
     function STACK_VERSION() external view returns (uint16);
     function isCoin(address token) external view returns (bool);
+    /// @notice The launch record for a coin. Reverts NotFound for a token this
+    ///         factory did not launch.
     function deploymentInfo(address token) external view returns (DeploymentInfoV2 memory);
     function deprecated() external view returns (bool);
     function deployFee() external view returns (uint256);
