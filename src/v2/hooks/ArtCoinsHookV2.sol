@@ -42,57 +42,44 @@ interface ILockerReads {
 }
 
 /// @title  ArtCoinsHookV2
-/// @notice Skim fee hook for v2 art coin pools. Every pool is native eth
-///         (currency0) against the art coin (currency1), created only by an
+/// @notice Skim fee hook for v2 coin pools. Every pool is native eth
+///         (currency0) against the coin (currency1), created only by an
 ///         allowlisted launcher. The fee rates and caps are set once at init;
 ///         the coin admin may change the pool's bounty recipient afterwards.
 ///
-///         Per swap, on the quote (eth) side, with `volume` the realized
-///         pool side quote amount `r` for all four swap shapes (V2H-05):
-///           totalSkim    = skim on the trader side (see the four shapes below)
-///           baselineSkim = totalSkim x baselineSkimBps / currentSkimBps
-///           bounty       = baselineSkim x bountyBps / 10_000 + (totalSkim - baselineSkim)
-///           protocol     = baselineSkim - baselineSkim x bountyBps / 10_000 - referral
-///           referral     = min(volume x min(att.referralBps, maxReferral) / 10_000,
-///                              protocol share - baselineSkim x minProtocolShareBps / 10_000)  (D52, floored at 0)
+///         Per swap, on the quote (eth) side, with `r` the realized pool side
+///         quote amount for all four swap shapes:
+///           totalSkim    = the skim on the trader side
+///           baselineSkim = totalSkim * baselineSkimBps / currentSkimBps
+///           bounty       = baselineSkim * bountyBps / BPS + (totalSkim - baselineSkim)
+///           protocol     = baselineSkim - baselineSkim * bountyBps / BPS - referral
+///           referral     = min(volume * min(att.referralBps, maxReferral) / BPS,
+///                              protocol - baselineSkim * minProtocolShareBps / BPS), floored at 0
 ///
 ///         No recipient code runs with useful gas while the PoolManager is
-///         unlocked (D41): every leg (bounty, protocol, referral to the
-///         referrer) is a plain eth push carrying only the EVM's 2,300 gas
-///         stipend; a failed push credits the recipient in the fee escrow.
-///         There is no `streamForward` probe. Contracts that need to react to
-///         fees pull from the escrow or are poked by a keeper after the swap.
-///         The hook holds no erc6909 claims and no eth between swaps.
+///         unlocked: every leg (bounty, protocol, referral) is a plain eth push
+///         carrying the EVM 2,300 gas stipend, and a failed push credits the
+///         recipient in the fee escrow. The hook holds no erc6909 claims and no
+///         eth between swaps.
 ///
 ///         Quote specified swaps (exact in buy, exact out sell) are charged in
 ///         `beforeSwap` on the requested amount, then trued up in `afterSwap`
-///         on the realized fill. The unfilled share is credited in the fee
-///         escrow to the refund address the swapper names in hookData
-///         (`mevModuleSwapData = abi.encode(address)`), else to the
-///         PoolManager caller. Why not inside the swap (D42, D51): v4 lets
-///         `afterSwap` return a delta only on the UNSPECIFIED currency, and
-///         for exactly these two shapes that is the art coin, so an eth
-///         refund cannot ride the return delta. `settleFor(sender)` credits
-///         the caller's transient delta but not the BalanceDelta `swap()`
-///         returns, so routers that settle the returned delta (dev buy,
-///         PoolSwapTest, many integrations) fail `CurrencyNotSettled`. The
-///         escrow keeps returned and transient deltas equal for every router.
-///         Known limit: on a partial exact out sell the caller's eth delta
-///         can be negative until the refund is claimed (V2H-06); a router
-///         that cannot claim (the universal router) must pass a refund
-///         address or the refund stays under it (V2H-03).
+///         on the realized fill. The over charge on an unfilled part is credited
+///         in the fee escrow to the refund address the swapper names in hookData,
+///         else to the PoolManager caller; a v4 return delta adjusts only the
+///         unspecified currency, which is the coin for these two shapes, so the
+///         eth refund cannot ride the return delta. Known limit: on a partial
+///         exact out sell the caller's eth delta is negative until the refund is
+///         claimed, so a router that cannot claim must pass a refund address.
 ///
-///         Self referral through a router (referrer = the user's own wallet)
-///         is accepted and bounded by the frozen per pool cap (<= 1% of
-///         volume, <= the protocol share) (D44). The PoolManager caller itself
-///         cannot be the referrer (H13).
+///         Self referral through a router is accepted and bounded by the frozen
+///         per pool cap (<= 1% of volume, <= the protocol share). The PoolManager
+///         caller cannot be the referrer.
 ///
-/// @dev    Size: one contract, no delegate module (D14). Calldata parsing
-///         lives in `HookCalldata` (internal, inlined).
-///         Init: the PoolManager never calls `beforeInitialize` when the hook
-///         itself initializes (Hooks.noSelfCall), so `_beforeInitialize`
-///         reverts unconditionally. That is strictly stronger than a transient
-///         "initializing" flag: the only init path is `initializePool`.
+/// @dev    One contract, no delegate module; calldata parsing is inlined from
+///         `HookCalldata`. The PoolManager never calls `beforeInitialize` on a
+///         self initialized pool, so `_beforeInitialize` reverts unconditionally
+///         and `initializePool` is the only init path.
 contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     using PoolIdLibrary for PoolKey;
 
