@@ -15,7 +15,7 @@ library Addresses {
     /// @dev owner of nearly every contract below (single eoa).
     address internal constant OWNER = 0xCB43078C32423F5348Cab5885911C3B5faE217F9;
 
-    // CURRENT stack (current): current stack (skim fee), factory deployed 2026-06-06
+    // CURRENT stack (superseded): current stack (skim fee), factory deployed 2026-06-06
     address internal constant CURRENT_FACTORY = 0x49596c375c139E79bb937bcf826068a8F78D4e0e;
     address internal constant CURRENT_HOOK = 0x636c050296B5Cc528D8785169Bf8923716FCa9cc;
     address internal constant CURRENT_LOCKER = 0x866ea3Dc2bf7A3e77374619cf50EB697FA766aab;
@@ -47,7 +47,7 @@ library Addresses {
     address internal constant OPEN_BURN_ROUTER_V0 = 0x9304a81965Ef3F7A092bd9eFd8c2fFc411E5F34d;
     uint256 internal constant OPEN_FACTORY_DEPLOY_BLOCK = 25_125_708;
 
-    // V2 stack (deployed): v2 stack (skim hook v2, constants bound), factory deployed 2026-10-09
+    // V2 stack (current): v2 stack (skim hook v2, constants bound), factory deployed 2026-10-09
     address internal constant V2_FACTORY = 0x9b17bf6f97F5429368E11028BC637479b4667f7b;
     address internal constant V2_HOOK = 0x2f7976bf73dE8e1D49D4c687404e527a75b0e8Cc;
     address internal constant V2_LOCKER = 0x1e2456861B864B96FFe6b34066b12FBD7EEb23fC;

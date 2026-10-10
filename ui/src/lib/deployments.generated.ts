@@ -33,14 +33,14 @@ export const STACKS: Record<StackId, RegistryStack> = {
   },
   current: {
     label: 'current stack (skim fee)',
-    status: 'current',
+    status: 'superseded',
     factory: '0x49596c375c139E79bb937bcf826068a8F78D4e0e',
     deployedAt: '2026-06-06',
     deployBlock: 25260062n,
   },
   v2: {
     label: 'v2 stack (skim hook v2, constants bound)',
-    status: 'deployed',
+    status: 'current',
     factory: '0x9b17bf6f97F5429368E11028BC637479b4667f7b',
     deployedAt: '2026-10-09',
     deployBlock: 26157200n,
