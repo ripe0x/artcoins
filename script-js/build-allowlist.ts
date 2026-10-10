@@ -9,10 +9,10 @@
  *   - `amount`: whole token units (decimal string or number). Converted to wei at 18 decimals.
  *
  * Output: JSON file with the merkle root and per-entry proofs. Defaults to
- *   ui/public/allowlists/<token-address-lowercase>.json
- * so the claim page can fetch it directly.
+ *   script-js/data/allowlists/<token-address-lowercase>.json
+ * for the site to serve at public/allowlists/.
  *
- * Also prints the merkle root to stdout — paste it into the airdrop form in the UI.
+ * Also prints the merkle root to stdout — paste it into the airdrop form on the site.
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -21,7 +21,7 @@ import type { Address } from 'viem';
 import {
   buildAllowlistFile,
   type AllowlistEntry,
-} from '../ui/src/lib/merkle.ts';
+} from './merkle.ts';
 
 function usage(): never {
   process.stderr.write(
@@ -70,9 +70,7 @@ function main() {
   if (!outPath) {
     outPath = resolve(
       import.meta.dirname,
-      '..',
-      'ui',
-      'public',
+      'data',
       'allowlists',
       `${token.toLowerCase()}.json`
     );

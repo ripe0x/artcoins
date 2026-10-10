@@ -21,9 +21,9 @@ contract V2BCoin is ERC20 {
 }
 
 contract V2BExtensionsTest is Test {
-    // vector from ui/node_modules/@openzeppelin/merkle-tree StandardMerkleTree.of(
+    // vector from @openzeppelin/merkle-tree StandardMerkleTree.of(
     //   [[0x11..11, 1000e18], [0x22..22, 2500e18], [0x33..33, 42]], ["address","uint256"])
-    // the same call ui/src/lib/merkle.ts buildTree makes.
+    // the same call script-js/merkle.ts buildTree makes.
     bytes32 internal constant ROOT =
         0xa25312279267352059d2ad647c87c163e44357aefb68c3cf2beaa679e277261d;
     address internal constant A = 0x1111111111111111111111111111111111111111;

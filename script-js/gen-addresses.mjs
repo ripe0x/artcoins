@@ -2,10 +2,10 @@
 // Generates address constants from deployments/mainnet.json (the registry, verified on chain by
 // verify-registry.mjs). Outputs, both committed:
 //   script/Addresses.sol                  solidity library, imported by forge scripts
-//   ui/src/lib/deployments.generated.ts   typescript constants, imported by ui/src/lib/config.ts
+//   abi/deployments.generated.ts          typescript constants, mirrored by the site (ripe0x/new-material)
 //   README.md                             the table between <!-- deployments:start --> and <!-- deployments:end -->
 // Usage: node script-js/gen-addresses.mjs [--check]     (or: cd script-js && npm run gen:addresses)
-// --check writes nothing, exits 1 if a generated file differs from disk or ui/public/config.json drifts.
+// --check writes nothing, exits 1 if a generated file differs from disk.
 // Output is a pure function of the registry (no timestamps), so reruns are byte identical.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,8 +15,7 @@ import { getAddress } from 'viem';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REGISTRY = path.join(ROOT, 'deployments/mainnet.json');
 const OUT_SOL = path.join(ROOT, 'script/Addresses.sol');
-const OUT_TS = path.join(ROOT, 'ui/src/lib/deployments.generated.ts');
-const UI_CONFIG = path.join(ROOT, 'ui/public/config.json');
+const OUT_TS = path.join(ROOT, 'abi/deployments.generated.ts');
 const README = path.join(ROOT, 'README.md');
 const check = process.argv.includes('--check');
 
@@ -296,9 +295,4 @@ for (const [file, text] of outputs) {
   }
 }
 
-// the ui runtime config carries one address, the default referrer. it must be the registry payout wallet.
-const payout = cs(contract('current', 'PassThroughWallet').address);
-const ui = JSON.parse(fs.readFileSync(UI_CONFIG, 'utf8'));
-if (ui.defaultReferrer !== payout) { console.error(`DRIFT ui/public/config.json defaultReferrer ${ui.defaultReferrer} != registry payout ${payout}`); bad++; }
-else console.log('ok    ui/public/config.json defaultReferrer = registry payout');
 process.exit(bad ? 1 : 0);

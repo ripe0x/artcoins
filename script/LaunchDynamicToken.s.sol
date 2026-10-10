@@ -12,7 +12,7 @@ import {LaunchDefaults} from "./LaunchDefaults.sol";
 
 /// @notice Deploy a new token with the DynamicBlockRenderer.
 /// @dev Sepolia only. The addresses below are the 2026-04-15 sepolia rehearsal stack
-///      (same as ui/src/lib/config.ts SEPOLIA_ADDRESSES). They are NOT in
+///      (the sepolia site config). They are NOT in
 ///      deployments/mainnet.json and not verified by it; there is no mainnet
 ///      deployment of this stack, so `run()` refuses any chain but Sepolia.
 ///
@@ -20,7 +20,7 @@ import {LaunchDefaults} from "./LaunchDefaults.sol";
 ///   source .env && forge script script/LaunchDynamicToken.s.sol \
 ///     --rpc-url "$SEPOLIA_RPC_URL" --broadcast -vvv
 contract LaunchDynamicToken is Script {
-    // Sepolia addresses (from ui/src/lib/config.ts)
+    // Sepolia addresses (sepolia rehearsal stack)
     address constant FACTORY = 0x3c3aEfC8Fa374589D179D43cb03e29a6B350DF7A;
     address constant HOOK = 0x36EF2eC4c1DF5e0A07567306D721F2Bb5d4E68cc;
     address constant LOCKER = 0x6e511f2321F82559E559ce1Da0EcFDBf0E4ace62;
