@@ -20,17 +20,18 @@
     },
     "current": {
       "label": "current stack (skim fee)",
-      "status": "current",
+      "status": "superseded",
       "factory": "0x49596c375c139E79bb937bcf826068a8F78D4e0e",
       "deployedAt": "2026-06-06",
       "notes": "factory 0x4959 matches repo head under profile ci (optimizer_runs 200) modulo linked libraries and metadata. owner only deploys, deploy fee 0.069 eth. coin: 111"
     },
     "v2": {
       "label": "v2 stack (skim hook v2, constants bound)",
-      "status": "deployed",
+      "status": "current",
       "factory": "0x9b17bf6f97F5429368E11028BC637479b4667f7b",
       "deployedAt": "2026-10-09",
-      "notes": "deployed by script/v2/DeployV2Stack.s.sol. factory ships deprecated (owner only) until the first coin ran a fee cycle"
+      "notes": "deployed by script/v2/DeployV2Stack.s.sol. factory ships deprecated (owner only) until the first coin ran a fee cycle",
+      "replaces": "current"
     }
   },
   "contracts": [
@@ -989,7 +990,7 @@
       "etherscanVerified": "unknown",
       "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "state": "unknown",
-      "status": "current",
+      "status": "superseded",
       "provenance": "chain",
       "chainVerified": true,
       "notes": "0xSplits pass-through wallet clone (impl 0xfe87400c...), protocol payout and ui defaultReferrer; treasury of both controllers. blockscout verified"
@@ -1013,7 +1014,7 @@
       "etherscanVerified": "unknown",
       "owner": null,
       "state": "unknown",
-      "status": "current",
+      "status": "superseded",
       "provenance": "chain",
       "chainVerified": true,
       "notes": "external library linked into current factory 0x4959 (address read from chain code); CREATE2 via 0x4e59. blockscout unverified | bytecode: artifact missing in foundry-out-ci-ipfs"
@@ -1037,7 +1038,7 @@
       "etherscanVerified": "unknown",
       "owner": null,
       "state": "unknown",
-      "status": "current",
+      "status": "superseded",
       "provenance": "chain",
       "chainVerified": true,
       "notes": "external library linked into current hook 0x636c (address read from chain code). blockscout verified | bytecode: artifact missing in foundry-out-ci-ipfs"
@@ -1061,7 +1062,7 @@
       "etherscanVerified": "unknown",
       "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "state": "deprecated",
-      "status": "current",
+      "status": "superseded",
       "provenance": "chain",
       "chainVerified": true,
       "notes": "current factory, version 1, deprecated=true means owner only deploys, deployFee 0.069 eth. NOT in broadcast records. blockscout verified | bytecode: artifact missing in foundry-out-ci-ipfs"
@@ -1085,7 +1086,7 @@
       "etherscanVerified": "unknown",
       "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "state": "unknown",
-      "status": "current",
+      "status": "superseded",
       "provenance": "chain",
       "chainVerified": true,
       "notes": "depositors: current locker and current hook. blockscout verified | bytecode: artifact missing in foundry-out-ci-ipfs"
@@ -1109,7 +1110,7 @@
       "etherscanVerified": "unknown",
       "owner": null,
       "state": "enabled",
-      "status": "current",
+      "status": "superseded",
       "provenance": "chain",
       "chainVerified": true,
       "notes": "skim hook for 111 (CREATE2 via 0x4e59); poolExtensionAllowlist is open-stack 0xd6d5. blockscout verified | bytecode: artifact missing in foundry-out-ci-ipfs"
@@ -1133,7 +1134,7 @@
       "etherscanVerified": "unknown",
       "owner": null,
       "state": "enabled",
-      "status": "current",
+      "status": "superseded",
       "provenance": "chain",
       "chainVerified": true,
       "notes": "blockscout unverified | bytecode: artifact missing in foundry-out-ci-ipfs"
@@ -1157,7 +1158,7 @@
       "etherscanVerified": "unknown",
       "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "state": "unknown",
-      "status": "current",
+      "status": "superseded",
       "provenance": "chain",
       "chainVerified": true,
       "notes": "permanent-collection controller, 86.67% treasury 0x41c3 / 13.33% burn router 0x0EB2. blockscout verified | bytecode: artifact missing in foundry-out-ci-ipfs"
@@ -1181,7 +1182,7 @@
       "etherscanVerified": "unknown",
       "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "state": "enabled",
-      "status": "current",
+      "status": "superseded",
       "provenance": "chain",
       "chainVerified": true,
       "notes": "111 locker, keeperRewardBps 0. blockscout verified | bytecode: artifact missing in foundry-out-ci-ipfs"
@@ -1205,7 +1206,7 @@
       "etherscanVerified": "unknown",
       "owner": null,
       "state": "unknown",
-      "status": "current",
+      "status": "superseded",
       "provenance": "chain",
       "chainVerified": true,
       "notes": "permanent-collection contract, source not in this repo. hook bountyRecipient and swapper endRecipient. blockscout verified"
@@ -1229,7 +1230,7 @@
       "etherscanVerified": "unknown",
       "owner": null,
       "state": "unknown",
-      "status": "current",
+      "status": "superseded",
       "provenance": "chain",
       "chainVerified": true,
       "notes": "permanent-collection contract, source not in this repo. hook protocolRecipient, forwards to controller 0xd8c6. blockscout verified"
@@ -1253,7 +1254,7 @@
       "etherscanVerified": "unknown",
       "owner": null,
       "state": "unknown",
-      "status": "current",
+      "status": "superseded",
       "provenance": "chain",
       "chainVerified": true,
       "notes": "permanent-collection contract, name unknown (unverified), metadataRenderer of 111. blockscout unverified"
@@ -1277,7 +1278,7 @@
       "etherscanVerified": "unknown",
       "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "state": "unknown",
-      "status": "current",
+      "status": "superseded",
       "provenance": "chain",
       "chainVerified": true,
       "notes": "permanent-collection contract, tokenAdmin of 111. blockscout unverified"
@@ -1301,7 +1302,7 @@
       "etherscanVerified": "unknown",
       "owner": null,
       "state": "unknown",
-      "status": "current",
+      "status": "superseded",
       "provenance": "chain",
       "chainVerified": true,
       "notes": "permanent-collection contract, name unknown (unverified), hook referralPayout; has hook() getter. blockscout unverified"
@@ -1325,7 +1326,7 @@
       "etherscanVerified": "unknown",
       "owner": null,
       "state": "unknown",
-      "status": "current",
+      "status": "superseded",
       "provenance": "chain",
       "chainVerified": true,
       "notes": "111 fee swapper (locker reward recipient 100%), endRecipient is LiveBidAdapter 0x8c72. blockscout verified | bytecode: first diff @45 (chain 11033 vs artifact 7937, best ci/none runs=200; tried ci/none); not tried (no artifacts): foundry-out-default,foundry-out-ci-ipfs,foundry-out-default-ipfs"
@@ -1349,7 +1350,7 @@
       "etherscanVerified": "unknown",
       "owner": null,
       "state": "unknown",
-      "status": "current",
+      "status": "superseded",
       "provenance": "chain",
       "chainVerified": true,
       "notes": "111 \"permanent collection\", launched by factory 0x4959, tokenAdmin is TokenAdminPoker 0xa96a. blockscout verified | bytecode: artifact missing in foundry-out-ci-ipfs"
@@ -1373,7 +1374,7 @@
       "etherscanVerified": "unknown",
       "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "state": "unknown",
-      "status": "current",
+      "status": "superseded",
       "provenance": "chain",
       "chainVerified": true,
       "notes": "burn router behind current controller 0xd8c6; not in broadcast records. blockscout unverified | bytecode: artifact missing in foundry-out-default"
@@ -1397,7 +1398,7 @@
       "etherscanVerified": "unknown",
       "owner": null,
       "state": "unknown",
-      "status": "current",
+      "status": "superseded",
       "provenance": "broadcast",
       "chainVerified": true,
       "notes": "collect, flush and convert helper pinned to the 111 locker 0x866e, coin 0x61C9, fee swapper 0xeBD9 and escrow 0x7559. ownerless, holds nothing. broadcast: script/v2/RunKeeper111.s.sol:DeployKeeper111 (runbook action 3) | bytecode: artifact missing in foundry-out-default"
@@ -1421,9 +1422,9 @@
       "etherscanVerified": "unknown",
       "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "state": "unknown",
-      "status": "deployed",
+      "status": "current",
       "provenance": "broadcast",
-      "chainVerified": true,
+      "chainVerified": false,
       "notes": "v2 stack | bytecode: ci/none runs=200"
     },
     {
@@ -1445,9 +1446,9 @@
       "etherscanVerified": "unknown",
       "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "state": "unknown",
-      "status": "deployed",
+      "status": "current",
       "provenance": "broadcast",
-      "chainVerified": true,
+      "chainVerified": false,
       "notes": "v2 stack | bytecode: ci/none runs=200"
     },
     {
@@ -1469,10 +1470,10 @@
       "etherscanVerified": "unknown",
       "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "state": "enabled",
-      "status": "deployed",
+      "status": "current",
       "provenance": "broadcast",
-      "chainVerified": true,
-      "notes": "CREATE2 via 0x4e59b44847b379578588920cA78FbF26c0B4956C salt 0x0000000000000000000000000000000000000000000000000000000000005544 | bytecode: ci/none runs=200"
+      "chainVerified": false,
+      "notes": "CREATE2 via 0x4e59b44847b379578588920cA78FbF26c0B4956C salt 0x0000000000000000000000000000000000000000000000000000000000005544"
     },
     {
       "name": "ArtCoinsLpLockerV2",
@@ -1493,9 +1494,9 @@
       "etherscanVerified": "unknown",
       "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "state": "unknown",
-      "status": "deployed",
+      "status": "current",
       "provenance": "broadcast",
-      "chainVerified": true,
+      "chainVerified": false,
       "notes": "v2 stack | bytecode: ci/none runs=200"
     },
     {
@@ -1517,9 +1518,9 @@
       "etherscanVerified": "unknown",
       "owner": null,
       "state": "enabled",
-      "status": "deployed",
+      "status": "current",
       "provenance": "broadcast",
-      "chainVerified": true,
+      "chainVerified": false,
       "notes": "v2 stack | bytecode: ci/none runs=200"
     },
     {
@@ -1541,9 +1542,9 @@
       "etherscanVerified": "unknown",
       "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "state": "deprecated",
-      "status": "deployed",
+      "status": "current",
       "provenance": "broadcast",
-      "chainVerified": true,
+      "chainVerified": false,
       "notes": "v2 stack | bytecode: ci/none runs=200"
     },
     {
@@ -1565,9 +1566,9 @@
       "etherscanVerified": "unknown",
       "owner": null,
       "state": "unknown",
-      "status": "deployed",
+      "status": "current",
       "provenance": "broadcast",
-      "chainVerified": true,
+      "chainVerified": false,
       "notes": "v2 stack | bytecode: ci/none runs=200"
     },
     {
@@ -1589,9 +1590,9 @@
       "etherscanVerified": "unknown",
       "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "state": "unknown",
-      "status": "deployed",
+      "status": "current",
       "provenance": "broadcast",
-      "chainVerified": true,
+      "chainVerified": false,
       "notes": "v2 stack | bytecode: ci/none runs=200"
     },
     {
@@ -1613,9 +1614,9 @@
       "etherscanVerified": "unknown",
       "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "state": "unknown",
-      "status": "deployed",
+      "status": "current",
       "provenance": "broadcast",
-      "chainVerified": true,
+      "chainVerified": false,
       "notes": "v2 stack | bytecode: ci/none runs=200"
     },
     {
@@ -1637,9 +1638,9 @@
       "etherscanVerified": "unknown",
       "owner": null,
       "state": "unknown",
-      "status": "deployed",
+      "status": "current",
       "provenance": "broadcast",
-      "chainVerified": true,
+      "chainVerified": false,
       "notes": "v2 stack | bytecode: ci/none runs=200"
     }
   ],
