@@ -163,7 +163,7 @@ contract LaunchLLToken is Script {
         console2.log("Total supply: ", token.totalSupply());
         console2.log("Admin:        ", token.admin());
         console2.log("");
-        console2.log("Next: copy ui/public/allowlists/liquidity-layer.json to");
+        console2.log("Next: copy script-js/data/allowlists/liquidity-layer.json to");
         console2.log("artcoins/public/allowlists/<token-address-lowercase>.json");
         console2.log("then visit /coin/11155111/<token>/claim");
     }

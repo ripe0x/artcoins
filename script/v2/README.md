@@ -119,7 +119,7 @@ the merge overlays the record on the `v2` stack entry and replaces the stack's c
 | `merge-v2.mjs <record>` after a cutover | v2 stays `current` |
 | `merge-v2.mjs --rollback` | the stack named in `stacks.v2.replaces` is `current` again and v2 is `deployed` |
 
-the generator writes constants per stack id: `CURRENT_*` (the `0x4959` stack, v1 abi), `OPEN_*`, `LEGACY_*` and `V2_*` in `script/Addresses.sol`, and `CURRENT` and `V2` in `ui/src/lib/deployments.generated.ts`. v2 consumers read `V2_*` and `V2`. scripts and ui code that bind the v1 abi of the `0x4959` stack read `CURRENT_*`.
+the generator writes constants per stack id: `CURRENT_*` (the `0x4959` stack, v1 abi), `OPEN_*`, `LEGACY_*` and `V2_*` in `script/Addresses.sol`, and `CURRENT` and `V2` in `abi/deployments.generated.ts`. v2 consumers read `V2_*` and `V2`. scripts and site code that bind the v1 abi of the `0x4959` stack read `CURRENT_*`.
 
 ## 4. launch the first coin (owner only while deprecated)
 

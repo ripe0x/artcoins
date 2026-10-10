@@ -52,9 +52,9 @@ abstract contract ForkBase is Test {
     address internal constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     /// @dev script/DeployV1Stack.s.sol; equals live locker.positionManager()
     address internal constant POSITION_MANAGER = 0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e;
-    /// @dev test/MainnetLaunchRehearsalForkTest.t.sol, ui/src/lib/config.ts
+    /// @dev test/MainnetLaunchRehearsalForkTest.t.sol
     address internal constant UNIVERSAL_ROUTER = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af;
-    /// @dev Not in the repo (ui mainnet stateView is zero). Uniswap canonical
+    /// @dev Not in the repo (not in the registry). Uniswap canonical
     ///      mainnet StateView; verified on chain at FORK_BLOCK:
     ///      poolManager() == POOL_MANAGER and getSlot0(coin 111 pool) answers.
     address internal constant STATE_VIEW = 0x7fFE42C4a5DEeA5b0feC41C94C136Cf115597227;
@@ -83,7 +83,7 @@ abstract contract ForkBase is Test {
     address internal constant LEGACY_FACTORY = 0xD1595A2742C392d1c109b616b4F08918D02292f9;
     /// @dev Single eoa owning factory, locker, escrow (and teamFeeRecipient of LIVE_FACTORY).
     address internal constant LIVE_OWNER = 0xCB43078C32423F5348Cab5885911C3B5faE217F9;
-    /// @dev ui/public/config.json defaultReferrer / protocol payout.
+    /// @dev Site default referrer, equals the registry protocol payout.
     address internal constant UI_DEFAULT_REFERRER = 0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4;
 
     // ─── state ───────────────────────────────────────────────────────────

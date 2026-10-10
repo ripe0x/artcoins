@@ -3,14 +3,18 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "gen:abi": "node gen-abis.mjs",
+    "check:abi": "node gen-abis.mjs --check",
     "gen:addresses": "node gen-addresses.mjs",
     "check:addresses": "node gen-addresses.mjs --check",
     "verify:registry": "cd .. && node script-js/verify-registry.mjs --no-build",
     "verify:registry:build": "cd .. && node script-js/verify-registry.mjs --build"
   },
   "dependencies": {
+    "@openzeppelin/merkle-tree": "^1.0.8",
     "puppeteer": "^23.0.0",
     "sharp": "^0.33.0",
+    "tsx": "^4.23.15",
     "viem": "^2.57.3"
   }
 }

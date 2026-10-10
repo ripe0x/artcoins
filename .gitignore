@@ -12,11 +12,8 @@ out/
 # Environment — ignore all .env files except the committed templates
 .env
 .env.*
-ui/.env
-ui/.env.*
 # Allow the placeholder-only templates to be committed
 !.env.example
-!ui/.env.example
 
 # Docs
 docs/*
@@ -25,11 +22,6 @@ docs/*
 # OS
 .DS_Store
 Thumbs.db
-
-# Node (ui/)
-ui/node_modules/
-ui/dist/
-ui/.env
 
 # Node (script-js/)
 script-js/node_modules/

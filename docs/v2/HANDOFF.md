@@ -55,7 +55,7 @@ you are taking over the artcoins v2 project from the cloud session that built it
 | 9 | ci secrets on the private repo: `MAINNET_RPC_URL` is set; add `ETHERSCAN_API_KEY` | owner | registry.yml, verify-v2.sh |
 | 10 | mainnet deploy: RUNBOOK part 2a. `FOUNDRY_PROFILE=ci forge script script/v2/DeployV2Stack.s.sol --rpc-url $ETH_RPC_URL --sender $OWNER` dry run, then the owner broadcasts with `--account ripe0x --broadcast --slow`; `acceptOwnership` on escrow, hook, locker, factory; `script/v2/verify-v2.sh`; fill deployments/v2.template.json into mainnet.json as stack `v2`; verifier; commit | owner broadcasts, you drive | RUNBOOK 2a, script/v2/README.md |
 | 11 | first coin via `deployTokenAsOwner` while the factory is deprecated; pre launch `setExemptAllowed(treasury)` if needed and `addDepositor(feeSwapper)`; `BurnRouterV2.initialize`; one keeper run; add the coin to the registry | owner broadcasts, you drive | RUNBOOK 2b |
-| 12 | ui: set the v2 stack (`VITE_V2_*` or the generator), rerun `cd ui && npm run test:e2e` against it, deploy the site | you | ui/README.md, ui-fixes.md |
+| 12 | site (ripe0x/new-material): bump the artcoins submodule pin, regenerate its abi and deployments mirrors, deploy the site | you | ripe0x/new-material |
 | 13 | `setDeprecated(false)` last, after the 15 gates in RUNBOOK 2c | owner | RUNBOOK 2c |
 
 ## how to run tests here
@@ -67,7 +67,7 @@ you are taking over the artcoins v2 project from the cloud session that built it
 | deploy rehearsal | `FOUNDRY_PROFILE=ci forge test --match-path "test/v2/DeployV2Stack.fork.t.sol" --fork-url $ETH_RPC_URL --fork-block-number 26130269 -vv` | 6 pass |
 | review proofs | `forge test --match-path "test/v2/{review,review-v2}/**" --fork-url $ETH_RPC_URL --fork-block-number 26130269 --fork-retries 8 --fork-retry-backoff 2000` | 101 pass |
 | keeper runner | `cd keeper && npm ci && npm test` | 70 pass |
-| ui | `cd ui && npm ci && npm test && npm run build && npm run lint`, then anvil fork, `DRY_RUN=0 script/v2/deploy.sh local` and `npm run test:e2e` (ui/README.md) | 74 unit, 19 e2e |
+| site | tests live in ripe0x/new-material; the `ui/` app was removed from this repo | n/a |
 | sizes | `FOUNDRY_PROFILE=ci forge build --sizes --skip "test/**" --skip script` | hook 16,716 bytes, headroom 7,860 |
 | registry | `cd script-js && npm ci && node verify-registry.mjs --build --require-artifacts` | 0 drift; 18 older rows mismatch by design (registry-notes.md) |
 

@@ -9,7 +9,7 @@
  *   node script-js/sync-addresses.mjs [--stack current|open|legacy] [--json]
  *   eval "$(node script-js/sync-addresses.mjs --stack legacy)"     # export into the shell
  *
- * The ui reads script-js/gen-addresses.mjs output instead (ui/src/lib/deployments.generated.ts).
+ * The site reads script-js/gen-addresses.mjs output instead (abi/deployments.generated.ts).
  * Verify the registry itself with: node script-js/verify-registry.mjs
  */
 import { readFileSync } from 'node:fs';

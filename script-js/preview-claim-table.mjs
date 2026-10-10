@@ -3,7 +3,7 @@
  * print the claim outcome for every address: what they'll successfully claim
  * vs. what gets stranded or under-filled.
  *
- * Usage (must run from ui/ or somewhere viem resolves):
+ * Usage (must run from script-js/ or somewhere viem resolves):
  *   node ../script-js/preview-claim-table.mjs <json-path> <totalSupply> <allocationPct>
  *
  * Example:

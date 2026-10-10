@@ -125,13 +125,9 @@ FOUNDRY_PROFILE=tune forge script script/DeployV1Stack.s.sol --rpc-url $MAINNET_
 
 After a deployment, add it to `deployments/mainnet.json`, run `node script-js/verify-registry.mjs --fill`, then `npm run gen:addresses`.
 
-## UI
+## Site
 
-`ui/` is a React 19 + Vite app (wagmi + RainbowKit + Tailwind) for deploying and managing tokens. Its mainnet addresses come from the registry through `ui/src/lib/deployments.generated.ts`.
-
-```bash
-cd ui && npm install && npm run dev
-```
+The web UI lives in [ripe0x/new-material](https://github.com/ripe0x/new-material), which consumes this repo as a git submodule. ABIs are generated into `abi/{v1,v2}/` (`cd script-js && npm run gen:abi`, check with `npm run check:abi`) and registry addresses into `abi/deployments.generated.ts` (`npm run gen:addresses`).
 
 ## License
 

@@ -14,7 +14,7 @@ worktree `.claude/worktrees/artcoins-v2-handoff-8404d2`, local branch `v2-direct
 | review proofs | review, review-v2 | 94 | 94 pass |
 | sizes | ci profile | hook 16,716 | hook 16,716, headroom 7,860 |
 | keeper runner | `cd keeper && npm test` with `MAINNET_RPC_URL` and ci artifacts built | 70 | 70 pass |
-| ui unit, build, lint | `cd ui && npm test && npm run build && npm run lint` | 74 | 74 pass, build and lint green |
+| ui unit, build, lint (historical, `ui/` removed; the site is ripe0x/new-material) | `cd ui && npm test && npm run build && npm run lint` | 74 | 74 pass, build and lint green |
 | ui e2e | anvil fork on port 8546, v2 stack deployed, `E2E_FORK_RPC=http://127.0.0.1:8546` | 19 | 19 pass after the harness fix: console load errors are judged by resource url against an allowlist of third party hosts (api.web3modal.org 403, pulse.walletconnect.org 400, ipfs.io 429). first run gave 3 pass, 10 fail, 6 not run on those errors alone |
 
 after D65 to D70 (merged head, same commands):

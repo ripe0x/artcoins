@@ -70,10 +70,10 @@ not on GitHub.
 `deployments/mainnet.json` is the source of truth for every mainnet
 address (stacks `current`, `open` superseded, `legacy` LAYER). Check it with
 `node script-js/verify-registry.mjs` (chain reads plus bytecode compare, ci
-runs it). Never hardcode a stack address in a script, the ui or a doc: run
+runs it). Never hardcode a stack address in a script, the site or a doc: run
 `cd script-js && npm run gen:addresses` and use the generated
-`script/Addresses.sol` (forge scripts) or `ui/src/lib/deployments.generated.ts`
-(ui). `node script-js/sync-addresses.mjs --stack <id>` prints the launch
+`script/Addresses.sol` (forge scripts) or `abi/deployments.generated.ts`
+(the site, ripe0x/new-material, mirrors it). `node script-js/sync-addresses.mjs --stack <id>` prints the launch
 script env vars from the registry. A script that targets a superseded stack
 must say so in a top comment and refuse mainnet unless `ALLOW_SUPERSEDED=1`.
 `broadcast/` is not a reliable record: the current stack has no entry there.

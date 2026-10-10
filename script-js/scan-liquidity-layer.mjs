@@ -2,8 +2,8 @@
  * Scan the LiquidityLayerMigrationDeposit contract on Base for Deposited events
  * and aggregate per-recipient totals.
  *
- * Usage (must resolve `viem` — run from ui/ or any node_modules scope that has it):
- *   cd ui && node ../script-js/scan-liquidity-layer.mjs [--rpc <url>]
+ * Usage (must resolve `viem` — run from script-js/ or any node_modules scope that has it):
+ *   cd script-js && node scan-liquidity-layer.mjs [--rpc <url>]
  *
  * Outputs:
  *   script-js/data/liquidity-layer-depositors.csv   — address,amountInWholeTokens
