@@ -17,11 +17,12 @@ import fs from "node:fs";
 import path from "node:path";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
-const DEFAULT_SOURCE = "/Users/dd/Sites/liquidity-layer-node/web/monalisa.png";
+const DEFAULT_SOURCE = process.env.MONA_SOURCE;
 
 const argv = process.argv.slice(2);
 const sourceIdx = argv.indexOf("--source");
 const SOURCE = sourceIdx >= 0 ? argv[sourceIdx + 1] : DEFAULT_SOURCE;
+if (!SOURCE) throw new Error("pass --source <png> or set MONA_SOURCE");
 
 const OUT = path.resolve(ROOT, "script-js/data/ll/candidates");
 fs.mkdirSync(OUT, { recursive: true });
