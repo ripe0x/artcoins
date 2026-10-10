@@ -86,7 +86,7 @@ a cold compile of the whole tree can need about 14 gb; build src, script and tes
 | the PoolManager passes the PositionManager, not the locker, as `sender` to liquidity hooks |
 | the afterSwap return delta can only adjust the unspecified currency, so an in swap eth refund is impossible (D58) |
 | on the owner's mac, git config sets `submodule.active :!**` for linked worktrees, so `git submodule update --init --recursive` skips every nested lib and the compile fails with `lib/permit2/src/src/...` not found. init nested submodules by explicit path inside the worktree (`git -C lib/v4-periphery submodule update --init -- lib/permit2`, repeat until `git submodule status --recursive` shows only the two deep `ds-test` leaves); never change the global config |
-| branch `v2` is also checked out in /Users/dd/CascadeProjects/launcher-v2, so another worktree cannot check it out. track it on a local branch (`git checkout -B v2-director origin/v2`) and push with `git push origin HEAD:v2` |
+| branch `v2` is also checked out in a separate local worktree, so another worktree cannot check it out. track it on a local branch (`git checkout -B v2-director origin/v2`) and push with `git push origin HEAD:v2` |
 | the local forge is 1.8.1, ci pins 1.7.1. the suites were proven with a 1.7.1 binary; use that for counts that must match ci |
 | port 8545 can be held by another session's anvil; run the ui e2e fork on another port with `E2E_FORK_RPC` |
 

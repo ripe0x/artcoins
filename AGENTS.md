@@ -26,8 +26,7 @@ asks you to "bump artcoins."
 
 ## When permanent-collection needs your changes (the bump recipe)
 
-Assuming the local sibling layout (both repos checked out as siblings
-at `/Users/dd/CascadeProjects/`):
+Assuming both repos are checked out as siblings in the same parent directory:
 
 ```bash
 # 1. In artcoins (this repo): make your changes, commit, push
@@ -35,7 +34,7 @@ git add -A && git commit -m "..."
 git push origin master   # CI in permanent-collection can now resolve the pin
 
 # 2. In permanent-collection: bump the pin
-cd /Users/dd/CascadeProjects/permanent-collection/contracts/lib/artcoins
+cd ../permanent-collection/contracts/lib/artcoins
 git fetch sibling && git checkout sibling/master
 # (`sibling` is a pre-configured remote pointing at this repo on local
 #  disk — avoids a GitHub roundtrip; the `origin` remote is GitHub.)

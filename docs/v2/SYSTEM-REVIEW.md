@@ -226,7 +226,7 @@ ui statuses come from ui-fixes.md (build, lint, `npm test`, `npm run check:abi`,
 | DC-4 | medium | tax "single deployment" convention | README | not enforced, any deployer can enable on a non deprecated factory | fixed. README corrected (row 7). v2 enforces the sink rule and the exempt allowlist at launch (D10, D47) |
 | DC-5 | low | ethereum mainnet only | README | no chain guard in factory or hook | fixed. README says no chain id enforcement (row 8) |
 | DC-6 | medium | "factory deployed 2026-05-18, see README addresses" | AGENTS.md | no such deploy date, README has no address table | fixed. three factories, current 0x4959 deployed 2026-06-06, README table generated (row 1) |
-| DC-7 | low | bump recipe, hardcoded `/Users/dd` paths | AGENTS.md | stale once v2 merges | open. `AGENTS.md` and `CLAUDE.md` still carry `/Users/dd` paths in the bump recipe |
+| DC-7 | low | bump recipe, hardcoded home directory paths | AGENTS.md | stale once v2 merges | open. `AGENTS.md` and `CLAUDE.md` still carry home directory paths in the bump recipe |
 | DC-8 | high | "wip branches stay private" | AGENTS.md, mirror.yml | origin carries four wip branches (HY3) | open. tied to HY3, owner decision D26 |
 | DC-9 | medium | readme deploy command | README:86 | deploys legacy stack (S-02) | fixed. README deploy section (S-02) |
 | DC-10 | low | stale contract names in `.env.example` | .env.example | pre rename names | fixed. `.env.example` names corrected (row 9) |
