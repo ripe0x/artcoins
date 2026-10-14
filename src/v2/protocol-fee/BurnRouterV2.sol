@@ -38,8 +38,12 @@ import {IWETH9} from "@uniswap/v4-periphery/src/interfaces/external/IWETH9.sol";
 ///         - output must reach the caller's `minOut` and `SPOT_FLOOR_BPS` of the
 ///           spot output for the weth consumed, net of the pool's buy fee. The
 ///           floor is read from the pool at burn time, so it cannot go stale.
-///         - keeper reward is `min(consumed * KEEPER_REWARD_BPS / BPS, KEEPER_REWARD_CAP)`,
-///           reserved before the swap and paid in eth after it.
+///         - keeper reward: when `block.basefee <= REWARD_MAX_BASEFEE`, a flat
+///           `KEEPER_TIP` plus the burn's gas at the basefee, capped at
+///           `REWARD_MAX_BPS` of the weth consumed; zero above that basefee.
+///           Reserved before the swap (REWARD_MAX_BPS of the balance), paid in
+///           eth after it. Burns wait for cheap blocks and for a budget worth
+///           at least ten times the reward.
 ///         - every coin held, including coin sent directly, burns on the next burn.
 ///         - eth, weth and the coin cannot be rescued.
 contract BurnRouterV2 is
@@ -57,6 +61,14 @@ contract BurnRouterV2 is
     uint256 public constant SPOT_FLOOR_BPS = Constants.BURN_SPOT_FLOOR_BPS;
     /// @inheritdoc IBurnRouterV2
     uint256 public constant KEEPER_GAS = 50_000;
+    /// @inheritdoc IBurnRouterV2
+    uint256 public constant KEEPER_TIP = 0.0003 ether;
+    /// @inheritdoc IBurnRouterV2
+    uint256 public constant KEEPER_GAS_OVERHEAD = 60_000;
+    /// @inheritdoc IBurnRouterV2
+    uint256 public constant REWARD_MAX_BASEFEE = 1 gwei;
+    /// @inheritdoc IBurnRouterV2
+    uint256 public constant REWARD_MAX_BPS = 1000;
     /// @inheritdoc IBurnRouterV2
     uint16 public constant STACK_VERSION = Constants.STACK_VERSION;
     /// @dev Gas for the hook's per direction fee read; a hook without the
@@ -117,6 +129,7 @@ contract BurnRouterV2 is
         nonReentrant
         returns (uint256 wethIn, uint256 burned)
     {
+        uint256 gasStart = gasleft();
         if (lastBurnBlock == block.number) revert AlreadyBurnedThisBlock();
         lastBurnBlock = uint64(block.number);
 
@@ -140,7 +153,8 @@ contract BurnRouterV2 is
 
         IBurnableCoin(coin).burn(burned);
 
-        uint256 reward = rewardFor(wethIn);
+        uint256 reward =
+            rewardFor(wethIn, gasStart - gasleft() + KEEPER_GAS_OVERHEAD, block.basefee);
         if (reward != 0) {
             IWETH9(payable(weth)).withdraw(reward);
             address keeper = msg.sender;
@@ -190,9 +204,15 @@ contract BurnRouterV2 is
     }
 
     /// @inheritdoc IBurnRouterV2
-    function rewardFor(uint256 consumed) public pure returns (uint256 reward) {
-        reward = (consumed * Constants.KEEPER_REWARD_BPS) / Constants.BPS;
-        if (reward > Constants.KEEPER_REWARD_CAP) reward = Constants.KEEPER_REWARD_CAP;
+    function rewardFor(uint256 consumed, uint256 gasUsed, uint256 baseFee)
+        public
+        pure
+        returns (uint256 reward)
+    {
+        if (baseFee > REWARD_MAX_BASEFEE) return 0;
+        reward = KEEPER_TIP + gasUsed * baseFee;
+        uint256 cap = (consumed * REWARD_MAX_BPS) / Constants.BPS;
+        if (reward > cap) reward = cap;
     }
 
     /// @inheritdoc IBurnRouterV2
@@ -226,10 +246,11 @@ contract BurnRouterV2 is
 
     // ── internals ─────────────────────────────────────────────────────────
 
-    /// @dev Balance minus the reward reserve. `rewardFor(bal) >= rewardFor(consumed)`
-    ///      keeps the reward payable after any fill.
+    /// @dev Balance minus the reward reserve, REWARD_MAX_BPS of the balance.
+    ///      The reward is capped at REWARD_MAX_BPS of the consumed weth, and
+    ///      consumed <= budget < balance, so the reserve covers it after any fill.
     function _budget(uint256 bal) internal pure returns (uint256) {
-        return bal - rewardFor(bal);
+        return bal - (bal * REWARD_MAX_BPS) / Constants.BPS;
     }
 
     /// @dev Exact input weth to coin with the price limit `maxImpactBps` from

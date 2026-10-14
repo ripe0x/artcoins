@@ -53,6 +53,7 @@ contract BurnRouterV2ForkTest is ForkBase {
         if (!forkMainnet()) return;
         key = IArtCoinsLpLocker(Addresses.LEGACY_LOCKER).tokenRewards(LAYER).poolKey;
         router = new BurnRouterV2(address(this), POOL_MANAGER, WETH, LAYER, key);
+        vm.fee(0.5 gwei); // under REWARD_MAX_BASEFEE: burns pay a keeper reward
         vm.label(address(router), "layerBurnRouter");
         vm.label(LAYER, "LAYER");
     }
@@ -61,6 +62,11 @@ contract BurnRouterV2ForkTest is ForkBase {
         vm.deal(address(this), address(this).balance + amount);
         (bool ok,) = address(router).call{value: amount}("");
         assertTrue(ok);
+    }
+
+    /// @dev REWARD_MAX_BPS of `bal`, the reserve the budget leaves for the reward.
+    function _reserve(uint256 bal) internal view returns (uint256) {
+        return bal * router.REWARD_MAX_BPS() / Constants.BPS;
     }
 
     function _spot() internal view returns (uint160 sqrtPriceX96) {
@@ -117,7 +123,7 @@ contract BurnRouterV2ForkTest is ForkBase {
         _fund(0.05 ether);
         uint256 supply0 = IERC20(LAYER).totalSupply();
         uint256 budget = router.swapBudget();
-        assertEq(budget, 0.05 ether - router.rewardFor(0.05 ether));
+        assertEq(budget, 0.05 ether - _reserve(0.05 ether));
         uint256 floor = router.floorFor(budget);
         assertGt(floor, 0);
 
@@ -128,14 +134,16 @@ contract BurnRouterV2ForkTest is ForkBase {
         assertGe(burned, floor, "floor enforced on the fill");
         assertEq(IERC20(LAYER).totalSupply(), supply0 - burned, "LAYER supply burned");
         assertEq(IERC20(LAYER).balanceOf(address(router)), 0, "no LAYER left");
-        assertEq(keeper.balance, router.rewardFor(wethIn), "reward on consumed, in eth");
+        uint256 reward = keeper.balance;
+        assertGe(reward, router.KEEPER_TIP(), "tip plus gas, in eth");
+        assertLe(reward, wethIn * router.REWARD_MAX_BPS() / Constants.BPS, "under the cap");
         assertEq(address(router).balance, 0, "eth wrapped");
-        // the reserve is sized on the balance, the reward on the fill; the
-        // difference is weth dust that folds into the next burn
+        // the reserve is sized on the balance, the reward on the burn; the
+        // difference is weth that folds into the next burn
         assertEq(
             IERC20(WETH).balanceOf(address(router)),
-            router.rewardFor(0.05 ether) - router.rewardFor(wethIn),
-            "budget spent, reward paid, reserve dust stays"
+            _reserve(0.05 ether) - reward,
+            "budget spent, reward paid, the rest of the reserve stays"
         );
         assertEq(router.lastBurnBlock(), block.number);
     }
@@ -144,15 +152,10 @@ contract BurnRouterV2ForkTest is ForkBase {
     function test_burnV2_wethFunded_burns() public onlyFork {
         dealWeth(address(router), 0.02 ether);
         _fund(0.01 ether);
-        assertEq(router.swapBudget(), 0.03 ether - router.rewardFor(0.03 ether));
+        assertEq(router.swapBudget(), 0.03 ether - _reserve(0.03 ether));
         uint256 supply0 = IERC20(LAYER).totalSupply();
         (uint256 wethIn, uint256 burned) = router.processBurn(0);
-        assertEq(
-            wethIn,
-            router.rewardFor(0.03 ether) > 0
-                ? 0.03 ether - router.rewardFor(0.03 ether)
-                : 0.03 ether
-        );
+        assertEq(wethIn, 0.03 ether - _reserve(0.03 ether));
         assertLt(IERC20(LAYER).totalSupply(), supply0);
         assertGt(burned, 0);
     }
@@ -166,7 +169,8 @@ contract BurnRouterV2ForkTest is ForkBase {
         (uint256 wethIn,) = router.processBurn(0);
         assertLt(wethIn, 5 ether, "partial fill");
         assertLe(_priceMoveBps(pre, _spot()), router.maxImpactBps(), "impact capped");
-        assertEq(keeper.balance, router.rewardFor(wethIn), "reward sized on consumed");
+        assertLe(keeper.balance, wethIn * router.REWARD_MAX_BPS() / Constants.BPS, "reward capped");
+        assertGe(keeper.balance, router.KEEPER_TIP(), "reward paid");
         assertGt(IERC20(WETH).balanceOf(address(router)), 4 ether, "rest waits as weth");
 
         // the next block burns again
@@ -243,17 +247,49 @@ contract BurnRouterV2ForkTest is ForkBase {
         vm.prank(rej);
         vm.expectEmit(true, false, false, false, address(router));
         emit IBurnRouterV2.KeeperRewardFailed(rej, 0);
-        (uint256 wethIn,) = router.processBurn(0);
-        uint256 reward = router.rewardFor(wethIn);
-        assertEq(address(router).balance, reward, "unwrapped reward stays as eth");
-        // and folds into the next burn together with the reserve dust
+        router.processBurn(0);
+        uint256 reward = address(router).balance;
+        assertGe(reward, router.KEEPER_TIP(), "unwrapped reward stays as eth");
+        // and folds into the next burn together with the rest of the reserve
         vm.roll(block.number + 1);
         _fund(0.01 ether);
         uint256 total = address(router).balance + IERC20(WETH).balanceOf(address(router));
         assertGe(total, reward + 0.01 ether);
-        assertEq(router.swapBudget(), total - router.rewardFor(total));
+        assertEq(router.swapBudget(), total - _reserve(total));
         (uint256 wethIn2,) = router.processBurn(0);
-        assertEq(wethIn2, total - router.rewardFor(total), "everything held is the next budget");
+        assertEq(wethIn2, total - _reserve(total), "everything held is the next budget");
+    }
+
+    // ── keeper reward ────────────────────────────────────────────────────
+
+    function test_burnV2_rewardFor_math() public view {
+        uint256 tip = router.KEEPER_TIP();
+        assertEq(router.rewardFor(1 ether, 800_000, 1 gwei), tip + 800_000 * 1 gwei, "tip plus gas");
+        assertEq(router.rewardFor(1 ether, 800_000, 1 gwei + 1), 0, "zero above the gate");
+        assertEq(router.rewardFor(0.001 ether, 800_000, 1 gwei), 0.0001 ether, "capped at 10%");
+        assertEq(router.rewardFor(1 ether, 0, 0), tip, "tip alone at zero basefee");
+    }
+
+    /// @notice Above REWARD_MAX_BASEFEE the burn runs and pays nothing.
+    function test_burnV2_reward_zeroAboveBasefeeGate() public onlyFork {
+        vm.fee(router.REWARD_MAX_BASEFEE() + 1);
+        _fund(0.05 ether);
+        vm.prank(keeper);
+        vm.expectEmit(true, false, false, false, address(router));
+        emit IBurnRouterV2.Burned(keeper, 0, 0, 0);
+        (uint256 wethIn,) = router.processBurn(0);
+        assertEq(keeper.balance, 0, "no reward above the gate");
+        assertEq(wethIn, 0.05 ether - _reserve(0.05 ether), "budget unchanged");
+        assertEq(IERC20(WETH).balanceOf(address(router)), _reserve(0.05 ether), "reserve kept");
+    }
+
+    /// @notice A small budget pays at most REWARD_MAX_BPS of what it burned.
+    function test_burnV2_reward_cappedByConsumed() public onlyFork {
+        _fund(0.002 ether);
+        vm.prank(keeper);
+        (uint256 wethIn,) = router.processBurn(0);
+        assertEq(keeper.balance, wethIn * router.REWARD_MAX_BPS() / Constants.BPS, "cap binds");
+        assertLt(keeper.balance, router.KEEPER_TIP(), "below the tip: not worth a keeper's gas");
     }
 
     // ── owner ────────────────────────────────────────────────────────────

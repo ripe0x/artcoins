@@ -143,6 +143,7 @@ contract FeeFlowV2ForkTest is IntegrationV2Base {
 
         // ── phase 4: the burn router buys and burns LAYER, one per block ──
         vm.roll(vm.getBlockNumber() + 1);
+        vm.fee(0.5 gwei); // under the router's REWARD_MAX_BASEFEE, so the keeper is paid
         assertGt(address(v2.burnRouter).balance, 0, "router funded");
         a = _actorsEth();
         uint256 supply0 = IERC20(LAYER).totalSupply();

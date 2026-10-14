@@ -10,8 +10,9 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 ///         is an exact input swap with a price limit `maxImpactBps` (1/10,000) from the pre swap
 ///         spot, so a large balance fills partially and drains over blocks. The output must reach
 ///         the caller's `minOut` and `SPOT_FLOOR_BPS` of the spot output net of the pool's buy
-///         fee. The keeper reward is `min(consumed * KEEPER_REWARD_BPS / 10,000,
-///         KEEPER_REWARD_CAP)` wei, paid in eth.
+///         fee. The keeper reward, paid in eth, is `KEEPER_TIP` plus the burn's gas at the
+///         basefee, capped at `REWARD_MAX_BPS` of the weth consumed, and zero when the basefee
+///         is above `REWARD_MAX_BASEFEE`.
 interface IBurnRouterV2 {
     /// @notice A burn completed.
     /// @param caller Keeper that called the burn.
@@ -113,14 +114,32 @@ interface IBurnRouterV2 {
     /// @param wethIn Weth consumed, in wei.
     function floorFor(uint256 wethIn) external view returns (uint256);
 
-    /// @notice Keeper reward for `consumed` wei: `min(consumed * KEEPER_REWARD_BPS / BPS,
-    ///         KEEPER_REWARD_CAP)`, in wei.
+    /// @notice Keeper reward in wei: zero when `baseFee > REWARD_MAX_BASEFEE`, else
+    ///         `min(KEEPER_TIP + gasUsed * baseFee, consumed * REWARD_MAX_BPS / 10,000)`.
     /// @param consumed Weth consumed by the swap, in wei.
-    function rewardFor(uint256 consumed) external pure returns (uint256 reward);
+    /// @param gasUsed Gas the burn used, `KEEPER_GAS_OVERHEAD` included.
+    /// @param baseFee Block basefee in wei.
+    function rewardFor(uint256 consumed, uint256 gasUsed, uint256 baseFee)
+        external
+        pure
+        returns (uint256 reward);
 
     /// @notice Weth the next burn would offer the pool, in wei: eth plus weth held minus the
-    ///         reward reserve.
+    ///         reward reserve (`REWARD_MAX_BPS` of that total).
     function swapBudget() external view returns (uint256);
+
+    /// @notice Flat part of the keeper reward, in wei.
+    function KEEPER_TIP() external view returns (uint256);
+
+    /// @notice Gas added to the measured burn gas for the reimbursement: the transaction base
+    ///         cost, calldata and the reward push.
+    function KEEPER_GAS_OVERHEAD() external view returns (uint256);
+
+    /// @notice Highest block basefee at which a burn pays a keeper reward, in wei.
+    function REWARD_MAX_BASEFEE() external view returns (uint256);
+
+    /// @notice Cap on the keeper reward, in bps of the weth consumed.
+    function REWARD_MAX_BPS() external view returns (uint256);
 
     /// @notice Uniswap v4 PoolManager. Immutable.
     function poolManager() external view returns (IPoolManager);
