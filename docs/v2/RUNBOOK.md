@@ -215,7 +215,7 @@ sources of truth, in this order: `script/v2/DeployV2Lib.sol` (the routine), `scr
 | value in `script/v2/env/mainnet.env` | default of the script | note |
 |---|---|---|
 | OWNER | `Addresses.OWNER` (0xCB43…) | owner of every owned contract and team fee recipient |
-| TREASURY, TREASURY_BPS | OWNER, 9000 | controller treasury and its share (Constants allow 4000 to 9000, the rest burns) |
+| TREASURY, TREASURY_BPS | OWNER, 5000 | controller treasury and its share (Constants allow 1000 to 9000, the rest buys and burns LAYER) |
 | REFERRAL_PAYOUT | 0 = the new escrow | D57. must have code. the live 0xB03C… answers `Unauthorized()` to everyone but the v1 hook and the owner eoa has no code, so neither is used |
 | DEPLOY_FEE, PROTOCOL_BPS | 0, 2000 | factory deploy fee (free at launch, owner tunable) and default protocol slot |
 | MIN_PROTOCOL_SKIM_SHARE_BPS | 1000 | D52 |
@@ -240,7 +240,7 @@ contracts, in the order `DeployV2Lib.deploy` creates them (D38, D36):
 | 6 | `ArtCoinsFactoryV2` | `(broadcaster, $PM, protocolBps 2000, deployFee 0.069 eth)` | ships `deprecated = true` |
 | 7 | `ArtCoinsDeployerV2` | `(factory)` | then `factory.setTokenDeployer(deployer)` (0x880183e9, owner only). D55: the deployer is an owner trust surface, the registry records its runtime code |
 | 8 | `BurnRouterV2` | `(OWNER, $PM, WETH, LAYER, LAYER pool key)` | bound to the live LAYER/WETH pool at construction; the key is read from the legacy locker `tokenRewards(LAYER).poolKey` |
-| 9 | `ProtocolFeeControllerV2` | `(OWNER, escrow, treasury, burnRouter, treasuryBps 9000)` | after the router, its constructor needs it |
+| 9 | `ProtocolFeeControllerV2` | `(OWNER, escrow, treasury, burnRouter, treasuryBps 5000)` | after the router, its constructor needs it |
 | 10 | `ArtCoinsKeeperV2` | `(factory)` | stateless, ownerless. record it as `KEEPER_V2` |
 
 wiring, in the order `_wire` sends it (D36: the escrow knows the hook and locker before either `setFeeEscrow`):

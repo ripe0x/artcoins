@@ -124,7 +124,7 @@ library Constants {
 
     // ── protocol fee controller ───────────────────────────────────────────
     /// @notice Minimum shares of the protocol revenue split, in BPS.
-    uint16 internal constant PFC_MIN_TREASURY_BPS = 4000;
+    uint16 internal constant PFC_MIN_TREASURY_BPS = 1000;
     uint16 internal constant PFC_MIN_BURN_BPS = 1000;
 
     // ── renderers ─────────────────────────────────────────────────────────

@@ -58,9 +58,9 @@ library DeployV2Lib {
     ///      (`setDeployFee`, up to MAX_DEPLOY_FEE).
     uint256 internal constant DEPLOY_FEE = 0;
     uint16 internal constant PROTOCOL_BPS = 2000;
-    /// @dev Controller split: the largest treasury share Constants allows
-    ///      (PFC_MIN_BURN_BPS 1000). The burn share buys and burns LAYER.
-    uint16 internal constant TREASURY_BPS = 9000;
+    /// @dev Controller split at launch: half to the treasury, half buys and
+    ///      burns LAYER. Owner tunable within [PFC_MIN_TREASURY_BPS, BPS - PFC_MIN_BURN_BPS].
+    uint16 internal constant TREASURY_BPS = 5000;
     /// @dev D52: the protocol keeps at least 10% of every skim; caps launch
     ///      bountyBps at 9000 and the referral cap above that floor.
     uint16 internal constant MIN_PROTOCOL_SKIM_SHARE_BPS = 1000;

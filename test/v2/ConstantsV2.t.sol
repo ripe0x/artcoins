@@ -126,7 +126,7 @@ contract ConstantsV2Test is Test {
         assertEq(Constants.PRICE_IMPACT_MIN, 25);
         assertEq(Constants.PRICE_IMPACT_DEFAULT, 100);
         assertEq(Constants.PRICE_IMPACT_MAX, 300);
-        assertEq(Constants.PFC_MIN_TREASURY_BPS, 4000);
+        assertEq(Constants.PFC_MIN_TREASURY_BPS, 1000);
         assertEq(Constants.PFC_MIN_BURN_BPS, 1000);
         assertEq(Constants.MAX_GLYPHS, 256);
         assertEq(Constants.RENDER_GAS_BUDGET, 8_000_000);

@@ -4,9 +4,9 @@ pragma solidity ^0.8.26;
 /// @title  IProtocolFeeControllerV2
 /// @notice Protocol fee recipient for every coin. Splits the eth it holds between the treasury
 ///         and the burn router.
-/// @dev    Owner setters apply to every coin. The treasury share is 4000 to 9000 bps and the
+/// @dev    Owner setters apply to every coin. The treasury share is 1000 to 9000 bps and the
 ///         burn share is the remainder, so each share stays at or above its Constants minimum
-///         (PFC_MIN_TREASURY_BPS 4000, PFC_MIN_BURN_BPS 1000). Bps are 1/10,000.
+///         (PFC_MIN_TREASURY_BPS 1000, PFC_MIN_BURN_BPS 1000). Bps are 1/10,000.
 interface IProtocolFeeControllerV2 {
     /// @notice The owner changed the treasury.
     /// @param oldTreasury Previous treasury, zero at construction.
@@ -83,7 +83,7 @@ interface IProtocolFeeControllerV2 {
     function setBurnRouter(address burnRouter_) external;
 
     /// @notice Sets the treasury share; the burn share becomes the remainder.
-    /// @dev Owner only. Reverts `TreasuryShareTooLow` below 4000 bps and `BurnShareTooLow`
+    /// @dev Owner only. Reverts `TreasuryShareTooLow` below 1000 bps and `BurnShareTooLow`
     ///      above 9000 bps.
     /// @param treasuryBps_ New treasury share in bps.
     function setSplit(uint16 treasuryBps_) external;

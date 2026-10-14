@@ -19,7 +19,7 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 ///         eth balance between `treasury` and `burnRouter`.
 /// @dev    Properties:
 ///         - the owner sets the treasury share within [PFC_MIN_TREASURY_BPS,
-///           BPS - PFC_MIN_BURN_BPS] (4000 to 9000 bps). Owner setters apply
+///           BPS - PFC_MIN_BURN_BPS] (1000 to 9000 bps). Owner setters apply
 ///           to every coin.
 ///         - `setBurnRouter` does not call the old router, so a faulty router
 ///           can be replaced.
