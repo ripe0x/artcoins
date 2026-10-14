@@ -27,17 +27,18 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 ///         mevModuleSwapData names the refund address for the over charge on a
 ///         price limited fill: empty, or exactly 32 bytes encoding one address
 ///         with clean high bits, else the refund goes to the PoolManager caller.
-///         poolExtensionSwapData is
-///           abi.encode(Attribution attribution, bytes extensionPayload),
-///           Attribution = (bytes32 sourceId, address referrer, bytes16
-///           campaignId, uint24 referralBps), where referralBps is BPS of
-///           volume, capped by the pool's maxReferralBpsOfVolume.
-///         Malformed input yields an empty attribution and refund address; the
+///         poolExtensionSwapData is empty or
+///           abi.encode(address referrer, bytes extensionPayload);
+///         the referrer is paid `referralBps` of the swap volume out of the
+///         protocol leg, and the whole slice reaches the pool extension.
+///         Malformed input yields a zero referrer and refund address; the
 ///         swap never reverts on it.
 interface IArtCoinsHookV2 is IConstantsBound {
     // ── types ─────────────────────────────────────────────────────────────
 
-    /// @notice Per pool record, written once at `initializePool`. A nonzero
+    /// @notice Per pool record, written at `initializePool`. Every field is fixed
+    ///         except `extension`, which the coin admin may change with
+    ///         `setPoolExtension` until the coin locks its recipients. A nonzero
     ///         `launcher` marks an official pool. When `restricted` is set the
     ///         hook grants a PoolManager transfer allowance on each swap.
     struct PoolInfo {
@@ -63,15 +64,12 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @notice Per pool fee config. All fields are fixed at init except
     ///         `bountyRecipient`, which the coin admin may change with
     ///         `setBountyRecipient` until the coin locks its recipients or
-    ///         renounces its admin.
+    ///         renounces its admin. The referral rate is hook wide (`referralBps`).
     struct SkimConfig {
         /// @dev Baseline skim, bps of swap volume. At most Constants.MAX_BASELINE_SKIM_BPS.
         uint24 baselineSkimBps;
         /// @dev Bounty share of the baseline skim, bps. At most Constants.MAX_BOUNTY_BPS.
         uint16 bountyBps;
-        /// @dev Cap on a swapper named referral, bps of swap volume. At most
-        ///      Constants.MAX_REFERRAL_CAP_OF_VOLUME.
-        uint24 maxReferralBpsOfVolume;
         /// @dev Uniswap v4 LP fee, pips (1/1,000,000). At most Constants.MAX_LP_FEE.
         uint24 lpFeePips;
         /// @dev Receives the bounty leg, which is the bounty share of the
@@ -109,10 +107,6 @@ interface IArtCoinsHookV2 is IConstantsBound {
         bytes extensionData;
         /// @dev Fee config stored for the pool.
         SkimConfig skim;
-        /// @dev Protocol leg floor, bps of the baseline skim. A referral is paid
-        ///      only from the protocol leg above it. `skim.bountyBps` plus this
-        ///      value must not exceed 10,000.
-        uint16 minProtocolShareBps;
     }
 
     // ── events ────────────────────────────────────────────────────────────
@@ -181,24 +175,24 @@ interface IArtCoinsHookV2 is IConstantsBound {
         uint256 referralPaid
     );
 
-    /// @notice Attribution named in the swap `hookData`. Emitted when a referrer
-    ///         or a nonzero `sourceId` is present and the swap paid a skim.
+    /// @notice A referrer was named in the swap `hookData` and the swap paid a skim.
     /// @param poolId Pool id.
     /// @param swapper PoolManager caller of the swap.
-    /// @param referrer Referrer named in `hookData`, or 0.
-    /// @param sourceId Opaque source id from `hookData`.
-    /// @param campaignId Opaque campaign id from `hookData`.
+    /// @param referrer Referrer named in `hookData`.
     /// @param quoteVolume Realized eth side swap amount, wei.
-    /// @param referralPaid Referral leg, wei.
+    /// @param referralPaid Referral leg, wei. Zero when the referrer is the swapper.
     event SwapAttribution(
         PoolId indexed poolId,
         address indexed swapper,
         address indexed referrer,
-        bytes32 sourceId,
-        bytes16 campaignId,
         uint256 quoteVolume,
         uint256 referralPaid
     );
+
+    /// @notice The owner changed the hook wide referral rate.
+    /// @param oldBps Previous rate, bps of swap volume.
+    /// @param newBps New rate, bps of swap volume.
+    event ReferralBpsSet(uint24 oldBps, uint24 newBps);
 
     /// @notice A launcher was enabled or disabled.
     /// @param launcher Launcher address.
@@ -227,16 +221,20 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @param amount Claim amount.
     event ClaimsRescued(Currency indexed currency, address indexed to, uint256 amount);
 
-    /// @notice The pool's protocol leg floor was stored at creation.
-    /// @param poolId Pool id.
-    /// @param minProtocolShareBps Floor, bps of the baseline skim.
-    event ProtocolFloorInitialized(PoolId indexed poolId, uint16 minProtocolShareBps);
     /// @notice The coin admin changed the pool's bounty recipient.
     /// @param poolId Pool id.
     /// @param oldRecipient Previous bounty recipient.
     /// @param newRecipient New bounty recipient.
     event BountyRecipientSet(
         PoolId indexed poolId, address indexed oldRecipient, address indexed newRecipient
+    );
+
+    /// @notice The coin admin changed the pool's extension.
+    /// @param poolId Pool id.
+    /// @param oldExtension Previous extension, zero for none.
+    /// @param newExtension New extension, zero for none.
+    event PoolExtensionSet(
+        PoolId indexed poolId, address indexed oldExtension, address indexed newExtension
     );
 
     // ── errors ────────────────────────────────────────────────────────────
@@ -262,6 +260,9 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @notice Liquidity add refused while the pool's anti sniper window is open.
     error MevWindowActive();
 
+    /// @notice `setPoolExtension` before the pool's launch completed (`initializeMevModule`).
+    error PoolNotStarted();
+
     /// @notice `lpFeePips` exceeds Constants.MAX_LP_FEE.
     error LpFeeTooHigh();
 
@@ -271,11 +272,8 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @notice `bountyBps` exceeds Constants.MAX_BOUNTY_BPS (share of the skim, in bps).
     error BountyBpsTooHigh();
 
-    /// @notice `bountyBps + minProtocolShareBps` exceeds 10,000 bps, so the legs cannot fit.
-    error BadLegBps();
-
-    /// @notice `maxReferralBpsOfVolume` exceeds Constants.MAX_REFERRAL_CAP_OF_VOLUME.
-    error MaxReferralTooHigh();
+    /// @notice `setReferralBps` above Constants.MAX_REFERRAL_CAP_OF_VOLUME.
+    error ReferralBpsTooHigh();
 
     /// @notice The bounty recipient is zero.
     error BountyRecipientZero();
@@ -322,9 +320,9 @@ interface IArtCoinsHookV2 is IConstantsBound {
     ///         `p.skim.lpFeePips`. The locker and the mev module (when set) must
     ///         report this build's `constantsHash()`. Reverts with `NotLauncher`,
     ///         `ZeroAddress`, `ConstantsMismatch`, `LpFeeTooHigh`,
-    ///         `BaselineSkimBpsTooHigh`, `BountyBpsTooHigh`, `MaxReferralTooHigh`,
-    ///         `BountyRecipientZero`, `ProtocolRecipientZero`, `BadLegBps`,
-    ///         `CanonicalHookMismatch` or `ExtensionNotAllowed`.
+    ///         `BaselineSkimBpsTooHigh`, `BountyBpsTooHigh`, `BountyRecipientZero`,
+    ///         `ProtocolRecipientZero`, `CanonicalHookMismatch` or
+    ///         `ExtensionNotAllowed`.
     /// @param p Pool parameters.
     /// @return poolKey Key of the created pool.
     function initializePool(PoolInitParams calldata p) external returns (PoolKey memory poolKey);
@@ -356,8 +354,9 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @return The fee config.
     function skimConfig(PoolId poolId) external view returns (SkimConfig memory);
 
-    /// @notice The pool's protocol leg floor, in bps of the baseline skim.
-    function minProtocolShareBps(PoolId poolId) external view returns (uint16);
+    /// @notice Hook wide referral rate, bps of swap volume, paid out of the protocol
+    ///         leg to the referrer a swap names. Owner tunable.
+    function referralBps() external view returns (uint24);
 
     /// @notice Current fee escrow and extension allowlist.
     /// @return The hook wide addresses.
@@ -383,8 +382,17 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @param escrow New fee escrow.
     function setFeeEscrow(address escrow) external;
 
+    /// @notice Sets the hook wide referral rate. Owner only.
+    /// @dev    Reverts with `ReferralBpsTooHigh` above Constants.MAX_REFERRAL_CAP_OF_VOLUME
+    ///         (100, 1% of volume). Applies to every pool from the next swap. A referral
+    ///         never exceeds the protocol leg of its swap.
+    /// @param bps New rate, bps of swap volume.
+    function setReferralBps(uint24 bps) external;
+
     /// @notice Sets the extension allowlist. Owner only.
-    /// @dev    Applies to pools created from now on. 0 disables extensions.
+    /// @dev    Gates the extension of pools created from now on and every
+    ///         `setPoolExtension` call. Extensions already set keep running.
+    ///         0 disables both.
     /// @param allowlist New allowlist.
     function setExtensionAllowlist(address allowlist) external;
 
@@ -419,6 +427,21 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @param poolId Pool id.
     /// @param newRecipient New bounty recipient.
     function setBountyRecipient(PoolId poolId, address payable newRecipient) external;
+
+    /// @notice Sets the pool's extension. Coin admin only, until the coin locks
+    ///         its recipients or renounces its admin.
+    /// @dev    `newExtension` is zero (no extension) or enabled on the hook's
+    ///         extension allowlist. A new extension receives
+    ///         `initializePreLockerSetup(key, false, initData)` and
+    ///         `initializePostLockerSetup(key, locker, false)` in this call; the
+    ///         old one is not called. Callable once the launch completed. Reverts
+    ///         with `UnknownPool`, `NotCoinAdmin`, `RecipientsLocked`,
+    ///         `PoolNotStarted` or `ExtensionNotAllowed`.
+    /// @param key Key of the pool.
+    /// @param newExtension New extension, zero for none.
+    /// @param initData Opaque bytes passed to the new extension's pre locker setup.
+    function setPoolExtension(PoolKey calldata key, address newExtension, bytes calldata initData)
+        external;
 
     /// @notice Stack version tag (Constants.STACK_VERSION).
     /// @return The stack version.

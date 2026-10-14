@@ -5,3 +5,4 @@
 @uniswap/permit2/=lib/permit2/
 @uniswap/universal-router/=lib/universal-router/
 solady/=lib/solady/src/
+permit2/=lib/permit2/

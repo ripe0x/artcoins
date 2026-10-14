@@ -27,10 +27,10 @@ export FOUNDRY_PROFILE=ci
 |---|---|---|
 | OWNER | `Addresses.OWNER` | owner of every owned contract, team fee recipient |
 | TREASURY | OWNER | `ProtocolFeeControllerV2` treasury |
-| TREASURY_BPS | 9000 | controller treasury share (Constants allow 4000..9000, the rest burns) |
-| DEPLOY_FEE | 0.069 ether | factory deploy fee (wei) |
+| TREASURY_BPS | 8000 | controller treasury share (Constants allow 1000..9000, the rest buys and burns LAYER); owner tunable with `setSplit` |
+| DEPLOY_FEE | 0 | factory deploy fee (wei); owner tunable later with `setDeployFee` |
 | PROTOCOL_BPS | 2000 | factory default protocol slot |
-| MIN_PROTOCOL_SKIM_SHARE_BPS | 1000 | D52: protocol floor of every skim. caps launch `bountyBps` at `10000 - this` and the referral cap above the floor |
+| REFERRAL_BPS | 25 | hook wide referral rate, bps of swap volume, paid to a swap's named referrer out of the protocol leg; owner tunable with `hook.setReferralBps` up to 100 (1%) |
 
 ### the wrapper
 
@@ -151,4 +151,4 @@ allowlist rule (restricted coins): the transfer rule checks the sender and the r
 
 restriction is fee priced, not absolute: a canonical buy and sell of X in one transaction grant 2X of the transfer allowance and consume none, so a holder can move X wallet to wallet through PoolManager balance operations or add X of coin liquidity, at the cost of the home pool's round trip fees. the coins produced stay restricted. restriction raises the cost of leaving the home pool; it does not pin supply.
 
-after the launch: `BurnRouterV2.initialize(token, key)` if the coin uses the burn leg, add the coin's fee swapper as an escrow depositor (D33), run `ArtCoinsKeeperV2.collectAndForward(token, true, minOut)` once, then `setDeprecated(false)` last (RUNBOOK 2b, 2c).
+after the launch: add the coin's fee swapper as an escrow depositor (D33), run `ArtCoinsKeeperV2.collectAndForward(token, true, minOut)` once, then `setDeprecated(false)` last (RUNBOOK 2b, 2c). the burn router needs no per coin call: it is bound to LAYER and its weth pool at deploy and burns LAYER with every coin's protocol share.

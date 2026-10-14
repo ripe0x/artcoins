@@ -98,11 +98,7 @@ contract Audit9RecipientProofForkTest is ForkBase {
         c.pool.tickSpacing = TS;
 
         c.fee = IArtCoinsFactoryV2.FeeConfigV2({
-            lpFeePips: 5000,
-            baselineSkimBps: 600,
-            bountyBps: 8000,
-            maxReferralBpsOfVolume: 25,
-            bountyRecipient: bounty
+            lpFeePips: 5000, baselineSkimBps: 600, bountyBps: 8000, bountyRecipient: bounty
         });
 
         c.locker.locker = address(locker);

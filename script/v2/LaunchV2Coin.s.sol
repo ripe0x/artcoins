@@ -66,7 +66,6 @@ library LaunchV2Lib {
         c.fee.lpFeePips = _u24(vm.parseJsonUint(j, ".fee.lpFeePips"));
         c.fee.baselineSkimBps = _u24(vm.parseJsonUint(j, ".fee.baselineSkimBps"));
         c.fee.bountyBps = _u16(vm.parseJsonUint(j, ".fee.bountyBps"));
-        c.fee.maxReferralBpsOfVolume = _u24(vm.parseJsonUint(j, ".fee.maxReferralBpsOfVolume"));
         c.fee.bountyRecipient = payable(vm.parseJsonAddress(j, ".fee.bountyRecipient"));
 
         c.locker.locker = t.locker;
@@ -321,6 +320,5 @@ contract LaunchV2Coin is Script {
         PoolId pid = LaunchV2Lib.checkLaunched(t, l, token);
         console2.log("token        ", token);
         console2.log("pool id      ", vm.toString(PoolId.unwrap(pid)));
-        console2.log("next: BurnRouterV2.initialize(token, key) if the coin uses the burn leg");
     }
 }

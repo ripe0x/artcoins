@@ -508,22 +508,16 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
     // 7. referral
     // ══════════════════════════════════════════════════════════════════════
 
-    /// the factory's own bound: maxRef * BPS <= baseline * (BPS - bounty - minShare).
-    function _refCapAtBound() internal view returns (uint24) {
-        uint256 minShare = v2.factory.minProtocolSkimShareBps();
-        return uint24((uint256(BASELINE) * (10_000 - BOUNTY_BPS - minShare)) / 10_000);
-    }
-
+    /// referral = min(volume * hook.referralBps / BPS, protocol leg), carved from the
+    /// protocol leg only.
     function _checkReferred(Legs memory l, address referrer, uint256 paidBefore) internal view {
-        uint256 minShare = v2.factory.minProtocolSkimShareBps();
         uint256 base = l.bounty + l.protocol + l.referral; // past the window: skim == baseline skim
-        uint256 floor = (base * minShare) / 10_000;
         uint256 protocolBefore = base - (base * BOUNTY_BPS) / 10_000;
-        uint256 capped = (l.volume * _refCapAtBound()) / D;
-        uint256 room = protocolBefore - floor;
+        uint256 asked = (l.volume * v2.hook.referralBps()) / D;
         assertGt(l.referral, 0, "referrer paid");
-        assertEq(l.referral, capped < room ? capped : room, "referral = min(cap, protocol - floor)");
-        assertGe(l.protocol, floor, "protocol leg never below the floor (D52)");
+        assertEq(
+            l.referral, asked < protocolBefore ? asked : protocolBefore, "min(rate, protocol leg)"
+        );
         assertEq(
             l.protocol + l.referral, protocolBefore, "referral carved from the protocol leg only"
         );
@@ -532,25 +526,13 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         );
     }
 
-    function test_i1_referral_paysReferrer_protocolNeverBelowFloor() public onlyFork {
-        // a launch above the floor bound is refused
-        IArtCoinsFactoryV2.DeploymentConfigV2 memory c =
-            _creditsConfig(address(new I1EmptyTreasury()));
-        uint24 cap = _refCapAtBound();
-        assertEq(v2.factory.minProtocolSkimShareBps(), 1000, "deploy script floor (D52)");
-        c.fee.maxReferralBpsOfVolume = cap + 1;
-        vm.deal(LIVE_OWNER, LIVE_OWNER.balance + 1 ether);
-        vm.prank(LIVE_OWNER);
-        vm.expectRevert(ArtCoinsFactoryV2.ReferralCapAboveProtocolFloor.selector);
-        v2.factory.deployTokenAsOwner{value: 0.069 ether}(c, PROTOCOL_BPS);
-
-        // at the bound, a referral asking for more (1%) is capped and the floor holds
-        c.fee.maxReferralBpsOfVolume = cap;
-        address coin = _ownerLaunch(c);
+    function test_i1_referral_paysReferrer_cappedAtProtocolLeg() public onlyFork {
+        address coin = _ownerLaunch(_creditsConfig(address(new I1EmptyTreasury())));
         PoolKey memory key = _key(coin);
         _pastWindow();
+        assertEq(v2.hook.referralBps(), 25, "deploy script rate (D89)");
         address referrer = makeAddr("i1.referrer");
-        bytes memory hd = _attribution(referrer, 100);
+        bytes memory hd = _referral(referrer);
 
         uint256 p0 = referrer.balance + _escrowed(referrer);
         vm.recordLogs();
@@ -567,11 +549,20 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         swapExactIn(key, false, got / 2, address(this), hd);
         _checkReferred(_legs(vm.getRecordedLogs()), referrer, p0);
 
+        // the owner raises the rate to the 1% ceiling: the referral is capped at
+        // the protocol leg, never beyond it
+        vm.prank(LIVE_OWNER);
+        v2.hook.setReferralBps(Constants.MAX_REFERRAL_CAP_OF_VOLUME);
+        p0 = referrer.balance + _escrowed(referrer);
+        vm.recordLogs();
+        swapExactIn(key, true, 1 ether, address(this), hd);
+        _checkReferred(_legs(vm.getRecordedLogs()), referrer, p0);
+
         // a referrer that cannot take a stipend push is credited in the escrow
-        // (D16; the factory's referral payout is the escrow, D57) and pulls it
+        // (D16) and pulls it
         I1RevertingTreasury rref = new I1RevertingTreasury();
         vm.recordLogs();
-        swapExactIn(key, true, 1 ether, address(this), _attribution(address(rref), 100));
+        swapExactIn(key, true, 1 ether, address(this), _referral(address(rref)));
         logs = vm.getRecordedLogs();
         l = _legs(logs);
         _checkReferred(l, address(rref), 0);
@@ -580,17 +571,5 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         address payable target = payable(makeAddr("i1.refTarget"));
         rref.pull(v2.escrow, target);
         assertEq(target.balance, l.referral, "referrer pulled it");
-    }
-
-    /// D52: the pool's protocol floor is frozen into the hook at launch, so the
-    /// hook enforces it per swap (not only the factory's launch time bound).
-    function test_i1_referral_protocolFloorFrozenIntoHook() public onlyFork {
-        address coin = _ownerLaunch(_creditsConfig(address(new I1EmptyTreasury())));
-        // f1 passed 0 here until the D52 wiring landed (TODO(D52) in _initializePool); fixed in tree.
-        assertEq(
-            uint256(v2.hook.minProtocolShareBps(_pid(coin))),
-            uint256(v2.factory.minProtocolSkimShareBps()),
-            "hook floor == factory minProtocolSkimShareBps"
-        );
     }
 }

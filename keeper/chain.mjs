@@ -32,7 +32,7 @@ export const marketAbi = parseAbi([
 
 /// v2 hook: one struct output, skim fields in bps, lp fee in pips
 const hookV2Abi = parseAbi([
-  'function skimConfig(bytes32) view returns ((uint24 baselineSkimBps, uint16 bountyBps, uint24 maxReferralBpsOfVolume, uint24 lpFeePips, address bountyRecipient, address protocolRecipient))',
+  'function skimConfig(bytes32) view returns ((uint24 baselineSkimBps, uint16 bountyBps, uint24 lpFeePips, address bountyRecipient, address protocolRecipient))',
 ]);
 
 /// v4 PoolId of a key: keccak256(abi.encode(key))

@@ -148,3 +148,17 @@ D76 review round (87a75228..): both recipient setters reject the full factory la
 | keeper runner | `cd keeper && npm test` | 70 pass, 1 skip |
 
 anti sniper window split (0.1 eth in-window buy, `RecipientChangesV2.test_antiSniperWindow_extraSkimAllToBounty`): total skim 0.06869 eth, baseline portion 0.006 eth, bounty leg 0.0676898 eth, protocol leg 0.0010002 eth. the skim above the baseline (0.06269 eth) is entirely the bounty leg; protocol and referral share the baseline portion only.
+
+## D82 (2026-10-14, LAYER burn router)
+
+the burn router is bound to LAYER and its live weth pool at construction; the controller is eth only and claims its own escrow credit. the deployed v2 stack (2026-10-09) could not burn LAYER and is to be redeployed as a whole (no coin launched on it). docs/v2/DECISIONS.md D82.
+
+| group | command | result |
+|---|---|---|
+| constants, controller unit | `FOUNDRY_PROFILE=ci forge test --match-path "test/v2/{ConstantsV2,ProtocolFeeControllerV2}.t.sol"` | 20 pass |
+| LAYER router fork | `MAINNET_RPC_URL=... FOUNDRY_PROFILE=ci forge test --match-path test/v2/BurnRouterV2.fork.t.sol` (pin 26130269, live LAYER/WETH pool) | 15 pass |
+| deploy rehearsal | `DeployV2Stack.fork.t.sol` | 6 pass |
+| fee flow, integration, review b, p1 | `test/v2/integration/FeeFlowV2.fork.t.sol`, `test/v2/IntegrationV2.fork.t.sol`, `test/v2/review-v2/b/V2BPeriphery.fork.t.sol`, `test/v2/p1/P1HookRegression.fork.t.sol` | 1, 5, 11, 3 pass |
+| sizes (ci) | router 7,062 bytes (was 9,342), controller 3,409 (was 3,971) |
+
+open: the hosted keeper runner has no step for the new controller (`processFees()`) and router (`processBurn(minOut)`); add it before the redeploy goes live. worktree note: `remappings.txt` pins `permit2/=lib/permit2/` so a fresh checkout resolves the bare prefix the same way the main checkout does.

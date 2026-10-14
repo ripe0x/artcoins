@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import {IArtCoinsLpLocker} from "../../src/interfaces/IArtCoinsLpLocker.sol";
 import {Addresses} from "../Addresses.sol";
 import {DeployV2Lib} from "./DeployV2Lib.sol";
 
@@ -22,10 +23,10 @@ import {Script, console2} from "forge-std/Script.sol";
 ///   env (all optional):
 ///     OWNER                         default Addresses.OWNER. ownership target of every owned contract
 ///     TREASURY                      default OWNER. ProtocolFeeControllerV2 treasury
-///     TREASURY_BPS                  default 9000 (Constants allow 4000..9000)
-///     DEPLOY_FEE                    default 0.069 ether (wei)
+///     TREASURY_BPS                  default 8000 (Constants allow 1000..9000)
+///     DEPLOY_FEE                    default 0 (wei)
 ///     PROTOCOL_BPS                  default 2000
-///     MIN_PROTOCOL_SKIM_SHARE_BPS   default 1000 (D52)
+///     REFERRAL_BPS                  default 25 (0.25% of volume, hook wide, owner tunable)
 ///   when the broadcaster is not OWNER, the escrow, hook, locker and factory
 ///   end with `pendingOwner == OWNER`; OWNER must call `acceptOwnership()` on
 ///   each (script/v2/README.md).
@@ -42,15 +43,17 @@ contract DeployV2Stack is Script {
             Addresses.PERMIT2,
             Addresses.CREATE2_DEPLOYER
         );
+        // the burn router buys LAYER on its live weth pool (legacy stack); the
+        // key is read from the legacy locker, the record of that pool.
+        p.weth = Addresses.WETH;
+        p.layer = Addresses.COIN_LAYER;
+        p.layerPoolKey =
+        IArtCoinsLpLocker(Addresses.LEGACY_LOCKER).tokenRewards(Addresses.COIN_LAYER).poolKey;
         p.treasury = vm.envOr("TREASURY", owner);
         p.treasuryBps = uint16(vm.envOr("TREASURY_BPS", uint256(DeployV2Lib.TREASURY_BPS)));
         p.deployFee = vm.envOr("DEPLOY_FEE", DeployV2Lib.DEPLOY_FEE);
         p.protocolBps = uint16(vm.envOr("PROTOCOL_BPS", uint256(DeployV2Lib.PROTOCOL_BPS)));
-        p.minProtocolSkimShareBps = uint16(
-            vm.envOr(
-                "MIN_PROTOCOL_SKIM_SHARE_BPS", uint256(DeployV2Lib.MIN_PROTOCOL_SKIM_SHARE_BPS)
-            )
-        );
+        p.referralBps = uint24(vm.envOr("REFERRAL_BPS", uint256(DeployV2Lib.REFERRAL_BPS)));
     }
 
     function run() external returns (DeployV2Lib.Stack memory s) {
@@ -88,10 +91,11 @@ contract DeployV2Stack is Script {
         console2.log("broadcaster ", p.broadcaster);
         console2.log("owner       ", p.owner);
         console2.log("treasury    ", p.treasury);
+        console2.log("burn coin   ", p.layer);
         console2.log("treasuryBps ", p.treasuryBps);
         console2.log("deployFee   ", p.deployFee);
         console2.log("protocolBps ", p.protocolBps);
-        console2.log("minSkimShare", p.minProtocolSkimShareBps);
+        console2.log("referralBps ", p.referralBps);
     }
 
     // ── json (registry contract format, DeployV2Lib order) ───────────────────

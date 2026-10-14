@@ -11,21 +11,23 @@ library Constants {
     uint16 internal constant STACK_VERSION = 2;
 
     // ── denominators ──────────────────────────────────────────────────────
-    /// @notice Basis point denominator (10_000 = 100%). Skim and referral rates,
-    ///         their caps, and the protocol floor are all in BPS of volume.
+    /// @notice Basis point denominator (10_000 = 100%). Skim and referral rates
+    ///         and their caps are in BPS of volume.
     uint256 internal constant BPS = 10_000;
     /// @notice Uniswap v4 lp fee denominator (1_000_000 = 100%).
     uint256 internal constant FEE_DENOMINATOR = 1_000_000;
 
-    // ── hook and pool fee config (frozen per pool, validated at init) ─────
+    // ── hook and pool fee config (per pool fields frozen at init; the referral rate is hook wide) ─────
     /// @notice Max lp fee, 10% in pips (1e6 units).
     uint24 internal constant MAX_LP_FEE = 100_000;
     /// @notice Anti sniper skim ceiling, 90% of volume in BPS.
     uint24 internal constant MAX_SKIM_BPS = 9000;
     /// @notice Baseline skim ceiling, 10% of volume in BPS.
     uint24 internal constant MAX_BASELINE_SKIM_BPS = 1000;
-    /// @notice Referral cap ceiling, 1% of volume in BPS.
+    /// @notice Ceiling of the hook wide referral rate, 1% of volume in BPS.
     uint24 internal constant MAX_REFERRAL_CAP_OF_VOLUME = 100;
+    /// @notice Initial hook wide referral rate, bps of volume (owner tunable, not hashed).
+    uint24 internal constant REFERRAL_BPS_DEFAULT = 25;
     /// @notice Max bounty share of the skim, in BPS.
     uint16 internal constant MAX_BOUNTY_BPS = 9999;
 
@@ -91,12 +93,26 @@ library Constants {
     /// @notice Keeper reward on consumed amounts, capped.
     uint256 internal constant KEEPER_REWARD_BPS = 50;
     uint256 internal constant KEEPER_REWARD_CAP = 0.01 ether;
-    /// @notice Burn router initial fee net spot floor, in BPS. The swapper's
-    ///         convert floor default (9500) is contract local; both are owner
-    ///         tunable within [SPOT_FLOOR_MIN_BPS, SPOT_FLOOR_MAX_BPS].
-    uint256 internal constant BURN_SPOT_FLOOR_DEFAULT_BPS = 8000;
+    /// @notice Burn router initial output floor, in BPS of the spot output net
+    ///         of the pool's buy fee (the spot and fee are read at burn time).
+    ///         Owner tunable within [SPOT_FLOOR_MIN_BPS, SPOT_FLOOR_MAX_BPS]; not hashed.
+    uint256 internal constant BURN_SPOT_FLOOR_BPS = 9000;
+    /// @notice Output floor bounds for the burn router and the fee swapper
+    ///         (the swapper's default, 9500, is contract local).
     uint256 internal constant SPOT_FLOOR_MIN_BPS = 5000;
     uint256 internal constant SPOT_FLOOR_MAX_BPS = 9500;
+    /// @notice Burn router keeper reward: initial values and owner bounds (not
+    ///         hashed). The reward is a flat tip plus the burn's gas at the
+    ///         basefee, paid when the basefee is at or under the gate, capped
+    ///         at a share of the weth consumed.
+    uint256 internal constant BURN_TIP_DEFAULT = 0.0003 ether;
+    uint256 internal constant BURN_TIP_MAX = 0.01 ether;
+    uint256 internal constant BURN_GAS_OVERHEAD_DEFAULT = 60_000;
+    uint256 internal constant BURN_GAS_OVERHEAD_MAX = 300_000;
+    uint256 internal constant BURN_BASEFEE_GATE_DEFAULT = 1 gwei;
+    uint256 internal constant BURN_BASEFEE_GATE_MAX = 100 gwei;
+    uint16 internal constant BURN_REWARD_BPS_DEFAULT = 1000;
+    uint16 internal constant BURN_REWARD_BPS_MAX = 5000;
     /// @notice Fee swapper owner bounds.
     uint256 internal constant SWAPPER_SLIPPAGE_MIN = 50;
     uint256 internal constant SWAPPER_SLIPPAGE_MAX = 1000;
@@ -107,15 +123,10 @@ library Constants {
     uint16 internal constant PRICE_IMPACT_MIN = 25;
     uint16 internal constant PRICE_IMPACT_DEFAULT = 100;
     uint16 internal constant PRICE_IMPACT_MAX = 300;
-    uint256 internal constant BURN_THRESHOLD_FLOOR = 0.001 ether;
-    /// @notice Burn router per call eth cap bounds and default (not hashed).
-    uint256 internal constant BURN_MAX_PER_CALL_MIN = 0.1 ether;
-    uint256 internal constant BURN_MAX_PER_CALL_MAX = 100 ether;
-    uint256 internal constant BURN_MAX_PER_CALL_DEFAULT = 5 ether;
 
     // ── protocol fee controller ───────────────────────────────────────────
     /// @notice Minimum shares of the protocol revenue split, in BPS.
-    uint16 internal constant PFC_MIN_TREASURY_BPS = 4000;
+    uint16 internal constant PFC_MIN_TREASURY_BPS = 1000;
     uint16 internal constant PFC_MIN_BURN_BPS = 1000;
 
     // ── renderers ─────────────────────────────────────────────────────────
@@ -177,7 +188,6 @@ library Constants {
     }
 
     function _hashKeeper() private pure returns (bytes32) {
-        return
-            keccak256(abi.encode(KEEPER_REWARD_BPS, KEEPER_REWARD_CAP, BURN_SPOT_FLOOR_DEFAULT_BPS));
+        return keccak256(abi.encode(KEEPER_REWARD_BPS, KEEPER_REWARD_CAP));
     }
 }

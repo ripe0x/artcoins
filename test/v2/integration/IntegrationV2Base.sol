@@ -11,7 +11,6 @@ import {ForkStack} from "../harness/ForkStack.sol";
 import {I1DeltaRouter} from "./mocks/I1Mocks.sol";
 
 import {Constants} from "../../../src/Constants.sol";
-import {PCAttribution, PCSwapData} from "../../../src/hooks/interfaces/IArtCoinsHookSkimFee.sol";
 import {IArtCoinsHook} from "../../../src/interfaces/IArtCoinsHook.sol";
 import {ArtCoinsTokenV2} from "../../../src/v2/ArtCoinsTokenV2.sol";
 import {FeeAutoSwapperV2} from "../../../src/v2/FeeAutoSwapperV2.sol";
@@ -37,7 +36,6 @@ abstract contract IntegrationV2Base is ForkStack {
     uint24 internal constant LP_FEE = 5000;
     uint24 internal constant BASELINE = 600;
     uint16 internal constant BOUNTY_BPS = 8333;
-    uint24 internal constant MAX_REF = 25;
     uint24 internal constant START_SKIM = 6869;
     uint32 internal constant WINDOW = 4140;
     uint16 internal constant PROTOCOL_BPS = 2000;
@@ -111,7 +109,6 @@ abstract contract IntegrationV2Base is ForkStack {
             lpFeePips: LP_FEE,
             baselineSkimBps: BASELINE,
             bountyBps: BOUNTY_BPS,
-            maxReferralBpsOfVolume: MAX_REF,
             bountyRecipient: payable(treasury)
         });
         address[] memory rr = new address[](1);
@@ -248,19 +245,11 @@ abstract contract IntegrationV2Base is ForkStack {
 
     // ── hookData ──────────────────────────────────────────────────────────
 
-    function _attribution(address referrer, uint24 bps) internal pure returns (bytes memory) {
-        PCSwapData memory inner = PCSwapData({
-            attribution: PCAttribution({
-                sourceId: bytes32("i1"),
-                referrer: referrer,
-                campaignId: bytes16("i1c"),
-                referralBps: bps
-            }),
-            extensionPayload: ""
-        });
+    /// @dev hookData naming `referrer`.
+    function _referral(address referrer) internal pure returns (bytes memory) {
         return abi.encode(
             IArtCoinsHook.PoolSwapData({
-                mevModuleSwapData: "", poolExtensionSwapData: abi.encode(inner)
+                mevModuleSwapData: "", poolExtensionSwapData: abi.encode(referrer, bytes(""))
             })
         );
     }

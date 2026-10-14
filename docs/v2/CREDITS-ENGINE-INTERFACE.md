@@ -15,8 +15,8 @@ for the credits engine developer. the first coin on the v2 stack has the treasur
 | eth only from the locker | slot recipient got both currencies | put a `FeeAutoSwapperV2` (`endRecipient = treasury`) in the slot. `convert` sells the coin side through the pool, `flushPaired` forwards eth. it pushes to the treasury with 500k gas and escrows on failure | register the swapper as an escrow depositor (D33, D36), deployer calls `setup(coin)` after launch |
 | paired currency | weth pools possible | native eth only (D17) | wrap itself if it wants weth |
 | protocol and referral | deployer chosen | factory injected: `protocolRecipient` (the stack fee controller). the referral is paid to the referrer directly, stipend push, escrow on failure (D16). there is no stored referral payout pointer (D76) | none |
-| protocol floor (D52) | referral could take the whole protocol leg | referral never takes the protocol leg below `minProtocolShareBps` of the baseline skim. `bountyBps <= 10000 minus minProtocolSkimShareBps` | config constraint, section 4 |
-| lp fee (D76) | none removed | `fee.lpFeePips` ranges 0 to `MAX_LP_FEE` (100,000 pips). 0 is a pure skim pool with no lp fee; the D52 protocol skim floor still secures the protocol leg | config choice, section 4 |
+| referral (D89) | per coin referral cap, protocol floor | one hook wide rate, `hook.referralBps` (0.25% of volume at launch, owner tunable up to 1%), paid to the referrer a swap names out of the protocol leg and never above that leg. no per coin field | none |
+| lp fee (D76) | none removed | `fee.lpFeePips` ranges 0 to `MAX_LP_FEE` (100,000 pips). 0 is a pure skim pool with no lp fee | config choice, section 4 |
 | recipient changes (D76) | slot admin removed in v1 | the coin admin may repoint the bounty recipient (`hook.setBountyRecipient(poolId, recipient)`) and a project reward slot (`locker.setRewardRecipient(token, index, recipient)`) after launch. new recipients pass the launch receiver checks, bps stay fixed, the protocol reward slot stays frozen. `token.lockRecipients()` freezes both setters one way, and renouncing the coin admin freezes them | move the treasury without a custom router; freeze with `lockRecipients` when final |
 | restriction (D73, D74) | n/a | one launch flag `restricted`. while set, holder to holder transfers revert unless a side is on the coin allowlist; coin moves to or from the PoolManager only within the transient allowance the canonical hook grants for a canonical swap in the same transaction, which the transfer consumes. restriction is fee priced, not absolute (D74): a canonical round trip of X in one transaction grants 2X allowance and consumes none, so a holder can move X through PoolManager balances at the cost of the home pool round trip fees. the cost of moving a restricted coin wallet to wallet through a canonical round trip equals the launcher's chosen home pool fees, so a restricted coin with near zero fees restricts transfers only nominally (launcher's choice, no fee floor for restricted coins, D80). the credits coin launches NOT restricted (plain erc20) | leave `restriction.restricted = false` for a plain erc20 |
 | restriction allowlist (D73, D76) | n/a | the coin admin manages the allowlist (`setAllowed`), may turn restriction off once (`unrestrict`), and may `lockAllowlist` to freeze the allowlist and the switch. the factory seeds the allowlist with the owner `defaultAllowed` set (empty by default), this launch's locker, the stack fee escrow and the launch extensions, and pins those so the coin admin cannot remove them. the PoolManager, the canonical hook, and any router/aggregator/forwarder are prohibited entries | allowlist only contracts whose coin outflows are fixed by their own logic |
@@ -59,9 +59,8 @@ the escrow is `IArtCoinsFeeEscrowV2`: `balances(feeOwner, token)`, `claim`, `cla
 | protocol slot | `protocolBps` is the factory appended locker slot (example uses 2,000). project slots in `locker.rewardBps` must sum with it to 10,000 or `ProjectSideBpsMismatch` |
 | set by the treasury integration | `fee.bountyRecipient = treasury`, `locker.rewardRecipients` (treasury or a fee swapper with `endRecipient = treasury`) |
 | injected by the factory | `protocolRecipient` and the protocol locker slot. do not set them |
-| `fee.bountyBps` | at most `10000 minus factory.minProtocolSkimShareBps()` (deploy script sets 1,000, so 9,000), also under `MAX_BOUNTY_BPS` 9,999. else `BountyBpsTooHigh` |
-| referral cap | `maxReferralBpsOfVolume * 10000 <= baselineSkimBps * (10000 minus bountyBps minus minProtocolSkimShareBps)`, else `ReferralCapAboveProtocolFloor`. unit: volume in bps, 100 is 1% |
-| `fee.lpFeePips` | 0 to `MAX_LP_FEE` 100,000 pips. 0 is a pure skim pool; the D52 protocol skim floor still pays the protocol leg |
+| `fee.bountyBps` | at most `MAX_BOUNTY_BPS` 9,999, else `BountyBpsTooHigh`. the referral is carved from the protocol leg that remains, so a bounty near the cap leaves referrers little |
+| `fee.lpFeePips` | 0 to `MAX_LP_FEE` 100,000 pips. 0 is a pure skim pool |
 | `fee.bountyRecipient` | not zero, not the hook, not the PoolManager (`RecipientCannotReceive`). the coin admin may change it after launch (`hook.setBountyRecipient`) until `lockRecipients` or admin renounce |
 | restriction | `restriction.restricted` false for a plain erc20 (the credits coin). when true, the coin admin manages the allowlist; see the allowlist rule in `script/v2/README.md` |
 | fee swapper | deploy it, `escrow.addDepositor(swapper, false)` by the escrow owner, list it in `locker.rewardRecipients`, deployer calls `swapper.setup(coin)` after launch |
@@ -82,7 +81,7 @@ c.pool = IArtCoinsFactoryV2.PoolConfigV2({
 });
 c.fee = IArtCoinsFactoryV2.FeeConfigV2({
     lpFeePips: 5000, baselineSkimBps: 600, bountyBps: 8333,
-    maxReferralBpsOfVolume: 25, bountyRecipient: payable(TREASURY)
+    bountyRecipient: payable(TREASURY)
 });
 address[] memory rr = new address[](1); rr[0] = TREASURY; // or the fee swapper
 uint16[] memory bps = new uint16[](1); bps[0] = 8000;
@@ -103,7 +102,7 @@ c.restriction = IArtCoinsFactoryV2.RestrictionConfigV2({
 address token = factory.deployTokenAsOwner{value: factory.deployFee()}(c, 2000);
 ```
 
-checks on those numbers: protocol 2,000 plus project 8,000 is 10,000. referral cap 25 times 10,000 is 250,000, under 600 times (10,000 minus 8,333 minus 1,000) which is 400,200. lpFeePips 5,000 pips is 0.5% (0 is also allowed). skim 600 bps is the 6% baseline. window 4,140 s is 69 minutes. during that window the skim above the 6% baseline is paid entirely to the bounty recipient; the baseline portion splits bounty / protocol / referral.
+checks on those numbers: protocol 2,000 plus project 8,000 is 10,000. lpFeePips 5,000 pips is 0.5% (0 is also allowed). skim 600 bps is the 6% baseline. window 4,140 s is 69 minutes. during that window the skim above the 6% baseline is paid entirely to the bounty recipient; the baseline portion splits bounty / protocol / referral.
 
 ## 5. events to index and keeper
 
@@ -117,7 +116,7 @@ checks on those numbers: protocol 2,000 plus project 8,000 is 10,000. referral c
 | `RecipientsLocked()` | token | the coin admin froze both recipient setters (D76) |
 | `SkimRefunded(poolId, to, amount)` | hook | refund of the over charge on a price limited fill, credited in the escrow to the hookData refund address or the PoolManager caller |
 | `FeesStored`, `FeesClaimed` | escrow | reconcile the escrow balance of the treasury |
-| `SkimSplit`, `SwapAttribution` | hook | volume and referral accounting, optional |
+| `SkimSplit`, `SwapAttribution` | hook | volume and referral accounting, optional. a swap names its referrer as `abi.encode(address referrer, bytes extensionPayload)` in `poolExtensionSwapData` |
 | `PoolInitializedV2(poolId, token, launcher, version, restricted, locker, mevModule, extension, tickSpacing)` | hook | discovery |
 
 keeper: `ArtCoinsKeeperV2(factory)`, stateless, holds nothing. `collectAndForward(token, doConvert, minOut)` calls `locker.collectRewards(token)` (reverts bubble), then for each reward recipient that answers erc165 for `IFeeAutoSwapperV2` calls `flushPaired()` and, if `doConvert`, `convert(minOut)`, then forwards all eth and coin it holds to the caller. a recipient that is not a swapper (a plain treasury) is skipped, its share is pushed by the locker itself. pass a real `minOut` from a quote; `0` invites a sandwich bounded only by the swapper floor. gas floors: collect 900k, flush 150k, convert 400k. `preview(token)` reads swapper balances. locker keeper reward is 0 bps at launch, so the caller earns nothing unless the owner raises it (max 2%).
@@ -146,7 +145,7 @@ keeper: `ArtCoinsKeeperV2(factory)`, stateless, holds nothing. `collectAndForwar
 | reward slot is the treasury, or a `FeeAutoSwapperV2` with `endRecipient = treasury` registered as an escrow depositor | yes | yes or no |
 | indexes `FeeDelivered`, `RewardDelivered`, `TokenCreatedV2`, `SkimRefunded`, and the D76 recipient events | yes | yes or no |
 | eth only: wraps itself if it wants weth | yes | yes or no |
-| config: `bountyBps`, referral cap, `lpFeePips`, slots pass section 4 limits | yes | yes or no |
+| config: `bountyBps`, `lpFeePips`, slots pass section 4 limits | yes | yes or no |
 
 note: the locker pushes eth with 150k gas (`PUSH_GAS_MAX`), not the 2,300 stipend, because it never runs inside a swap; the hook legs use the stipend (a zero gas call).
 

@@ -13,7 +13,6 @@ import {Constants} from "../../../src/Constants.sol";
 import {
     ArtCoinsPoolExtensionAllowlist
 } from "../../../src/hooks/ArtCoinsPoolExtensionAllowlist.sol";
-import {PCAttribution, PCSwapData} from "../../../src/hooks/interfaces/IArtCoinsHookSkimFee.sol";
 import {IArtCoinsHook} from "../../../src/interfaces/IArtCoinsHook.sol";
 import {ArtCoinsFeeEscrowV2} from "../../../src/v2/ArtCoinsFeeEscrowV2.sol";
 import {ArtCoinsTokenV2} from "../../../src/v2/ArtCoinsTokenV2.sol";
@@ -55,7 +54,8 @@ abstract contract HookV2ForkBase is Test {
     // default pool fee config (coin 111 live values)
     uint24 internal constant BASELINE = 600;
     uint16 internal constant BOUNTY_BPS = 8333;
-    uint24 internal constant MAX_REF = 25;
+    /// @dev The hook's initial referral rate (Constants.REFERRAL_BPS_DEFAULT), bps of volume.
+    uint24 internal constant REFERRAL_BPS = 25;
     uint24 internal constant LP_FEE = 5000;
 
     bool internal onFork;
@@ -79,7 +79,6 @@ abstract contract HookV2ForkBase is Test {
         address bounty;
         uint24 baseline;
         uint16 bountyBps;
-        uint24 maxRef;
         address module;
         address extension;
         bytes mevConfig;
@@ -141,7 +140,6 @@ abstract contract HookV2ForkBase is Test {
         l.bounty = bounty;
         l.baseline = BASELINE;
         l.bountyBps = BOUNTY_BPS;
-        l.maxRef = MAX_REF;
     }
 
     function _newToken(bool restricted, address, address hook_)
@@ -193,7 +191,6 @@ abstract contract HookV2ForkBase is Test {
         p.skim = IArtCoinsHookV2.SkimConfig({
             baselineSkimBps: l.baseline,
             bountyBps: l.bountyBps,
-            maxReferralBpsOfVolume: l.maxRef,
             lpFeePips: LP_FEE,
             bountyRecipient: payable(l.bounty),
             protocolRecipient: protocolR
@@ -272,19 +269,12 @@ abstract contract HookV2ForkBase is Test {
         assertEq(address(hook).balance, 0, "hook eth");
     }
 
-    function _attribution(address referrer, uint24 bps) internal pure returns (bytes memory) {
-        PCSwapData memory inner = PCSwapData({
-            attribution: PCAttribution({
-                sourceId: bytes32("src"),
-                referrer: referrer,
-                campaignId: bytes16("cmp"),
-                referralBps: bps
-            }),
-            extensionPayload: hex"c0ffee"
-        });
+    /// @dev hookData naming `referrer`, with an extension payload behind it.
+    function _referral(address referrer) internal pure returns (bytes memory) {
         return abi.encode(
             IArtCoinsHook.PoolSwapData({
-                mevModuleSwapData: "", poolExtensionSwapData: abi.encode(inner)
+                mevModuleSwapData: "",
+                poolExtensionSwapData: abi.encode(referrer, bytes(hex"c0ffee"))
             })
         );
     }

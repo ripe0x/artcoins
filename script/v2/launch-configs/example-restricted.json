@@ -21,7 +21,6 @@
     "lpFeePips": 5000,
     "baselineSkimBps": 600,
     "bountyBps": 8333,
-    "maxReferralBpsOfVolume": 25,
     "bountyRecipient": "0x7ea5000000000000000000000000000000000001"
   },
   "locker": {

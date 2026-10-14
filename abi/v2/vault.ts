@@ -216,11 +216,6 @@ export const vaultV2Abi = [
                 "internalType": "uint16"
               },
               {
-                "name": "maxReferralBpsOfVolume",
-                "type": "uint24",
-                "internalType": "uint24"
-              },
-              {
                 "name": "bountyRecipient",
                 "type": "address",
                 "internalType": "address payable"

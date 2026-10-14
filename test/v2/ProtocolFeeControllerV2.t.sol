@@ -10,31 +10,12 @@ import {ArtCoinsFeeEscrowV2} from "../../src/v2/ArtCoinsFeeEscrowV2.sol";
 import {IArtCoinsFeeEscrowV2} from "../../src/v2/interfaces/IArtCoinsFeeEscrowV2.sol";
 import {IConstantsBound} from "../../src/v2/interfaces/IConstantsBound.sol";
 import {IProtocolFeeControllerV2} from "../../src/v2/interfaces/IProtocolFeeControllerV2.sol";
-import {FeeDelivery} from "../../src/v2/libraries/FeeDelivery.sol";
 import {ProtocolFeeControllerV2} from "../../src/v2/protocol-fee/ProtocolFeeControllerV2.sol";
-import {FalseTransferToken} from "./FeeDelivery.t.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
-/// @notice Router stand in that reports its coin and accepts eth. Carries a
-///         matching constants hash so the controller accepts it.
-contract P1MockRouter {
-    address public coin;
-
-    constructor(address coin_) {
-        coin = coin_;
-    }
-
-    function constantsHash() external pure returns (bytes32) {
-        return Constants.hash();
-    }
-
-    receive() external payable {}
-}
-
-/// @notice Router stand in without `coin()` (a different stack router). Carries
-///         a matching constants hash so the controller accepts it.
-contract P1NoCoinRouter {
+/// @notice Router stand in: accepts eth and carries a matching constants hash.
+contract P1MockRouter is IConstantsBound {
     function constantsHash() external pure returns (bytes32) {
         return Constants.hash();
     }
@@ -43,7 +24,7 @@ contract P1NoCoinRouter {
 }
 
 /// @notice A contract built against a different `Constants` set.
-contract P1WrongHashRouter {
+contract P1WrongHashRouter is IConstantsBound {
     function constantsHash() external pure returns (bytes32) {
         return keccak256("wrong");
     }
@@ -51,8 +32,8 @@ contract P1WrongHashRouter {
     receive() external payable {}
 }
 
-/// @notice A valid-hash router that reverts on eth receipt (push fails).
-contract P1RejectingRouter {
+/// @notice A valid hash router that reverts on eth receipt (push fails).
+contract P1RejectingRouter is IConstantsBound {
     function constantsHash() external pure returns (bytes32) {
         return Constants.hash();
     }
@@ -63,8 +44,9 @@ contract P1RejectingRouter {
 }
 
 /// @title  ProtocolFeeControllerV2Test
-/// @notice Review LF-10 and DESIGN section 2. No pool needed, so plain unit tests.
-/// Run: /tmp/claude-0/forge.sh test --match-path test/v2/ProtocolFeeControllerV2.t.sol -vv
+/// @notice Eth split, escrow claim, delivery fallback, owner bounds. No pool
+///         needed, so plain unit tests.
+/// Run: forge test --match-path test/v2/ProtocolFeeControllerV2.t.sol -vv
 contract ProtocolFeeControllerV2Test is Test {
     ArtCoinsFeeEscrowV2 internal escrow;
     P1Coin internal coin;
@@ -78,10 +60,12 @@ contract ProtocolFeeControllerV2Test is Test {
     function setUp() public {
         escrow = new ArtCoinsFeeEscrowV2(address(this));
         coin = new P1Coin();
-        router = new P1MockRouter(address(coin));
+        router = new P1MockRouter();
         treasury = new P1Sink();
         pfc = _deploy(address(treasury), address(router), SPLIT);
         escrow.addDepositor(address(pfc), false);
+        // the test itself credits the controller in the escrow (the hook's role)
+        escrow.addDepositor(address(this), false);
     }
 
     function _deploy(address t, address r, uint16 bps) internal returns (ProtocolFeeControllerV2) {
@@ -90,65 +74,77 @@ contract ProtocolFeeControllerV2Test is Test {
 
     // ── split math ────────────────────────────────────────────────────────
 
-    function test_pfcV2_nativeSplit_math() public {
+    function test_pfcV2_split_math() public {
         uint256 total = 1 ether + 7;
         vm.deal(address(pfc), total);
-        pfc.processFees(address(0));
+        vm.expectEmit(false, false, false, true, address(pfc));
         uint256 t = total * SPLIT / Constants.BPS;
+        emit IProtocolFeeControllerV2.FeesProcessed(total, t, total - t);
+        pfc.processFees();
         assertEq(address(treasury).balance, t, "treasury share rounds down");
         assertEq(address(router).balance, total - t, "burn absorbs dust");
         assertEq(address(pfc).balance, 0);
     }
 
-    function testFuzz_pfcV2_nativeSplit_sumsToTotal(uint96 total, uint16 bps) public {
+    function testFuzz_pfcV2_split_sumsToTotal(uint96 total, uint16 bps) public {
         bps = uint16(
             bound(bps, Constants.PFC_MIN_TREASURY_BPS, Constants.BPS - Constants.PFC_MIN_BURN_BPS)
         );
         vm.assume(total > 0);
         pfc.setSplit(bps);
         vm.deal(address(pfc), total);
-        pfc.processFees(address(0));
+        pfc.processFees();
         assertEq(address(treasury).balance + address(router).balance, total);
         assertGe(
             address(treasury).balance,
             uint256(total) * Constants.PFC_MIN_TREASURY_BPS / Constants.BPS
         );
+        assertEq(pfc.burnBps(), Constants.BPS - bps);
     }
 
-    function test_pfcV2_receive_withGas_splitsImmediately() public {
-        (bool ok,) = address(pfc).call{value: 1 ether, gas: 1_000_000}("");
-        assertTrue(ok);
+    // ── receive and escrow claim ──────────────────────────────────────────
+
+    /// @notice The hook pushes with the 2,300 gas stipend; `receive` must fit it.
+    function test_pfcV2_receive_fitsStipend_holds() public {
+        (bool ok,) = address(pfc).call{value: 1 ether, gas: 2300}("");
+        assertTrue(ok, "stipend push lands");
+        assertEq(address(pfc).balance, 1 ether, "held until processFees");
+        assertEq(pfc.pending(), 1 ether);
+    }
+
+    /// @notice A failed hook push lands in the escrow; `processFees` claims it first.
+    function test_pfcV2_processFees_claimsEscrowCredit() public {
+        escrow.storeFeesNative{value: 0.4 ether}(address(pfc));
+        vm.deal(address(pfc), 0.6 ether);
+        assertEq(pfc.pending(), 1 ether, "balance plus credit");
+
+        pfc.processFees();
+        assertEq(escrow.balances(address(pfc), address(0)), 0, "credit claimed");
+        assertEq(address(treasury).balance, 0.6 ether, "split over the claimed total");
+        assertEq(address(router).balance, 0.4 ether);
+        assertEq(pfc.pending(), 0);
+    }
+
+    function test_pfcV2_processFees_creditOnly() public {
+        escrow.storeFeesNative{value: 1 ether}(address(pfc));
+        pfc.processFees();
         assertEq(address(treasury).balance, 0.6 ether);
         assertEq(address(router).balance, 0.4 ether);
     }
 
-    /// @notice The hook and locker push with a small gas cap; the push must succeed.
-    function test_pfcV2_receive_lowGas_holds_neverReverts() public {
-        (bool ok,) = address(pfc).call{value: 1 ether, gas: 10_000}("");
-        assertTrue(ok, "push with 10k gas succeeds");
-        (ok,) = address(pfc).call{value: 1 ether, gas: 50_000}("");
-        assertTrue(ok, "push with 50k gas succeeds");
-        assertEq(address(pfc).balance, 2 ether, "held");
-        pfc.processFees(address(0));
-        assertEq(address(treasury).balance, 1.2 ether);
+    function test_pfcV2_nothingToProcess_reverts() public {
+        vm.expectRevert(IProtocolFeeControllerV2.NothingToProcess.selector);
+        pfc.processFees();
     }
 
-    function test_pfcV2_receive_neverReverts_evenIfDeliveryCannotComplete() public {
-        // reverting treasury and NOT an escrow depositor: processFees would revert
-        ProtocolFeeControllerV2 p = _deploy(address(new P1Rejector()), address(router), SPLIT);
-        (bool ok,) = address(p).call{value: 1 ether, gas: 2_000_000}("");
-        assertTrue(ok, "receive swallowed the failed split");
-        assertEq(address(p).balance, 1 ether, "held for retry");
-        vm.expectRevert(IArtCoinsFeeEscrowV2.NotDepositor.selector);
-        p.processFees(address(0));
-    }
+    // ── delivery fallback ─────────────────────────────────────────────────
 
     function test_pfcV2_revertingTreasury_fallsBackToEscrow() public {
         address rej = address(new P1Rejector());
         ProtocolFeeControllerV2 p = _deploy(rej, address(router), SPLIT);
         escrow.addDepositor(address(p), false);
         vm.deal(address(p), 1 ether);
-        p.processFees(address(0));
+        p.processFees();
         assertEq(escrow.balances(rej, address(0)), 0.6 ether, "treasury credited");
         assertEq(address(router).balance, 0.4 ether, "burn share pushed");
         assertEq(address(p).balance, 0);
@@ -158,46 +154,19 @@ contract ProtocolFeeControllerV2Test is Test {
         address rej = address(new P1RejectingRouter());
         pfc.setBurnRouter(rej);
         vm.deal(address(pfc), 1 ether);
-        pfc.processFees(address(0));
+        pfc.processFees();
         assertEq(escrow.balances(rej, address(0)), 0.4 ether);
         assertEq(address(treasury).balance, 0.6 ether);
     }
 
-    function test_pfcV2_nothingToProcess_reverts() public {
-        vm.expectRevert(IProtocolFeeControllerV2.NothingToProcess.selector);
-        pfc.processFees(address(0));
-        vm.expectRevert(IProtocolFeeControllerV2.NothingToProcess.selector);
-        pfc.processFees(address(coin));
-    }
-
-    // ── erc20 ─────────────────────────────────────────────────────────────
-
-    function test_pfcV2_routerCoin_burnShareBurned() public {
-        coin.mint(address(pfc), 1000e18);
-        uint256 supply = coin.totalSupply();
-        pfc.processFees(address(coin));
-        assertEq(coin.balanceOf(address(treasury)), 600e18);
-        assertEq(coin.totalSupply(), supply - 400e18, "burn share burned");
-        assertEq(coin.balanceOf(address(pfc)), 0);
-    }
-
-    function test_pfcV2_otherErc20_allToTreasury() public {
-        P1Stray other = new P1Stray();
-        other.transfer(address(pfc), 1000e18);
-        pfc.processFees(address(other));
-        assertEq(other.balanceOf(address(treasury)), 1000e18, "not parked at the router");
-        assertEq(other.balanceOf(address(router)), 0);
-    }
-
-    function test_pfcV2_routerWithoutCoin_erc20AllToTreasury() public {
-        pfc.setBurnRouter(address(new P1NoCoinRouter()));
-        coin.mint(address(pfc), 10e18);
-        pfc.processFees(address(coin));
-        assertEq(coin.balanceOf(address(treasury)), 10e18);
-        pfc.setBurnRouter(address(new P1NoCoinRouter()));
-        coin.mint(address(pfc), 10e18);
-        pfc.processFees(address(coin));
-        assertEq(coin.balanceOf(address(treasury)), 20e18);
+    /// @notice Until the controller is an escrow depositor a failed push reverts
+    ///         and the eth stays for a retry.
+    function test_pfcV2_notDepositor_failedPushReverts_fundsStay() public {
+        ProtocolFeeControllerV2 p = _deploy(address(new P1Rejector()), address(router), SPLIT);
+        vm.deal(address(p), 1 ether);
+        vm.expectRevert(IArtCoinsFeeEscrowV2.NotDepositor.selector);
+        p.processFees();
+        assertEq(address(p).balance, 1 ether, "held for retry");
     }
 
     // ── bounds and owner ──────────────────────────────────────────────────
@@ -241,8 +210,7 @@ contract ProtocolFeeControllerV2Test is Test {
     }
 
     function test_pfcV2_rotation_noOldRouterCall() public {
-        pfc.setBurnRouter(address(new P1NoCoinRouter()));
-        pfc.setBurnRouter(address(new P1NoCoinRouter()));
+        pfc.setBurnRouter(address(new P1MockRouter()));
         pfc.setBurnRouter(address(router)); // rotate back; the old router is never called
         assertEq(pfc.burnRouter(), address(router));
         vm.expectRevert(IProtocolFeeControllerV2.ZeroAddress.selector);
@@ -264,8 +232,8 @@ contract ProtocolFeeControllerV2Test is Test {
         vm.stopPrank();
     }
 
-    /// A9-03: setBurnRouter rejects a router built against other Constants or
-    /// one with no code, so the IConstantsBound wiring guarantee holds.
+    /// @notice `setBurnRouter` rejects a router built against other Constants or
+    ///         one with no code.
     function test_pfcV2_setBurnRouter_checksConstants() public {
         address wrong = address(new P1WrongHashRouter());
         vm.expectRevert(abi.encodeWithSelector(IConstantsBound.ConstantsMismatch.selector, wrong));
@@ -279,11 +247,15 @@ contract ProtocolFeeControllerV2Test is Test {
     function test_pfcV2_rescue() public {
         vm.deal(address(pfc), 1 ether);
         coin.mint(address(pfc), 5e18);
+        P1Stray stray = new P1Stray();
+        stray.transfer(address(pfc), 3e18);
         address to = makeAddr("to");
         pfc.rescue(address(0), to, 1 ether);
         pfc.rescue(address(coin), to, 5e18);
+        pfc.rescue(address(stray), to, 3e18);
         assertEq(to.balance, 1 ether);
         assertEq(coin.balanceOf(to), 5e18);
+        assertEq(stray.balanceOf(to), 3e18);
 
         vm.expectRevert(IProtocolFeeControllerV2.ZeroAddress.selector);
         pfc.rescue(address(0), address(0), 0);
@@ -301,15 +273,7 @@ contract ProtocolFeeControllerV2Test is Test {
         pfc.acceptOwnership();
         assertEq(pfc.owner(), attacker);
         assertEq(pfc.constantsHash(), Constants.hash());
-    }
-
-    function test_pfcV2_processFees_falseReturningToken_reverts_noCredit() public {
-        FalseTransferToken t = new FalseTransferToken();
-        t.mint(address(pfc), 10e18);
-        vm.expectRevert(FeeDelivery.InvalidTransferReturn.selector);
-        pfc.processFees(address(t));
-        assertEq(escrow.balances(address(treasury), address(t)), 0);
-        assertEq(escrow.totalOwed(address(t)), 0);
-        assertEq(t.balanceOf(address(pfc)), 10e18);
+        assertEq(pfc.STACK_VERSION(), Constants.STACK_VERSION);
+        assertEq(pfc.PUSH_GAS(), Constants.PUSH_GAS_MAX);
     }
 }

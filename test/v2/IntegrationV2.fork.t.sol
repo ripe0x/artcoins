@@ -64,7 +64,7 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _creditsConfig(address(treasury));
         assertTrue(v2.factory.deprecated(), "stack ships deprecated");
         uint256 fee = v2.factory.deployFee();
-        assertEq(fee, 0.069 ether, "deploy fee");
+        assertEq(fee, 0, "deploy fee: free at launch");
 
         // closed to the public
         vm.deal(stranger, 1 ether);
@@ -230,7 +230,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         bytes memory a = abi.encode(
             v2.hook.poolInfo(pid),
             v2.hook.skimConfig(pid),
-            v2.hook.minProtocolShareBps(pid),
             v2.hook.isOfficialPool(pid),
             v2.locker.tokenRewards(coin),
             v2.mev.schedule(pid),
@@ -266,8 +265,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         PoolKey memory key = _key(coin);
         _pastWindow();
         _buyAndSell(key, 1 ether);
-        vm.prank(LIVE_OWNER);
-        v2.burnRouter.initialize(coin, key);
 
         bytes32 before = _perCoin(coin, sw);
         address other = makeAddr("i1.other");
@@ -282,7 +279,7 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         v2.factory.setDeprecated(false);
         v2.factory.setDeployFee(Constants.MAX_DEPLOY_FEE);
         v2.factory.setDefaultProtocolFeeBps(Constants.MAX_PROTOCOL_FEE_BPS);
-        v2.factory.setMinProtocolSkimShareBps(uint16(Constants.BPS));
+        v2.hook.setReferralBps(Constants.MAX_REFERRAL_CAP_OF_VOLUME);
         v2.factory.setProtocolRecipient(payable(other));
         v2.factory.setTeamFeeRecipient(other);
         address[] memory da = new address[](1);
@@ -313,8 +310,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         v2.controller.setBurnRouter(address(new I1ConstantsStub())); // valid-hash target
 
         v2.burnRouter.setMaxImpactBps(Constants.PRICE_IMPACT_MAX);
-        v2.burnRouter.setMinProcessThreshold(type(uint96).max);
-        v2.burnRouter.setOpenTabCaller(other);
         // the coin's fee swapper: tunables only
         sw.setMaxSlippageBps(Constants.SWAPPER_SLIPPAGE_MAX);
         sw.setMinBlocksBetweenConverts(Constants.SWAPPER_MIN_BLOCKS_MAX);
@@ -372,8 +367,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         PoolKey memory key = _key(coin);
         _pastWindow();
         _buyAndSell(key, 1 ether);
-        vm.prank(LIVE_OWNER);
-        v2.burnRouter.initialize(coin, key);
 
         uint256 owed = _escrowed(address(burner));
         assertGt(owed, 0, "bounty escrowed for the burner");
@@ -420,9 +413,12 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         vm.expectRevert(abi.encodeWithSelector(IFeeAutoSwapperV2.CannotRescue.selector, address(0)));
         sw.rescue(address(0), LIVE_OWNER, 1);
 
-        // burn router: never the coin or eth
-        vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.CannotRescue.selector, coin));
-        v2.burnRouter.rescue(coin, LIVE_OWNER, 1);
+        // burn router: never eth, weth or LAYER (the burn budget)
+        address layer = v2.burnRouter.coin();
+        vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.CannotRescue.selector, layer));
+        v2.burnRouter.rescue(layer, LIVE_OWNER, 1);
+        vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.CannotRescue.selector, WETH));
+        v2.burnRouter.rescue(WETH, LIVE_OWNER, 1);
         vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.CannotRescue.selector, address(0)));
         v2.burnRouter.rescue(address(0), LIVE_OWNER, 1);
         vm.stopPrank();
@@ -475,8 +471,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
 
         sw.setup(coin);
         PoolKey memory key = _key(coin);
-        vm.prank(LIVE_OWNER);
-        v2.burnRouter.initialize(coin, key);
         _pastWindow();
         _buyAndSell(key, 1 ether); // seed both fee sides and the coin balance
         vm.roll(vm.getBlockNumber() + 1);

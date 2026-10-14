@@ -18,6 +18,7 @@ import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 
 /// @title  DeployV2Lib
@@ -35,7 +36,7 @@ import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 ///          5 linear skim module           ctor takes the hook, ownerless
 ///          6 factory                      owner = broadcaster, ships deprecated
 ///          7 token deployer               bound to the factory, then `setTokenDeployer`
-///          8 burn router                  owner = OWNER, `initialize(coin, key)` later
+///          8 burn router                  owner = OWNER, bound to LAYER and its weth pool at construction
 ///          9 protocol fee controller      owner = OWNER, treasury, burn router (ctor needs it, so 8 before 9)
 ///         10 keeper                       `ArtCoinsKeeperV2(factory)`, ownerless
 ///         11 wiring                       escrow depositors first (D36), then hook, locker, factory
@@ -53,15 +54,17 @@ library DeployV2Lib {
     uint256 internal constant MAX_MINE = 400_000;
 
     // ── defaults ────────────────────────────────────────────────────────────
-    uint256 internal constant DEPLOY_FEE = 0.069 ether;
+    /// @dev Launches are free at the v2 opening; the owner can set a fee later
+    ///      (`setDeployFee`, up to MAX_DEPLOY_FEE).
+    uint256 internal constant DEPLOY_FEE = 0;
     uint16 internal constant PROTOCOL_BPS = 2000;
-    /// @dev Controller split: the largest treasury share Constants allows
-    ///      (PFC_MIN_BURN_BPS 1000). The burn share waits in the router until
-    ///      `initialize(coin, key)`.
-    uint16 internal constant TREASURY_BPS = 9000;
-    /// @dev D52: the protocol keeps at least 10% of every skim; caps launch
-    ///      bountyBps at 9000 and the referral cap above that floor.
-    uint16 internal constant MIN_PROTOCOL_SKIM_SHARE_BPS = 1000;
+    /// @dev Controller split at launch: 80% to the treasury, 20% buys and
+    ///      burns LAYER. Owner tunable within [PFC_MIN_TREASURY_BPS, BPS - PFC_MIN_BURN_BPS].
+    uint16 internal constant TREASURY_BPS = 8000;
+    /// @dev Hook wide referral rate at launch, bps of swap volume (0.25%),
+    ///      paid to a swap's named referrer out of the protocol leg. Owner
+    ///      tunable up to MAX_REFERRAL_CAP_OF_VOLUME.
+    uint24 internal constant REFERRAL_BPS = Constants.REFERRAL_BPS_DEFAULT;
     uint256 internal constant EIP170 = 24_576;
 
     /// @dev Deploy inputs.
@@ -72,11 +75,16 @@ library DeployV2Lib {
         address positionManager;
         address permit2;
         address create2Deployer;
+        /// @dev Burn router binding: wrapped eth, the coin it burns (LAYER) and
+        ///      the coin's weth pool key, read from the chain by the caller.
+        address weth;
+        address layer;
+        PoolKey layerPoolKey;
         address treasury;
         uint16 treasuryBps;
         uint256 deployFee;
         uint16 protocolBps;
-        uint16 minProtocolSkimShareBps;
+        uint24 referralBps;
         /// @dev Enforce EIP-170 in `check`. Always true in the script. The
         ///      token deployer is over the limit at the default profile
         ///      (optimizer_runs 20000), so the stack ships from FOUNDRY_PROFILE=ci;
@@ -117,7 +125,7 @@ library DeployV2Lib {
         p.treasuryBps = TREASURY_BPS;
         p.deployFee = DEPLOY_FEE;
         p.protocolBps = PROTOCOL_BPS;
-        p.minProtocolSkimShareBps = MIN_PROTOCOL_SKIM_SHARE_BPS;
+        p.referralBps = REFERRAL_BPS;
         p.checkSizes = true;
     }
 
@@ -128,6 +136,7 @@ library DeployV2Lib {
     function deploy(Params memory p) internal returns (Stack memory s) {
         require(p.owner != address(0) && p.broadcaster != address(0), "v2: zero owner");
         require(p.treasury != address(0), "v2: zero treasury");
+        require(p.weth.code.length != 0 && p.layer.code.length != 0, "v2: weth or layer missing");
         require(p.create2Deployer.code.length != 0, "v2: no CREATE2 deployer");
         require(p.poolManager.code.length != 0, "v2: no PoolManager");
         require(p.positionManager.code.length != 0, "v2: no PositionManager");
@@ -146,7 +155,7 @@ library DeployV2Lib {
         s.tokenDeployer = new ArtCoinsDeployerV2(address(s.factory));
         s.factory.setTokenDeployer(address(s.tokenDeployer));
         // 8, 9
-        s.burnRouter = new BurnRouterV2(p.owner, p.poolManager, address(s.escrow));
+        s.burnRouter = new BurnRouterV2(p.owner, p.poolManager, p.weth, p.layer, p.layerPoolKey);
         s.controller = new ProtocolFeeControllerV2(
             p.owner, address(s.escrow), p.treasury, address(s.burnRouter), p.treasuryBps
         );
@@ -220,6 +229,7 @@ library DeployV2Lib {
         s.hook.setFeeEscrow(address(s.escrow));
         s.hook.setExtensionAllowlist(address(s.allowlist));
         s.hook.setLauncher(address(s.factory), true);
+        s.hook.setReferralBps(p.referralBps);
 
         s.locker.setFeeEscrow(address(s.escrow));
         s.locker.setLauncher(address(s.factory), true);
@@ -233,7 +243,6 @@ library DeployV2Lib {
         f.setTeamFeeRecipient(p.owner);
         f.setDeployFee(p.deployFee);
         f.setDefaultProtocolFeeBps(p.protocolBps);
-        f.setMinProtocolSkimShareBps(p.minProtocolSkimShareBps);
         // defaultAllowed ships empty; see the allowlist rule on
         // ArtCoinsFactoryV2._defaultAllowed for what may be added.
         // deprecated stays true (constructor). opening is a separate owner tx.
@@ -305,6 +314,7 @@ library DeployV2Lib {
         require(g.feeEscrow == address(s.escrow), "v2: hook escrow");
         require(g.extensionAllowlist == address(s.allowlist), "v2: hook allowlist");
         require(s.hook.isLauncher(address(s.factory)), "v2: hook launcher");
+        require(s.hook.referralBps() == p.referralBps, "v2: hook referral rate");
     }
 
     function _checkEscrow(Stack memory s) private view {
@@ -341,7 +351,6 @@ library DeployV2Lib {
         require(f.teamFeeRecipient() == p.owner, "v2: team fee recipient");
         require(f.deployFee() == p.deployFee, "v2: deploy fee");
         require(f.defaultProtocolFeeBps() == p.protocolBps, "v2: protocol bps");
-        require(f.minProtocolSkimShareBps() == p.minProtocolSkimShareBps, "v2: min skim share");
         require(f.defaultAllowed().length == 0, "v2: default allowed must ship empty");
         require(f.deprecated(), "v2: factory must ship deprecated");
         require(f.STACK_VERSION() == Constants.STACK_VERSION, "v2: stack version");
@@ -354,9 +363,13 @@ library DeployV2Lib {
         require(s.controller.treasury() == p.treasury, "v2: controller treasury");
         require(s.controller.burnRouter() == address(s.burnRouter), "v2: controller router");
         require(s.controller.treasuryBps() == p.treasuryBps, "v2: controller split");
-        require(s.burnRouter.feeEscrow() == address(s.escrow), "v2: router escrow");
         require(address(s.burnRouter.poolManager()) == p.poolManager, "v2: router PoolManager");
-        require(s.burnRouter.coin() == address(0), "v2: router initialized early");
+        require(s.burnRouter.weth() == p.weth, "v2: router weth");
+        require(s.burnRouter.coin() == p.layer, "v2: router coin");
+        require(
+            keccak256(abi.encode(s.burnRouter.poolKey())) == keccak256(abi.encode(p.layerPoolKey)),
+            "v2: router pool key"
+        );
     }
 
     function _checkOwners(Stack memory s, Params memory p, bool accepted) private view {
@@ -453,7 +466,7 @@ library DeployV2Lib {
         a[4] = abi.encode(address(s.hook));
         a[5] = abi.encode(p.broadcaster, p.poolManager, p.protocolBps, p.deployFee);
         a[6] = abi.encode(address(s.factory));
-        a[7] = abi.encode(p.owner, p.poolManager, address(s.escrow));
+        a[7] = abi.encode(p.owner, p.poolManager, p.weth, p.layer, p.layerPoolKey);
         a[8] = abi.encode(
             p.owner, address(s.escrow), p.treasury, address(s.burnRouter), p.treasuryBps
         );

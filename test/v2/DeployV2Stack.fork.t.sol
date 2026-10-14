@@ -8,6 +8,7 @@ import {IArtCoinsHookV2} from "../../src/v2/interfaces/IArtCoinsHookV2.sol";
 // broadcaster that is not the owner, so the two step ownership hand over is
 // exercised. skips cleanly when the rpc is unreachable.
 
+import {Addresses} from "../../script/Addresses.sol";
 import {DeployV2Lib} from "../../script/v2/DeployV2Lib.sol";
 import {LaunchV2Coin, LaunchV2Lib} from "../../script/v2/LaunchV2Coin.s.sol";
 import {Constants} from "../../src/Constants.sol";
@@ -42,7 +43,7 @@ contract DeployV2StackForkTest is ForkStack {
         '"image":"ipfs://example","description":"{\\"description\\":\\"credits engine example coin\\"}",'
         '"totalSupply":0,"renderer":"0x0000000000000000000000000000000000000000"},'
         '"pool":{"tickIfToken0IsCoin":-200000,"tickSpacing":200},"fee":{"lpFeePips":5000,"baselineSkimBps":600,'
-        '"bountyBps":8333,"maxReferralBpsOfVolume":25,"bountyRecipient":"0x7ea5000000000000000000000000000000000001"},'
+        '"bountyBps":8333,"bountyRecipient":"0x7ea5000000000000000000000000000000000001"},'
         '"locker":{"rewardRecipients":["0x7ea5000000000000000000000000000000000001"],"rewardBps":[8000],'
         '"tickLower":[-200000,-160000,-120000],"tickUpper":[-120000,-100000,-60000],"positionBps":[5000,'
         '3000,2000]},"mev":{"startingSkimBps":6869,"windowSeconds":4140},'
@@ -88,13 +89,15 @@ contract DeployV2StackForkTest is ForkStack {
         assertEq(s.locker.keeperRewardBps(), 0, "D28 keeper reward");
         assertTrue(s.factory.deprecated(), "ships deprecated");
         assertEq(s.factory.tokenDeployer(), address(s.tokenDeployer), "D38 deployer");
-        assertEq(s.factory.deployFee(), 0.069 ether, "deploy fee");
+        assertEq(s.factory.deployFee(), 0, "deploy fee: free at launch");
         assertEq(s.factory.defaultProtocolFeeBps(), 2000, "protocol bps");
-        assertEq(s.factory.minProtocolSkimShareBps(), 1000, "D52 protocol skim floor");
+        assertEq(s.hook.referralBps(), 25, "hook referral rate (D89)");
         assertEq(s.factory.protocolRecipient(), address(s.controller), "protocol recipient");
         assertEq(s.factory.teamFeeRecipient(), LIVE_OWNER, "team fee recipient");
         assertEq(s.controller.treasury(), LIVE_OWNER, "treasury = owner");
-        assertEq(s.burnRouter.coin(), address(0), "router not initialized");
+        assertEq(s.burnRouter.coin(), Addresses.COIN_LAYER, "router burns LAYER");
+        assertEq(s.burnRouter.weth(), WETH, "router weth");
+        assertFalse(s.burnRouter.wethIsCurrency0(), "LAYER is currency0 of the live pool");
 
         // two step hand over: the broadcaster keeps power until OWNER accepts
         Ownable2Step[4] memory o = DeployV2Lib.pendingOwnables(s);
@@ -128,7 +131,7 @@ contract DeployV2StackForkTest is ForkStack {
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _launch(address(treasury)).cfg;
         vm.prank(stranger);
         vm.expectRevert(IArtCoinsFactoryV2.Deprecated.selector);
-        s.factory.deployToken{value: 0.069 ether}(c);
+        s.factory.deployToken(c);
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -140,12 +143,14 @@ contract DeployV2StackForkTest is ForkStack {
         string[10] memory n = DeployV2Lib.names();
         string[10] memory src = DeployV2Lib.paths();
         // every immutable in the stack is one of these addresses
-        bytes32[] memory imm = new bytes32[](13);
+        bytes32[] memory imm = new bytes32[](15);
         imm[0] = bytes32(uint256(uint160(POOL_MANAGER)));
         imm[1] = bytes32(uint256(uint160(POSITION_MANAGER)));
         imm[2] = bytes32(uint256(uint160(PERMIT2)));
+        imm[3] = bytes32(uint256(uint160(WETH)));
+        imm[4] = bytes32(uint256(uint160(Addresses.COIN_LAYER)));
         for (uint256 i; i < 10; ++i) {
-            imm[3 + i] = bytes32(uint256(uint160(a[i])));
+            imm[5 + i] = bytes32(uint256(uint160(a[i])));
         }
         for (uint256 i; i < 10; ++i) {
             bytes memory art = vm.getDeployedCode(string.concat(src[i], ":", n[i]));
@@ -205,7 +210,7 @@ contract DeployV2StackForkTest is ForkStack {
         assertEq(l.cfg.mev.windowSeconds, 69 minutes, "69 minute skim");
 
         (address predicted, uint256 value) = LaunchV2Lib.preflight(t, l, LIVE_OWNER);
-        assertEq(value, 0.069 ether, "value");
+        assertEq(value, 0, "value: no deploy fee");
         (address dry,) = LaunchV2Lib.dryRun(t, l, LIVE_OWNER, value);
         assertEq(dry, predicted, "dry run address");
         assertEq(dry.code.length, 0, "dry run reverted to snapshot");

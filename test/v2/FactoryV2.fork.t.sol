@@ -141,11 +141,7 @@ contract FactoryV2ForkTest is ForkBase {
         c.pool.tickSpacing = TS;
 
         c.fee = IArtCoinsFactoryV2.FeeConfigV2({
-            lpFeePips: 5000,
-            baselineSkimBps: 600,
-            bountyBps: 8333,
-            maxReferralBpsOfVolume: 25,
-            bountyRecipient: bounty
+            lpFeePips: 5000, baselineSkimBps: 600, bountyBps: 8333, bountyRecipient: bounty
         });
 
         c.locker.locker = locker;
@@ -694,20 +690,22 @@ contract FactoryV2ForkTest is ForkBase {
         c.locker.positionBps[1] = 3999;
         _expectRevertDeploy(c, abi.encodeWithSelector(ArtCoinsFactoryV2.InvalidPositions.selector));
 
-        // bounty share capped by the minimum protocol share
-        factory.setMinProtocolSkimShareBps(2000);
+        // bounty share capped at MAX_BOUNTY_BPS
         c = _cfg();
+        c.fee.bountyBps = Constants.MAX_BOUNTY_BPS + 1;
         _expectRevertDeploy(
             c,
             abi.encodeWithSelector(
-                IArtCoinsFactoryV2.BountyBpsTooHigh.selector, uint16(8333), uint16(8000)
+                IArtCoinsFactoryV2.BountyBpsTooHigh.selector,
+                uint16(Constants.MAX_BOUNTY_BPS + 1),
+                Constants.MAX_BOUNTY_BPS
             )
         );
-        c.fee.bountyBps = 8000;
-        // at the max bounty nothing is left above the protocol floor (D52)
-        c.fee.maxReferralBpsOfVolume = 0;
+        c.fee.bountyBps = Constants.MAX_BOUNTY_BPS;
         address t = _deploy(alice, c);
-        assertEq(hook.skimConfig(factory.deploymentInfo(t).poolId).bountyBps, 8000);
+        assertEq(
+            hook.skimConfig(factory.deploymentInfo(t).poolId).bountyBps, Constants.MAX_BOUNTY_BPS
+        );
 
         // fee caps
         c = _cfg();
@@ -717,11 +715,6 @@ contract FactoryV2ForkTest is ForkBase {
         );
         c = _cfg();
         c.fee.baselineSkimBps = Constants.MAX_BASELINE_SKIM_BPS + 1;
-        _expectRevertDeploy(
-            c, abi.encodeWithSelector(ArtCoinsFactoryV2.FeeConfigOutOfBounds.selector)
-        );
-        c = _cfg();
-        c.fee.maxReferralBpsOfVolume = Constants.MAX_REFERRAL_CAP_OF_VOLUME + 1;
         _expectRevertDeploy(
             c, abi.encodeWithSelector(ArtCoinsFactoryV2.FeeConfigOutOfBounds.selector)
         );
@@ -919,57 +912,6 @@ contract FactoryV2ForkTest is ForkBase {
         assertGt(address(this).balance, ethBefore, "eth back");
     }
 
-    /// D52 / V2F-01: maxReferral * BPS <= baseline * (BPS - bounty - minShare).
-    function test_referralCap_protocolFloor_boundary() public onlyFork {
-        factory.setMinProtocolSkimShareBps(1000);
-        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        // baseline 600, bounty 8000, floor 1000: room = 600 * 1000 / 10000 = 60
-        c.fee.baselineSkimBps = 600;
-        c.fee.bountyBps = 8000;
-        c.fee.maxReferralBpsOfVolume = 61;
-        _expectRevertDeploy(
-            c, abi.encodeWithSelector(ArtCoinsFactoryV2.ReferralCapAboveProtocolFloor.selector)
-        );
-        c.fee.maxReferralBpsOfVolume = 60; // boundary passes
-        address t = _deploy(alice, c);
-        PoolId pid = factory.deploymentInfo(t).poolId;
-        assertEq(hook.skimConfig(pid).maxReferralBpsOfVolume, 60);
-        assertEq(hook.minProtocolShareBps(pid), 1000, "floor frozen on the pool");
-
-        // bounty + floor > BPS fails in the factory before the hook's BadLegBps
-        c = _cfg();
-        c.fee.bountyBps = 9001;
-        c.fee.maxReferralBpsOfVolume = 0;
-        _expectRevertDeploy(
-            c,
-            abi.encodeWithSelector(
-                IArtCoinsFactoryV2.BountyBpsTooHigh.selector, uint16(9001), uint16(9000)
-            )
-        );
-
-        // the reviewer's V2F-01 shape: baseline 1%, max bounty, max referral
-        c = _cfg();
-        c.fee.baselineSkimBps = 100;
-        c.fee.bountyBps = 9000;
-        c.fee.maxReferralBpsOfVolume = Constants.MAX_REFERRAL_CAP_OF_VOLUME;
-        _expectRevertDeploy(
-            c, abi.encodeWithSelector(ArtCoinsFactoryV2.ReferralCapAboveProtocolFloor.selector)
-        );
-
-        // with no floor the whole protocol leg is the room
-        factory.setMinProtocolSkimShareBps(0);
-        c = _cfg();
-        c.fee.baselineSkimBps = 100;
-        c.fee.bountyBps = 0;
-        c.fee.maxReferralBpsOfVolume = 100; // = baseline
-        c.token.salt = bytes32(uint256(41));
-        assertEq(hook.minProtocolShareBps(factory.deploymentInfo(_deploy(alice, c)).poolId), 0);
-        c.fee.baselineSkimBps = 99;
-        _expectRevertDeploy(
-            c, abi.encodeWithSelector(ArtCoinsFactoryV2.ReferralCapAboveProtocolFloor.selector)
-        );
-    }
-
     /// D76: the min lp fee rule is removed; a launch accepts lp fee 0 (pure skim).
     function test_lpFeeZero_launches() public onlyFork {
         // lp fee 0 with a nonzero skim passes (pure skim pool).
@@ -980,7 +922,6 @@ contract FactoryV2ForkTest is ForkBase {
         assertEq(
             hook.skimConfig(factory.deploymentInfo(t).poolId).lpFeePips, 0, "lp fee 0 launched"
         );
-        // the protocol skim share floor (D52) still bounds referrals.
         c = _cfg();
         c.fee.lpFeePips = Constants.MAX_LP_FEE;
         _deploy(alice, c);
@@ -992,7 +933,6 @@ contract FactoryV2ForkTest is ForkBase {
         c.fee.lpFeePips = 0;
         c.fee.baselineSkimBps = 0;
         c.fee.bountyBps = 0;
-        c.fee.maxReferralBpsOfVolume = 0;
         c.mev = IArtCoinsFactoryV2.MevConfigV2(address(0), 0, 0); // no window (startingSkimBps >= baseline)
         _expectRevertDeploy(c, abi.encodeWithSelector(ArtCoinsFactoryV2.ZeroFeeLaunch.selector));
     }
@@ -1208,10 +1148,6 @@ contract FactoryV2ForkTest is ForkBase {
         factory.setDefaultProtocolFeeBps(Constants.MAX_PROTOCOL_FEE_BPS);
         assertEq(factory.defaultProtocolFeeBps(), Constants.MAX_PROTOCOL_FEE_BPS);
 
-        vm.expectRevert(IArtCoinsFactoryV2.MinProtocolSkimShareTooHigh.selector);
-        factory.setMinProtocolSkimShareBps(uint16(Constants.BPS + 1));
-        factory.setMinProtocolSkimShareBps(uint16(Constants.BPS));
-
         vm.expectRevert(IArtCoinsFactoryV2.ZeroAddress.selector);
         factory.setProtocolRecipient(payable(address(0)));
         vm.expectRevert(IArtCoinsFactoryV2.ZeroAddress.selector);
@@ -1234,8 +1170,6 @@ contract FactoryV2ForkTest is ForkBase {
         factory.setDeployFee(0);
         vm.expectRevert(err);
         factory.setDefaultProtocolFeeBps(0);
-        vm.expectRevert(err);
-        factory.setMinProtocolSkimShareBps(0);
         vm.expectRevert(err);
         factory.setProtocolRecipient(payable(alice));
         vm.expectRevert(err);

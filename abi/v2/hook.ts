@@ -157,11 +157,6 @@ export const hookV2Abi = [
                 "internalType": "uint16"
               },
               {
-                "name": "maxReferralBpsOfVolume",
-                "type": "uint24",
-                "internalType": "uint24"
-              },
-              {
                 "name": "lpFeePips",
                 "type": "uint24",
                 "internalType": "uint24"
@@ -177,11 +172,6 @@ export const hookV2Abi = [
                 "internalType": "address payable"
               }
             ]
-          },
-          {
-            "name": "minProtocolShareBps",
-            "type": "uint16",
-            "internalType": "uint16"
           }
         ]
       }
@@ -262,25 +252,6 @@ export const hookV2Abi = [
   },
   {
     "type": "function",
-    "name": "minProtocolShareBps",
-    "inputs": [
-      {
-        "name": "poolId",
-        "type": "bytes32",
-        "internalType": "PoolId"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "poolInfo",
     "inputs": [
       {
@@ -336,6 +307,19 @@ export const hookV2Abi = [
             "internalType": "address"
           }
         ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "referralBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint24",
+        "internalType": "uint24"
       }
     ],
     "stateMutability": "view"
@@ -450,6 +434,69 @@ export const hookV2Abi = [
   },
   {
     "type": "function",
+    "name": "setPoolExtension",
+    "inputs": [
+      {
+        "name": "key",
+        "type": "tuple",
+        "internalType": "struct PoolKey",
+        "components": [
+          {
+            "name": "currency0",
+            "type": "address",
+            "internalType": "Currency"
+          },
+          {
+            "name": "currency1",
+            "type": "address",
+            "internalType": "Currency"
+          },
+          {
+            "name": "fee",
+            "type": "uint24",
+            "internalType": "uint24"
+          },
+          {
+            "name": "tickSpacing",
+            "type": "int24",
+            "internalType": "int24"
+          },
+          {
+            "name": "hooks",
+            "type": "address",
+            "internalType": "contract IHooks"
+          }
+        ]
+      },
+      {
+        "name": "newExtension",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "initData",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setReferralBps",
+    "inputs": [
+      {
+        "name": "bps",
+        "type": "uint24",
+        "internalType": "uint24"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "skimConfig",
     "inputs": [
       {
@@ -473,11 +520,6 @@ export const hookV2Abi = [
             "name": "bountyBps",
             "type": "uint16",
             "internalType": "uint16"
-          },
-          {
-            "name": "maxReferralBpsOfVolume",
-            "type": "uint24",
-            "internalType": "uint24"
           },
           {
             "name": "lpFeePips",
@@ -664,6 +706,31 @@ export const hookV2Abi = [
   },
   {
     "type": "event",
+    "name": "PoolExtensionSet",
+    "inputs": [
+      {
+        "name": "poolId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "PoolId"
+      },
+      {
+        "name": "oldExtension",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newExtension",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "PoolInitializedV2",
     "inputs": [
       {
@@ -725,19 +792,19 @@ export const hookV2Abi = [
   },
   {
     "type": "event",
-    "name": "ProtocolFloorInitialized",
+    "name": "ReferralBpsSet",
     "inputs": [
       {
-        "name": "poolId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "PoolId"
+        "name": "oldBps",
+        "type": "uint24",
+        "indexed": false,
+        "internalType": "uint24"
       },
       {
-        "name": "minProtocolShareBps",
-        "type": "uint16",
+        "name": "newBps",
+        "type": "uint24",
         "indexed": false,
-        "internalType": "uint16"
+        "internalType": "uint24"
       }
     ],
     "anonymous": false
@@ -792,11 +859,6 @@ export const hookV2Abi = [
             "name": "bountyBps",
             "type": "uint16",
             "internalType": "uint16"
-          },
-          {
-            "name": "maxReferralBpsOfVolume",
-            "type": "uint24",
-            "internalType": "uint24"
           },
           {
             "name": "lpFeePips",
@@ -903,18 +965,6 @@ export const hookV2Abi = [
         "internalType": "address"
       },
       {
-        "name": "sourceId",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "campaignId",
-        "type": "bytes16",
-        "indexed": false,
-        "internalType": "bytes16"
-      },
-      {
         "name": "quoteVolume",
         "type": "uint256",
         "indexed": false,
@@ -928,11 +978,6 @@ export const hookV2Abi = [
       }
     ],
     "anonymous": false
-  },
-  {
-    "type": "error",
-    "name": "BadLegBps",
-    "inputs": []
   },
   {
     "type": "error",
@@ -999,11 +1044,6 @@ export const hookV2Abi = [
   },
   {
     "type": "error",
-    "name": "MaxReferralTooHigh",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "MevModuleAlreadyInitialized",
     "inputs": []
   },
@@ -1051,6 +1091,11 @@ export const hookV2Abi = [
   {
     "type": "error",
     "name": "RecipientsLocked",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ReferralBpsTooHigh",
     "inputs": []
   },
   {

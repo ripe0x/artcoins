@@ -36,19 +36,6 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 
-/// hookData shapes the v2 hook parses (HookCalldata.sol).
-struct V2FAttribution {
-    bytes32 sourceId;
-    address referrer;
-    bytes16 campaignId;
-    uint24 referralBps;
-}
-
-struct V2FSwapData {
-    V2FAttribution attribution;
-    bytes extensionPayload;
-}
-
 struct V2FPoolSwapData {
     bytes mevModuleSwapData;
     bytes poolExtensionSwapData;
@@ -144,11 +131,7 @@ contract V2FFactoryReviewTest is ForkBase {
         c.pool.tickSpacing = TS;
 
         c.fee = IArtCoinsFactoryV2.FeeConfigV2({
-            lpFeePips: 5000,
-            baselineSkimBps: 600,
-            bountyBps: 8333,
-            maxReferralBpsOfVolume: 25,
-            bountyRecipient: bounty
+            lpFeePips: 5000, baselineSkimBps: 600, bountyBps: 8333, bountyRecipient: bounty
         });
 
         c.locker.locker = address(locker);
@@ -183,109 +166,12 @@ contract V2FFactoryReviewTest is ForkBase {
         });
     }
 
-    function _attribution(address referrer, uint24 bps) internal pure returns (bytes memory) {
-        V2FSwapData memory inner = V2FSwapData({
-            attribution: V2FAttribution({
-                sourceId: bytes32(0), referrer: referrer, campaignId: bytes16(0), referralBps: bps
-            }),
-            extensionPayload: ""
-        });
-        return abi.encode(
-            V2FPoolSwapData({mevModuleSwapData: "", poolExtensionSwapData: abi.encode(inner)})
-        );
-    }
-
     function _filled(uint256 n) internal pure returns (string memory) {
         bytes memory b = new bytes(n);
         for (uint256 i; i < n; ++i) {
             b[i] = "a";
         }
         return string(b);
-    }
-
-    // ══════════════════════════════════════════════════════════════════════
-    // V2F-01: the launcher's referral cap erases the protocol skim floor
-    // ══════════════════════════════════════════════════════════════════════
-
-    /// REGRESSION (fixed by D52 and D53, was V2F-01 and V2F-02).
-    ///
-    /// original attack: the owner sets minProtocolSkimShareBps = 2000 ("the
-    /// protocol keeps at least 20% of the skim", ui encodeV2.ts:288). a public
-    /// launcher picks the max bounty the factory allowed (8000), the max
-    /// referral cap (1% of volume) and lpFeePips 0. any swapper that names a
-    /// referrer (D44: its own wallet is fine) moved the whole protocol leg to
-    /// that referrer, so the protocol earned 0 from the skim, and the 20%
-    /// locker slot earned 0 because there was no lp fee to share.
-    ///
-    /// now: the factory refuses a referral cap that does not fit above the
-    /// protocol floor (D52), and the hook clamps the referral leg at
-    /// `protocol - floor` on every swap. lp fee 0 is allowed (D76).
-    function test_V2F01_referralCapZeroesProtocolSkimFloor() public onlyFork {
-        factory.setMinProtocolSkimShareBps(2000);
-        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        c.mev = IArtCoinsFactoryV2.MevConfigV2(address(0), 0, 0); // no window, baseline only
-        c.fee.baselineSkimBps = 100; // 1% of volume
-        c.fee.bountyBps = 8000; // old max accepted: BPS - minProtocolSkimShareBps
-        c.fee.maxReferralBpsOfVolume = Constants.MAX_REFERRAL_CAP_OF_VOLUME; // 1%
-        c.fee.lpFeePips = 0;
-
-        // V2F-01: the old attack config is refused because the 1% referral cap
-        // cannot fit above a 20% floor with an 80% bounty.
-        vm.prank(alice);
-        vm.expectRevert(ArtCoinsFactoryV2.ReferralCapAboveProtocolFloor.selector);
-        factory.deployToken{value: FEE}(c);
-
-        // the largest cap that fits: baseline 1000, bounty 5000, floor 2000
-        // gives referral <= 1000 * (10000 - 5000 - 2000) / 10000 = 300 (0.3% of volume).
-        c.fee.bountyBps = 5000;
-        c.fee.maxReferralBpsOfVolume = 31;
-        vm.prank(alice);
-        vm.expectRevert(ArtCoinsFactoryV2.ReferralCapAboveProtocolFloor.selector);
-        factory.deployToken{value: FEE}(c);
-        c.fee.maxReferralBpsOfVolume = 30;
-        c.fee.lpFeePips = 5000; // a nonzero lp fee so the protocol locker slot earns
-        vm.prank(alice);
-        address token = factory.deployToken{value: FEE}(c);
-        PoolKey memory key = _key(token);
-
-        // control: no referrer, the protocol leg is 50% of the 1% baseline skim
-        uint256 base = 1 ether * 100 / Constants.BPS;
-        uint256 floor = base * factory.minProtocolSkimShareBps() / Constants.BPS;
-        uint256 p0 = protocolR.balance;
-        swapExactIn(key, true, 1 ether, address(this), "");
-        uint256 protocolNoRef = protocolR.balance - p0;
-        assertGt(protocolNoRef, floor, "control: protocol paid above the floor");
-        console2.log("protocol leg, no referrer (wei)", protocolNoRef);
-
-        // same swap naming a referrer: the referrer is paid, the protocol keeps
-        // at least the floor (the hook clamps the referral at protocol - floor)
-        p0 = protocolR.balance;
-        uint256 r0 = referrerEoa.balance;
-        uint256 b0 = bounty.balance;
-        swapExactIn(key, true, 1 ether, address(this), _attribution(referrerEoa, 100));
-        uint256 protocolWithRef = protocolR.balance - p0;
-        uint256 referral = referrerEoa.balance - r0;
-        assertGt(referral, 0, "referrer paid");
-        assertGe(protocolWithRef, floor, "protocol leg never below the floor");
-        assertLe(
-            protocolWithRef + referral, protocolNoRef + 1, "referral comes out of the protocol leg"
-        );
-        assertGt(bounty.balance - b0, 0, "bounty unaffected");
-        console2.log("protocol leg, with referrer (wei)", protocolWithRef);
-        console2.log("referral leg (wei)", referral);
-
-        // the 20% locker protocol slot has an lp fee to share
-        assertEq(locker.rewardRecipients(token)[1], protocolR);
-        p0 = protocolR.balance;
-        uint256 c0 = IERC20(token).balanceOf(protocolR);
-        locker.collectRewards(token);
-        assertGt(
-            protocolR.balance - p0 + IERC20(token).balanceOf(protocolR) - c0,
-            0,
-            "protocol lp slot earns"
-        );
-
-        assertEq(factory.minProtocolSkimShareBps(), 2000);
     }
 
     // ══════════════════════════════════════════════════════════════════════

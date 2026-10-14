@@ -22,7 +22,7 @@ import {IProtocolFeeControllerV2} from "../../src/v2/interfaces/IProtocolFeeCont
 contract ConstantsV2Test is Test {
     /// @dev Update only together with an intended change to a hashed constant.
     bytes32 internal constant GOLDEN_HASH =
-        0x69b6027a6426e4db8d91e06f74d3977b5d6e616067cf30c29f74d7c785ae4027;
+        0x55e6fb9e4eac600e09be6990b8c9e2a4c9d6b2321d49e25528af079ce3c5703f;
 
     function _literalHash() internal pure returns (bytes32) {
         bytes32 pool = keccak256(
@@ -62,8 +62,7 @@ contract ConstantsV2Test is Test {
         bytes32 keeper = keccak256(
             abi.encode(
                 uint256(50), // KEEPER_REWARD_BPS
-                uint256(1e16), // KEEPER_REWARD_CAP
-                uint256(8000) // BURN_SPOT_FLOOR_DEFAULT_BPS
+                uint256(1e16) // KEEPER_REWARD_CAP
             )
         );
         return keccak256(abi.encode(pool, delivery, launch, keeper));
@@ -89,6 +88,7 @@ contract ConstantsV2Test is Test {
         assertEq(Constants.MAX_SKIM_BPS, 9000);
         assertEq(Constants.MAX_BASELINE_SKIM_BPS, 1000);
         assertEq(Constants.MAX_REFERRAL_CAP_OF_VOLUME, 100);
+        assertEq(Constants.REFERRAL_BPS_DEFAULT, 25);
         assertEq(Constants.MAX_BOUNTY_BPS, 9999);
         assertEq(Constants.PUSH_GAS_MAX, 150_000);
         assertEq(Constants.MIN_MEV_WINDOW, 1 minutes);
@@ -110,7 +110,15 @@ contract ConstantsV2Test is Test {
         assertEq(Constants.DEAD, 0x000000000000000000000000000000000000dEaD);
         assertEq(Constants.KEEPER_REWARD_BPS, 50);
         assertEq(Constants.KEEPER_REWARD_CAP, 0.01 ether);
-        assertEq(Constants.BURN_SPOT_FLOOR_DEFAULT_BPS, 8000);
+        assertEq(Constants.BURN_SPOT_FLOOR_BPS, 9000);
+        assertEq(Constants.BURN_TIP_DEFAULT, 0.0003 ether);
+        assertEq(Constants.BURN_TIP_MAX, 0.01 ether);
+        assertEq(Constants.BURN_GAS_OVERHEAD_DEFAULT, 60_000);
+        assertEq(Constants.BURN_GAS_OVERHEAD_MAX, 300_000);
+        assertEq(Constants.BURN_BASEFEE_GATE_DEFAULT, 1 gwei);
+        assertEq(Constants.BURN_BASEFEE_GATE_MAX, 100 gwei);
+        assertEq(Constants.BURN_REWARD_BPS_DEFAULT, 1000);
+        assertEq(Constants.BURN_REWARD_BPS_MAX, 5000);
         assertEq(Constants.SWAPPER_SLIPPAGE_MIN, 50);
         assertEq(Constants.SWAPPER_SLIPPAGE_MAX, 1000);
         assertEq(Constants.SWAPPER_MIN_BLOCKS_MIN, 1);
@@ -118,11 +126,7 @@ contract ConstantsV2Test is Test {
         assertEq(Constants.PRICE_IMPACT_MIN, 25);
         assertEq(Constants.PRICE_IMPACT_DEFAULT, 100);
         assertEq(Constants.PRICE_IMPACT_MAX, 300);
-        assertEq(Constants.BURN_THRESHOLD_FLOOR, 0.001 ether);
-        assertEq(Constants.BURN_MAX_PER_CALL_MIN, 0.1 ether);
-        assertEq(Constants.BURN_MAX_PER_CALL_MAX, 100 ether);
-        assertEq(Constants.BURN_MAX_PER_CALL_DEFAULT, 5 ether);
-        assertEq(Constants.PFC_MIN_TREASURY_BPS, 4000);
+        assertEq(Constants.PFC_MIN_TREASURY_BPS, 1000);
         assertEq(Constants.PFC_MIN_BURN_BPS, 1000);
         assertEq(Constants.MAX_GLYPHS, 256);
         assertEq(Constants.RENDER_GAS_BUDGET, 8_000_000);
@@ -137,8 +141,6 @@ contract ConstantsV2Test is Test {
         assertLt(Constants.DEFAULT_MEV_WINDOW, Constants.MAX_MEV_WINDOW);
         assertLt(Constants.PRICE_IMPACT_MIN, Constants.PRICE_IMPACT_DEFAULT);
         assertLt(Constants.PRICE_IMPACT_DEFAULT, Constants.PRICE_IMPACT_MAX);
-        assertLt(Constants.BURN_MAX_PER_CALL_MIN, Constants.BURN_MAX_PER_CALL_DEFAULT);
-        assertLt(Constants.BURN_MAX_PER_CALL_DEFAULT, Constants.BURN_MAX_PER_CALL_MAX);
         assertLt(Constants.LOCKER_KEEPER_CAP_MIN, Constants.LOCKER_KEEPER_CAP_MAX);
         assertLt(Constants.SWAPPER_SLIPPAGE_MIN, Constants.SWAPPER_SLIPPAGE_MAX);
         assertLt(Constants.SWAPPER_MIN_BLOCKS_MIN, Constants.SWAPPER_MIN_BLOCKS_MAX);
@@ -149,6 +151,7 @@ contract ConstantsV2Test is Test {
         assertLe(Constants.DEFAULT_START_SKIM_BPS, Constants.MAX_SKIM_BPS);
         assertLt(Constants.MAX_SKIM_BPS, Constants.BPS);
         assertLe(Constants.MAX_REFERRAL_CAP_OF_VOLUME, Constants.MAX_BASELINE_SKIM_BPS);
+        assertLe(Constants.REFERRAL_BPS_DEFAULT, Constants.MAX_REFERRAL_CAP_OF_VOLUME);
         assertLt(Constants.MAX_BOUNTY_BPS, Constants.BPS);
         assertLt(Constants.MAX_LP_FEE, Constants.FEE_DENOMINATOR);
         // shares and caps within 100%
@@ -156,7 +159,13 @@ contract ConstantsV2Test is Test {
         assertLt(Constants.MAX_EXTENSION_BPS, Constants.BPS);
         assertLe(Constants.LOCKER_KEEPER_BPS_MAX, Constants.BPS);
         assertLe(Constants.KEEPER_REWARD_BPS, Constants.BPS);
-        assertLe(Constants.BURN_SPOT_FLOOR_DEFAULT_BPS, Constants.BPS);
+        assertGe(Constants.BURN_SPOT_FLOOR_BPS, Constants.SPOT_FLOOR_MIN_BPS);
+        assertLe(Constants.BURN_SPOT_FLOOR_BPS, Constants.SPOT_FLOOR_MAX_BPS);
+        assertLe(Constants.BURN_TIP_DEFAULT, Constants.BURN_TIP_MAX);
+        assertLe(Constants.BURN_GAS_OVERHEAD_DEFAULT, Constants.BURN_GAS_OVERHEAD_MAX);
+        assertLe(Constants.BURN_BASEFEE_GATE_DEFAULT, Constants.BURN_BASEFEE_GATE_MAX);
+        assertLe(Constants.BURN_REWARD_BPS_DEFAULT, Constants.BURN_REWARD_BPS_MAX);
+        assertLt(Constants.BURN_REWARD_BPS_MAX, Constants.BPS);
         assertLe(
             uint256(Constants.PFC_MIN_TREASURY_BPS) + Constants.PFC_MIN_BURN_BPS, Constants.BPS
         );
