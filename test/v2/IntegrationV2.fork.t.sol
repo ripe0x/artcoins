@@ -64,7 +64,7 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _creditsConfig(address(treasury));
         assertTrue(v2.factory.deprecated(), "stack ships deprecated");
         uint256 fee = v2.factory.deployFee();
-        assertEq(fee, 0.069 ether, "deploy fee");
+        assertEq(fee, 0, "deploy fee: free at launch");
 
         // closed to the public
         vm.deal(stranger, 1 ether);

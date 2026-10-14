@@ -542,7 +542,7 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         vm.deal(LIVE_OWNER, LIVE_OWNER.balance + 1 ether);
         vm.prank(LIVE_OWNER);
         vm.expectRevert(ArtCoinsFactoryV2.ReferralCapAboveProtocolFloor.selector);
-        v2.factory.deployTokenAsOwner{value: 0.069 ether}(c, PROTOCOL_BPS);
+        v2.factory.deployTokenAsOwner{value: v2.factory.deployFee()}(c, PROTOCOL_BPS);
 
         // at the bound, a referral asking for more (1%) is capped and the floor holds
         c.fee.maxReferralBpsOfVolume = cap;
