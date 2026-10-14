@@ -22,7 +22,7 @@ import {IProtocolFeeControllerV2} from "../../src/v2/interfaces/IProtocolFeeCont
 contract ConstantsV2Test is Test {
     /// @dev Update only together with an intended change to a hashed constant.
     bytes32 internal constant GOLDEN_HASH =
-        0x61fdd6a9e8d4637647af202c2a8ae4e1f88474e8d6108bedbb67c1984dda16d6;
+        0x55e6fb9e4eac600e09be6990b8c9e2a4c9d6b2321d49e25528af079ce3c5703f;
 
     function _literalHash() internal pure returns (bytes32) {
         bytes32 pool = keccak256(
@@ -62,8 +62,7 @@ contract ConstantsV2Test is Test {
         bytes32 keeper = keccak256(
             abi.encode(
                 uint256(50), // KEEPER_REWARD_BPS
-                uint256(1e16), // KEEPER_REWARD_CAP
-                uint256(9000) // BURN_SPOT_FLOOR_BPS
+                uint256(1e16) // KEEPER_REWARD_CAP
             )
         );
         return keccak256(abi.encode(pool, delivery, launch, keeper));

@@ -35,7 +35,7 @@ interface IBurnRouterV2 {
     /// @notice The owner changed `spotFloorBps`.
     /// @param oldBps Previous value in bps.
     /// @param newBps New value in bps.
-    event SpotFloorBpsSet(uint256 oldBps, uint256 newBps);
+    event SpotFloorBpsSet(uint16 oldBps, uint16 newBps);
 
     /// @notice The owner changed the keeper reward values.
     /// @param tip Flat reward in wei.
@@ -117,8 +117,8 @@ interface IBurnRouterV2 {
     /// @param amount Amount in base units.
     function rescue(address token, address to, uint256 amount) external;
 
-    /// @notice Lp fee the pool charges a coin buy, in pips (1/1,000,000). Read from the pool's
-    ///         hook when it exposes a per direction fee, else from the pool.
+    /// @notice Lp fee the pool charges a coin buy (weth in), in pips (1/1,000,000). Read from
+    ///         the pool's hook when it exposes a per direction fee (`pairedFee`), else from the pool.
     function poolBuyFeePips() external view returns (uint24);
 
     /// @notice Minimum coin output a burn enforces for `wethIn` wei consumed at the current spot:

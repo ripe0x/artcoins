@@ -45,6 +45,11 @@ import {IWETH9} from "@uniswap/v4-periphery/src/interfaces/external/IWETH9.sol";
 ///           eth after it.
 ///         - every reward value, the output floor and the impact cap are owner
 ///           tunable within Constants bounds.
+///         Dependency on the LAYER pool: its legacy hook charges `protocolFeeNumerator`
+///         in beforeSwap on the full input of an exact input swap, before the price
+///         limit cuts the fill. That fee is 0 (D21) and must stay 0: a nonzero value
+///         is paid on the whole budget of every partial fill and counts against the
+///         floor, so a large balance would fail the floor until the fee is reset.
 ///         - every coin held, including coin sent directly, burns on the next burn.
 ///         - eth, weth and the coin cannot be rescued.
 contract BurnRouterV2 is
@@ -122,7 +127,7 @@ contract BurnRouterV2 is
         keeperGasOverhead = Constants.BURN_GAS_OVERHEAD_DEFAULT;
         rewardMaxBaseFee = Constants.BURN_BASEFEE_GATE_DEFAULT;
         emit MaxImpactBpsSet(0, Constants.PRICE_IMPACT_DEFAULT);
-        emit SpotFloorBpsSet(0, Constants.BURN_SPOT_FLOOR_BPS);
+        emit SpotFloorBpsSet(0, uint16(Constants.BURN_SPOT_FLOOR_BPS));
         emit RewardConfigSet(
             Constants.BURN_TIP_DEFAULT,
             Constants.BURN_GAS_OVERHEAD_DEFAULT,
@@ -346,16 +351,16 @@ contract BurnRouterV2 is
         if (coinOut != 0) poolManager.take(cc, address(this), coinOut);
     }
 
-    /// @dev The pool's fee on a coin buy: the hook's per direction fee for the
-    ///      coin side when it exposes one (`artCoinFee`), else the pool's
-    ///      current lp fee. A read failure or a value above MAX_LP_FEE uses the
-    ///      pool value, clamped to MAX_LP_FEE.
+    /// @dev The pool's fee on a coin buy: the static fee hook's `pairedFee`, the
+    ///      fee it sets when the paired currency (weth) is the input, else the
+    ///      pool's current lp fee. A read failure or a value above MAX_LP_FEE
+    ///      uses the pool value, clamped to MAX_LP_FEE.
     function _buyFeePips() internal view returns (uint24) {
         PoolId pid = _poolKey.toId();
         address h = address(_poolKey.hooks);
         if (h.code.length != 0) {
             (bool ok, bytes memory ret) = h.staticcall{gas: _FEE_READ_GAS}(
-                abi.encodeCall(IArtCoinsHookStaticFee.artCoinFee, (pid))
+                abi.encodeCall(IArtCoinsHookStaticFee.pairedFee, (pid))
             );
             if (ok && ret.length == 32) {
                 uint256 f = abi.decode(ret, (uint256));

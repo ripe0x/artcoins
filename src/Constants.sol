@@ -11,13 +11,13 @@ library Constants {
     uint16 internal constant STACK_VERSION = 2;
 
     // ── denominators ──────────────────────────────────────────────────────
-    /// @notice Basis point denominator (10_000 = 100%). Skim and referral rates,
-    ///         their caps, and the protocol floor are all in BPS of volume.
+    /// @notice Basis point denominator (10_000 = 100%). Skim and referral rates
+    ///         and their caps are in BPS of volume.
     uint256 internal constant BPS = 10_000;
     /// @notice Uniswap v4 lp fee denominator (1_000_000 = 100%).
     uint256 internal constant FEE_DENOMINATOR = 1_000_000;
 
-    // ── hook and pool fee config (frozen per pool, validated at init) ─────
+    // ── hook and pool fee config (per pool fields frozen at init; the referral rate is hook wide) ─────
     /// @notice Max lp fee, 10% in pips (1e6 units).
     uint24 internal constant MAX_LP_FEE = 100_000;
     /// @notice Anti sniper skim ceiling, 90% of volume in BPS.
@@ -95,7 +95,7 @@ library Constants {
     uint256 internal constant KEEPER_REWARD_CAP = 0.01 ether;
     /// @notice Burn router initial output floor, in BPS of the spot output net
     ///         of the pool's buy fee (the spot and fee are read at burn time).
-    ///         Owner tunable within [SPOT_FLOOR_MIN_BPS, SPOT_FLOOR_MAX_BPS].
+    ///         Owner tunable within [SPOT_FLOOR_MIN_BPS, SPOT_FLOOR_MAX_BPS]; not hashed.
     uint256 internal constant BURN_SPOT_FLOOR_BPS = 9000;
     /// @notice Output floor bounds for the burn router and the fee swapper
     ///         (the swapper's default, 9500, is contract local).
@@ -188,6 +188,6 @@ library Constants {
     }
 
     function _hashKeeper() private pure returns (bytes32) {
-        return keccak256(abi.encode(KEEPER_REWARD_BPS, KEEPER_REWARD_CAP, BURN_SPOT_FLOOR_BPS));
+        return keccak256(abi.encode(KEEPER_REWARD_BPS, KEEPER_REWARD_CAP));
     }
 }

@@ -983,6 +983,12 @@ contract HookV2ForkTest is HookV2ForkBase {
         hook.setPoolExtension(key, address(ext), "");
         assertEq(hook.poolInfo(key.toId()).extension, address(ext));
 
+        // closed until the launch completes (initializeMevModule)
+        ArtCoinsTokenV2 t2 = _newToken(false, bountyEoa, address(hook));
+        PoolKey memory k2 = hook.initializePool(_params(_defaults(bountyEoa), address(t2)));
+        vm.expectRevert(IArtCoinsHookV2.PoolNotStarted.selector);
+        hook.setPoolExtension(k2, address(ext), "");
+
         token.lockRecipients();
         vm.expectRevert(IArtCoinsHookV2.RecipientsLocked.selector);
         hook.setPoolExtension(key, address(0), "");

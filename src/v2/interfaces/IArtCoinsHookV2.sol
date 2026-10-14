@@ -36,7 +36,9 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 interface IArtCoinsHookV2 is IConstantsBound {
     // ── types ─────────────────────────────────────────────────────────────
 
-    /// @notice Per pool record, written once at `initializePool`. A nonzero
+    /// @notice Per pool record, written at `initializePool`. Every field is fixed
+    ///         except `extension`, which the coin admin may change with
+    ///         `setPoolExtension` until the coin locks its recipients. A nonzero
     ///         `launcher` marks an official pool. When `restricted` is set the
     ///         hook grants a PoolManager transfer allowance on each swap.
     struct PoolInfo {
@@ -258,6 +260,9 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @notice Liquidity add refused while the pool's anti sniper window is open.
     error MevWindowActive();
 
+    /// @notice `setPoolExtension` before the pool's launch completed (`initializeMevModule`).
+    error PoolNotStarted();
+
     /// @notice `lpFeePips` exceeds Constants.MAX_LP_FEE.
     error LpFeeTooHigh();
 
@@ -385,7 +390,9 @@ interface IArtCoinsHookV2 is IConstantsBound {
     function setReferralBps(uint24 bps) external;
 
     /// @notice Sets the extension allowlist. Owner only.
-    /// @dev    Applies to pools created from now on. 0 disables extensions.
+    /// @dev    Gates the extension of pools created from now on and every
+    ///         `setPoolExtension` call. Extensions already set keep running.
+    ///         0 disables both.
     /// @param allowlist New allowlist.
     function setExtensionAllowlist(address allowlist) external;
 
@@ -427,8 +434,9 @@ interface IArtCoinsHookV2 is IConstantsBound {
     ///         extension allowlist. A new extension receives
     ///         `initializePreLockerSetup(key, false, initData)` and
     ///         `initializePostLockerSetup(key, locker, false)` in this call; the
-    ///         old one is not called. Reverts with `UnknownPool`, `NotCoinAdmin`,
-    ///         `RecipientsLocked` or `ExtensionNotAllowed`.
+    ///         old one is not called. Callable once the launch completed. Reverts
+    ///         with `UnknownPool`, `NotCoinAdmin`, `RecipientsLocked`,
+    ///         `PoolNotStarted` or `ExtensionNotAllowed`.
     /// @param key Key of the pool.
     /// @param newExtension New extension, zero for none.
     /// @param initData Opaque bytes passed to the new extension's pre locker setup.

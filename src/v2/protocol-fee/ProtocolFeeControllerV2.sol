@@ -27,7 +27,8 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 ///           failure (FeeDelivery), which requires this contract to be an escrow
 ///           depositor. Until it is, a failed push reverts `processFees` and the
 ///           eth stays here for a retry.
-///         - erc20 sent here is rescuable by the owner; the split is eth only.
+///         - the split is eth only. The owner can rescue any balance, eth
+///           waiting to be split included, and any erc20 sent here.
 contract ProtocolFeeControllerV2 is
     IProtocolFeeControllerV2,
     IConstantsBound,
@@ -59,6 +60,7 @@ contract ProtocolFeeControllerV2 is
         if (feeEscrow_ == address(0) || treasury_ == address(0) || burnRouter_ == address(0)) {
             revert ZeroAddress();
         }
+        _checkConstants(burnRouter_);
         feeEscrow = feeEscrow_;
         treasury = treasury_;
         burnRouter = burnRouter_;

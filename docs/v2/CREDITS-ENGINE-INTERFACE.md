@@ -16,7 +16,7 @@ for the credits engine developer. the first coin on the v2 stack has the treasur
 | paired currency | weth pools possible | native eth only (D17) | wrap itself if it wants weth |
 | protocol and referral | deployer chosen | factory injected: `protocolRecipient` (the stack fee controller). the referral is paid to the referrer directly, stipend push, escrow on failure (D16). there is no stored referral payout pointer (D76) | none |
 | referral (D89) | per coin referral cap, protocol floor | one hook wide rate, `hook.referralBps` (0.25% of volume at launch, owner tunable up to 1%), paid to the referrer a swap names out of the protocol leg and never above that leg. no per coin field | none |
-| lp fee (D76) | none removed | `fee.lpFeePips` ranges 0 to `MAX_LP_FEE` (100,000 pips). 0 is a pure skim pool with no lp fee; the D52 protocol skim floor still secures the protocol leg | config choice, section 4 |
+| lp fee (D76) | none removed | `fee.lpFeePips` ranges 0 to `MAX_LP_FEE` (100,000 pips). 0 is a pure skim pool with no lp fee | config choice, section 4 |
 | recipient changes (D76) | slot admin removed in v1 | the coin admin may repoint the bounty recipient (`hook.setBountyRecipient(poolId, recipient)`) and a project reward slot (`locker.setRewardRecipient(token, index, recipient)`) after launch. new recipients pass the launch receiver checks, bps stay fixed, the protocol reward slot stays frozen. `token.lockRecipients()` freezes both setters one way, and renouncing the coin admin freezes them | move the treasury without a custom router; freeze with `lockRecipients` when final |
 | restriction (D73, D74) | n/a | one launch flag `restricted`. while set, holder to holder transfers revert unless a side is on the coin allowlist; coin moves to or from the PoolManager only within the transient allowance the canonical hook grants for a canonical swap in the same transaction, which the transfer consumes. restriction is fee priced, not absolute (D74): a canonical round trip of X in one transaction grants 2X allowance and consumes none, so a holder can move X through PoolManager balances at the cost of the home pool round trip fees. the cost of moving a restricted coin wallet to wallet through a canonical round trip equals the launcher's chosen home pool fees, so a restricted coin with near zero fees restricts transfers only nominally (launcher's choice, no fee floor for restricted coins, D80). the credits coin launches NOT restricted (plain erc20) | leave `restriction.restricted = false` for a plain erc20 |
 | restriction allowlist (D73, D76) | n/a | the coin admin manages the allowlist (`setAllowed`), may turn restriction off once (`unrestrict`), and may `lockAllowlist` to freeze the allowlist and the switch. the factory seeds the allowlist with the owner `defaultAllowed` set (empty by default), this launch's locker, the stack fee escrow and the launch extensions, and pins those so the coin admin cannot remove them. the PoolManager, the canonical hook, and any router/aggregator/forwarder are prohibited entries | allowlist only contracts whose coin outflows are fixed by their own logic |
@@ -60,7 +60,7 @@ the escrow is `IArtCoinsFeeEscrowV2`: `balances(feeOwner, token)`, `claim`, `cla
 | set by the treasury integration | `fee.bountyRecipient = treasury`, `locker.rewardRecipients` (treasury or a fee swapper with `endRecipient = treasury`) |
 | injected by the factory | `protocolRecipient` and the protocol locker slot. do not set them |
 | `fee.bountyBps` | at most `MAX_BOUNTY_BPS` 9,999, else `BountyBpsTooHigh`. the referral is carved from the protocol leg that remains, so a bounty near the cap leaves referrers little |
-| `fee.lpFeePips` | 0 to `MAX_LP_FEE` 100,000 pips. 0 is a pure skim pool; the D52 protocol skim floor still pays the protocol leg |
+| `fee.lpFeePips` | 0 to `MAX_LP_FEE` 100,000 pips. 0 is a pure skim pool |
 | `fee.bountyRecipient` | not zero, not the hook, not the PoolManager (`RecipientCannotReceive`). the coin admin may change it after launch (`hook.setBountyRecipient`) until `lockRecipients` or admin renounce |
 | restriction | `restriction.restricted` false for a plain erc20 (the credits coin). when true, the coin admin manages the allowlist; see the allowlist rule in `script/v2/README.md` |
 | fee swapper | deploy it, `escrow.addDepositor(swapper, false)` by the escrow owner, list it in `locker.rewardRecipients`, deployer calls `swapper.setup(coin)` after launch |
@@ -145,7 +145,7 @@ keeper: `ArtCoinsKeeperV2(factory)`, stateless, holds nothing. `collectAndForwar
 | reward slot is the treasury, or a `FeeAutoSwapperV2` with `endRecipient = treasury` registered as an escrow depositor | yes | yes or no |
 | indexes `FeeDelivered`, `RewardDelivered`, `TokenCreatedV2`, `SkimRefunded`, and the D76 recipient events | yes | yes or no |
 | eth only: wraps itself if it wants weth | yes | yes or no |
-| config: `bountyBps`, referral cap, `lpFeePips`, slots pass section 4 limits | yes | yes or no |
+| config: `bountyBps`, `lpFeePips`, slots pass section 4 limits | yes | yes or no |
 
 note: the locker pushes eth with 150k gas (`PUSH_GAS_MAX`), not the 2,300 stipend, because it never runs inside a swap; the hook legs use the stipend (a zero gas call).
 

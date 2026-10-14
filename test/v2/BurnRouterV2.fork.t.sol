@@ -91,8 +91,8 @@ contract BurnRouterV2ForkTest is ForkBase {
         assertEq(router.maxImpactBps(), Constants.PRICE_IMPACT_DEFAULT);
         assertEq(router.spotFloorBps(), Constants.BURN_SPOT_FLOOR_BPS);
         assertEq(router.constantsHash(), Constants.hash());
-        // the floor reads the hook's buy side fee (1% live)
-        uint24 buyFee = IArtCoinsHookStaticFee(address(key.hooks)).artCoinFee(key.toId());
+        // the floor reads the hook's fee for a weth in swap, a coin buy (1% live)
+        uint24 buyFee = IArtCoinsHookStaticFee(address(key.hooks)).pairedFee(key.toId());
         assertEq(router.poolBuyFeePips(), buyFee);
         assertEq(buyFee, 10_000);
     }
@@ -304,7 +304,7 @@ contract BurnRouterV2ForkTest is ForkBase {
 
         uint256 before = router.floorFor(1 ether);
         vm.expectEmit(false, false, false, true, address(router));
-        emit IBurnRouterV2.SpotFloorBpsSet(Constants.BURN_SPOT_FLOOR_BPS, hi);
+        emit IBurnRouterV2.SpotFloorBpsSet(uint16(Constants.BURN_SPOT_FLOOR_BPS), uint16(hi));
         router.setSpotFloorBps(uint16(hi));
         assertEq(router.spotFloorBps(), hi);
         assertEq(

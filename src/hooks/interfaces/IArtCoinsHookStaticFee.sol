@@ -25,11 +25,11 @@ interface IArtCoinsHookStaticFee {
         uint24 pairedFee;
     }
 
-    /// @notice Returns the buy-side fee for a pool.
+    /// @notice Fee applied when the art coin is the swap input (a sell), in pips.
     /// @param poolId The pool id.
     /// @return The fee.
     function artCoinFee(PoolId poolId) external view returns (uint24);
-    /// @notice Returns the sell-side fee for a pool.
+    /// @notice Fee applied when the paired currency is the swap input (a buy), in pips.
     /// @param poolId The pool id.
     /// @return The fee.
     function pairedFee(PoolId poolId) external view returns (uint24);

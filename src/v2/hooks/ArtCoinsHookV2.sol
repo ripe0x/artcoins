@@ -118,7 +118,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
 
     mapping(PoolId => PoolInfo) internal _info;
     mapping(PoolId => SkimConfig) internal _skim;
-    /// @dev per pool protocol leg floor, BPS of the baseline skim.
     /// @dev Set once by `initializeMevModule`: the window started and the
     ///      extension finished its post locker setup.
     mapping(PoolId => bool) internal _started;
@@ -491,7 +490,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     }
 
     /// @dev Pool extension `afterSwap` with the trader facing realized delta
-    ///      (fixes N2), gas capped, failure and returndata ignored. Runs last.
+    ///      gas capped, failure and returndata ignored. Runs last.
     function _runExtension(
         PoolKey calldata key,
         PoolId pid,
@@ -636,6 +635,8 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         IArtCoinsTokenV2 t = IArtCoinsTokenV2(coin);
         if (msg.sender != t.admin()) revert NotCoinAdmin();
         if (t.recipientsLocked()) revert RecipientsLocked();
+        // after launch only: the launch runs the extension setups itself.
+        if (!_started[poolId]) revert PoolNotStarted();
         if (newExtension != address(0)) {
             address al = _globals.extensionAllowlist;
             if (
