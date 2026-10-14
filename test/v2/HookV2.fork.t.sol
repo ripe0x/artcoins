@@ -912,6 +912,69 @@ contract HookV2ForkTest is HookV2ForkBase {
         hook.setBountyRecipient(fake.toId(), payable(bountyEoa));
     }
 
+    // ─── coin admin: lower the baseline skim ──────────────────────────────
+
+    /// the coin admin lowers the skim; the next swap pays the lower rate and
+    /// every leg scales with it. Raising, equal, zero on a skim only pool,
+    /// strangers, unknown pools and a locked coin are refused.
+    function test_lowerBaselineSkim_lowerOnly() public onlyFork {
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(_defaults(bountyEoa));
+        PoolId pid = key.toId();
+        uint24 half = BASELINE / 2;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsHookV2.SkimNotLower.selector, BASELINE, BASELINE)
+        );
+        hook.lowerBaselineSkim(pid, BASELINE);
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsHookV2.SkimNotLower.selector, BASELINE, BASELINE + 1)
+        );
+        hook.lowerBaselineSkim(pid, BASELINE + 1);
+        vm.prank(makeAddr("stranger"));
+        vm.expectRevert(IArtCoinsHookV2.NotCoinAdmin.selector);
+        hook.lowerBaselineSkim(pid, half);
+        PoolKey memory fake = PoolKey(key.currency0, key.currency1, key.fee, int24(1), key.hooks);
+        vm.expectRevert(IArtCoinsHookV2.UnknownPool.selector);
+        hook.lowerBaselineSkim(fake.toId(), half);
+
+        vm.expectEmit(true, false, false, true, address(hook));
+        emit IArtCoinsHookV2.BaselineSkimLowered(pid, BASELINE, half);
+        hook.lowerBaselineSkim(pid, half);
+        assertEq(hook.skimConfig(pid).baselineSkimBps, half);
+
+        uint256 b0 = _paid(bountyEoa);
+        uint256 p0 = protocolR.balance;
+        _swap(key, true, -1 ether, 0, "");
+        uint256 skim = (1 ether * uint256(half)) / D; // no window: skim == baseline
+        uint256 bounty = (skim * BOUNTY_BPS) / Constants.BPS;
+        assertEq(_paid(bountyEoa) - b0, bounty, "bounty at the lower skim");
+        assertEq(protocolR.balance - p0, skim - bounty, "protocol at the lower skim");
+
+        // never back up
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsHookV2.SkimNotLower.selector, half, BASELINE)
+        );
+        hook.lowerBaselineSkim(pid, BASELINE);
+        // the lock freezes it
+        token.lockRecipients();
+        vm.expectRevert(IArtCoinsHookV2.RecipientsLocked.selector);
+        hook.lowerBaselineSkim(pid, 1);
+    }
+
+    /// a pool with no lp fee keeps a nonzero skim (the launch rule, D77).
+    function test_lowerBaselineSkim_zeroNeedsLpFee() public onlyFork {
+        ArtCoinsTokenV2 t = _newToken(false, bountyEoa, address(hook));
+        IArtCoinsHookV2.PoolInitParams memory p = _params(_defaults(bountyEoa), address(t));
+        p.skim.lpFeePips = 0;
+        PoolKey memory k = hook.initializePool(p);
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsHookV2.SkimNotLower.selector, BASELINE, uint24(0))
+        );
+        hook.lowerBaselineSkim(k.toId(), 0);
+        hook.lowerBaselineSkim(k.toId(), 1);
+        assertEq(hook.skimConfig(k.toId()).baselineSkimBps, 1);
+    }
+
     function test_setBountyRecipient_lockFreezes() public onlyFork {
         (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(_defaults(bountyEoa));
         token.lockRecipients();

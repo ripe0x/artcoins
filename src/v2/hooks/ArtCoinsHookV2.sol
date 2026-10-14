@@ -48,7 +48,8 @@ interface ILockerReads {
 ///         (currency0) against the coin (currency1), created only by an
 ///         allowlisted launcher. The fee rates and caps are set once at init.
 ///         The coin admin may change the pool's bounty recipient and its
-///         extension until the coin calls `lockRecipients` or renounces its admin. Anti sniper skim above
+///         extension, and lower its baseline skim, until the coin calls
+///         `lockRecipients` or renounces its admin. Anti sniper skim above
 ///         the baseline goes to the bounty recipient.
 ///
 ///         Per swap, on the quote (eth) side, with `r` the realized pool side
@@ -622,6 +623,23 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         address old = _skim[poolId].bountyRecipient;
         _skim[poolId].bountyRecipient = newRecipient;
         emit BountyRecipientSet(poolId, old, newRecipient);
+    }
+
+    /// @inheritdoc IArtCoinsHookV2
+    function lowerBaselineSkim(PoolId poolId, uint24 bps) external {
+        PoolInfo storage info = _info[poolId];
+        address coin = info.token;
+        if (coin == address(0)) revert UnknownPool();
+        IArtCoinsTokenV2 t = IArtCoinsTokenV2(coin);
+        if (msg.sender != t.admin()) revert NotCoinAdmin();
+        if (t.recipientsLocked()) revert RecipientsLocked();
+        SkimConfig storage cfg = _skim[poolId];
+        uint24 old = cfg.baselineSkimBps;
+        if (bps >= old) revert SkimNotLower(old, bps);
+        // a pool keeps one fee: the skim or the lp fee (ZeroFeeLaunch at launch).
+        if (bps == 0 && cfg.lpFeePips == 0) revert SkimNotLower(old, bps);
+        cfg.baselineSkimBps = bps;
+        emit BaselineSkimLowered(poolId, old, bps);
     }
 
     /// @inheritdoc IArtCoinsHookV2

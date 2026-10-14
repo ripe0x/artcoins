@@ -61,10 +61,11 @@ interface IArtCoinsHookV2 is IConstantsBound {
         address extension;
     }
 
-    /// @notice Per pool fee config. All fields are fixed at init except
-    ///         `bountyRecipient`, which the coin admin may change with
-    ///         `setBountyRecipient` until the coin locks its recipients or
-    ///         renounces its admin. The referral rate is hook wide (`referralBps`).
+    /// @notice Per pool fee config. Fixed at init except `bountyRecipient`
+    ///         (`setBountyRecipient`) and `baselineSkimBps`, which the coin admin
+    ///         may only lower (`lowerBaselineSkim`), both until the coin locks its
+    ///         recipients or renounces its admin. The referral rate is hook wide
+    ///         (`referralBps`).
     struct SkimConfig {
         /// @dev Baseline skim, bps of swap volume. At most Constants.MAX_BASELINE_SKIM_BPS.
         uint24 baselineSkimBps;
@@ -229,6 +230,12 @@ interface IArtCoinsHookV2 is IConstantsBound {
         PoolId indexed poolId, address indexed oldRecipient, address indexed newRecipient
     );
 
+    /// @notice The coin admin lowered the pool's baseline skim.
+    /// @param poolId Pool id.
+    /// @param oldBps Previous baseline skim, bps of swap volume.
+    /// @param newBps New baseline skim, bps of swap volume.
+    event BaselineSkimLowered(PoolId indexed poolId, uint24 oldBps, uint24 newBps);
+
     /// @notice The coin admin changed the pool's extension.
     /// @param poolId Pool id.
     /// @param oldExtension Previous extension, zero for none.
@@ -308,6 +315,12 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @notice The coin's recipients are frozen (the coin called `lockRecipients`
     ///         or renounced its admin).
     error RecipientsLocked();
+
+    /// @notice `lowerBaselineSkim` with a value at or above the current baseline, or a
+    ///         zero skim on a pool with no lp fee.
+    /// @param current Current baseline skim, bps of swap volume.
+    /// @param requested Requested value.
+    error SkimNotLower(uint24 current, uint24 requested);
     /// @notice `poolId` was not created by this hook.
     error UnknownPool();
 
@@ -427,6 +440,17 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @param poolId Pool id.
     /// @param newRecipient New bounty recipient.
     function setBountyRecipient(PoolId poolId, address payable newRecipient) external;
+
+    /// @notice Lowers the pool's baseline skim. Coin admin only, until the coin
+    ///         locks its recipients or renounces its admin. The rate never rises.
+    /// @dev    `bps` must be below the current baseline, and above zero when the
+    ///         pool has no lp fee. Applies from the next swap; an anti sniper
+    ///         window in progress keeps its schedule and the skim stays at or
+    ///         above the new baseline. Reverts with `UnknownPool`, `NotCoinAdmin`,
+    ///         `RecipientsLocked` or `SkimNotLower`.
+    /// @param poolId Pool id.
+    /// @param bps New baseline skim, bps of swap volume.
+    function lowerBaselineSkim(PoolId poolId, uint24 bps) external;
 
     /// @notice Sets the pool's extension. Coin admin only, until the coin locks
     ///         its recipients or renounces its admin.
