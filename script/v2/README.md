@@ -151,4 +151,4 @@ allowlist rule (restricted coins): the transfer rule checks the sender and the r
 
 restriction is fee priced, not absolute: a canonical buy and sell of X in one transaction grant 2X of the transfer allowance and consume none, so a holder can move X wallet to wallet through PoolManager balance operations or add X of coin liquidity, at the cost of the home pool's round trip fees. the coins produced stay restricted. restriction raises the cost of leaving the home pool; it does not pin supply.
 
-after the launch: `BurnRouterV2.initialize(token, key)` if the coin uses the burn leg, add the coin's fee swapper as an escrow depositor (D33), run `ArtCoinsKeeperV2.collectAndForward(token, true, minOut)` once, then `setDeprecated(false)` last (RUNBOOK 2b, 2c).
+after the launch: add the coin's fee swapper as an escrow depositor (D33), run `ArtCoinsKeeperV2.collectAndForward(token, true, minOut)` once, then `setDeprecated(false)` last (RUNBOOK 2b, 2c). the burn router needs no per coin call: it is bound to LAYER and its weth pool at deploy and burns LAYER with every coin's protocol share.

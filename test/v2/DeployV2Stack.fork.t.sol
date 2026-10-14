@@ -8,6 +8,7 @@ import {IArtCoinsHookV2} from "../../src/v2/interfaces/IArtCoinsHookV2.sol";
 // broadcaster that is not the owner, so the two step ownership hand over is
 // exercised. skips cleanly when the rpc is unreachable.
 
+import {Addresses} from "../../script/Addresses.sol";
 import {DeployV2Lib} from "../../script/v2/DeployV2Lib.sol";
 import {LaunchV2Coin, LaunchV2Lib} from "../../script/v2/LaunchV2Coin.s.sol";
 import {Constants} from "../../src/Constants.sol";
@@ -94,7 +95,9 @@ contract DeployV2StackForkTest is ForkStack {
         assertEq(s.factory.protocolRecipient(), address(s.controller), "protocol recipient");
         assertEq(s.factory.teamFeeRecipient(), LIVE_OWNER, "team fee recipient");
         assertEq(s.controller.treasury(), LIVE_OWNER, "treasury = owner");
-        assertEq(s.burnRouter.coin(), address(0), "router not initialized");
+        assertEq(s.burnRouter.coin(), Addresses.COIN_LAYER, "router burns LAYER");
+        assertEq(s.burnRouter.weth(), WETH, "router weth");
+        assertFalse(s.burnRouter.wethIsCurrency0(), "LAYER is currency0 of the live pool");
 
         // two step hand over: the broadcaster keeps power until OWNER accepts
         Ownable2Step[4] memory o = DeployV2Lib.pendingOwnables(s);
@@ -140,12 +143,14 @@ contract DeployV2StackForkTest is ForkStack {
         string[10] memory n = DeployV2Lib.names();
         string[10] memory src = DeployV2Lib.paths();
         // every immutable in the stack is one of these addresses
-        bytes32[] memory imm = new bytes32[](13);
+        bytes32[] memory imm = new bytes32[](15);
         imm[0] = bytes32(uint256(uint160(POOL_MANAGER)));
         imm[1] = bytes32(uint256(uint160(POSITION_MANAGER)));
         imm[2] = bytes32(uint256(uint160(PERMIT2)));
+        imm[3] = bytes32(uint256(uint160(WETH)));
+        imm[4] = bytes32(uint256(uint160(Addresses.COIN_LAYER)));
         for (uint256 i; i < 10; ++i) {
-            imm[3 + i] = bytes32(uint256(uint160(a[i])));
+            imm[5 + i] = bytes32(uint256(uint160(a[i])));
         }
         for (uint256 i; i < 10; ++i) {
             bytes memory art = vm.getDeployedCode(string.concat(src[i], ":", n[i]));

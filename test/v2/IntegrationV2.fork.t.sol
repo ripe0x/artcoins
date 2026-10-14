@@ -266,8 +266,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         PoolKey memory key = _key(coin);
         _pastWindow();
         _buyAndSell(key, 1 ether);
-        vm.prank(LIVE_OWNER);
-        v2.burnRouter.initialize(coin, key);
 
         bytes32 before = _perCoin(coin, sw);
         address other = makeAddr("i1.other");
@@ -313,8 +311,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         v2.controller.setBurnRouter(address(new I1ConstantsStub())); // valid-hash target
 
         v2.burnRouter.setMaxImpactBps(Constants.PRICE_IMPACT_MAX);
-        v2.burnRouter.setMinProcessThreshold(type(uint96).max);
-        v2.burnRouter.setOpenTabCaller(other);
         // the coin's fee swapper: tunables only
         sw.setMaxSlippageBps(Constants.SWAPPER_SLIPPAGE_MAX);
         sw.setMinBlocksBetweenConverts(Constants.SWAPPER_MIN_BLOCKS_MAX);
@@ -372,8 +368,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         PoolKey memory key = _key(coin);
         _pastWindow();
         _buyAndSell(key, 1 ether);
-        vm.prank(LIVE_OWNER);
-        v2.burnRouter.initialize(coin, key);
 
         uint256 owed = _escrowed(address(burner));
         assertGt(owed, 0, "bounty escrowed for the burner");
@@ -420,9 +414,12 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         vm.expectRevert(abi.encodeWithSelector(IFeeAutoSwapperV2.CannotRescue.selector, address(0)));
         sw.rescue(address(0), LIVE_OWNER, 1);
 
-        // burn router: never the coin or eth
-        vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.CannotRescue.selector, coin));
-        v2.burnRouter.rescue(coin, LIVE_OWNER, 1);
+        // burn router: never eth, weth or LAYER (the burn budget)
+        address layer = v2.burnRouter.coin();
+        vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.CannotRescue.selector, layer));
+        v2.burnRouter.rescue(layer, LIVE_OWNER, 1);
+        vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.CannotRescue.selector, WETH));
+        v2.burnRouter.rescue(WETH, LIVE_OWNER, 1);
         vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.CannotRescue.selector, address(0)));
         v2.burnRouter.rescue(address(0), LIVE_OWNER, 1);
         vm.stopPrank();
@@ -475,8 +472,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
 
         sw.setup(coin);
         PoolKey memory key = _key(coin);
-        vm.prank(LIVE_OWNER);
-        v2.burnRouter.initialize(coin, key);
         _pastWindow();
         _buyAndSell(key, 1 ether); // seed both fee sides and the coin balance
         vm.roll(vm.getBlockNumber() + 1);

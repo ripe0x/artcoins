@@ -13,6 +13,8 @@ pragma solidity ^0.8.26;
 // proceeds, all read from the contracts' own events.
 
 import {IntegrationV2Base} from "./IntegrationV2Base.sol";
+
+import {Addresses} from "../../../script/Addresses.sol";
 import {I1EmptyTreasury} from "./mocks/I1Mocks.sol";
 
 import {FeeAutoSwapperV2} from "../../../src/v2/FeeAutoSwapperV2.sol";
@@ -37,6 +39,7 @@ contract FeeFlowV2ForkTest is IntegrationV2Base {
     PoolKey internal key;
     address internal protocolTreasury = makeAddr("i1.protocolTreasury");
     address internal burnCaller = makeAddr("i1.burnCaller");
+    address internal constant LAYER = Addresses.COIN_LAYER;
 
     function setUp() public override {
         super.setUp();
@@ -51,17 +54,16 @@ contract FeeFlowV2ForkTest is IntegrationV2Base {
         vm.startPrank(LIVE_OWNER);
         v2.controller.setTreasury(protocolTreasury);
         v2.locker.setKeeperRewardBps(100); // 1%, so the keeper reward path is live
-        v2.burnRouter.initialize(coin, key);
         vm.stopPrank();
         _pastWindow();
     }
 
-    /// eth held by every party a fee can reach, plus every escrow credit.
+    /// eth held by every party a fee can reach (the router's weth included), plus every escrow credit.
     function _actorsEth() internal view returns (uint256) {
         return address(treasury).balance + address(v2.controller).balance + protocolTreasury.balance
-            + address(v2.burnRouter).balance + address(sw).balance + address(v2.keeper).balance
-            + keeperCaller.balance + burnCaller.balance + address(v2.locker).balance
-            + address(v2.hook).balance + _owed();
+            + address(v2.burnRouter).balance + IERC20(WETH).balanceOf(address(v2.burnRouter))
+            + address(sw).balance + address(v2.keeper).balance + keeperCaller.balance
+            + burnCaller.balance + address(v2.locker).balance + address(v2.hook).balance + _owed();
     }
 
     function _coinOf(address a) internal view returns (uint256) {
@@ -128,36 +130,31 @@ contract FeeFlowV2ForkTest is IntegrationV2Base {
         uint256 router0 = address(v2.burnRouter).balance;
         uint256 pt0 = protocolTreasury.balance;
         vm.prank(stranger);
-        v2.controller.processFees(address(0));
+        v2.controller.processFees();
         uint256 burnShare = ctrlEth - (ctrlEth * v2.controller.treasuryBps()) / 10_000;
         assertEq(address(v2.controller).balance, 0, "controller emptied");
         assertEq(protocolTreasury.balance - pt0, ctrlEth - burnShare, "treasury share");
         assertEq(address(v2.burnRouter).balance - router0, burnShare, "burn share");
         assertEq(_actorsEth(), a, "phase 3: an internal move");
+        // the split is eth only: the protocol slot's coin side stays in the
+        // controller for the owner (rescue)
         uint256 ctrlCoin = _coinOf(address(v2.controller));
-        uint256 supply0 = IERC20(coin).totalSupply();
-        vm.prank(stranger);
-        v2.controller.processFees(coin);
-        uint256 coinBurn = ctrlCoin - (ctrlCoin * v2.controller.treasuryBps()) / 10_000;
-        assertEq(supply0 - IERC20(coin).totalSupply(), coinBurn, "coin burn share burned");
-        assertEq(_coinOf(protocolTreasury), ctrlCoin - coinBurn, "coin treasury share");
+        assertGt(ctrlCoin, 0, "coin side of the protocol slot held");
 
-        // ── phase 4: the burn router buys and burns, one per block ──
+        // ── phase 4: the burn router buys and burns LAYER, one per block ──
         vm.roll(vm.getBlockNumber() + 1);
-        assertGe(
-            address(v2.burnRouter).balance, v2.burnRouter.minProcessThreshold(), "router funded"
-        );
+        assertGt(address(v2.burnRouter).balance, 0, "router funded");
         a = _actorsEth();
-        supply0 = IERC20(coin).totalSupply();
+        uint256 supply0 = IERC20(LAYER).totalSupply();
         vm.recordLogs();
         vm.prank(burnCaller);
         (uint256 ethIn, uint256 burned) = v2.burnRouter.processBurn(0);
         logs = vm.getRecordedLogs();
         Legs memory l4 = _legs(logs);
         uint256 reward = _burnReward(logs);
-        uint256 paid = ethIn + l4.refunded; // eth the router settled into the pool
+        uint256 paid = ethIn; // eth the router wrapped and settled into the LAYER pool
         assertGt(burned, 0);
-        assertEq(supply0 - IERC20(coin).totalSupply(), burned, "coin burned");
+        assertEq(supply0 - IERC20(LAYER).totalSupply(), burned, "LAYER burned");
         assertEq(burnCaller.balance, reward, "burn keeper paid");
         assertGt(reward, 0, "burn keeper reward");
         assertEq(
@@ -181,7 +178,7 @@ contract FeeFlowV2ForkTest is IntegrationV2Base {
         console2.log("  convert proceeds", convOut);
         console2.log("  eth burned (router paid in)", paid);
         console2.log("  held by recipients and escrow", delivered);
-        console2.log("  coin burned by router / controller", burned, coinBurn);
+        console2.log("  LAYER burned by the router", burned);
         _assertHookHoldsNothing(key);
     }
 

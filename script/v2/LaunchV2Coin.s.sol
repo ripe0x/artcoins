@@ -321,6 +321,5 @@ contract LaunchV2Coin is Script {
         PoolId pid = LaunchV2Lib.checkLaunched(t, l, token);
         console2.log("token        ", token);
         console2.log("pool id      ", vm.toString(PoolId.unwrap(pid)));
-        console2.log("next: BurnRouterV2.initialize(token, key) if the coin uses the burn leg");
     }
 }

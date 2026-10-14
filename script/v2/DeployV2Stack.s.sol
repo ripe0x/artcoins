@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import {IArtCoinsLpLocker} from "../../src/interfaces/IArtCoinsLpLocker.sol";
 import {Addresses} from "../Addresses.sol";
 import {DeployV2Lib} from "./DeployV2Lib.sol";
 
@@ -42,6 +43,12 @@ contract DeployV2Stack is Script {
             Addresses.PERMIT2,
             Addresses.CREATE2_DEPLOYER
         );
+        // the burn router buys LAYER on its live weth pool (legacy stack); the
+        // key is read from the legacy locker, the record of that pool.
+        p.weth = Addresses.WETH;
+        p.layer = Addresses.COIN_LAYER;
+        p.layerPoolKey =
+        IArtCoinsLpLocker(Addresses.LEGACY_LOCKER).tokenRewards(Addresses.COIN_LAYER).poolKey;
         p.treasury = vm.envOr("TREASURY", owner);
         p.treasuryBps = uint16(vm.envOr("TREASURY_BPS", uint256(DeployV2Lib.TREASURY_BPS)));
         p.deployFee = vm.envOr("DEPLOY_FEE", DeployV2Lib.DEPLOY_FEE);
@@ -88,6 +95,7 @@ contract DeployV2Stack is Script {
         console2.log("broadcaster ", p.broadcaster);
         console2.log("owner       ", p.owner);
         console2.log("treasury    ", p.treasury);
+        console2.log("burn coin   ", p.layer);
         console2.log("treasuryBps ", p.treasuryBps);
         console2.log("deployFee   ", p.deployFee);
         console2.log("protocolBps ", p.protocolBps);

@@ -8,7 +8,6 @@ import {ArtCoinsTokenV2} from "../../../src/v2/ArtCoinsTokenV2.sol";
 import {FeeAutoSwapperV2} from "../../../src/v2/FeeAutoSwapperV2.sol";
 import {IArtCoinsHookV2} from "../../../src/v2/interfaces/IArtCoinsHookV2.sol";
 import {IFeeAutoSwapperV2} from "../../../src/v2/interfaces/IFeeAutoSwapperV2.sol";
-import {BurnRouterV2} from "../../../src/v2/protocol-fee/BurnRouterV2.sol";
 
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
@@ -22,7 +21,7 @@ contract P1HookSink {
 }
 
 /// @title  P1HookRegressionForkTest
-/// @notice Regressions for review v2-b (V2B-01, V2B-02, V2B-03) against the
+/// @notice Regressions for review v2-b (V2B-02) against the
 ///         real `ArtCoinsHookV2` and `ArtCoinsTokenV2` on a mainnet fork, same
 ///         pool setup as `test/v2/review-v2/b/V2BPeriphery.fork.t.sol`
 ///         (1000 eth full range, 0.5% lp fee).
@@ -41,11 +40,6 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
         l.restricted = restricted;
         l.baseline = baseline;
         (key, token) = _launch(l);
-    }
-
-    function _router(PoolKey memory key, address coin) internal returns (BurnRouterV2 r) {
-        r = new BurnRouterV2(address(this), POOL_MANAGER, address(escrow));
-        r.initialize(coin, key);
     }
 
     function _fund(address to, uint256 amount) internal {
@@ -73,93 +67,6 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
             })
         );
         escrow.addDepositor(address(s), false);
-    }
-
-    // ── V2B-01 / V2B-03: burn router on a skim pool ──────────────────────
-
-    /// @notice 50 eth router on a 6% baseline skim, 0.5% lp fee pool: every
-    ///         block burns (v1 of this contract reverted `InsufficientOutput`
-    ///         forever), at most `maxBurnPerCall` per burn, `ethIn` and the
-    ///         keeper reward exclude the skim the hook refunds.
-    function test_burnV2_skimPool_50eth_burnsEveryBlock_drains() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(false, BASELINE);
-        BurnRouterV2 r = _router(key, address(token));
-        _fund(address(r), 50 ether);
-
-        uint256 paidTotal;
-        uint256 refundSeen;
-        uint256 b0 = block.number;
-        for (uint256 i; i < 8; ++i) {
-            vm.roll(b0 + i + 1); // absolute: via ir may cache block.number
-            // the burn first claims any refund left by the previous burn
-            uint256 bal0 = address(r).balance + escrow.balances(address(r), address(0));
-            uint256 k0 = keeper.balance;
-            uint256 supply0 = token.totalSupply();
-
-            vm.prank(keeper);
-            (uint256 ethIn, uint256 burned) = r.processBurn(0);
-
-            uint256 reward = keeper.balance - k0;
-            uint256 refund = escrow.balances(address(r), address(0));
-            uint256 paid = bal0 - address(r).balance - reward;
-            assertGt(burned, 0, "burns every block");
-            assertEq(token.totalSupply(), supply0 - burned, "burned via token burn");
-            // pre D42 hook: refund lands in the escrow (paid includes it);
-            // D42 hook: refund settled into the swap delta (paid excludes it)
-            assertEq(ethIn + refund, paid, "ethIn excludes the refunded skim");
-            assertEq(reward, r.rewardFor(ethIn), "reward on consumed only");
-            assertLe(paid, r.maxBurnPerCall(), "capped per burn");
-            paidTotal += paid;
-            refundSeen += refund;
-        }
-        emit log_named_uint("eth paid over 8 blocks", paidTotal);
-        emit log_named_uint("skim refunded over 8 blocks", refundSeen);
-        assertGt(paidTotal, 8 ether, "drains over blocks");
-        assertLt(address(r).balance, 50 ether - 8 ether);
-    }
-
-    /// @notice Partial fill on the skim pool (cap raised so the impact limit
-    ///         binds): the hook refunds the over charged skim (D42: settled
-    ///         into this router's PoolManager delta; pre D42: escrow credit).
-    ///         The router settles only what it owes (no `CurrencyNotSettled`),
-    ///         and `ethIn` and the reward exclude the refund.
-    function test_burnV2_skimPool_partialFill_netOfRefund() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(false, BASELINE);
-        BurnRouterV2 r = _router(key, address(token));
-        r.setMaxBurnPerCall(50 ether);
-        _fund(address(r), 50 ether);
-        uint256 budget = r.swapBudget();
-
-        vm.prank(keeper);
-        (uint256 ethIn, uint256 burned) = r.processBurn(0);
-        uint256 reward = keeper.balance;
-        uint256 refund = escrow.balances(address(r), address(0));
-        uint256 paid = 50 ether - address(r).balance - reward;
-        emit log_named_uint("budget offered", budget);
-        emit log_named_uint("eth paid", paid);
-        emit log_named_uint("escrow refund", refund);
-        assertGt(burned, 0);
-        assertLt(paid, budget / 2, "partial fill, refund not paid");
-        assertEq(ethIn + refund, paid, "ethIn net of any refund");
-        assertEq(reward, r.rewardFor(ethIn), "reward on consumed only");
-    }
-
-    /// @notice The reviewer's 300 eth case (owner limits) and the default
-    ///         settings both burn now.
-    function test_burnV2_skimPool_300eth_burns() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(false, BASELINE);
-        BurnRouterV2 r = _router(key, address(token));
-        _fund(address(r), 300 ether);
-        (uint256 ethIn, uint256 burned) = r.processBurn(0);
-        assertGt(burned, 0);
-        assertLe(ethIn, r.maxBurnPerCall());
-
-        vm.roll(block.number + 1);
-        r.setMaxImpactBps(Constants.PRICE_IMPACT_MAX);
-        r.setSpotFloorBps(Constants.SPOT_FLOOR_MIN_BPS);
-        r.setMaxBurnPerCall(r.MAX_BURN_PER_CALL_MAX());
-        (, burned) = r.processBurn(0);
-        assertGt(burned, 0, "owner limits burn too");
     }
 
     // ── V2B-02: swapper sandwich ─────────────────────────────────────────
@@ -273,21 +180,5 @@ contract P1HookRegressionForkTest is HookV2ForkBase {
         six.syncPoolFees();
         assertEq(six.poolBaselineSkimBps(), 900);
         assertGt(six.convert(0), 0, "converts once the known fees are right");
-    }
-
-    /// @notice Router side: fees stored at initialize, floor view nets them out.
-    function test_burnV2_feeAwareFloor_storedAndUsed() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(false, BASELINE);
-        BurnRouterV2 r = _router(key, address(token));
-        assertEq(r.poolBaselineSkimBps(), BASELINE);
-        assertEq(r.poolLpFee(), LP_FEE);
-        (uint160 p,,,) = pm.getSlot0(key.toId());
-        uint256 raw = FullMath.mulDiv(FullMath.mulDiv(1 ether, p, 1 << 96), p, 1 << 96);
-        uint256 netPpm = 1e6 - uint256(BASELINE) * 100 - LP_FEE;
-        assertEq(r.floorFor(1 ether), FullMath.mulDiv(raw, netPpm * 8000, 1e6 * 1e4));
-        r.setSpotFloorBps(9500);
-        _fund(address(r), 1 ether);
-        (, uint256 burned) = r.processBurn(0);
-        assertGt(burned, 0, "burns at 95% of the fee net spot");
     }
 }

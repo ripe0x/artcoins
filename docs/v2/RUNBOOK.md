@@ -239,7 +239,7 @@ contracts, in the order `DeployV2Lib.deploy` creates them (D38, D36):
 | 5 | `ArtCoinsMevLinearSkimV2` | `(hook)` | ownerless |
 | 6 | `ArtCoinsFactoryV2` | `(broadcaster, $PM, protocolBps 2000, deployFee 0.069 eth)` | ships `deprecated = true` |
 | 7 | `ArtCoinsDeployerV2` | `(factory)` | then `factory.setTokenDeployer(deployer)` (0x880183e9, owner only). D55: the deployer is an owner trust surface, the registry records its runtime code |
-| 8 | `BurnRouterV2` | `(OWNER, $PM, escrow)` | `initialize(coin, key)` after the first launch |
+| 8 | `BurnRouterV2` | `(OWNER, $PM, WETH, LAYER, LAYER pool key)` | bound to the live LAYER/WETH pool at construction; the key is read from the legacy locker `tokenRewards(LAYER).poolKey` |
 | 9 | `ProtocolFeeControllerV2` | `(OWNER, escrow, treasury, burnRouter, treasuryBps 9000)` | after the router, its constructor needs it |
 | 10 | `ArtCoinsKeeperV2` | `(factory)` | stateless, ownerless. record it as `KEEPER_V2` |
 
@@ -258,7 +258,7 @@ wiring, in the order `_wire` sends it (D36: the escrow knows the hook and locker
 
 | step | what | detail |
 |---|---|---|
-| 11 | wiring | the table above, 19 calls after step 10. not wired at deploy: a coin's fee swapper as depositor, the burn router `initialize`. those are per coin owner calls in 2b (D33) |
+| 11 | wiring | the table above, 19 calls after step 10. not wired at deploy: a coin's fee swapper as depositor, a per coin owner call in 2b (D33) |
 | 12 | ownership, Ownable2Step (D20) | broadcaster == OWNER: nothing to do. otherwise escrow, hook, locker and factory end with `pendingOwner() == OWNER` (0xe30c3978) and the broadcaster still owns them. the allowlist, router and controller are constructed with OWNER, nothing to accept |
 | 13 | post deploy asserts, in the script | `constantsHash()` of escrow, hook, locker, mev, factory, deployer, router, controller. hook low bits 0x2DCC, permissions equal the address flags, hook PoolManager, globals escrow and allowlist, factory is a launcher. escrow depositors and core flags. locker escrow, launcher, reward bps 0. every factory getter above, deployer binding, `deprecated`, `STACK_VERSION`. mev hook, keeper factory, controller and router links, router `coin() == 0`. owners or pending owners. runtime size of all 10 under 24,576. prints `post deploy asserts: ok`, the registry json, writes `tmp/v2-deploy-1.json` |
 
@@ -293,7 +293,7 @@ the first coin is `deployTokenAsOwner` (the one path that sets the protocol slot
 | 3 | dry run | `forge script script/v2/LaunchV2Coin.s.sol --sig "run(string)" "$(cat my-coin.json)" --rpc-url $ETH_RPC_URL --sender $OWNER`. preflight on the wiring, `predictToken`, a snapshot dry run, then it stops before the tx. record the predicted token, `configHash`, value (the deploy fee) and pool id |
 | 4 | broadcast | the same command plus `--account ripe0x --broadcast --slow`. excess value above `deployFee()` plus extension msgValues is refunded |
 | 5 | checks | `factory.isCoin(token)`, token equals the predicted address, `hook.poolInfo(poolId).version == 2`, `token.launcherVersion() == 2`, the `TokenCreatedV2` event echoes the config and its `configHash` equals the dry run |
-| 6 | post launch owner calls | `escrow.isDepositor(feeSwapper)` (0x2f70d1ba) is true, add it if step 1 was skipped. the swapper's deployer calls `swapper.setup(coin)` (0x66d38203). `BurnRouterV2.initialize(token, key)` if the coin uses the burn leg, then `router.coin() == token` |
+| 6 | post launch owner calls | `escrow.isDepositor(feeSwapper)` (0x2f70d1ba) is true, add it if step 1 was skipped. the swapper's deployer calls `swapper.setup(coin)` (0x66d38203). the burn router needs no per coin call (it burns LAYER for every coin) |
 | 7 | run the keeper once | see the next table. then a small buy and sell and check the fee legs: the bounty is pushed with the 2,300 gas stipend (D41), anything that fails sits in the escrow under the recipient, claim it |
 | 8 | registry and cron | add the coin to the registry `coins` list (`verify-registry` passes) and to the keeper cron |
 

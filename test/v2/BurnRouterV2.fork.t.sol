@@ -1,23 +1,26 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {P1Base, P1Rejector, P1Stray} from "./p1/P1Base.sol";
+import {ForkBase} from "./harness/ForkBase.sol";
+import {P1Rejector, P1Stray} from "./p1/P1Base.sol";
 
+import {Addresses} from "../../script/Addresses.sol";
 import {Constants} from "../../src/Constants.sol";
+import {IArtCoinsHookStaticFee} from "../../src/hooks/interfaces/IArtCoinsHookStaticFee.sol";
+import {IArtCoinsLpLocker} from "../../src/interfaces/IArtCoinsLpLocker.sol";
 import {IBurnRouterV2} from "../../src/v2/interfaces/IBurnRouterV2.sol";
 import {BurnRouterV2} from "../../src/v2/protocol-fee/BurnRouterV2.sol";
 
-import {IConstantsBound} from "../../src/v2/interfaces/IConstantsBound.sol";
-
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
-import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
-/// @notice Calls `processBurn` repeatedly inside one transaction (LF-03).
+/// @notice Calls `processBurn` repeatedly inside one transaction.
 contract BurnLooper {
     function loop(BurnRouterV2 r, uint256 n) external returns (uint256 successes) {
         for (uint256 i; i < n; ++i) {
@@ -30,312 +33,243 @@ contract BurnLooper {
     receive() external payable {}
 }
 
-/// @notice Opens a PoolManager unlock and drives the open tab burn inside it,
-///         as a pool extension would.
-contract OpenTabCaller is IUnlockCallback {
-    IPoolManager internal immutable pm;
-    BurnRouterV2 internal immutable router;
-    uint256 public lastEthIn;
-
-    constructor(IPoolManager pm_, BurnRouterV2 router_) {
-        pm = pm_;
-        router = router_;
-    }
-
-    function go() external {
-        pm.unlock("");
-    }
-
-    function unlockCallback(bytes calldata) external returns (bytes memory) {
-        (lastEthIn,) = router.processBurnOpenTab(0);
-        return "";
-    }
-
-    receive() external payable {}
-}
-
-/// @notice A hook built against a different `Constants` set.
-contract BRWrongHashHook {
-    function constantsHash() external pure returns (bytes32) {
-        return keccak256("wrong");
-    }
-}
-
 /// @title  BurnRouterV2ForkTest
-/// Run: /tmp/claude-0/forge.sh test --match-path test/v2/BurnRouterV2.fork.t.sol -vv
-contract BurnRouterV2ForkTest is P1Base {
+/// @notice The LAYER burn router against the live LAYER/WETH pool (legacy
+///         static fee hook) at the pinned block.
+/// Run: MAINNET_RPC_URL=... FOUNDRY_PROFILE=ci forge test --match-path test/v2/BurnRouterV2.fork.t.sol -vv
+contract BurnRouterV2ForkTest is ForkBase {
+    using StateLibrary for IPoolManager;
+    using PoolIdLibrary for PoolKey;
+
+    address internal constant LAYER = Addresses.COIN_LAYER;
+    IPoolManager internal pm = IPoolManager(POOL_MANAGER);
+
     BurnRouterV2 internal router;
+    PoolKey internal key;
     address internal keeper = makeAddr("keeper");
     address internal attacker = makeAddr("attacker");
 
     function setUp() public {
-        _setUpChain();
-        router = new BurnRouterV2(address(this), address(pm), address(escrow));
-        router.initialize(address(coin), key);
-        escrow.addDepositor(address(this), false);
+        if (!forkMainnet()) return;
+        key = IArtCoinsLpLocker(Addresses.LEGACY_LOCKER).tokenRewards(LAYER).poolKey;
+        router = new BurnRouterV2(address(this), POOL_MANAGER, WETH, LAYER, key);
+        vm.label(address(router), "layerBurnRouter");
+        vm.label(LAYER, "LAYER");
     }
 
     function _fund(uint256 amount) internal {
+        vm.deal(address(this), address(this).balance + amount);
         (bool ok,) = address(router).call{value: amount}("");
         assertTrue(ok);
     }
 
-    // ── b6 pacing ─────────────────────────────────────────────────────────
+    function _spot() internal view returns (uint160 sqrtPriceX96) {
+        (sqrtPriceX96,,,) = pm.getSlot0(key.toId());
+    }
 
-    function test_burnV2_secondCallSameBlock_reverts() public {
-        _fund(2 ether);
-        router.processBurn(0);
+    /// @dev Price ratio new/old in bps from two sqrt prices.
+    function _priceMoveBps(uint160 a, uint160 b) internal pure returns (uint256) {
+        (uint256 hi, uint256 lo) = a > b ? (uint256(a), uint256(b)) : (uint256(b), uint256(a));
+        uint256 r = (hi * 1e18) / lo;
+        return ((r * r) / 1e18 - 1e18) * 10_000 / 1e18;
+    }
+
+    // ── binding ──────────────────────────────────────────────────────────
+
+    function test_burnV2_binding_liveLayerPool() public onlyFork {
+        assertEq(router.coin(), LAYER);
+        assertEq(router.weth(), WETH);
+        assertEq(Currency.unwrap(key.currency0), LAYER, "LAYER is currency0 live");
+        assertFalse(router.wethIsCurrency0());
+        assertEq(keccak256(abi.encode(router.poolKey())), keccak256(abi.encode(key)));
+        assertEq(router.maxImpactBps(), Constants.PRICE_IMPACT_DEFAULT);
+        assertEq(router.SPOT_FLOOR_BPS(), Constants.BURN_SPOT_FLOOR_BPS);
+        assertEq(router.constantsHash(), Constants.hash());
+        // the floor reads the hook's buy side fee (1% live)
+        uint24 buyFee = IArtCoinsHookStaticFee(address(key.hooks)).artCoinFee(key.toId());
+        assertEq(router.poolBuyFeePips(), buyFee);
+        assertEq(buyFee, 10_000);
+    }
+
+    function test_burnV2_constructor_validates() public onlyFork {
+        PoolKey memory bad = key;
+        bad.currency0 = Currency.wrap(address(0xBEEF));
+        vm.expectRevert(IBurnRouterV2.InvalidPoolKey.selector);
+        new BurnRouterV2(address(this), POOL_MANAGER, WETH, LAYER, bad);
+
+        bad = key;
+        bad.tickSpacing = 60; // a pool that does not exist
+        vm.expectRevert(IBurnRouterV2.InvalidPoolKey.selector);
+        new BurnRouterV2(address(this), POOL_MANAGER, WETH, LAYER, bad);
+
+        vm.expectRevert(IBurnRouterV2.InvalidPoolKey.selector);
+        new BurnRouterV2(address(this), POOL_MANAGER, WETH, COIN_111, key);
+
+        vm.expectRevert(IBurnRouterV2.ZeroAddress.selector);
+        new BurnRouterV2(address(this), POOL_MANAGER, address(0), LAYER, key);
+        vm.expectRevert(IBurnRouterV2.ZeroAddress.selector);
+        new BurnRouterV2(address(this), POOL_MANAGER, WETH, address(0), key);
+    }
+
+    // ── burn ─────────────────────────────────────────────────────────────
+
+    function test_burnV2_ethIn_layerBurned_rewardPaid() public onlyFork {
+        _fund(0.05 ether);
+        uint256 supply0 = IERC20(LAYER).totalSupply();
+        uint256 budget = router.swapBudget();
+        assertEq(budget, 0.05 ether - router.rewardFor(0.05 ether));
+        uint256 floor = router.floorFor(budget);
+        assertGt(floor, 0);
+
+        vm.prank(keeper);
+        (uint256 wethIn, uint256 burned) = router.processBurn(floor);
+
+        assertEq(wethIn, budget, "small budget fills fully");
+        assertGe(burned, floor, "floor enforced on the fill");
+        assertEq(IERC20(LAYER).totalSupply(), supply0 - burned, "LAYER supply burned");
+        assertEq(IERC20(LAYER).balanceOf(address(router)), 0, "no LAYER left");
+        assertEq(keeper.balance, router.rewardFor(wethIn), "reward on consumed, in eth");
+        assertEq(address(router).balance, 0, "eth wrapped");
+        // the reserve is sized on the balance, the reward on the fill; the
+        // difference is weth dust that folds into the next burn
+        assertEq(
+            IERC20(WETH).balanceOf(address(router)),
+            router.rewardFor(0.05 ether) - router.rewardFor(wethIn),
+            "budget spent, reward paid, reserve dust stays"
+        );
         assertEq(router.lastBurnBlock(), block.number);
+    }
+
+    /// @notice Weth sent directly (the v1 routers held weth) is part of the budget.
+    function test_burnV2_wethFunded_burns() public onlyFork {
+        dealWeth(address(router), 0.02 ether);
+        _fund(0.01 ether);
+        assertEq(router.swapBudget(), 0.03 ether - router.rewardFor(0.03 ether));
+        uint256 supply0 = IERC20(LAYER).totalSupply();
+        (uint256 wethIn, uint256 burned) = router.processBurn(0);
+        assertEq(
+            wethIn,
+            router.rewardFor(0.03 ether) > 0
+                ? 0.03 ether - router.rewardFor(0.03 ether)
+                : 0.03 ether
+        );
+        assertLt(IERC20(LAYER).totalSupply(), supply0);
+        assertGt(burned, 0);
+    }
+
+    /// @notice A balance far above the pool's depth fills partially at the
+    ///         impact limit and the rest waits for later blocks.
+    function test_burnV2_bigBalance_partialFill_impactCapped() public onlyFork {
+        _fund(5 ether);
+        uint160 pre = _spot();
+        vm.prank(keeper);
+        (uint256 wethIn,) = router.processBurn(0);
+        assertLt(wethIn, 5 ether, "partial fill");
+        assertLe(_priceMoveBps(pre, _spot()), router.maxImpactBps(), "impact capped");
+        assertEq(keeper.balance, router.rewardFor(wethIn), "reward sized on consumed");
+        assertGt(IERC20(WETH).balanceOf(address(router)), 4 ether, "rest waits as weth");
+
+        // the next block burns again
+        vm.roll(block.number + 1);
+        uint256 supply0 = IERC20(LAYER).totalSupply();
+        router.processBurn(0);
+        assertLt(IERC20(LAYER).totalSupply(), supply0);
+    }
+
+    function test_burnV2_onePerBlock_loopGetsOneBurn() public onlyFork {
+        _fund(5 ether);
+        BurnLooper looper = new BurnLooper();
+        uint160 pre = _spot();
+        uint256 successes = looper.loop(router, 10);
+        assertEq(successes, 1, "one burn per block");
+        assertLe(_priceMoveBps(pre, _spot()), router.maxImpactBps(), "impact capped per tx");
 
         vm.expectRevert(IBurnRouterV2.AlreadyBurnedThisBlock.selector);
         router.processBurn(0);
-
         vm.roll(block.number + 1);
         router.processBurn(0);
     }
 
-    /// @notice v1 let a contract loop the per call impact clamp in one tx and
-    ///         spend the whole balance at a price it moved (LF-03). v2: one burn
-    ///         per block, so the loop gets one burn and the price moves at most
-    ///         `maxImpactBps`.
-    function test_burnV2_loopingContract_cannotExceedImpact() public {
-        _fund(50 ether); // half the pool's eth side
-        BurnLooper looper = new BurnLooper();
-        uint160 pre = _spot();
-
-        uint256 successes = looper.loop(router, 25);
-
-        assertEq(successes, 1, "one burn per block");
-        uint256 moved = _priceMoveBps(pre, _spot());
-        assertLe(moved, router.maxImpactBps(), "impact capped for the whole tx");
-        assertGt(address(router).balance, 45 ether, "most of the balance waits");
-    }
-
-    function test_burnV2_openTab_sharesPacing() public {
-        _fund(2 ether);
-        OpenTabCaller caller = new OpenTabCaller(pm, router);
-        router.setOpenTabCaller(address(caller));
-        caller.go();
-        assertGt(caller.lastEthIn(), 0, "open tab burn ran");
-        assertEq(address(router).balance > 0, true);
-
-        vm.expectRevert(IBurnRouterV2.AlreadyBurnedThisBlock.selector);
-        router.processBurn(0);
-    }
-
-    function test_burnV2_openTab_outsideUnlock_reverts() public {
-        _fund(2 ether);
-        router.setOpenTabCaller(address(this));
-        vm.expectRevert(IPoolManager.ManagerLocked.selector);
-        router.processBurnOpenTab(0);
-    }
-
-    // ── D31 open tab gate ────────────────────────────────────────────────
-
-    function test_burnV2_openTab_disabledByDefault_reverts() public {
-        _fund(2 ether);
-        assertEq(router.openTabCaller(), address(0));
-        OpenTabCaller caller = new OpenTabCaller(pm, router);
-        vm.expectRevert(IBurnRouterV2.NotOpenTabCaller.selector);
-        caller.go();
-        vm.expectRevert(IBurnRouterV2.NotOpenTabCaller.selector);
-        router.processBurnOpenTab(0);
-    }
-
-    function test_burnV2_openTab_setCaller_passes() public {
-        _fund(2 ether);
-        OpenTabCaller caller = new OpenTabCaller(pm, router);
-        vm.expectEmit(true, true, false, false, address(router));
-        emit IBurnRouterV2.OpenTabCallerSet(address(0), address(caller));
-        router.setOpenTabCaller(address(caller));
-        caller.go();
-        assertGt(caller.lastEthIn(), 0, "gated caller burns");
-    }
-
-    function test_burnV2_openTab_otherCaller_reverts() public {
-        _fund(2 ether);
-        OpenTabCaller allowed = new OpenTabCaller(pm, router);
-        OpenTabCaller other = new OpenTabCaller(pm, router);
-        router.setOpenTabCaller(address(allowed));
-        vm.expectRevert(IBurnRouterV2.NotOpenTabCaller.selector);
-        other.go();
-        vm.prank(attacker);
-        vm.expectRevert(IBurnRouterV2.NotOpenTabCaller.selector);
-        router.processBurnOpenTab(0);
-
-        // owner only, and zero disables again
-        vm.prank(attacker);
-        vm.expectRevert(
-            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
-        );
-        router.setOpenTabCaller(attacker);
-        router.setOpenTabCaller(address(0));
-        vm.expectRevert(IBurnRouterV2.NotOpenTabCaller.selector);
-        allowed.go();
-    }
-
-    // ── D32 spot floor ───────────────────────────────────────────────────
-
-    function _expectedFloor(uint256 ethIn, uint256 bps) internal view returns (uint256) {
-        uint160 p = _spot();
-        uint256 step = FullMath.mulDiv(ethIn, p, 1 << 96);
-        return FullMath.mulDiv(step, p, 1 << 96) * bps / Constants.BPS;
-    }
-
-    function test_burnV2_spotFloor_bounds() public {
-        assertEq(router.spotFloorBps(), Constants.BURN_SPOT_FLOOR_DEFAULT_BPS, "default 80%");
-        uint256 lo = Constants.SPOT_FLOOR_MIN_BPS;
-        uint256 hi = Constants.SPOT_FLOOR_MAX_BPS;
-        vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, lo - 1, lo, hi));
-        router.setSpotFloorBps(lo - 1);
-        vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, hi + 1, lo, hi));
-        router.setSpotFloorBps(hi + 1);
-        vm.expectEmit(false, false, false, true, address(router));
-        emit IBurnRouterV2.SpotFloorBpsSet(Constants.BURN_SPOT_FLOOR_DEFAULT_BPS, lo);
-        router.setSpotFloorBps(lo);
-        assertEq(router.spotFloorBps(), lo);
-        router.setSpotFloorBps(hi);
-        assertEq(router.spotFloorBps(), hi);
-
-        vm.prank(attacker);
-        vm.expectRevert(
-            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
-        );
-        router.setSpotFloorBps(9000);
-    }
-
-    /// @notice D50: a hookless pool has no known fees, so the floor is raw spot.
-    function test_burnV2_hooklessPool_rawSpotFloor() public {
-        assertEq(router.poolBaselineSkimBps(), 0);
-        assertEq(router.poolLpFee(), 0);
-        assertEq(
-            router.floorFor(1 ether), _expectedFloor(1 ether, Constants.BURN_SPOT_FLOOR_DEFAULT_BPS)
-        );
-        router.syncPoolFees();
-        BurnRouterV2 r = new BurnRouterV2(address(this), address(pm), address(escrow));
-        vm.expectRevert(IBurnRouterV2.NotInitialized.selector);
-        r.syncPoolFees();
-    }
-
-    /// @notice The floor the view reports and the burn enforces uses the stored bps.
-    function test_burnV2_spotFloor_usesStoredValue() public {
-        assertEq(
-            router.floorFor(1 ether), _expectedFloor(1 ether, Constants.BURN_SPOT_FLOOR_DEFAULT_BPS)
-        );
-        router.setSpotFloorBps(Constants.SPOT_FLOOR_MAX_BPS);
-        assertEq(router.floorFor(1 ether), _expectedFloor(1 ether, Constants.SPOT_FLOOR_MAX_BPS));
-        router.setSpotFloorBps(Constants.SPOT_FLOOR_MIN_BPS);
-        assertEq(router.floorFor(1 ether), _expectedFloor(1 ether, Constants.SPOT_FLOOR_MIN_BPS));
-
-        // at the 95% floor a small burn (1% lp fee, tiny impact) still clears it
-        router.setSpotFloorBps(Constants.SPOT_FLOOR_MAX_BPS);
-        _fund(0.2 ether);
-        uint256 budget = router.swapBudget();
-        uint256 floor = router.floorFor(budget);
-        (, uint256 burned) = router.processBurn(0);
-        assertGe(burned, floor, "enforced floor is the stored one");
-    }
-
-    // ── b6 reward (LF-04) ─────────────────────────────────────────────────
-
-    function test_burnV2_partialFill_rewardOnConsumed() public {
-        _fund(50 ether);
-        uint256 supplyBefore = coin.totalSupply();
-
-        vm.prank(keeper);
-        (uint256 ethIn, uint256 burned) = router.processBurn(0);
-
-        assertLt(ethIn, 50 ether, "partial fill");
-        uint256 expected = ethIn * Constants.KEEPER_REWARD_BPS / Constants.BPS;
-        if (expected > Constants.KEEPER_REWARD_CAP) expected = Constants.KEEPER_REWARD_CAP;
-        assertEq(keeper.balance, expected, "reward on consumed");
-        assertEq(keeper.balance, router.rewardFor(ethIn));
-        // v1 paid min(0.5% of the whole balance, cap) = 0.01 eth here
-        assertLt(keeper.balance, Constants.KEEPER_REWARD_CAP, "not sized on the whole balance");
-        assertEq(address(router).balance, 50 ether - ethIn - expected, "rest stays");
-        assertEq(coin.totalSupply(), supplyBefore - burned, "burned via token burn");
-        assertEq(coin.balanceOf(address(router)), 0);
-    }
-
-    function test_burnV2_rejectingKeeper_rewardStays() public {
-        _fund(1 ether);
-        address rej = address(new P1Rejector());
-        vm.prank(rej);
-        (uint256 ethIn,) = router.processBurn(0);
-        assertEq(address(router).balance, 1 ether - ethIn, "reward kept");
-    }
-
-    // ── output guards ─────────────────────────────────────────────────────
-
-    function test_burnV2_minOut_honoured() public {
-        _fund(1 ether);
-        vm.expectPartialRevert(IBurnRouterV2.InsufficientOutput.selector);
-        router.processBurn(1e40);
-    }
-
-    function test_burnV2_floorView_matchesEnforcement() public {
-        _fund(0.2 ether);
-        uint256 budget = router.swapBudget();
-        uint256 floor = router.floorFor(budget);
-        (uint256 ethIn, uint256 burned) = router.processBurn(floor);
-        assertEq(ethIn, budget, "small balance fills fully");
-        assertGe(burned, floor);
-    }
-
-    function test_burnV2_heldCoin_isBurnedToo() public {
-        coin.transfer(address(router), 7e18);
-        _fund(1 ether);
-        uint256 supplyBefore = coin.totalSupply();
+    function test_burnV2_heldLayer_isBurnedToo() public onlyFork {
+        deal(LAYER, address(router), 7e18);
+        _fund(0.01 ether);
+        uint256 supply0 = IERC20(LAYER).totalSupply();
         (, uint256 burned) = router.processBurn(0);
         assertGt(burned, 7e18);
-        assertEq(coin.totalSupply(), supplyBefore - burned);
+        assertEq(IERC20(LAYER).totalSupply(), supply0 - burned);
+        assertEq(IERC20(LAYER).balanceOf(address(router)), 0);
     }
 
-    // ── threshold and impact bounds ──────────────────────────────────────
-
-    function test_burnV2_threshold_bounds() public {
-        _fund(0.005 ether);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IBurnRouterV2.BelowMinThreshold.selector, 0.005 ether, 0.01 ether
-            )
-        );
+    function test_burnV2_nothingToBurn_reverts() public onlyFork {
+        vm.expectRevert(IBurnRouterV2.NothingToBurn.selector);
         router.processBurn(0);
-
-        uint256 floor = Constants.BURN_THRESHOLD_FLOOR;
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IBurnRouterV2.OutOfBounds.selector, floor - 1, floor, type(uint96).max
-            )
-        );
-        router.setMinProcessThreshold(uint96(floor - 1));
-
-        router.setMinProcessThreshold(uint96(floor));
-        assertEq(router.minProcessThreshold(), floor);
+        assertEq(router.lastBurnBlock(), 0, "a reverted call spends nothing");
+        _fund(0.01 ether);
         router.processBurn(0);
-
-        vm.prank(attacker);
-        vm.expectRevert(
-            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
-        );
-        router.setMinProcessThreshold(1 ether);
+        assertEq(router.lastBurnBlock(), block.number);
     }
 
-    function test_burnV2_impact_bounds() public {
-        assertEq(router.maxImpactBps(), Constants.PRICE_IMPACT_DEFAULT);
+    function test_burnV2_minOut_honoured() public onlyFork {
+        _fund(0.01 ether);
+        vm.expectPartialRevert(IBurnRouterV2.InsufficientOutput.selector);
+        router.processBurn(type(uint128).max);
+    }
+
+    /// @notice The floor is the live spot output net of the live buy fee times
+    ///         SPOT_FLOOR_BPS; a burn at the impact limit clears it.
+    function test_burnV2_floor_liveSpotAndFee() public onlyFork {
+        uint160 p = _spot();
+        uint256 wethIn = 0.1 ether;
+        // LAYER is currency0: price is weth per LAYER, out = weth / price
+        uint256 raw = FullMath.mulDiv(FullMath.mulDiv(wethIn, 1 << 96, p), 1 << 96, p);
+        uint256 netPpm = 1e6 - router.poolBuyFeePips();
+        assertEq(
+            router.floorFor(wethIn),
+            FullMath.mulDiv(raw, netPpm * Constants.BURN_SPOT_FLOOR_BPS, 1e6 * 1e4)
+        );
+        assertEq(router.floorFor(0), 0);
+
+        router.setMaxImpactBps(Constants.PRICE_IMPACT_MAX);
+        _fund(5 ether);
+        (uint256 consumed, uint256 burned) = router.processBurn(0);
+        assertGe(
+            burned, router.floorFor(consumed) * 99 / 100, "fill at max impact clears the floor"
+        );
+    }
+
+    function test_burnV2_rejectingKeeper_rewardStays() public onlyFork {
+        _fund(0.05 ether);
+        address rej = address(new P1Rejector());
+        vm.prank(rej);
+        vm.expectEmit(true, false, false, false, address(router));
+        emit IBurnRouterV2.KeeperRewardFailed(rej, 0);
+        (uint256 wethIn,) = router.processBurn(0);
+        uint256 reward = router.rewardFor(wethIn);
+        assertEq(address(router).balance, reward, "unwrapped reward stays as eth");
+        // and folds into the next burn together with the reserve dust
+        vm.roll(block.number + 1);
+        _fund(0.01 ether);
+        uint256 total = address(router).balance + IERC20(WETH).balanceOf(address(router));
+        assertGe(total, reward + 0.01 ether);
+        assertEq(router.swapBudget(), total - router.rewardFor(total));
+        (uint256 wethIn2,) = router.processBurn(0);
+        assertEq(wethIn2, total - router.rewardFor(total), "everything held is the next budget");
+    }
+
+    // ── owner ────────────────────────────────────────────────────────────
+
+    function test_burnV2_impact_bounds() public onlyFork {
         uint16 lo = Constants.PRICE_IMPACT_MIN;
         uint16 hi = Constants.PRICE_IMPACT_MAX;
         vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, lo - 1, lo, hi));
         router.setMaxImpactBps(lo - 1);
         vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, hi + 1, lo, hi));
         router.setMaxImpactBps(hi + 1);
+        vm.expectEmit(false, false, false, true, address(router));
+        emit IBurnRouterV2.MaxImpactBpsSet(Constants.PRICE_IMPACT_DEFAULT, lo);
         router.setMaxImpactBps(lo);
         router.setMaxImpactBps(hi);
-
-        _fund(80 ether);
-        uint160 pre = _spot();
-        router.processBurn(0);
-        assertLe(_priceMoveBps(pre, _spot()), hi, "max impact respected");
+        assertEq(router.maxImpactBps(), hi);
 
         vm.prank(attacker);
         vm.expectRevert(
@@ -344,68 +278,15 @@ contract BurnRouterV2ForkTest is P1Base {
         router.setMaxImpactBps(100);
     }
 
-    // ── init ──────────────────────────────────────────────────────────────
-
-    function test_burnV2_initialize_onceAndValidated() public {
-        vm.expectRevert(IBurnRouterV2.AlreadyInitialized.selector);
-        router.initialize(address(coin), key);
-
-        BurnRouterV2 r = new BurnRouterV2(address(this), address(pm), address(escrow));
-        vm.expectRevert(IBurnRouterV2.NotInitialized.selector);
-        r.processBurn(0);
-
-        PoolKey memory bad = key;
-        bad.currency1 = Currency.wrap(address(0xBEEF));
-        vm.expectRevert(IBurnRouterV2.InvalidPoolKey.selector);
-        r.initialize(address(coin), bad);
-
-        bad = key;
-        bad.fee = 3000; // not initialized
-        vm.expectRevert(IBurnRouterV2.InvalidPoolKey.selector);
-        r.initialize(address(coin), bad);
-
-        // A9-03: the hook the router binds to must report this build's constants hash
-        address wrongHook = address(new BRWrongHashHook());
-        bad = key;
-        bad.hooks = IHooks(wrongHook);
-        vm.expectRevert(
-            abi.encodeWithSelector(IConstantsBound.ConstantsMismatch.selector, wrongHook)
-        );
-        r.initialize(address(coin), bad);
-
-        vm.prank(attacker);
-        vm.expectRevert(
-            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
-        );
-        r.initialize(address(coin), key);
-
-        r.initialize(address(coin), key);
-        assertEq(r.coin(), address(coin));
-        assertEq(keccak256(abi.encode(r.poolKey())), keccak256(abi.encode(key)));
-    }
-
-    // ── refunds and rescue ───────────────────────────────────────────────
-
-    function test_burnV2_claimRefund_pullsEscrowCredit() public {
-        assertEq(router.claimRefund(), 0, "nothing to claim is not an error");
-        escrow.storeFeesNative{value: 0.4 ether}(address(router));
-        assertEq(router.claimRefund(), 0.4 ether);
-        assertEq(address(router).balance, 0.4 ether);
-        assertEq(escrow.balances(address(router), address(0)), 0);
-    }
-
-    function test_burnV2_processBurn_pullsRefundFirst() public {
-        escrow.storeFeesNative{value: 0.5 ether}(address(router));
-        // below threshold without the refund
-        router.processBurn(0);
-        assertEq(escrow.balances(address(router), address(0)), 0);
-    }
-
-    function test_burnV2_rescue_cannotTouchCoinOrEth() public {
-        vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.CannotRescue.selector, address(coin)));
-        router.rescue(address(coin), address(this), 1);
+    function test_burnV2_rescue_neverEthWethOrLayer() public onlyFork {
         vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.CannotRescue.selector, address(0)));
         router.rescue(address(0), address(this), 1);
+        vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.CannotRescue.selector, WETH));
+        router.rescue(WETH, address(this), 1);
+        vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.CannotRescue.selector, LAYER));
+        router.rescue(LAYER, address(this), 1);
+        vm.expectRevert(IBurnRouterV2.ZeroAddress.selector);
+        router.rescue(COIN_111, address(0), 1);
 
         P1Stray stray = new P1Stray();
         stray.transfer(address(router), 3e18);
@@ -419,50 +300,16 @@ contract BurnRouterV2ForkTest is P1Base {
         router.rescue(address(stray), attacker, 0);
     }
 
-    /// @notice View accuracy: the budget counts escrow refunds the burn claims first.
-    function test_burnV2_swapBudget_includesPendingRefund() public {
-        assertEq(router.swapBudget(), 0, "below threshold");
-        escrow.storeFeesNative{value: 0.3 ether}(address(router));
-        _fund(0.2 ether);
-        uint256 budget = router.swapBudget();
-        assertEq(budget, 0.5 ether - router.rewardFor(0.5 ether));
-        (uint256 ethIn,) = router.processBurn(router.floorFor(budget));
-        assertEq(ethIn, budget, "view matches the burn");
-    }
-
-    // ── D40 per burn cap ─────────────────────────────────────────────────
-
-    function test_burnV2_maxBurnPerCall_capsBudget_andBounds() public {
-        assertEq(router.maxBurnPerCall(), 5 ether, "default");
-        uint256 lo = router.MAX_BURN_PER_CALL_MIN();
-        uint256 hi = router.MAX_BURN_PER_CALL_MAX();
-        assertEq(lo, 0.1 ether);
-        assertEq(hi, 100 ether);
-        vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, lo - 1, lo, hi));
-        router.setMaxBurnPerCall(lo - 1);
-        vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, hi + 1, lo, hi));
-        router.setMaxBurnPerCall(hi + 1);
-        vm.expectEmit(false, false, false, true, address(router));
-        emit IBurnRouterV2.MaxBurnPerCallSet(5 ether, lo);
-        router.setMaxBurnPerCall(lo);
-
-        _fund(1 ether);
-        assertEq(router.swapBudget(), lo, "view capped");
-        (uint256 ethIn,) = router.processBurn(0);
-        assertEq(ethIn, lo, "burn capped, fills fully");
-        assertEq(address(router).balance, 1 ether - lo - router.rewardFor(lo));
-
-        router.setMaxBurnPerCall(hi);
-        assertEq(router.maxBurnPerCall(), hi);
-        vm.prank(attacker);
-        vm.expectRevert(
-            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
-        );
-        router.setMaxBurnPerCall(1 ether);
-    }
-
-    function test_burnV2_unlockCallback_onlyPoolManager() public {
+    function test_burnV2_unlockCallback_onlyPoolManager() public onlyFork {
         vm.expectRevert(IBurnRouterV2.NotPoolManager.selector);
         router.unlockCallback(abi.encode(uint256(1), uint160(1)));
+    }
+
+    function test_burnV2_ownable2Step() public onlyFork {
+        router.transferOwnership(attacker);
+        assertEq(router.owner(), address(this), "pending only");
+        vm.prank(attacker);
+        router.acceptOwnership();
+        assertEq(router.owner(), attacker);
     }
 }

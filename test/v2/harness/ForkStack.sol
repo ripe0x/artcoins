@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import {ForkBase} from "./ForkBase.sol";
 
+import {Addresses} from "../../../script/Addresses.sol";
 import {LaunchDefaults} from "../../../script/LaunchDefaults.sol";
 import {DeployV2Lib} from "../../../script/v2/DeployV2Lib.sol";
 import {ArtCoinsFactory} from "../../../src/ArtCoinsFactory.sol";
@@ -370,6 +371,10 @@ abstract contract ForkStack is ForkBase {
         p = DeployV2Lib.defaults(
             owner, broadcaster, POOL_MANAGER, POSITION_MANAGER, PERMIT2, CREATE2_DEPLOYER
         );
+        p.weth = WETH;
+        p.layer = Addresses.COIN_LAYER;
+        p.layerPoolKey =
+        IArtCoinsLpLocker(Addresses.LEGACY_LOCKER).tokenRewards(Addresses.COIN_LAYER).poolKey;
         p.checkSizes =
             keccak256(bytes(vm.envOr("FOUNDRY_PROFILE", string("default")))) == keccak256("ci");
     }

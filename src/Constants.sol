@@ -91,10 +91,11 @@ library Constants {
     /// @notice Keeper reward on consumed amounts, capped.
     uint256 internal constant KEEPER_REWARD_BPS = 50;
     uint256 internal constant KEEPER_REWARD_CAP = 0.01 ether;
-    /// @notice Burn router initial fee net spot floor, in BPS. The swapper's
-    ///         convert floor default (9500) is contract local; both are owner
-    ///         tunable within [SPOT_FLOOR_MIN_BPS, SPOT_FLOOR_MAX_BPS].
-    uint256 internal constant BURN_SPOT_FLOOR_DEFAULT_BPS = 8000;
+    /// @notice Burn router output floor, in BPS of the spot output net of the
+    ///         pool's buy fee. Fixed: the floor is computed from the live spot
+    ///         and fee at burn time, so it has no stale state to tune.
+    uint256 internal constant BURN_SPOT_FLOOR_BPS = 9000;
+    /// @notice Fee swapper convert floor bounds. The default (9500) is contract local.
     uint256 internal constant SPOT_FLOOR_MIN_BPS = 5000;
     uint256 internal constant SPOT_FLOOR_MAX_BPS = 9500;
     /// @notice Fee swapper owner bounds.
@@ -107,11 +108,6 @@ library Constants {
     uint16 internal constant PRICE_IMPACT_MIN = 25;
     uint16 internal constant PRICE_IMPACT_DEFAULT = 100;
     uint16 internal constant PRICE_IMPACT_MAX = 300;
-    uint256 internal constant BURN_THRESHOLD_FLOOR = 0.001 ether;
-    /// @notice Burn router per call eth cap bounds and default (not hashed).
-    uint256 internal constant BURN_MAX_PER_CALL_MIN = 0.1 ether;
-    uint256 internal constant BURN_MAX_PER_CALL_MAX = 100 ether;
-    uint256 internal constant BURN_MAX_PER_CALL_DEFAULT = 5 ether;
 
     // ── protocol fee controller ───────────────────────────────────────────
     /// @notice Minimum shares of the protocol revenue split, in BPS.
@@ -177,7 +173,6 @@ library Constants {
     }
 
     function _hashKeeper() private pure returns (bytes32) {
-        return
-            keccak256(abi.encode(KEEPER_REWARD_BPS, KEEPER_REWARD_CAP, BURN_SPOT_FLOOR_DEFAULT_BPS));
+        return keccak256(abi.encode(KEEPER_REWARD_BPS, KEEPER_REWARD_CAP, BURN_SPOT_FLOOR_BPS));
     }
 }

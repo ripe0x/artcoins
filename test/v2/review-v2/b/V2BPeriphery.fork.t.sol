@@ -5,7 +5,7 @@ pragma solidity ^0.8.26;
 // run: /tmp/claude-0/forge.sh test --match-path "test/v2/review-v2/b/**" \
 //   --skip "test/v2/harness/**" --skip "test/v2/review/**" --skip script \
 //   --skip src/v2/ArtCoinsFactoryV2.sol --skip "test/v2/FactoryV2*" --skip "test/v2/mocks/FactoryV2*" -vv
-// after the fixes (D39, D40, D50) the test_V2Bxx_* tests are regressions: they
+// after the fixes (D39) the test_V2Bxx_* tests are regressions: they
 // PASS by asserting the fixed outcome. the original attack is kept in a comment
 // above each one. tests named test_holds_* PASS when the claim holds.
 
@@ -20,8 +20,6 @@ import {
 } from "../../../../src/v2/extensions/interfaces/IArtCoinsUniv4EthDevBuyV2.sol";
 import {IArtCoinsFactoryV2} from "../../../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsHookV2} from "../../../../src/v2/interfaces/IArtCoinsHookV2.sol";
-import {IBurnRouterV2} from "../../../../src/v2/interfaces/IBurnRouterV2.sol";
-import {BurnRouterV2} from "../../../../src/v2/protocol-fee/BurnRouterV2.sol";
 
 import {IArtCoinsFeeEscrowV2} from "../../../../src/v2/interfaces/IArtCoinsFeeEscrowV2.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
@@ -81,11 +79,6 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
         (key, token) = _launch(l);
     }
 
-    function _router(PoolKey memory key, address coin) internal returns (BurnRouterV2 r) {
-        r = new BurnRouterV2(address(this), POOL_MANAGER, address(escrow));
-        r.initialize(coin, key);
-    }
-
     function _fund(address to, uint256 amount) internal {
         (bool ok,) = to.call{value: amount}("");
         require(ok, "fund");
@@ -111,98 +104,6 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
             })
         );
         escrow.addDepositor(address(s), false);
-    }
-
-    function _burnSelector(BurnRouterV2 r) internal returns (bool ok, bytes4 sel) {
-        try r.processBurn(0) {
-            ok = true;
-        } catch (bytes memory err) {
-            sel = bytes4(err);
-        }
-    }
-
-    // ── V2B-01: burn router floor and reward count the refunded skim ──────
-
-    /// REGRESSION (fixed by D40 and D50, was V2B-01 and V2B-03).
-    ///
-    /// original attack: default settings, 111 style pool (6% baseline skim,
-    /// 0.5% lp fee), 1000 eth full range. a 10 eth budget burns; a 50 eth
-    /// budget (5% of the pool's eth) could never burn: the impact limit partial
-    /// filled, the hook charged skim on the whole requested input and refunded
-    /// the unfilled share later, but `_finish` checked the floor against `ethIn`
-    /// including that refundable skim. the balance only grows, so burns stopped
-    /// for good, a griefer's donation bricked a working router, and the keeper
-    /// reward was sized on the refundable skim.
-    ///
-    /// now: `ethIn` and the reward exclude the refunded skim, each burn is capped
-    /// at `maxBurnPerCall`, so a 50 eth balance drains over blocks and a
-    /// donation cannot brick the router. eth stays unrescuable (by design).
-    function test_V2B01_burnRouter_bigBudgetNeverBurns_defaultSettings() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(false, BASELINE);
-
-        BurnRouterV2 small = _router(key, address(token));
-        _fund(address(small), 10 ether);
-        uint256 snap = vm.snapshotState();
-        uint256 k0 = keeper.balance;
-        vm.prank(keeper);
-        (uint256 ethIn, uint256 burned) = small.processBurn(0);
-        assertGt(burned, 0, "10 eth budget burns");
-        uint256 refund = escrow.balances(address(small), address(0));
-        // reward is sized on the consumed eth only, not on any refunded skim
-        assertEq(keeper.balance - k0, small.rewardFor(ethIn), "reward on consumed only");
-        assertLe(ethIn, small.maxBurnPerCall(), "capped per burn");
-        emit log_named_uint("10 eth: ethIn net of refunded skim", ethIn);
-        emit log_named_uint("10 eth: skim still owed in escrow", refund);
-        vm.revertToState(snap);
-
-        // same pool: a 50 eth balance burns every block and drains.
-        BurnRouterV2 big = _router(key, address(token));
-        _fund(address(big), 50 ether);
-        uint256 b0 = block.number;
-        for (uint256 i; i < 3; ++i) {
-            vm.roll(b0 + i + 1);
-            uint256 supply0 = token.totalSupply();
-            (bool ok, bytes4 sel) = _burnSelector(big);
-            assertTrue(ok, "50 eth budget burns every block");
-            assertEq(sel, bytes4(0));
-            assertLt(token.totalSupply(), supply0, "coin burned");
-        }
-        assertLt(address(big).balance, 50 ether, "balance drains over blocks");
-
-        // a donation no longer bricks a working router.
-        vm.roll(b0 + 10);
-        BurnRouterV2 victim = _router(key, address(token));
-        _fund(address(victim), 5 ether);
-        vm.deal(griefer, 45 ether);
-        vm.prank(griefer);
-        _fund(address(victim), 45 ether);
-        (bool ok2, bytes4 sel2) = _burnSelector(victim);
-        assertTrue(ok2, "donation does not brick the router");
-        assertEq(sel2, bytes4(0));
-
-        // eth is still not rescuable.
-        vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.CannotRescue.selector, address(0)));
-        victim.rescue(address(0), address(this), 1);
-    }
-
-    /// REGRESSION (fixed by D40, was V2B-01).
-    ///
-    /// original attack: owner levers at their bounds (impact 300 bps, floor
-    /// 50%) did not save a 300 eth balance on the same 1000 eth pool, it never
-    /// burned. now it burns at the default settings and at the owner limits.
-    function test_V2B01_burnRouter_bricked_evenAtOwnerLimits() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(false, BASELINE);
-        BurnRouterV2 r = _router(key, address(token));
-        _fund(address(r), 300 ether);
-        (bool ok,) = _burnSelector(r);
-        assertTrue(ok, "300 eth burns at the default settings");
-
-        vm.roll(block.number + 1);
-        r.setMaxImpactBps(Constants.PRICE_IMPACT_MAX);
-        r.setSpotFloorBps(Constants.SPOT_FLOOR_MIN_BPS);
-        (bool ok2, bytes4 sel2) = _burnSelector(r);
-        assertTrue(ok2, "300 eth burns at the owner limits");
-        assertEq(sel2, bytes4(0));
     }
 
     // ── V2B-02: swapper sandwich on a low fee v2 pool ─────────────────────
@@ -267,17 +168,6 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
         assertEq(token.balanceOf(address(s)), 0);
         assertEq(address(s).balance, 0);
         assertEq(token.transferAllowance(), 0, "allowance fully consumed");
-    }
-
-    function test_holds_restricted_burnRouter() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(true, BASELINE);
-        BurnRouterV2 r = _router(key, address(token));
-        _fund(address(r), 1 ether);
-        uint256 supply0 = token.totalSupply();
-        vm.prank(keeper);
-        (, uint256 burned) = r.processBurn(0);
-        assertGt(burned, 0);
-        assertEq(token.totalSupply(), supply0 - burned);
     }
 
     function _devBuyCall(
