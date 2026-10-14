@@ -23,7 +23,7 @@ import {Script, console2} from "forge-std/Script.sol";
 ///   env (all optional):
 ///     OWNER                         default Addresses.OWNER. ownership target of every owned contract
 ///     TREASURY                      default OWNER. ProtocolFeeControllerV2 treasury
-///     TREASURY_BPS                  default 5000 (Constants allow 1000..9000)
+///     TREASURY_BPS                  default 8000 (Constants allow 1000..9000)
 ///     DEPLOY_FEE                    default 0 (wei)
 ///     PROTOCOL_BPS                  default 2000
 ///     MIN_PROTOCOL_SKIM_SHARE_BPS   default 1000 (D52)
