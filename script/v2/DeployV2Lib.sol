@@ -54,7 +54,9 @@ library DeployV2Lib {
     uint256 internal constant MAX_MINE = 400_000;
 
     // ── defaults ────────────────────────────────────────────────────────────
-    uint256 internal constant DEPLOY_FEE = 0.069 ether;
+    /// @dev Launches are free at the v2 opening; the owner can set a fee later
+    ///      (`setDeployFee`, up to MAX_DEPLOY_FEE).
+    uint256 internal constant DEPLOY_FEE = 0;
     uint16 internal constant PROTOCOL_BPS = 2000;
     /// @dev Controller split: the largest treasury share Constants allows
     ///      (PFC_MIN_BURN_BPS 1000). The burn share buys and burns LAYER.

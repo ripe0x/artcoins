@@ -89,7 +89,7 @@ contract DeployV2StackForkTest is ForkStack {
         assertEq(s.locker.keeperRewardBps(), 0, "D28 keeper reward");
         assertTrue(s.factory.deprecated(), "ships deprecated");
         assertEq(s.factory.tokenDeployer(), address(s.tokenDeployer), "D38 deployer");
-        assertEq(s.factory.deployFee(), 0.069 ether, "deploy fee");
+        assertEq(s.factory.deployFee(), 0, "deploy fee: free at launch");
         assertEq(s.factory.defaultProtocolFeeBps(), 2000, "protocol bps");
         assertEq(s.factory.minProtocolSkimShareBps(), 1000, "D52 protocol skim floor");
         assertEq(s.factory.protocolRecipient(), address(s.controller), "protocol recipient");
@@ -131,7 +131,7 @@ contract DeployV2StackForkTest is ForkStack {
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _launch(address(treasury)).cfg;
         vm.prank(stranger);
         vm.expectRevert(IArtCoinsFactoryV2.Deprecated.selector);
-        s.factory.deployToken{value: 0.069 ether}(c);
+        s.factory.deployToken(c);
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -210,7 +210,7 @@ contract DeployV2StackForkTest is ForkStack {
         assertEq(l.cfg.mev.windowSeconds, 69 minutes, "69 minute skim");
 
         (address predicted, uint256 value) = LaunchV2Lib.preflight(t, l, LIVE_OWNER);
-        assertEq(value, 0.069 ether, "value");
+        assertEq(value, 0, "value: no deploy fee");
         (address dry,) = LaunchV2Lib.dryRun(t, l, LIVE_OWNER, value);
         assertEq(dry, predicted, "dry run address");
         assertEq(dry.code.length, 0, "dry run reverted to snapshot");

@@ -28,7 +28,7 @@ export FOUNDRY_PROFILE=ci
 | OWNER | `Addresses.OWNER` | owner of every owned contract, team fee recipient |
 | TREASURY | OWNER | `ProtocolFeeControllerV2` treasury |
 | TREASURY_BPS | 9000 | controller treasury share (Constants allow 4000..9000, the rest burns) |
-| DEPLOY_FEE | 0.069 ether | factory deploy fee (wei) |
+| DEPLOY_FEE | 0 | factory deploy fee (wei); owner tunable later with `setDeployFee` |
 | PROTOCOL_BPS | 2000 | factory default protocol slot |
 | MIN_PROTOCOL_SKIM_SHARE_BPS | 1000 | D52: protocol floor of every skim. caps launch `bountyBps` at `10000 - this` and the referral cap above the floor |
 

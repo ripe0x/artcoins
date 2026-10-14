@@ -217,7 +217,7 @@ sources of truth, in this order: `script/v2/DeployV2Lib.sol` (the routine), `scr
 | OWNER | `Addresses.OWNER` (0xCB43…) | owner of every owned contract and team fee recipient |
 | TREASURY, TREASURY_BPS | OWNER, 9000 | controller treasury and its share (Constants allow 4000 to 9000, the rest burns) |
 | REFERRAL_PAYOUT | 0 = the new escrow | D57. must have code. the live 0xB03C… answers `Unauthorized()` to everyone but the v1 hook and the owner eoa has no code, so neither is used |
-| DEPLOY_FEE, PROTOCOL_BPS | 0.069 eth, 2000 | factory deploy fee and default protocol slot |
+| DEPLOY_FEE, PROTOCOL_BPS | 0, 2000 | factory deploy fee (free at launch, owner tunable) and default protocol slot |
 | MIN_PROTOCOL_SKIM_SHARE_BPS | 1000 | D52 |
 
 about 29.5m gas over 29 txs (0.011 eth at 0.38 gwei, measured on a fork at block 26131304). the hook address depends on the broadcaster, so a dry run with `--sender $OWNER` shows the real one. `script/v2/deploy.sh mainnet` runs steps 0a, 0c, 13 and the record of step 15 in one path (guards, warm ci build, dry run, `--slow` broadcast with `--account ripe0x`, readback, `deployments/1.v2.json`, `verify-v2.sh`). it refuses while `TREASURY`, `TREASURY_BPS`, `DEPLOY_FEE` or `PROTOCOL_BPS` is empty in the env file.
@@ -252,7 +252,7 @@ wiring, in the order `_wire` sends it (D36: the escrow knows the hook and locker
 | 7 to 9 | locker | `setFeeEscrow(escrow)`, `setLauncher(factory, true)`, `setKeeperRewardBps(0)` (0x4a1e2ec0) | D28: the keeper reward starts at 0, max 2% later |
 | 10 to 13 | factory | `setHook(hook, true)`, `setLocker(locker, true)`, `setMevModule(mev, true)`, `setEscrow(escrow, true)` | enable the stack |
 | 14 to 16 | factory | `setProtocolRecipient(controller)`, `setReferralPayout(escrow or REFERRAL_PAYOUT)`, `setTeamFeeRecipient(OWNER)` | D57. referral legs are credited to the referrer in the escrow (D16), claimed with `escrow.claim(referrer, 0x0)` (0x21c0b342) |
-| 17, 18 | factory | `setDeployFee(0.069 eth)`, `setDefaultProtocolFeeBps(2000)` | |
+| 17, 18 | factory | `setDeployFee(0)`, `setDefaultProtocolFeeBps(2000)` | |
 | 19 | factory | `setMinProtocolSkimShareBps(1000)` (0x76ed5aeb) | D52: the protocol keeps at least 10% of every skim. caps `bountyBps` at 9000 and the referral cap |
 | none | factory | `deprecated` stays true | opening is the last owner tx, 2c |
 

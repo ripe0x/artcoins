@@ -24,7 +24,7 @@ import {Script, console2} from "forge-std/Script.sol";
 ///     OWNER                         default Addresses.OWNER. ownership target of every owned contract
 ///     TREASURY                      default OWNER. ProtocolFeeControllerV2 treasury
 ///     TREASURY_BPS                  default 9000 (Constants allow 4000..9000)
-///     DEPLOY_FEE                    default 0.069 ether (wei)
+///     DEPLOY_FEE                    default 0 (wei)
 ///     PROTOCOL_BPS                  default 2000
 ///     MIN_PROTOCOL_SKIM_SHARE_BPS   default 1000 (D52)
 ///   when the broadcaster is not OWNER, the escrow, hook, locker and factory
