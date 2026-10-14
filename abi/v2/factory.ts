@@ -130,11 +130,6 @@ export const factoryV2Abi = [
                 "internalType": "uint16"
               },
               {
-                "name": "maxReferralBpsOfVolume",
-                "type": "uint24",
-                "internalType": "uint24"
-              },
-              {
                 "name": "bountyRecipient",
                 "type": "address",
                 "internalType": "address payable"
@@ -417,11 +412,6 @@ export const factoryV2Abi = [
                 "internalType": "uint16"
               },
               {
-                "name": "maxReferralBpsOfVolume",
-                "type": "uint24",
-                "internalType": "uint24"
-              },
-              {
                 "name": "bountyRecipient",
                 "type": "address",
                 "internalType": "address payable"
@@ -650,11 +640,6 @@ export const factoryV2Abi = [
                 "name": "bountyBps",
                 "type": "uint16",
                 "internalType": "uint16"
-              },
-              {
-                "name": "maxReferralBpsOfVolume",
-                "type": "uint24",
-                "internalType": "uint24"
               },
               {
                 "name": "bountyRecipient",
@@ -969,19 +954,6 @@ export const factoryV2Abi = [
   },
   {
     "type": "function",
-    "name": "minProtocolSkimShareBps",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "owner",
     "inputs": [],
     "outputs": [
@@ -1131,11 +1103,6 @@ export const factoryV2Abi = [
                 "name": "bountyBps",
                 "type": "uint16",
                 "internalType": "uint16"
-              },
-              {
-                "name": "maxReferralBpsOfVolume",
-                "type": "uint24",
-                "internalType": "uint24"
               },
               {
                 "name": "bountyRecipient",
@@ -1428,19 +1395,6 @@ export const factoryV2Abi = [
   },
   {
     "type": "function",
-    "name": "setMinProtocolSkimShareBps",
-    "inputs": [
-      {
-        "name": "bps",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "setProtocolRecipient",
     "inputs": [
       {
@@ -1709,25 +1663,6 @@ export const factoryV2Abi = [
   },
   {
     "type": "event",
-    "name": "MinProtocolSkimShareBpsSet",
-    "inputs": [
-      {
-        "name": "oldBps",
-        "type": "uint16",
-        "indexed": false,
-        "internalType": "uint16"
-      },
-      {
-        "name": "newBps",
-        "type": "uint16",
-        "indexed": false,
-        "internalType": "uint16"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "OwnershipTransferStarted",
     "inputs": [
       {
@@ -1989,11 +1924,6 @@ export const factoryV2Abi = [
                 "name": "bountyBps",
                 "type": "uint16",
                 "internalType": "uint16"
-              },
-              {
-                "name": "maxReferralBpsOfVolume",
-                "type": "uint24",
-                "internalType": "uint24"
               },
               {
                 "name": "bountyRecipient",
@@ -2292,11 +2222,6 @@ export const factoryV2Abi = [
   },
   {
     "type": "error",
-    "name": "MinProtocolSkimShareTooHigh",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "MsgValueMismatch",
     "inputs": [
       {
@@ -2378,11 +2303,6 @@ export const factoryV2Abi = [
   {
     "type": "error",
     "name": "ReentrancyGuardReentrantCall",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "ReferralCapAboveProtocolFloor",
     "inputs": []
   },
   {

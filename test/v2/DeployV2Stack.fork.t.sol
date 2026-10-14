@@ -43,7 +43,7 @@ contract DeployV2StackForkTest is ForkStack {
         '"image":"ipfs://example","description":"{\\"description\\":\\"credits engine example coin\\"}",'
         '"totalSupply":0,"renderer":"0x0000000000000000000000000000000000000000"},'
         '"pool":{"tickIfToken0IsCoin":-200000,"tickSpacing":200},"fee":{"lpFeePips":5000,"baselineSkimBps":600,'
-        '"bountyBps":8333,"maxReferralBpsOfVolume":25,"bountyRecipient":"0x7ea5000000000000000000000000000000000001"},'
+        '"bountyBps":8333,"bountyRecipient":"0x7ea5000000000000000000000000000000000001"},'
         '"locker":{"rewardRecipients":["0x7ea5000000000000000000000000000000000001"],"rewardBps":[8000],'
         '"tickLower":[-200000,-160000,-120000],"tickUpper":[-120000,-100000,-60000],"positionBps":[5000,'
         '3000,2000]},"mev":{"startingSkimBps":6869,"windowSeconds":4140},'
@@ -91,7 +91,7 @@ contract DeployV2StackForkTest is ForkStack {
         assertEq(s.factory.tokenDeployer(), address(s.tokenDeployer), "D38 deployer");
         assertEq(s.factory.deployFee(), 0, "deploy fee: free at launch");
         assertEq(s.factory.defaultProtocolFeeBps(), 2000, "protocol bps");
-        assertEq(s.factory.minProtocolSkimShareBps(), 1000, "D52 protocol skim floor");
+        assertEq(s.hook.referralBps(), 25, "hook referral rate (D89)");
         assertEq(s.factory.protocolRecipient(), address(s.controller), "protocol recipient");
         assertEq(s.factory.teamFeeRecipient(), LIVE_OWNER, "team fee recipient");
         assertEq(s.controller.treasury(), LIVE_OWNER, "treasury = owner");

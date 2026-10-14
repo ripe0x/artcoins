@@ -6,66 +6,39 @@ pragma solidity ^0.8.26;
 ///         accepts:
 ///           hookData = abi.encode(SwapData{bytes mevModuleSwapData, bytes poolExtensionSwapData})
 ///           mevModuleSwapData = "" or abi.encode(address refundTo)
-///           poolExtensionSwapData = abi.encode(ExtensionSwapData{Attribution attribution, bytes extensionPayload})
-///           Attribution = (bytes32 sourceId, address referrer, bytes16 campaignId, uint24 referralBps)
-///         `referralBps` is BPS of volume, capped by the pool's maxReferralBpsOfVolume.
+///           poolExtensionSwapData = "" or abi.encode(address referrer, bytes extensionPayload)
 /// @dev    Never reverts: every offset and length is checked against the
 ///         calldata bounds before it is used, every sum is bounded by a small
 ///         multiple of `hookData.length`, so no checked arithmetic can
 ///         overflow. Malformed input yields an empty extension payload and/or
-///         an empty attribution, never a swap revert. Values abi.decode would
-///         reject (dirty high bits) yield an empty attribution.
+///         a zero referrer, never a swap revert. A referrer word with dirty
+///         high bits yields a zero referrer.
 library HookCalldata {
-    /// @notice Swap attribution named by the swapper in `hookData`. All fields are
-    ///         zero when absent or malformed.
-    struct Attribution {
-        /// @dev Opaque source id.
-        bytes32 sourceId;
-        /// @dev Referral recipient, or 0.
-        address referrer;
-        /// @dev Opaque campaign id.
-        bytes16 campaignId;
-        /// @dev Requested referral, bps of swap volume. At most 2^24 - 1; the hook
-        ///      caps it by the pool's maxReferralBpsOfVolume.
-        uint256 referralBps;
-    }
-
-    /// @notice Parses the extension slice and attribution out of `hookData`.
+    /// @notice Parses the extension slice and the referrer out of `hookData`.
     /// @param d The swap `hookData`.
     /// @return ext The `poolExtensionSwapData` slice (empty if malformed).
-    /// @return att The attribution inside it (all zero if absent or malformed).
+    /// @return referrer The referrer named in it (zero if absent or malformed).
     /// @dev    Never reverts.
-    function decode(bytes calldata d)
-        internal
-        pure
-        returns (bytes calldata ext, Attribution memory att)
-    {
+    function decode(bytes calldata d) internal pure returns (bytes calldata ext, address referrer) {
         ext = d[0:0];
         uint256 n = d.length;
-        if (n < 0x60) return (ext, att);
+        if (n < 0x60) return (ext, referrer);
         // outer tuple: head at t holds [offset mev, offset ext] relative to t.
         uint256 t = _word(d, 0);
-        if (t > n - 0x40) return (ext, att);
+        if (t > n - 0x40) return (ext, referrer);
         uint256 o = _word(d, t + 0x20);
-        if (o > n) return (ext, att);
+        if (o > n) return (ext, referrer);
         uint256 p = t + o; // <= 2n
-        if (p > n - 0x20) return (ext, att);
+        if (p > n - 0x20) return (ext, referrer);
         uint256 len = _word(d, p);
-        if (len > n - 0x20 - p) return (ext, att);
+        if (len > n - 0x20 - p) return (ext, referrer);
         ext = d[p + 0x20:p + 0x20 + len];
 
-        // inner tuple: head at t2 holds the four attribution words.
-        if (len < 0xa0) return (ext, att);
-        uint256 t2 = _word(ext, 0);
-        if (t2 > len - 0x80) return (ext, att);
-        uint256 ref = _word(ext, t2 + 0x20);
-        uint256 camp = _word(ext, t2 + 0x40);
-        uint256 bps = _word(ext, t2 + 0x60);
-        if (ref >> 160 != 0 || uint128(camp) != 0 || bps >> 24 != 0) return (ext, att);
-        att.sourceId = bytes32(_word(ext, t2));
-        att.referrer = address(uint160(ref));
-        att.campaignId = bytes16(bytes32(camp));
-        att.referralBps = bps;
+        // inner tuple: the first head word is the referrer.
+        if (len < 0x40) return (ext, referrer);
+        uint256 ref = _word(ext, 0);
+        if (ref >> 160 != 0) return (ext, referrer);
+        referrer = address(uint160(ref));
     }
 
     /// @notice Optional refund address for the unfilled skim of a price

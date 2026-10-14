@@ -30,7 +30,7 @@ export FOUNDRY_PROFILE=ci
 | TREASURY_BPS | 8000 | controller treasury share (Constants allow 1000..9000, the rest buys and burns LAYER); owner tunable with `setSplit` |
 | DEPLOY_FEE | 0 | factory deploy fee (wei); owner tunable later with `setDeployFee` |
 | PROTOCOL_BPS | 2000 | factory default protocol slot |
-| MIN_PROTOCOL_SKIM_SHARE_BPS | 1000 | D52: protocol floor of every skim. caps launch `bountyBps` at `10000 - this` and the referral cap above the floor |
+| REFERRAL_BPS | 25 | hook wide referral rate, bps of swap volume, paid to a swap's named referrer out of the protocol leg; owner tunable with `hook.setReferralBps` up to 100 (1%) |
 
 ### the wrapper
 

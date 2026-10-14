@@ -230,7 +230,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         bytes memory a = abi.encode(
             v2.hook.poolInfo(pid),
             v2.hook.skimConfig(pid),
-            v2.hook.minProtocolShareBps(pid),
             v2.hook.isOfficialPool(pid),
             v2.locker.tokenRewards(coin),
             v2.mev.schedule(pid),
@@ -280,7 +279,7 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         v2.factory.setDeprecated(false);
         v2.factory.setDeployFee(Constants.MAX_DEPLOY_FEE);
         v2.factory.setDefaultProtocolFeeBps(Constants.MAX_PROTOCOL_FEE_BPS);
-        v2.factory.setMinProtocolSkimShareBps(uint16(Constants.BPS));
+        v2.hook.setReferralBps(Constants.MAX_REFERRAL_CAP_OF_VOLUME);
         v2.factory.setProtocolRecipient(payable(other));
         v2.factory.setTeamFeeRecipient(other);
         address[] memory da = new address[](1);

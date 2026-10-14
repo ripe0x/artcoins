@@ -218,7 +218,7 @@ sources of truth, in this order: `script/v2/DeployV2Lib.sol` (the routine), `scr
 | TREASURY, TREASURY_BPS | OWNER, 8000 | controller treasury and its share (Constants allow 1000 to 9000, the rest buys and burns LAYER) |
 | REFERRAL_PAYOUT | 0 = the new escrow | D57. must have code. the live 0xB03C… answers `Unauthorized()` to everyone but the v1 hook and the owner eoa has no code, so neither is used |
 | DEPLOY_FEE, PROTOCOL_BPS | 0, 2000 | factory deploy fee (free at launch, owner tunable) and default protocol slot |
-| MIN_PROTOCOL_SKIM_SHARE_BPS | 1000 | D52 |
+| REFERRAL_BPS | 25 | hook wide referral rate (D89) |
 
 about 29.5m gas over 29 txs (0.011 eth at 0.38 gwei, measured on a fork at block 26131304). the hook address depends on the broadcaster, so a dry run with `--sender $OWNER` shows the real one. `script/v2/deploy.sh mainnet` runs steps 0a, 0c, 13 and the record of step 15 in one path (guards, warm ci build, dry run, `--slow` broadcast with `--account ripe0x`, readback, `deployments/1.v2.json`, `verify-v2.sh`). it refuses while `TREASURY`, `TREASURY_BPS`, `DEPLOY_FEE` or `PROTOCOL_BPS` is empty in the env file.
 
@@ -328,6 +328,6 @@ before the call: every gate below is true, the first coin ran at least one full 
 | 9b | LAYER keeper cron running | `CollectFlushKeeperLayer` (part 1 action 2b, 3.5M gas limit, `ALLOW_SUPERSEDED=1` for the scripts), daily `preview()` check, weekly run regardless. alert when a router stays at or above 0.01 weth for more than a day, or a run logs `StepSkipped` step 5 |
 | 10 | old factories deprecated | `deprecated()` true on `$F_OPEN`, `$F_CUR`, `$F_LEGACY`. `setHook(0x636c…, false)` on `$F_CUR` after the first v2 coin trades (part 1 action 7) |
 | 11 | part 1 actions 1, 2, 4 and 5 done, router floors fresh | collect timestamps, `minLayerOutPerWeth()` within 5% of 95% of spot |
-| 12 | stack defaults read back | `minProtocolSkimShareBps` 1000, locker `keeperRewardBps` 0, referral payout is the escrow or a deliberate v2 aware payout, `deprecated` true until the last tx |
+| 12 | stack defaults read back | hook `referralBps` 25, controller split 8000/2000, locker `keeperRewardBps` 0, `deprecated` true until the last tx |
 | 13 | public repo decision D26 reviewed | `origin` is the public ripe0x/artcoins (H3), branch `v2` and the review docs with findings on live contracts are already public (D26): keep or delete the remote branch on purpose. curated merge of `docs/v2` and `test/v2/review` (H2), mirror tag filter fixed (H1). part 1 of this file stays off the mirror until actions 1, 2, 4 and 5 are done |
 | 14 | owner key custody | hardware or keystore. `acceptOwnership` was exercised on a fork (step 0b) before the real accepts |

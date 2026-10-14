@@ -61,9 +61,10 @@ library DeployV2Lib {
     /// @dev Controller split at launch: 80% to the treasury, 20% buys and
     ///      burns LAYER. Owner tunable within [PFC_MIN_TREASURY_BPS, BPS - PFC_MIN_BURN_BPS].
     uint16 internal constant TREASURY_BPS = 8000;
-    /// @dev D52: the protocol keeps at least 10% of every skim; caps launch
-    ///      bountyBps at 9000 and the referral cap above that floor.
-    uint16 internal constant MIN_PROTOCOL_SKIM_SHARE_BPS = 1000;
+    /// @dev Hook wide referral rate at launch, bps of swap volume (0.25%),
+    ///      paid to a swap's named referrer out of the protocol leg. Owner
+    ///      tunable up to MAX_REFERRAL_CAP_OF_VOLUME.
+    uint24 internal constant REFERRAL_BPS = Constants.REFERRAL_BPS_DEFAULT;
     uint256 internal constant EIP170 = 24_576;
 
     /// @dev Deploy inputs.
@@ -83,7 +84,7 @@ library DeployV2Lib {
         uint16 treasuryBps;
         uint256 deployFee;
         uint16 protocolBps;
-        uint16 minProtocolSkimShareBps;
+        uint24 referralBps;
         /// @dev Enforce EIP-170 in `check`. Always true in the script. The
         ///      token deployer is over the limit at the default profile
         ///      (optimizer_runs 20000), so the stack ships from FOUNDRY_PROFILE=ci;
@@ -124,7 +125,7 @@ library DeployV2Lib {
         p.treasuryBps = TREASURY_BPS;
         p.deployFee = DEPLOY_FEE;
         p.protocolBps = PROTOCOL_BPS;
-        p.minProtocolSkimShareBps = MIN_PROTOCOL_SKIM_SHARE_BPS;
+        p.referralBps = REFERRAL_BPS;
         p.checkSizes = true;
     }
 
@@ -228,6 +229,7 @@ library DeployV2Lib {
         s.hook.setFeeEscrow(address(s.escrow));
         s.hook.setExtensionAllowlist(address(s.allowlist));
         s.hook.setLauncher(address(s.factory), true);
+        s.hook.setReferralBps(p.referralBps);
 
         s.locker.setFeeEscrow(address(s.escrow));
         s.locker.setLauncher(address(s.factory), true);
@@ -241,7 +243,6 @@ library DeployV2Lib {
         f.setTeamFeeRecipient(p.owner);
         f.setDeployFee(p.deployFee);
         f.setDefaultProtocolFeeBps(p.protocolBps);
-        f.setMinProtocolSkimShareBps(p.minProtocolSkimShareBps);
         // defaultAllowed ships empty; see the allowlist rule on
         // ArtCoinsFactoryV2._defaultAllowed for what may be added.
         // deprecated stays true (constructor). opening is a separate owner tx.
@@ -313,6 +314,7 @@ library DeployV2Lib {
         require(g.feeEscrow == address(s.escrow), "v2: hook escrow");
         require(g.extensionAllowlist == address(s.allowlist), "v2: hook allowlist");
         require(s.hook.isLauncher(address(s.factory)), "v2: hook launcher");
+        require(s.hook.referralBps() == p.referralBps, "v2: hook referral rate");
     }
 
     function _checkEscrow(Stack memory s) private view {
@@ -349,7 +351,6 @@ library DeployV2Lib {
         require(f.teamFeeRecipient() == p.owner, "v2: team fee recipient");
         require(f.deployFee() == p.deployFee, "v2: deploy fee");
         require(f.defaultProtocolFeeBps() == p.protocolBps, "v2: protocol bps");
-        require(f.minProtocolSkimShareBps() == p.minProtocolSkimShareBps, "v2: min skim share");
         require(f.defaultAllowed().length == 0, "v2: default allowed must ship empty");
         require(f.deprecated(), "v2: factory must ship deprecated");
         require(f.STACK_VERSION() == Constants.STACK_VERSION, "v2: stack version");

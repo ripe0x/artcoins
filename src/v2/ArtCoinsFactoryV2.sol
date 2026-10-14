@@ -67,9 +67,6 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     /// @notice Parallel arrays of different lengths.
     error ArrayLengthMismatch();
-    /// @notice `maxReferralBpsOfVolume` could take the protocol
-    ///         leg below `minProtocolSkimShareBps` of the baseline skim.
-    error ReferralCapAboveProtocolFloor();
     /// @notice A launch must earn some fee: both `lpFeePips` and `baselineSkimBps`
     ///         are zero, so the pool, the locker and the protocol earn nothing.
     error ZeroFeeLaunch();
@@ -84,7 +81,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     /// @notice Reward slot count (project slots plus protocol slot) is 0 or above
     ///         `Constants.MAX_REWARD_PARTICIPANTS`, or a project slot has 0 bps.
     error InvalidRewardSlots();
-    /// @notice lpFeePips, baselineSkimBps or maxReferralBpsOfVolume above its Constants cap.
+    /// @notice lpFeePips or baselineSkimBps above its Constants cap.
     error FeeConfigOutOfBounds();
     /// @notice The hook answers a different PoolManager than the factory's.
     error PoolManagerMismatch(address hook);
@@ -117,8 +114,6 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     bool public deprecated;
     /// @inheritdoc IArtCoinsFactoryV2
     uint16 public defaultProtocolFeeBps;
-    /// @inheritdoc IArtCoinsFactoryV2
-    uint16 public minProtocolSkimShareBps;
     /// @inheritdoc IArtCoinsFactoryV2
     uint256 public deployFee;
     /// @inheritdoc IArtCoinsFactoryV2
@@ -409,41 +404,17 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         if (len > max) revert IArtCoinsTokenV2.StringTooLong(field, len);
     }
 
-    function _validateFee(FeeConfigV2 calldata f) internal view {
+    function _validateFee(FeeConfigV2 calldata f) internal pure {
         if (f.bountyRecipient == address(0)) revert ZeroAddress();
         // a launch must earn some fee on one of the two legs.
         if (f.lpFeePips == 0 && f.baselineSkimBps == 0) revert ZeroFeeLaunch();
         if (
             f.lpFeePips > Constants.MAX_LP_FEE
                 || f.baselineSkimBps > Constants.MAX_BASELINE_SKIM_BPS
-                || f.maxReferralBpsOfVolume > Constants.MAX_REFERRAL_CAP_OF_VOLUME
         ) revert FeeConfigOutOfBounds();
-        // `bountyBps + minProtocolSkimShareBps <= BPS` (the hook refuses
-        // more at init with `BadLegBps`); this cap fails it first with
-        // `BountyBpsTooHigh(bountyBps, max)`.
-        uint256 maxBounty = Constants.BPS - minProtocolSkimShareBps;
-        if (maxBounty > Constants.MAX_BOUNTY_BPS) maxBounty = Constants.MAX_BOUNTY_BPS;
-        // casting to uint16 is safe: maxBounty <= MAX_BOUNTY_BPS (9999)
-        // forge-lint: disable-next-line(unsafe-typecast)
-        if (f.bountyBps > maxBounty) revert BountyBpsTooHigh(f.bountyBps, uint16(maxBounty));
-        // the referral cap must fit above the protocol floor.
-        // hook `_split` per swap, volume V (eth), all skim rates in BPS:
-        //   base     = V * baselineSkimBps / BPS           (the baseline skim)
-        //   protocol = base * (BPS - bountyBps) / BPS
-        //   floor    = base * minProtocolSkimShareBps / BPS
-        //   referral <= V * maxReferralBpsOfVolume / BPS
-        // referral <= protocol - floor for every V iff
-        //   maxReferralBpsOfVolume * BPS
-        //     <= baselineSkimBps * (BPS - bountyBps - minProtocolSkimShareBps).
-        // maxReferral and baseline share the BPS unit, so it cancels. the right
-        // side is >= 0 (bountyBps check above). per swap
-        // floor rounding can still differ by a few wei; the hook's own clamp
-        // is exact.
-        if (
-            uint256(f.maxReferralBpsOfVolume) * Constants.BPS
-                > uint256(f.baselineSkimBps)
-                    * (Constants.BPS - f.bountyBps - minProtocolSkimShareBps)
-        ) revert ReferralCapAboveProtocolFloor();
+        if (f.bountyBps > Constants.MAX_BOUNTY_BPS) {
+            revert BountyBpsTooHigh(f.bountyBps, Constants.MAX_BOUNTY_BPS);
+        }
     }
 
     function _validateLocker(LockerConfigV2 calldata l, uint16 protocolBps) internal view {
@@ -582,15 +553,10 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         p.skim = IArtCoinsHookV2.SkimConfig({
             baselineSkimBps: c.fee.baselineSkimBps,
             bountyBps: c.fee.bountyBps,
-            maxReferralBpsOfVolume: c.fee.maxReferralBpsOfVolume,
             lpFeePips: c.fee.lpFeePips,
             bountyRecipient: c.fee.bountyRecipient,
             protocolRecipient: protocolRecipient
         });
-        // the hook freezes the protocol floor per pool and caps each
-        // referral at `protocol - floor`; `_validateFee` already made the
-        // launch's referral cap fit above it.
-        p.minProtocolShareBps = minProtocolSkimShareBps;
         return IArtCoinsHookV2(c.pool.hook).initializePool(p);
     }
 
@@ -823,15 +789,6 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         if (bps > Constants.MAX_PROTOCOL_FEE_BPS) revert ProtocolFeeBpsTooHigh();
         emit DefaultProtocolFeeBpsSet(defaultProtocolFeeBps, bps);
         defaultProtocolFeeBps = bps;
-    }
-
-    /// @inheritdoc IArtCoinsFactoryV2
-    /// @dev <= BPS. Launch bountyBps is capped at min(MAX_BOUNTY_BPS, BPS - this),
-    ///      and the referral cap must fit above this floor.
-    function setMinProtocolSkimShareBps(uint16 bps) external onlyOwner {
-        if (bps > Constants.BPS) revert MinProtocolSkimShareTooHigh();
-        emit MinProtocolSkimShareBpsSet(minProtocolSkimShareBps, bps);
-        minProtocolSkimShareBps = bps;
     }
 
     /// @inheritdoc IArtCoinsFactoryV2

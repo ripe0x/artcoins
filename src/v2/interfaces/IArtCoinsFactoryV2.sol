@@ -69,17 +69,14 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     /// @param baselineSkimBps Baseline skim in bps of swap volume. At most
     ///        `Constants.MAX_BASELINE_SKIM_BPS`, else `FeeConfigOutOfBounds`. `lpFeePips` and this
     ///        field both 0 reverts `ZeroFeeLaunch`.
-    /// @param bountyBps Bounty share of the skim in bps. At most min(`Constants.MAX_BOUNTY_BPS`,
-    ///        `BPS - minProtocolSkimShareBps`), else `BountyBpsTooHigh`.
-    /// @param maxReferralBpsOfVolume Per swap referral cap in bps of swap volume. At most
-    ///        `Constants.MAX_REFERRAL_CAP_OF_VOLUME`, else `FeeConfigOutOfBounds`. A value that can
-    ///        exceed the protocol leg above its floor reverts `ReferralCapAboveProtocolFloor`.
+    /// @param bountyBps Bounty share of the skim in bps. At most `Constants.MAX_BOUNTY_BPS`, else
+    ///        `BountyBpsTooHigh`. The referral rate is hook wide (`IArtCoinsHookV2.referralBps`)
+    ///        and is carved from the protocol leg.
     /// @param bountyRecipient Receives the bounty leg. Nonzero, else `ZeroAddress`.
     struct FeeConfigV2 {
         uint24 lpFeePips;
         uint24 baselineSkimBps;
         uint16 bountyBps;
-        uint24 maxReferralBpsOfVolume;
         address payable bountyRecipient;
     }
 
@@ -245,8 +242,6 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     event DeployFeeSet(uint256 oldFee, uint256 newFee);
     /// @notice The owner changed the default protocol fee. Values are in bps.
     event DefaultProtocolFeeBpsSet(uint16 oldBps, uint16 newBps);
-    /// @notice The owner changed the minimum protocol share of the skim. Values are in bps.
-    event MinProtocolSkimShareBpsSet(uint16 oldBps, uint16 newBps);
     /// @notice The owner changed the protocol recipient.
     event ProtocolRecipientSet(address indexed oldRecipient, address indexed newRecipient);
     /// @notice The owner changed the team fee recipient.
@@ -299,8 +294,6 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     error DeployFeeTooHigh();
     /// @notice A protocol fee exceeds `Constants.MAX_PROTOCOL_FEE_BPS`.
     error ProtocolFeeBpsTooHigh();
-    /// @notice The minimum protocol skim share exceeds `Constants.BPS`.
-    error MinProtocolSkimShareTooHigh();
     /// @notice `bountyBps` exceeds the allowed maximum.
     /// @param bountyBps Submitted value in bps.
     /// @param max Allowed maximum in bps.
@@ -393,9 +386,6 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     /// @notice Protocol share of the locker reward split for public launches, in bps.
     function defaultProtocolFeeBps() external view returns (uint16);
 
-    /// @notice Minimum protocol share of the baseline skim, in bps. Frozen per pool at launch.
-    function minProtocolSkimShareBps() external view returns (uint16);
-
     /// @notice Recipient of the protocol skim leg and the locker protocol slot for new launches.
     function protocolRecipient() external view returns (address payable);
 
@@ -457,11 +447,6 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     /// @notice Set the protocol share used by `deployToken`. Owner only.
     /// @param bps Share in bps. Above `Constants.MAX_PROTOCOL_FEE_BPS` reverts `ProtocolFeeBpsTooHigh`.
     function setDefaultProtocolFeeBps(uint16 bps) external;
-
-    /// @notice Set the minimum protocol share of the baseline skim. Owner only.
-    /// @dev    Caps launch `bountyBps` at `BPS - bps` and bounds the referral cap.
-    /// @param bps Share in bps. Above `Constants.BPS` reverts `MinProtocolSkimShareTooHigh`.
-    function setMinProtocolSkimShareBps(uint16 bps) external;
 
     /// @notice Set the protocol recipient for new launches. Owner only.
     /// @dev    Reverts `ZeroAddress` for address(0).

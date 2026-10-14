@@ -57,8 +57,8 @@ interface ILockerReads {
 ///           baselineSkim = totalSkim * baselineSkimBps / currentSkimBps
 ///           bounty       = baselineSkim * bountyBps / BPS + (totalSkim - baselineSkim)
 ///           protocol     = baselineSkim - baselineSkim * bountyBps / BPS - referral
-///           referral     = min(volume * min(att.referralBps, maxReferral) / BPS,
-///                              protocol - baselineSkim * minProtocolShareBps / BPS), floored at 0
+///           referral     = min(volume * referralBps / BPS, protocol) when hookData
+///                          names a referrer other than the PoolManager caller
 ///
 ///         No recipient code runs with useful gas while the PoolManager is
 ///         unlocked: every leg (bounty, protocol, referral) is a plain eth push
@@ -76,9 +76,9 @@ interface ILockerReads {
 ///         exact out sell the caller's eth delta is negative until the refund is
 ///         claimed, so a router that cannot claim must pass a refund address.
 ///
-///         Self referral through a router is accepted and bounded by the frozen
-///         per pool cap (<= 1% of volume, <= the protocol share). The PoolManager
-///         caller cannot be the referrer.
+///         The referral rate is hook wide and owner tunable (`referralBps`, at
+///         most MAX_REFERRAL_CAP_OF_VOLUME). Self referral through a router is
+///         accepted and bounded by it. The PoolManager caller cannot be the referrer.
 ///
 /// @dev    Single contract; calldata parsing is inlined from
 ///         `HookCalldata`. The PoolManager never calls `beforeInitialize` on a
@@ -119,12 +119,14 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     mapping(PoolId => PoolInfo) internal _info;
     mapping(PoolId => SkimConfig) internal _skim;
     /// @dev per pool protocol leg floor, BPS of the baseline skim.
-    mapping(PoolId => uint16) internal _minProtocolShareBps;
     /// @dev Set once by `initializeMevModule`: the window started and the
     ///      extension finished its post locker setup.
     mapping(PoolId => bool) internal _started;
     mapping(address => bool) internal _launchers;
     HookGlobals internal _globals;
+    /// @inheritdoc IArtCoinsHookV2
+    uint24 public referralBps;
+
     /// @dev Every fee escrow this hook has been wired to, set in the constructor
     ///      and in `setFeeEscrow`. A bounty recipient can never be one of them,
     ///      so a rotated-out escrow stays rejected.
@@ -141,6 +143,8 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         _checkConstants(escrow_);
         _globals = HookGlobals({feeEscrow: escrow_, extensionAllowlist: allowlist_});
         _knownEscrow[escrow_] = true;
+        referralBps = Constants.REFERRAL_BPS_DEFAULT;
+        emit ReferralBpsSet(0, Constants.REFERRAL_BPS_DEFAULT);
         emit FeeEscrowSet(address(0), escrow_);
         emit ExtensionAllowlistSet(address(0), allowlist_);
     }
@@ -161,8 +165,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         _checkConstants(p.locker);
         if (p.mevModule != address(0)) _checkConstants(p.mevModule);
         _validateSkim(p.skim);
-        // bounty plus the protocol floor fit inside the baseline skim.
-        if (uint256(p.skim.bountyBps) + p.minProtocolShareBps > Constants.BPS) revert BadLegBps();
 
         key = PoolKey({
             currency0: Currency.wrap(address(0)),
@@ -200,7 +202,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
             extension: ext
         });
         _skim[pid] = p.skim;
-        _minProtocolShareBps[pid] = p.minProtocolShareBps;
         emit PoolInitializedV2(
             pid,
             token,
@@ -213,7 +214,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
             p.tickSpacing
         );
         emit SkimConfigInitialized(pid, p.skim);
-        emit ProtocolFloorInitialized(pid, p.minProtocolShareBps);
 
         // art coin is always currency1, so the starting tick is negated.
         poolManager.initialize(key, TickMath.getSqrtPriceAtTick(-p.tickIfToken0IsCoin));
@@ -370,7 +370,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
             }
         }
 
-        (bytes calldata ext, HookCalldata.Attribution memory att) = HookCalldata.decode(hookData);
+        (bytes calldata ext, address referrer) = HookCalldata.decode(hookData);
         if (charged != 0) {
             address escrow = _globals.feeEscrow;
             uint256 over = charged - skim;
@@ -386,7 +386,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
             if (skim != 0) {
                 address synced =
                     Currency.unwrap(TransientStateLibrary.getSyncedCurrency(poolManager));
-                _split(pid, sender, escrow, skim, bps, r, att);
+                _split(pid, sender, escrow, skim, bps, r, referrer);
                 // a 2,300 gas recipient can still reach `sync`; undo it so a
                 // router that settles native without syncing is not broken.
                 if (
@@ -413,7 +413,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         uint256 skim,
         uint256 bps,
         uint256 volume,
-        HookCalldata.Attribution memory att
+        address referrer
     ) private {
         SkimConfig storage cfg = _skim[pid];
         // bps >= baseline (clamped), so base <= skim.
@@ -423,28 +423,17 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         uint256 bounty = bountyShare + (skim - base);
 
         uint256 referral;
-        address referrer = att.referrer;
-        // the PoolManager caller cannot name itself. A router user
-        // naming its own wallet is accepted, bounded by the frozen per pool
-        // cap (<= 1% of volume, <= the protocol share above its floor).
+        // the PoolManager caller cannot name itself. A router user naming its
+        // own wallet is accepted, bounded by the hook wide rate and the
+        // protocol leg it is carved from.
         if (referrer != address(0) && referrer != sender) {
-            uint256 cap = cfg.maxReferralBpsOfVolume;
-            if (att.referralBps < cap) cap = att.referralBps;
-            referral = (volume * cap) / Constants.BPS;
-            // never below the pool's protocol floor (BPS of the baseline
-            // skim, the factory's unit for `minProtocolSkimShareBps`).
-            uint256 floor = (base * _minProtocolShareBps[pid]) / Constants.BPS;
-            uint256 room = protocol > floor ? protocol - floor : 0;
-            if (referral > room) referral = room;
+            referral = (volume * referralBps) / Constants.BPS;
+            if (referral > protocol) referral = protocol;
             protocol -= referral;
         }
 
         emit SkimSplit(pid, volume, bounty, protocol, referral);
-        if (referrer != address(0) || att.sourceId != bytes32(0)) {
-            emit SwapAttribution(
-                pid, sender, referrer, att.sourceId, att.campaignId, volume, referral
-            );
-        }
+        if (referrer != address(0)) emit SwapAttribution(pid, sender, referrer, volume, referral);
 
         _leg(pid, Constants.LEG_BOUNTY, escrow, cfg.bountyRecipient, bounty);
         _leg(pid, Constants.LEG_PROTOCOL, escrow, cfg.protocolRecipient, protocol);
@@ -533,9 +522,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         if (s.lpFeePips > Constants.MAX_LP_FEE) revert LpFeeTooHigh();
         if (s.baselineSkimBps > Constants.MAX_BASELINE_SKIM_BPS) revert BaselineSkimBpsTooHigh();
         if (s.bountyBps > Constants.MAX_BOUNTY_BPS) revert BountyBpsTooHigh();
-        if (s.maxReferralBpsOfVolume > Constants.MAX_REFERRAL_CAP_OF_VOLUME) {
-            revert MaxReferralTooHigh();
-        }
         if (s.bountyRecipient == address(0)) revert BountyRecipientZero();
         if (s.protocolRecipient == address(0)) revert ProtocolRecipientZero();
         _checkReceiver(s.bountyRecipient);
@@ -584,6 +570,13 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     function setExtensionAllowlist(address allowlist) external onlyOwner {
         emit ExtensionAllowlistSet(_globals.extensionAllowlist, allowlist);
         _globals.extensionAllowlist = allowlist;
+    }
+
+    /// @inheritdoc IArtCoinsHookV2
+    function setReferralBps(uint24 bps) external onlyOwner {
+        if (bps > Constants.MAX_REFERRAL_CAP_OF_VOLUME) revert ReferralBpsTooHigh();
+        emit ReferralBpsSet(referralBps, bps);
+        referralBps = bps;
     }
 
     /// @inheritdoc IArtCoinsHookV2
@@ -701,14 +694,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     /// @inheritdoc IArtCoinsHookV2
     function poolInfo(PoolId poolId) external view returns (PoolInfo memory) {
         return _info[poolId];
-    }
-
-    /// @notice Protocol leg floor of a pool, bps of the baseline skim. A referral
-    ///         is paid only from the protocol leg above it.
-    /// @param poolId Pool id.
-    /// @return Floor in bps.
-    function minProtocolShareBps(PoolId poolId) external view returns (uint16) {
-        return _minProtocolShareBps[poolId];
     }
 
     /// @inheritdoc IArtCoinsHookV2

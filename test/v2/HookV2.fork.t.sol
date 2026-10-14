@@ -72,13 +72,9 @@ contract HV2CalldataHarness {
         return HookCalldata.refundTo(d);
     }
 
-    function decode(bytes calldata d)
-        external
-        pure
-        returns (bytes memory ext, HookCalldata.Attribution memory att)
-    {
-        (bytes calldata e, HookCalldata.Attribution memory a) = HookCalldata.decode(d);
-        return (e, a);
+    function decode(bytes calldata d) external pure returns (bytes memory ext, address referrer) {
+        (bytes calldata e, address r) = HookCalldata.decode(d);
+        return (e, r);
     }
 }
 
@@ -545,7 +541,6 @@ contract HookV2ForkTest is HookV2ForkBase {
         IArtCoinsHookV2.SkimConfig memory c = hook.skimConfig(pid);
         assertEq(c.baselineSkimBps, BASELINE);
         assertEq(c.bountyBps, BOUNTY_BPS);
-        assertEq(c.maxReferralBpsOfVolume, MAX_REF);
         assertEq(c.lpFeePips, LP_FEE);
         assertEq(c.bountyRecipient, bountyEoa);
         assertEq(c.protocolRecipient, protocolR);
@@ -632,11 +627,6 @@ contract HookV2ForkTest is HookV2ForkBase {
         vm.expectRevert(IArtCoinsHookV2.BountyBpsTooHigh.selector);
         hook.initializePool(p);
 
-        p = _params(_defaults(bountyEoa), address(1));
-        p.skim.maxReferralBpsOfVolume = Constants.MAX_REFERRAL_CAP_OF_VOLUME + 1;
-        vm.expectRevert(IArtCoinsHookV2.MaxReferralTooHigh.selector);
-        hook.initializePool(p);
-
         p = _params(_defaults(address(0)), address(1));
         vm.expectRevert(IArtCoinsHookV2.BountyRecipientZero.selector);
         hook.initializePool(p);
@@ -668,9 +658,9 @@ contract HookV2ForkTest is HookV2ForkBase {
         PoolKey memory key = _launchSimple(bountyEoa);
         address ref = makeAddr("ref");
         uint256 p0 = protocolR.balance;
-        _swap(key, true, -1 ether, 0, _attribution(ref, 100)); // asks 1%, cap 0.25%
+        _swap(key, true, -1 ether, 0, _referral(ref)); // asks 1%, cap 0.25%
         uint256 skim = (1 ether * uint256(BASELINE)) / D;
-        uint256 referral = ((1 ether - skim) * uint256(MAX_REF)) / D;
+        uint256 referral = ((1 ether - skim) * uint256(REFERRAL_BPS)) / D;
         assertEq(ref.balance, referral, "pushed to the referrer (D41)");
         (, uint256 protocol) = _legs(skim, BASELINE);
         assertEq(protocolR.balance - p0, protocol - referral, "referral comes out of protocol");
@@ -681,49 +671,65 @@ contract HookV2ForkTest is HookV2ForkBase {
 
     function _checkSellReferral(PoolKey memory key, address ref) internal {
         uint256 r0 = ref.balance;
-        BalanceDelta d = _swap(key, false, -1 ether, 0, _attribution(ref, 25));
+        BalanceDelta d = _swap(key, false, -1 ether, 0, _referral(ref));
         uint256 net = uint256(int256(d.amount0())); // r - skim
         uint256 r = (net * D) / (D - uint256(BASELINE)); // +-1
-        assertApproxEqAbs(ref.balance - r0, (r * uint256(MAX_REF)) / D, 1);
+        assertApproxEqAbs(ref.balance - r0, (r * uint256(REFERRAL_BPS)) / D, 1);
     }
 
-    /// D52 / V2F-01: referral cap at the 1% maximum and a referrer named:
-    /// the protocol leg never drops below `minProtocolShareBps` of the
-    /// baseline skim; the referral only takes what is above it.
-    function test_referral_neverBelowProtocolFloor() public onlyFork {
+    /// the referral is `referralBps` of volume, capped at the protocol leg of
+    /// the swap: a rate above the leg takes the whole leg and no more.
+    function test_referral_cappedAtProtocolLeg() public onlyFork {
         ArtCoinsTokenV2 t = _newToken(false, bountyEoa, address(hook));
         Launch memory l = _defaults(bountyEoa);
         l.baseline = 100; // 1% of volume
-        l.bountyBps = 7000;
-        l.maxRef = Constants.MAX_REFERRAL_CAP_OF_VOLUME; // 1% of volume
-        IArtCoinsHookV2.PoolInitParams memory p = _params(l, address(t));
-        p.minProtocolShareBps = 2000;
-        PoolKey memory k = hook.initializePool(p);
+        l.bountyBps = 9000; // protocol leg: 0.1% of volume
+        PoolKey memory k = hook.initializePool(_params(l, address(t)));
         _modify(k, FULL_LO, FULL_HI, int256(LIQ), 0);
         hook.initializeMevModule(k, "");
-        assertEq(hook.minProtocolShareBps(k.toId()), 2000);
 
-        address ref = makeAddr("floorRef");
+        hook.setReferralBps(Constants.MAX_REFERRAL_CAP_OF_VOLUME); // asks 1% of volume
+        address ref = makeAddr("capRef");
         uint256 p0 = protocolR.balance;
-        _swap(k, true, -1 ether, 0, _attribution(ref, 100));
+        _swap(k, true, -1 ether, 0, _referral(ref));
         uint256 skim = (1 ether * 100) / D; // 0.01 eth, all baseline
-        uint256 floor = (skim * 2000) / Constants.BPS; // 0.002 eth
-        uint256 protocolLeg = skim - (skim * 7000) / Constants.BPS; // 0.003 eth
-        assertEq(protocolR.balance - p0, floor, "protocol keeps exactly its floor");
-        assertEq(ref.balance, protocolLeg - floor, "referral only above the floor");
+        uint256 protocolLeg = skim - (skim * 9000) / Constants.BPS; // 0.001 eth
+        assertEq(ref.balance, protocolLeg, "referral takes the whole protocol leg");
+        assertEq(protocolR.balance - p0, 0, "protocol leg exhausted by the referral");
+    }
 
-        // bounty plus floor above the baseline is refused at init
-        p = _params(l, address(_newToken(false, bountyEoa, address(hook))));
-        p.minProtocolShareBps = 3001;
-        vm.expectRevert(IArtCoinsHookV2.BadLegBps.selector);
-        hook.initializePool(p);
+    /// owner tunable, bounded, applies to every pool from the next swap.
+    function test_setReferralBps_boundsAndEffect() public onlyFork {
+        assertEq(hook.referralBps(), Constants.REFERRAL_BPS_DEFAULT);
+        PoolKey memory key = _launchSimple(bountyEoa);
+        address ref = makeAddr("rateRef");
+
+        vm.expectRevert(IArtCoinsHookV2.ReferralBpsTooHigh.selector);
+        hook.setReferralBps(Constants.MAX_REFERRAL_CAP_OF_VOLUME + 1);
+        address stranger = makeAddr("stranger");
+        vm.prank(stranger);
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, stranger)
+        );
+        hook.setReferralBps(1);
+
+        vm.expectEmit(false, false, false, true, address(hook));
+        emit IArtCoinsHookV2.ReferralBpsSet(Constants.REFERRAL_BPS_DEFAULT, 0);
+        hook.setReferralBps(0);
+        _swap(key, true, -1 ether, 0, _referral(ref));
+        assertEq(ref.balance, 0, "rate 0 pays no referral");
+
+        hook.setReferralBps(50);
+        _swap(key, true, -1 ether, 0, _referral(ref));
+        uint256 skim = (1 ether * uint256(BASELINE)) / D;
+        assertEq(ref.balance, ((1 ether - skim) * 50) / D, "new rate on the next swap");
     }
 
     function test_referral_selfReferralByCaller_refused() public onlyFork {
         PoolKey memory key = _launchSimple(bountyEoa);
         uint256 p0 = protocolR.balance;
         uint256 r0 = address(swapRouter).balance;
-        _swap(key, true, -1 ether, 0, _attribution(address(swapRouter), 25));
+        _swap(key, true, -1 ether, 0, _referral(address(swapRouter)));
         assertEq(address(swapRouter).balance, r0, "caller cannot name itself");
         (, uint256 protocol) = _legs((1 ether * uint256(BASELINE)) / D, BASELINE);
         assertEq(protocolR.balance - p0, protocol, "protocol leg intact");
@@ -734,9 +740,9 @@ contract HookV2ForkTest is HookV2ForkBase {
     function test_referral_rejectingReferrer_escrowed() public onlyFork {
         PoolKey memory key = _launchSimple(bountyEoa);
         HV2Rejecter ref = new HV2Rejecter();
-        _swap(key, true, -1 ether, 0, _attribution(address(ref), 25));
+        _swap(key, true, -1 ether, 0, _referral(address(ref)));
         uint256 skim = (1 ether * uint256(BASELINE)) / D;
-        assertEq(_escrowed(address(ref)), ((1 ether - skim) * uint256(MAX_REF)) / D);
+        assertEq(_escrowed(address(ref)), ((1 ether - skim) * uint256(REFERRAL_BPS)) / D);
     }
 
     function test_hookData_malformed_neverReverts() public onlyFork {
@@ -760,7 +766,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         Launch memory l = _defaults(bountyEoa);
         l.extension = address(ext);
         (PoolKey memory key,) = _launch(l);
-        bytes memory hd = _attribution(makeAddr("ref"), 10);
+        bytes memory hd = _referral(makeAddr("ref"));
         (int256 net0,) = _swapNet(key, true, -100 ether, TickMath.getSqrtPriceAtTick(-100), hd);
         assertEq(ext.swaps(), 1);
         // trader facing: fill plus fair skim (the refund comes back via escrow)
@@ -1052,29 +1058,37 @@ contract HookV2ForkTest is HookV2ForkBase {
 
     // ─── hookData parser ─────────────────────────────────────────────────
 
-    function test_calldata_decodesAttribution() public {
+    function test_calldata_decodesReferrer() public {
         HV2CalldataHarness h = new HV2CalldataHarness();
         address ref = makeAddr("ref");
-        bytes memory hd = _attribution(ref, 123);
-        (bytes memory ext, HookCalldata.Attribution memory att) = h.decode(hd);
-        assertEq(att.referrer, ref);
-        assertEq(att.referralBps, 123);
-        assertEq(att.sourceId, bytes32("src"));
-        assertEq(att.campaignId, bytes16("cmp"));
+        bytes memory hd = _referral(ref);
+        (bytes memory ext, address referrer) = h.decode(hd);
+        assertEq(referrer, ref);
         assertEq(
             keccak256(ext),
             keccak256(abi.decode(hd, (IArtCoinsHook.PoolSwapData)).poolExtensionSwapData)
         );
-        (ext, att) = h.decode("");
+        // a dirty referrer word yields no referrer, the extension slice is kept
+        bytes memory dirtyInner = abi.encode(uint256(uint160(ref)) | (uint256(1) << 200), bytes(""));
+        (ext, referrer) = h.decode(
+            abi.encode(
+                IArtCoinsHook.PoolSwapData({
+                    mevModuleSwapData: "", poolExtensionSwapData: dirtyInner
+                })
+            )
+        );
+        assertEq(referrer, address(0), "dirty high bits: no referrer");
+        assertEq(keccak256(ext), keccak256(dirtyInner));
+        (ext, referrer) = h.decode("");
         assertEq(ext.length, 0);
-        assertEq(att.referrer, address(0));
+        assertEq(referrer, address(0));
     }
 
     function test_calldata_refundTo() public {
         HV2CalldataHarness h = new HV2CalldataHarness();
         address me = makeAddr("me");
         assertEq(h.refundTo(_refundData(me)), me);
-        assertEq(h.refundTo(_attribution(me, 1)), address(0), "empty mev data");
+        assertEq(h.refundTo(_referral(me)), address(0), "empty mev data");
         assertEq(h.refundTo(""), address(0));
         bytes memory dirty = abi.encode(
             IArtCoinsHook.PoolSwapData({

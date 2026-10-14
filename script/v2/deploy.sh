@@ -12,7 +12,7 @@
 # confirmation (WALLET_MODE=account), broadcast (--slow), readback, record at $RECORD, verify-v2.sh (VERIFY=full|chain).
 #
 # Env file values: CHAIN_ID RPC_DEFAULT FOUNDRY_PROFILE WALLET_MODE (account|unlocked) KEYSTORE OWNER
-#   TREASURY TREASURY_BPS DEPLOY_FEE (wei) PROTOCOL_BPS MIN_PROTOCOL_SKIM_SHARE_BPS
+#   TREASURY TREASURY_BPS DEPLOY_FEE (wei) PROTOCOL_BPS REFERRAL_BPS
 #   VERIFY (full|chain|none) REQUIRE_CLEAN_GIT BROADCAST_DIR DEPLOY_JSON RECORD.
 # Shell:
 #   RPC_URL            rpc endpoint, overrides RPC_DEFAULT. Cast and forge read it from the environment, messages show scheme and host
@@ -48,7 +48,7 @@ soft() { # enforced on a real run, reported on a dry run
 }
 
 for v in CHAIN_ID RPC_DEFAULT FOUNDRY_PROFILE WALLET_MODE OWNER TREASURY TREASURY_BPS DEPLOY_FEE PROTOCOL_BPS \
-  MIN_PROTOCOL_SKIM_SHARE_BPS VERIFY REQUIRE_CLEAN_GIT BROADCAST_DIR DEPLOY_JSON RECORD; do
+  REFERRAL_BPS VERIFY REQUIRE_CLEAN_GIT BROADCAST_DIR DEPLOY_JSON RECORD; do
   [ -n "${!v:-}" ] || die "$ENV_FILE has no $v. Set it before deploying."
 done
 [ "$FOUNDRY_PROFILE" = ci ] || die "FOUNDRY_PROFILE must be ci (D45)"

@@ -26,7 +26,7 @@ import {Script, console2} from "forge-std/Script.sol";
 ///     TREASURY_BPS                  default 8000 (Constants allow 1000..9000)
 ///     DEPLOY_FEE                    default 0 (wei)
 ///     PROTOCOL_BPS                  default 2000
-///     MIN_PROTOCOL_SKIM_SHARE_BPS   default 1000 (D52)
+///     REFERRAL_BPS                  default 25 (0.25% of volume, hook wide, owner tunable)
 ///   when the broadcaster is not OWNER, the escrow, hook, locker and factory
 ///   end with `pendingOwner == OWNER`; OWNER must call `acceptOwnership()` on
 ///   each (script/v2/README.md).
@@ -53,11 +53,7 @@ contract DeployV2Stack is Script {
         p.treasuryBps = uint16(vm.envOr("TREASURY_BPS", uint256(DeployV2Lib.TREASURY_BPS)));
         p.deployFee = vm.envOr("DEPLOY_FEE", DeployV2Lib.DEPLOY_FEE);
         p.protocolBps = uint16(vm.envOr("PROTOCOL_BPS", uint256(DeployV2Lib.PROTOCOL_BPS)));
-        p.minProtocolSkimShareBps = uint16(
-            vm.envOr(
-                "MIN_PROTOCOL_SKIM_SHARE_BPS", uint256(DeployV2Lib.MIN_PROTOCOL_SKIM_SHARE_BPS)
-            )
-        );
+        p.referralBps = uint24(vm.envOr("REFERRAL_BPS", uint256(DeployV2Lib.REFERRAL_BPS)));
     }
 
     function run() external returns (DeployV2Lib.Stack memory s) {
@@ -99,7 +95,7 @@ contract DeployV2Stack is Script {
         console2.log("treasuryBps ", p.treasuryBps);
         console2.log("deployFee   ", p.deployFee);
         console2.log("protocolBps ", p.protocolBps);
-        console2.log("minSkimShare", p.minProtocolSkimShareBps);
+        console2.log("referralBps ", p.referralBps);
     }
 
     // ── json (registry contract format, DeployV2Lib order) ───────────────────
