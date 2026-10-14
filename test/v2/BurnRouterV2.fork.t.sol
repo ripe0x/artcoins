@@ -66,7 +66,7 @@ contract BurnRouterV2ForkTest is ForkBase {
 
     /// @dev REWARD_MAX_BPS of `bal`, the reserve the budget leaves for the reward.
     function _reserve(uint256 bal) internal view returns (uint256) {
-        return bal * router.REWARD_MAX_BPS() / Constants.BPS;
+        return bal * router.rewardMaxBps() / Constants.BPS;
     }
 
     function _spot() internal view returns (uint160 sqrtPriceX96) {
@@ -89,7 +89,7 @@ contract BurnRouterV2ForkTest is ForkBase {
         assertFalse(router.wethIsCurrency0());
         assertEq(keccak256(abi.encode(router.poolKey())), keccak256(abi.encode(key)));
         assertEq(router.maxImpactBps(), Constants.PRICE_IMPACT_DEFAULT);
-        assertEq(router.SPOT_FLOOR_BPS(), Constants.BURN_SPOT_FLOOR_BPS);
+        assertEq(router.spotFloorBps(), Constants.BURN_SPOT_FLOOR_BPS);
         assertEq(router.constantsHash(), Constants.hash());
         // the floor reads the hook's buy side fee (1% live)
         uint24 buyFee = IArtCoinsHookStaticFee(address(key.hooks)).artCoinFee(key.toId());
@@ -135,8 +135,8 @@ contract BurnRouterV2ForkTest is ForkBase {
         assertEq(IERC20(LAYER).totalSupply(), supply0 - burned, "LAYER supply burned");
         assertEq(IERC20(LAYER).balanceOf(address(router)), 0, "no LAYER left");
         uint256 reward = keeper.balance;
-        assertGe(reward, router.KEEPER_TIP(), "tip plus gas, in eth");
-        assertLe(reward, wethIn * router.REWARD_MAX_BPS() / Constants.BPS, "under the cap");
+        assertGe(reward, router.keeperTip(), "tip plus gas, in eth");
+        assertLe(reward, wethIn * router.rewardMaxBps() / Constants.BPS, "under the cap");
         assertEq(address(router).balance, 0, "eth wrapped");
         // the reserve is sized on the balance, the reward on the burn; the
         // difference is weth that folds into the next burn
@@ -169,8 +169,8 @@ contract BurnRouterV2ForkTest is ForkBase {
         (uint256 wethIn,) = router.processBurn(0);
         assertLt(wethIn, 5 ether, "partial fill");
         assertLe(_priceMoveBps(pre, _spot()), router.maxImpactBps(), "impact capped");
-        assertLe(keeper.balance, wethIn * router.REWARD_MAX_BPS() / Constants.BPS, "reward capped");
-        assertGe(keeper.balance, router.KEEPER_TIP(), "reward paid");
+        assertLe(keeper.balance, wethIn * router.rewardMaxBps() / Constants.BPS, "reward capped");
+        assertGe(keeper.balance, router.keeperTip(), "reward paid");
         assertGt(IERC20(WETH).balanceOf(address(router)), 4 ether, "rest waits as weth");
 
         // the next block burns again
@@ -249,7 +249,7 @@ contract BurnRouterV2ForkTest is ForkBase {
         emit IBurnRouterV2.KeeperRewardFailed(rej, 0);
         router.processBurn(0);
         uint256 reward = address(router).balance;
-        assertGe(reward, router.KEEPER_TIP(), "unwrapped reward stays as eth");
+        assertGe(reward, router.keeperTip(), "unwrapped reward stays as eth");
         // and folds into the next burn together with the rest of the reserve
         vm.roll(block.number + 1);
         _fund(0.01 ether);
@@ -263,7 +263,7 @@ contract BurnRouterV2ForkTest is ForkBase {
     // ── keeper reward ────────────────────────────────────────────────────
 
     function test_burnV2_rewardFor_math() public view {
-        uint256 tip = router.KEEPER_TIP();
+        uint256 tip = router.keeperTip();
         assertEq(router.rewardFor(1 ether, 800_000, 1 gwei), tip + 800_000 * 1 gwei, "tip plus gas");
         assertEq(router.rewardFor(1 ether, 800_000, 1 gwei + 1), 0, "zero above the gate");
         assertEq(router.rewardFor(0.001 ether, 800_000, 1 gwei), 0.0001 ether, "capped at 10%");
@@ -272,7 +272,7 @@ contract BurnRouterV2ForkTest is ForkBase {
 
     /// @notice Above REWARD_MAX_BASEFEE the burn runs and pays nothing.
     function test_burnV2_reward_zeroAboveBasefeeGate() public onlyFork {
-        vm.fee(router.REWARD_MAX_BASEFEE() + 1);
+        vm.fee(router.rewardMaxBaseFee() + 1);
         _fund(0.05 ether);
         vm.prank(keeper);
         vm.expectEmit(true, false, false, false, address(router));
@@ -288,11 +288,84 @@ contract BurnRouterV2ForkTest is ForkBase {
         _fund(0.002 ether);
         vm.prank(keeper);
         (uint256 wethIn,) = router.processBurn(0);
-        assertEq(keeper.balance, wethIn * router.REWARD_MAX_BPS() / Constants.BPS, "cap binds");
-        assertLt(keeper.balance, router.KEEPER_TIP(), "below the tip: not worth a keeper's gas");
+        assertEq(keeper.balance, wethIn * router.rewardMaxBps() / Constants.BPS, "cap binds");
+        assertLt(keeper.balance, router.keeperTip(), "below the tip: not worth a keeper's gas");
     }
 
     // ── owner ────────────────────────────────────────────────────────────
+
+    function test_burnV2_setSpotFloorBps_boundsAndEffect() public onlyFork {
+        uint256 lo = Constants.SPOT_FLOOR_MIN_BPS;
+        uint256 hi = Constants.SPOT_FLOOR_MAX_BPS;
+        vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, lo - 1, lo, hi));
+        router.setSpotFloorBps(uint16(lo - 1));
+        vm.expectRevert(abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, hi + 1, lo, hi));
+        router.setSpotFloorBps(uint16(hi + 1));
+
+        uint256 before = router.floorFor(1 ether);
+        vm.expectEmit(false, false, false, true, address(router));
+        emit IBurnRouterV2.SpotFloorBpsSet(Constants.BURN_SPOT_FLOOR_BPS, hi);
+        router.setSpotFloorBps(uint16(hi));
+        assertEq(router.spotFloorBps(), hi);
+        assertEq(
+            router.floorFor(1 ether), before * hi / Constants.BURN_SPOT_FLOOR_BPS, "floor scales"
+        );
+
+        vm.prank(attacker);
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
+        );
+        router.setSpotFloorBps(uint16(lo));
+    }
+
+    function test_burnV2_setRewardConfig_boundsAndEffect() public onlyFork {
+        assertEq(router.keeperTip(), Constants.BURN_TIP_DEFAULT);
+        assertEq(router.keeperGasOverhead(), Constants.BURN_GAS_OVERHEAD_DEFAULT);
+        assertEq(router.rewardMaxBaseFee(), Constants.BURN_BASEFEE_GATE_DEFAULT);
+        assertEq(router.rewardMaxBps(), Constants.BURN_REWARD_BPS_DEFAULT);
+
+        uint256 tipMax = Constants.BURN_TIP_MAX;
+        vm.expectRevert(
+            abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, tipMax + 1, 0, tipMax)
+        );
+        router.setRewardConfig(tipMax + 1, 0, 0, 0);
+        uint256 ohMax = Constants.BURN_GAS_OVERHEAD_MAX;
+        vm.expectRevert(
+            abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, ohMax + 1, 0, ohMax)
+        );
+        router.setRewardConfig(0, ohMax + 1, 0, 0);
+        uint256 gateMax = Constants.BURN_BASEFEE_GATE_MAX;
+        vm.expectRevert(
+            abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, gateMax + 1, 0, gateMax)
+        );
+        router.setRewardConfig(0, 0, gateMax + 1, 0);
+        uint16 bpsMax = Constants.BURN_REWARD_BPS_MAX;
+        vm.expectRevert(
+            abi.encodeWithSelector(IBurnRouterV2.OutOfBounds.selector, bpsMax + 1, 0, bpsMax)
+        );
+        router.setRewardConfig(0, 0, 0, bpsMax + 1);
+
+        // a higher gate and tip: the same block now pays, and the reserve follows the cap
+        vm.expectEmit(false, false, false, true, address(router));
+        emit IBurnRouterV2.RewardConfigSet(0.001 ether, 100_000, 30 gwei, 2000);
+        router.setRewardConfig(0.001 ether, 100_000, 30 gwei, 2000);
+        assertEq(router.rewardFor(1 ether, 800_000, 20 gwei), 0.001 ether + 800_000 * 20 gwei);
+        assertEq(router.rewardFor(1 ether, 800_000, 31 gwei), 0);
+        _fund(1 ether);
+        assertEq(router.swapBudget(), 1 ether - 0.2 ether, "reserve is the new cap");
+
+        // all zero turns the reward off and frees the whole balance
+        router.setRewardConfig(0, 0, 0, 0);
+        assertEq(router.swapBudget(), 1 ether);
+        vm.fee(0);
+        assertEq(router.rewardFor(1 ether, 800_000, 0), 0);
+
+        vm.prank(attacker);
+        vm.expectRevert(
+            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
+        );
+        router.setRewardConfig(0, 0, 0, 0);
+    }
 
     function test_burnV2_impact_bounds() public onlyFork {
         uint16 lo = Constants.PRICE_IMPACT_MIN;

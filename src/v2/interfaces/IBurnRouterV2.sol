@@ -9,10 +9,11 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 /// @dev    The coin and its weth pool are fixed at construction. One burn per block. Each burn
 ///         is an exact input swap with a price limit `maxImpactBps` (1/10,000) from the pre swap
 ///         spot, so a large balance fills partially and drains over blocks. The output must reach
-///         the caller's `minOut` and `SPOT_FLOOR_BPS` of the spot output net of the pool's buy
-///         fee. The keeper reward, paid in eth, is `KEEPER_TIP` plus the burn's gas at the
-///         basefee, capped at `REWARD_MAX_BPS` of the weth consumed, and zero when the basefee
-///         is above `REWARD_MAX_BASEFEE`.
+///         the caller's `minOut` and `spotFloorBps` of the spot output net of the pool's buy
+///         fee. The keeper reward, paid in eth, is `keeperTip` plus the burn's gas at the
+///         basefee, capped at `rewardMaxBps` of the weth consumed, and zero when the basefee
+///         is above `rewardMaxBaseFee`. The impact cap, the floor and every reward value are
+///         owner tunable within Constants bounds.
 interface IBurnRouterV2 {
     /// @notice A burn completed.
     /// @param caller Keeper that called the burn.
@@ -30,6 +31,18 @@ interface IBurnRouterV2 {
     /// @param oldBps Previous value in bps.
     /// @param newBps New value in bps.
     event MaxImpactBpsSet(uint16 oldBps, uint16 newBps);
+
+    /// @notice The owner changed `spotFloorBps`.
+    /// @param oldBps Previous value in bps.
+    /// @param newBps New value in bps.
+    event SpotFloorBpsSet(uint256 oldBps, uint256 newBps);
+
+    /// @notice The owner changed the keeper reward values.
+    /// @param tip Flat reward in wei.
+    /// @param gasOverhead Gas added to the measured burn gas.
+    /// @param maxBaseFee Highest basefee that pays a reward, in wei.
+    /// @param maxBps Reward cap in bps of the weth consumed.
+    event RewardConfigSet(uint256 tip, uint256 gasOverhead, uint256 maxBaseFee, uint16 maxBps);
 
     /// @notice The owner withdrew a token other than eth, weth and the coin.
     /// @param token Withdrawn token.
@@ -114,38 +127,57 @@ interface IBurnRouterV2 {
     /// @param wethIn Weth consumed, in wei.
     function floorFor(uint256 wethIn) external view returns (uint256);
 
-    /// @notice Keeper reward in wei: zero when `baseFee > REWARD_MAX_BASEFEE`, else
-    ///         `min(KEEPER_TIP + gasUsed * baseFee, consumed * REWARD_MAX_BPS / 10,000)`.
+    /// @notice Keeper reward in wei: zero when `baseFee > rewardMaxBaseFee`, else
+    ///         `min(keeperTip + gasUsed * baseFee, consumed * rewardMaxBps / 10,000)`.
     /// @param consumed Weth consumed by the swap, in wei.
-    /// @param gasUsed Gas the burn used, `KEEPER_GAS_OVERHEAD` included.
+    /// @param gasUsed Gas the burn used, `keeperGasOverhead` included.
     /// @param baseFee Block basefee in wei.
     function rewardFor(uint256 consumed, uint256 gasUsed, uint256 baseFee)
         external
-        pure
+        view
         returns (uint256 reward);
 
     /// @notice Weth the next burn would offer the pool, in wei: eth plus weth held minus the
-    ///         reward reserve (`REWARD_MAX_BPS` of that total).
+    ///         reward reserve (`rewardMaxBps` of that total).
     function swapBudget() external view returns (uint256);
 
-    /// @notice Flat part of the keeper reward, in wei.
-    function KEEPER_TIP() external view returns (uint256);
+    /// @notice Output floor in bps of the fee net spot output. Owner tunable.
+    function spotFloorBps() external view returns (uint16);
+
+    /// @notice Flat part of the keeper reward, in wei. Owner tunable.
+    function keeperTip() external view returns (uint256);
 
     /// @notice Gas added to the measured burn gas for the reimbursement: the transaction base
-    ///         cost, calldata and the reward push.
-    function KEEPER_GAS_OVERHEAD() external view returns (uint256);
+    ///         cost, calldata and the reward push. Owner tunable.
+    function keeperGasOverhead() external view returns (uint256);
 
-    /// @notice Highest block basefee at which a burn pays a keeper reward, in wei.
-    function REWARD_MAX_BASEFEE() external view returns (uint256);
+    /// @notice Highest block basefee at which a burn pays a keeper reward, in wei. Owner tunable.
+    function rewardMaxBaseFee() external view returns (uint256);
 
-    /// @notice Cap on the keeper reward, in bps of the weth consumed.
-    function REWARD_MAX_BPS() external view returns (uint256);
+    /// @notice Cap on the keeper reward, in bps of the weth consumed; also the share of the
+    ///         balance reserved for it. Owner tunable.
+    function rewardMaxBps() external view returns (uint16);
+
+    /// @notice Sets the output floor.
+    /// @dev Owner only. Reverts `OutOfBounds` outside [Constants.SPOT_FLOOR_MIN_BPS,
+    ///      Constants.SPOT_FLOOR_MAX_BPS] (5000 to 9500).
+    /// @param bps New floor in bps of the fee net spot output.
+    function setSpotFloorBps(uint16 bps) external;
+
+    /// @notice Sets the keeper reward values.
+    /// @dev Owner only. Reverts `OutOfBounds` above Constants.BURN_TIP_MAX (0.01 ether),
+    ///      BURN_GAS_OVERHEAD_MAX (300,000), BURN_BASEFEE_GATE_MAX (100 gwei) or
+    ///      BURN_REWARD_BPS_MAX (5000). Zero is allowed for each: a zero tip and gate turns
+    ///      the reward off.
+    /// @param tip Flat reward in wei.
+    /// @param gasOverhead Gas added to the measured burn gas.
+    /// @param maxBaseFee Highest basefee that pays a reward, in wei.
+    /// @param maxBps Reward cap and reserve, in bps of the weth consumed.
+    function setRewardConfig(uint256 tip, uint256 gasOverhead, uint256 maxBaseFee, uint16 maxBps)
+        external;
 
     /// @notice Uniswap v4 PoolManager. Immutable.
     function poolManager() external view returns (IPoolManager);
-
-    /// @notice Output floor in bps of the fee net spot output.
-    function SPOT_FLOOR_BPS() external view returns (uint256);
 
     /// @notice Gas forwarded on the keeper reward push (no returndata copied).
     function KEEPER_GAS() external view returns (uint256);

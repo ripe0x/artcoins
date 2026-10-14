@@ -91,13 +91,26 @@ library Constants {
     /// @notice Keeper reward on consumed amounts, capped.
     uint256 internal constant KEEPER_REWARD_BPS = 50;
     uint256 internal constant KEEPER_REWARD_CAP = 0.01 ether;
-    /// @notice Burn router output floor, in BPS of the spot output net of the
-    ///         pool's buy fee. Fixed: the floor is computed from the live spot
-    ///         and fee at burn time, so it has no stale state to tune.
+    /// @notice Burn router initial output floor, in BPS of the spot output net
+    ///         of the pool's buy fee (the spot and fee are read at burn time).
+    ///         Owner tunable within [SPOT_FLOOR_MIN_BPS, SPOT_FLOOR_MAX_BPS].
     uint256 internal constant BURN_SPOT_FLOOR_BPS = 9000;
-    /// @notice Fee swapper convert floor bounds. The default (9500) is contract local.
+    /// @notice Output floor bounds for the burn router and the fee swapper
+    ///         (the swapper's default, 9500, is contract local).
     uint256 internal constant SPOT_FLOOR_MIN_BPS = 5000;
     uint256 internal constant SPOT_FLOOR_MAX_BPS = 9500;
+    /// @notice Burn router keeper reward: initial values and owner bounds (not
+    ///         hashed). The reward is a flat tip plus the burn's gas at the
+    ///         basefee, paid when the basefee is at or under the gate, capped
+    ///         at a share of the weth consumed.
+    uint256 internal constant BURN_TIP_DEFAULT = 0.0003 ether;
+    uint256 internal constant BURN_TIP_MAX = 0.01 ether;
+    uint256 internal constant BURN_GAS_OVERHEAD_DEFAULT = 60_000;
+    uint256 internal constant BURN_GAS_OVERHEAD_MAX = 300_000;
+    uint256 internal constant BURN_BASEFEE_GATE_DEFAULT = 1 gwei;
+    uint256 internal constant BURN_BASEFEE_GATE_MAX = 100 gwei;
+    uint16 internal constant BURN_REWARD_BPS_DEFAULT = 1000;
+    uint16 internal constant BURN_REWARD_BPS_MAX = 5000;
     /// @notice Fee swapper owner bounds.
     uint256 internal constant SWAPPER_SLIPPAGE_MIN = 50;
     uint256 internal constant SWAPPER_SLIPPAGE_MAX = 1000;

@@ -35,15 +35,16 @@ import {IWETH9} from "@uniswap/v4-periphery/src/interfaces/external/IWETH9.sol";
 ///         - the swap is exact input with a price limit `maxImpactBps` from the
 ///           pre swap spot (owner bounded to [PRICE_IMPACT_MIN, PRICE_IMPACT_MAX]).
 ///           A balance above the limit fills partially and drains over later blocks.
-///         - output must reach the caller's `minOut` and `SPOT_FLOOR_BPS` of the
-///           spot output for the weth consumed, net of the pool's buy fee. The
-///           floor is read from the pool at burn time, so it cannot go stale.
-///         - keeper reward: when `block.basefee <= REWARD_MAX_BASEFEE`, a flat
-///           `KEEPER_TIP` plus the burn's gas at the basefee, capped at
-///           `REWARD_MAX_BPS` of the weth consumed; zero above that basefee.
-///           Reserved before the swap (REWARD_MAX_BPS of the balance), paid in
-///           eth after it. Burns wait for cheap blocks and for a budget worth
-///           at least ten times the reward.
+///         - output must reach the caller's `minOut` and `spotFloorBps` of the
+///           spot output for the weth consumed, net of the pool's buy fee. Spot
+///           and fee are read from the pool at burn time.
+///         - keeper reward: when `block.basefee <= rewardMaxBaseFee`, a flat
+///           `keeperTip` plus the burn's gas at the basefee, capped at
+///           `rewardMaxBps` of the weth consumed; zero above that basefee.
+///           Reserved before the swap (`rewardMaxBps` of the balance), paid in
+///           eth after it.
+///         - every reward value, the output floor and the impact cap are owner
+///           tunable within Constants bounds.
 ///         - every coin held, including coin sent directly, burns on the next burn.
 ///         - eth, weth and the coin cannot be rescued.
 contract BurnRouterV2 is
@@ -58,17 +59,7 @@ contract BurnRouterV2 is
     using PoolIdLibrary for PoolKey;
 
     /// @inheritdoc IBurnRouterV2
-    uint256 public constant SPOT_FLOOR_BPS = Constants.BURN_SPOT_FLOOR_BPS;
-    /// @inheritdoc IBurnRouterV2
     uint256 public constant KEEPER_GAS = 50_000;
-    /// @inheritdoc IBurnRouterV2
-    uint256 public constant KEEPER_TIP = 0.0003 ether;
-    /// @inheritdoc IBurnRouterV2
-    uint256 public constant KEEPER_GAS_OVERHEAD = 60_000;
-    /// @inheritdoc IBurnRouterV2
-    uint256 public constant REWARD_MAX_BASEFEE = 1 gwei;
-    /// @inheritdoc IBurnRouterV2
-    uint256 public constant REWARD_MAX_BPS = 1000;
     /// @inheritdoc IBurnRouterV2
     uint16 public constant STACK_VERSION = Constants.STACK_VERSION;
     /// @dev Gas for the hook's per direction fee read; a hook without the
@@ -87,6 +78,16 @@ contract BurnRouterV2 is
     uint64 public lastBurnBlock;
     /// @inheritdoc IBurnRouterV2
     uint16 public maxImpactBps;
+    /// @inheritdoc IBurnRouterV2
+    uint16 public spotFloorBps;
+    /// @inheritdoc IBurnRouterV2
+    uint16 public rewardMaxBps;
+    /// @inheritdoc IBurnRouterV2
+    uint256 public keeperTip;
+    /// @inheritdoc IBurnRouterV2
+    uint256 public keeperGasOverhead;
+    /// @inheritdoc IBurnRouterV2
+    uint256 public rewardMaxBaseFee;
 
     /// @param owner_ Owner (Ownable2Step).
     /// @param poolManager_ Uniswap v4 PoolManager.
@@ -115,7 +116,19 @@ contract BurnRouterV2 is
         coin = coin_;
         _poolKey = key;
         maxImpactBps = Constants.PRICE_IMPACT_DEFAULT;
+        spotFloorBps = uint16(Constants.BURN_SPOT_FLOOR_BPS);
+        rewardMaxBps = Constants.BURN_REWARD_BPS_DEFAULT;
+        keeperTip = Constants.BURN_TIP_DEFAULT;
+        keeperGasOverhead = Constants.BURN_GAS_OVERHEAD_DEFAULT;
+        rewardMaxBaseFee = Constants.BURN_BASEFEE_GATE_DEFAULT;
         emit MaxImpactBpsSet(0, Constants.PRICE_IMPACT_DEFAULT);
+        emit SpotFloorBpsSet(0, Constants.BURN_SPOT_FLOOR_BPS);
+        emit RewardConfigSet(
+            Constants.BURN_TIP_DEFAULT,
+            Constants.BURN_GAS_OVERHEAD_DEFAULT,
+            Constants.BURN_BASEFEE_GATE_DEFAULT,
+            Constants.BURN_REWARD_BPS_DEFAULT
+        );
     }
 
     /// @notice Accepts the burn budget (eth from the fee controller) and weth unwrapped for rewards.
@@ -153,8 +166,7 @@ contract BurnRouterV2 is
 
         IBurnableCoin(coin).burn(burned);
 
-        uint256 reward =
-            rewardFor(wethIn, gasStart - gasleft() + KEEPER_GAS_OVERHEAD, block.basefee);
+        uint256 reward = rewardFor(wethIn, gasStart - gasleft() + keeperGasOverhead, block.basefee);
         if (reward != 0) {
             IWETH9(payable(weth)).withdraw(reward);
             address keeper = msg.sender;
@@ -206,12 +218,12 @@ contract BurnRouterV2 is
     /// @inheritdoc IBurnRouterV2
     function rewardFor(uint256 consumed, uint256 gasUsed, uint256 baseFee)
         public
-        pure
+        view
         returns (uint256 reward)
     {
-        if (baseFee > REWARD_MAX_BASEFEE) return 0;
-        reward = KEEPER_TIP + gasUsed * baseFee;
-        uint256 cap = (consumed * REWARD_MAX_BPS) / Constants.BPS;
+        if (baseFee > rewardMaxBaseFee) return 0;
+        reward = keeperTip + gasUsed * baseFee;
+        uint256 cap = (consumed * rewardMaxBps) / Constants.BPS;
         if (reward > cap) reward = cap;
     }
 
@@ -237,6 +249,37 @@ contract BurnRouterV2 is
     }
 
     /// @inheritdoc IBurnRouterV2
+    function setSpotFloorBps(uint16 bps) external onlyOwner {
+        if (bps < Constants.SPOT_FLOOR_MIN_BPS || bps > Constants.SPOT_FLOOR_MAX_BPS) {
+            revert OutOfBounds(bps, Constants.SPOT_FLOOR_MIN_BPS, Constants.SPOT_FLOOR_MAX_BPS);
+        }
+        emit SpotFloorBpsSet(spotFloorBps, bps);
+        spotFloorBps = bps;
+    }
+
+    /// @inheritdoc IBurnRouterV2
+    function setRewardConfig(uint256 tip, uint256 gasOverhead, uint256 maxBaseFee, uint16 maxBps)
+        external
+        onlyOwner
+    {
+        if (tip > Constants.BURN_TIP_MAX) revert OutOfBounds(tip, 0, Constants.BURN_TIP_MAX);
+        if (gasOverhead > Constants.BURN_GAS_OVERHEAD_MAX) {
+            revert OutOfBounds(gasOverhead, 0, Constants.BURN_GAS_OVERHEAD_MAX);
+        }
+        if (maxBaseFee > Constants.BURN_BASEFEE_GATE_MAX) {
+            revert OutOfBounds(maxBaseFee, 0, Constants.BURN_BASEFEE_GATE_MAX);
+        }
+        if (maxBps > Constants.BURN_REWARD_BPS_MAX) {
+            revert OutOfBounds(maxBps, 0, Constants.BURN_REWARD_BPS_MAX);
+        }
+        keeperTip = tip;
+        keeperGasOverhead = gasOverhead;
+        rewardMaxBaseFee = maxBaseFee;
+        rewardMaxBps = maxBps;
+        emit RewardConfigSet(tip, gasOverhead, maxBaseFee, maxBps);
+    }
+
+    /// @inheritdoc IBurnRouterV2
     function rescue(address token, address to, uint256 amount) external onlyOwner nonReentrant {
         if (to == address(0)) revert ZeroAddress();
         if (token == address(0) || token == weth || token == coin) revert CannotRescue(token);
@@ -246,11 +289,11 @@ contract BurnRouterV2 is
 
     // ── internals ─────────────────────────────────────────────────────────
 
-    /// @dev Balance minus the reward reserve, REWARD_MAX_BPS of the balance.
-    ///      The reward is capped at REWARD_MAX_BPS of the consumed weth, and
+    /// @dev Balance minus the reward reserve, `rewardMaxBps` of the balance.
+    ///      The reward is capped at `rewardMaxBps` of the consumed weth, and
     ///      consumed <= budget < balance, so the reserve covers it after any fill.
-    function _budget(uint256 bal) internal pure returns (uint256) {
-        return bal - (bal * REWARD_MAX_BPS) / Constants.BPS;
+    function _budget(uint256 bal) internal view returns (uint256) {
+        return bal - (bal * rewardMaxBps) / Constants.BPS;
     }
 
     /// @dev Exact input weth to coin with the price limit `maxImpactBps` from
@@ -324,7 +367,7 @@ contract BurnRouterV2 is
     }
 
     /// @dev Expected coin for `wethIn` at `sqrtPriceX96`, times (1 - buy fee),
-    ///      times `SPOT_FLOOR_BPS`. price = currency1 per currency0.
+    ///      times `spotFloorBps`. price = currency1 per currency0.
     function _spotFloor(uint256 wethIn, uint160 sqrtPriceX96) internal view returns (uint256) {
         if (wethIn == 0 || sqrtPriceX96 == 0) return 0;
         uint256 expected;
@@ -336,8 +379,9 @@ contract BurnRouterV2 is
             expected = FullMath.mulDiv(step, 1 << 96, sqrtPriceX96);
         }
         uint256 netPpm = Constants.FEE_DENOMINATOR - _buyFeePips();
-        return FullMath.mulDiv(
-            expected, netPpm * SPOT_FLOOR_BPS, Constants.FEE_DENOMINATOR * Constants.BPS
-        );
+        return
+            FullMath.mulDiv(
+                expected, netPpm * spotFloorBps, Constants.FEE_DENOMINATOR * Constants.BPS
+            );
     }
 }

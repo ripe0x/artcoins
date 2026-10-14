@@ -111,6 +111,14 @@ contract ConstantsV2Test is Test {
         assertEq(Constants.KEEPER_REWARD_BPS, 50);
         assertEq(Constants.KEEPER_REWARD_CAP, 0.01 ether);
         assertEq(Constants.BURN_SPOT_FLOOR_BPS, 9000);
+        assertEq(Constants.BURN_TIP_DEFAULT, 0.0003 ether);
+        assertEq(Constants.BURN_TIP_MAX, 0.01 ether);
+        assertEq(Constants.BURN_GAS_OVERHEAD_DEFAULT, 60_000);
+        assertEq(Constants.BURN_GAS_OVERHEAD_MAX, 300_000);
+        assertEq(Constants.BURN_BASEFEE_GATE_DEFAULT, 1 gwei);
+        assertEq(Constants.BURN_BASEFEE_GATE_MAX, 100 gwei);
+        assertEq(Constants.BURN_REWARD_BPS_DEFAULT, 1000);
+        assertEq(Constants.BURN_REWARD_BPS_MAX, 5000);
         assertEq(Constants.SWAPPER_SLIPPAGE_MIN, 50);
         assertEq(Constants.SWAPPER_SLIPPAGE_MAX, 1000);
         assertEq(Constants.SWAPPER_MIN_BLOCKS_MIN, 1);
@@ -150,7 +158,13 @@ contract ConstantsV2Test is Test {
         assertLt(Constants.MAX_EXTENSION_BPS, Constants.BPS);
         assertLe(Constants.LOCKER_KEEPER_BPS_MAX, Constants.BPS);
         assertLe(Constants.KEEPER_REWARD_BPS, Constants.BPS);
-        assertLe(Constants.BURN_SPOT_FLOOR_BPS, Constants.BPS);
+        assertGe(Constants.BURN_SPOT_FLOOR_BPS, Constants.SPOT_FLOOR_MIN_BPS);
+        assertLe(Constants.BURN_SPOT_FLOOR_BPS, Constants.SPOT_FLOOR_MAX_BPS);
+        assertLe(Constants.BURN_TIP_DEFAULT, Constants.BURN_TIP_MAX);
+        assertLe(Constants.BURN_GAS_OVERHEAD_DEFAULT, Constants.BURN_GAS_OVERHEAD_MAX);
+        assertLe(Constants.BURN_BASEFEE_GATE_DEFAULT, Constants.BURN_BASEFEE_GATE_MAX);
+        assertLe(Constants.BURN_REWARD_BPS_DEFAULT, Constants.BURN_REWARD_BPS_MAX);
+        assertLt(Constants.BURN_REWARD_BPS_MAX, Constants.BPS);
         assertLe(
             uint256(Constants.PFC_MIN_TREASURY_BPS) + Constants.PFC_MIN_BURN_BPS, Constants.BPS
         );
