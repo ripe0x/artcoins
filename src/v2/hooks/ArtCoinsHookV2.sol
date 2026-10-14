@@ -47,8 +47,8 @@ interface ILockerReads {
 /// @notice Skim fee hook for v2 coin pools. Every pool is native eth
 ///         (currency0) against the coin (currency1), created only by an
 ///         allowlisted launcher. The fee rates and caps are set once at init.
-///         The coin admin may change the pool's bounty recipient until the coin
-///         calls `lockRecipients` or renounces its admin. Anti sniper skim above
+///         The coin admin may change the pool's bounty recipient and its
+///         extension until the coin calls `lockRecipients` or renounces its admin. Anti sniper skim above
 ///         the baseline goes to the bounty recipient.
 ///
 ///         Per swap, on the quote (eth) side, with `r` the realized pool side
@@ -630,6 +630,35 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         address old = _skim[poolId].bountyRecipient;
         _skim[poolId].bountyRecipient = newRecipient;
         emit BountyRecipientSet(poolId, old, newRecipient);
+    }
+
+    /// @inheritdoc IArtCoinsHookV2
+    function setPoolExtension(PoolKey calldata key, address newExtension, bytes calldata initData)
+        external
+    {
+        PoolId poolId = key.toId();
+        PoolInfo storage info = _info[poolId];
+        address coin = info.token;
+        if (coin == address(0)) revert UnknownPool();
+        IArtCoinsTokenV2 t = IArtCoinsTokenV2(coin);
+        if (msg.sender != t.admin()) revert NotCoinAdmin();
+        if (t.recipientsLocked()) revert RecipientsLocked();
+        if (newExtension != address(0)) {
+            address al = _globals.extensionAllowlist;
+            if (
+                al == address(0)
+                    || !IArtCoinsPoolExtensionAllowlist(al).enabledExtensions(newExtension)
+            ) {
+                revert ExtensionNotAllowed(newExtension);
+            }
+        }
+        address old = info.extension;
+        info.extension = newExtension;
+        emit PoolExtensionSet(poolId, old, newExtension);
+        if (newExtension != address(0)) {
+            IArtCoinsPoolExtension(newExtension).initializePreLockerSetup(key, false, initData);
+            IArtCoinsPoolExtension(newExtension).initializePostLockerSetup(key, info.locker, false);
+        }
     }
 
     /// @dev Reverts `RecipientCannotReceive` when `r` is a stack contract that

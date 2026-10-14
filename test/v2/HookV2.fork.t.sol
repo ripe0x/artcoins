@@ -921,6 +921,67 @@ contract HookV2ForkTest is HookV2ForkBase {
         hook.setBountyRecipient(key.toId(), payable(makeAddr("x")));
     }
 
+    // ─── coin admin: pool extension ───────────────────────────────────────
+
+    /// the coin admin swaps the pool's extension; the new one is set up in the
+    /// call and sees the next swap, the old one sees nothing more.
+    function test_setPoolExtension_replacesAndSetsUp() public onlyFork {
+        HV2Extension first = new HV2Extension(address(hook));
+        HV2Extension second = new HV2Extension(address(hook));
+        allowlist.setPoolExtension(address(first), true);
+        allowlist.setPoolExtension(address(second), true);
+        Launch memory l = _defaults(bountyEoa);
+        l.extension = address(first);
+        (PoolKey memory key,) = _launch(l);
+        PoolId pid = key.toId();
+        _swap(key, true, -0.1 ether, 0, "");
+        assertEq(first.swaps(), 1, "first extension saw the launch swap");
+
+        vm.expectEmit(true, true, true, true, address(hook));
+        emit IArtCoinsHookV2.PoolExtensionSet(pid, address(first), address(second));
+        hook.setPoolExtension(key, address(second), hex"c0ffee");
+        assertEq(hook.poolInfo(pid).extension, address(second), "info updated");
+        assertEq(second.preSetups(), 1, "pre locker setup ran");
+        assertEq(second.postSetups(), 1, "post locker setup ran");
+
+        _swap(key, true, -0.1 ether, 0, "");
+        assertEq(second.swaps(), 1, "second extension sees the next swap");
+        assertEq(first.swaps(), 1, "first extension sees nothing more");
+
+        // zero clears it; no setup call to make
+        hook.setPoolExtension(key, address(0), "");
+        assertEq(hook.poolInfo(pid).extension, address(0));
+        _swap(key, true, -0.1 ether, 0, "");
+        assertEq(second.swaps(), 1, "cleared extension is not called");
+    }
+
+    function test_setPoolExtension_guards() public onlyFork {
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(_defaults(bountyEoa));
+        HV2Extension ext = new HV2Extension(address(hook));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsHookV2.ExtensionNotAllowed.selector, address(ext))
+        );
+        hook.setPoolExtension(key, address(ext), "");
+        allowlist.setPoolExtension(address(ext), true);
+
+        vm.prank(makeAddr("stranger"));
+        vm.expectRevert(IArtCoinsHookV2.NotCoinAdmin.selector);
+        hook.setPoolExtension(key, address(ext), "");
+
+        // a fresh struct: a memory to memory assignment would alias `key`
+        PoolKey memory fake = PoolKey(key.currency0, key.currency1, key.fee, int24(1), key.hooks);
+        vm.expectRevert(IArtCoinsHookV2.UnknownPool.selector);
+        hook.setPoolExtension(fake, address(ext), "");
+
+        hook.setPoolExtension(key, address(ext), "");
+        assertEq(hook.poolInfo(key.toId()).extension, address(ext));
+
+        token.lockRecipients();
+        vm.expectRevert(IArtCoinsHookV2.RecipientsLocked.selector);
+        hook.setPoolExtension(key, address(0), "");
+    }
+
     function test_owner_onlyOwner() public {
         address s = makeAddr("stranger");
         bytes memory err = abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, s);

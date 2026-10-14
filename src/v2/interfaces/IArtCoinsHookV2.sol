@@ -239,6 +239,14 @@ interface IArtCoinsHookV2 is IConstantsBound {
         PoolId indexed poolId, address indexed oldRecipient, address indexed newRecipient
     );
 
+    /// @notice The coin admin changed the pool's extension.
+    /// @param poolId Pool id.
+    /// @param oldExtension Previous extension, zero for none.
+    /// @param newExtension New extension, zero for none.
+    event PoolExtensionSet(
+        PoolId indexed poolId, address indexed oldExtension, address indexed newExtension
+    );
+
     // ── errors ────────────────────────────────────────────────────────────
 
     /// @notice The caller is not an allowlisted launcher, or not the launcher of the pool.
@@ -419,6 +427,20 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @param poolId Pool id.
     /// @param newRecipient New bounty recipient.
     function setBountyRecipient(PoolId poolId, address payable newRecipient) external;
+
+    /// @notice Sets the pool's extension. Coin admin only, until the coin locks
+    ///         its recipients or renounces its admin.
+    /// @dev    `newExtension` is zero (no extension) or enabled on the hook's
+    ///         extension allowlist. A new extension receives
+    ///         `initializePreLockerSetup(key, false, initData)` and
+    ///         `initializePostLockerSetup(key, locker, false)` in this call; the
+    ///         old one is not called. Reverts with `UnknownPool`, `NotCoinAdmin`,
+    ///         `RecipientsLocked` or `ExtensionNotAllowed`.
+    /// @param key Key of the pool.
+    /// @param newExtension New extension, zero for none.
+    /// @param initData Opaque bytes passed to the new extension's pre locker setup.
+    function setPoolExtension(PoolKey calldata key, address newExtension, bytes calldata initData)
+        external;
 
     /// @notice Stack version tag (Constants.STACK_VERSION).
     /// @return The stack version.
