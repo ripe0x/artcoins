@@ -54,7 +54,7 @@ you are taking over the artcoins v2 project from the cloud session that built it
 | 8 | check the credits engine treasury against docs/v2/CREDITS-ENGINE-INTERFACE.md (the bundle was never available; the interface is from assumptions). if the treasury needs something the interface does not give, change the hook delivery or swapper, retest | owner provides the bundle, you check | CREDITS-ENGINE-INTERFACE.md |
 | 9 | ci secrets on the private repo: `MAINNET_RPC_URL` is set; add `ETHERSCAN_API_KEY` | owner | registry.yml, verify-v2.sh |
 | 10 | mainnet deploy: RUNBOOK part 2a. `FOUNDRY_PROFILE=ci forge script script/v2/DeployV2Stack.s.sol --rpc-url $ETH_RPC_URL --sender $OWNER` dry run, then the owner broadcasts with `--account ripe0x --broadcast --slow`; `acceptOwnership` on escrow, hook, locker, factory; `script/v2/verify-v2.sh`; fill deployments/v2.template.json into mainnet.json as stack `v2`; verifier; commit | owner broadcasts, you drive | RUNBOOK 2a, script/v2/README.md |
-| 11 | first coin via `deployTokenAsOwner` while the factory is deprecated; pre launch `setExemptAllowed(treasury)` if needed and `addDepositor(feeSwapper)`; `BurnRouterV2.initialize`; one keeper run; add the coin to the registry | owner broadcasts, you drive | RUNBOOK 2b |
+| 11 | first coin via `deployTokenAsOwner` while the factory is deprecated; pre launch `addDepositor(feeSwapper)`; one keeper run; add the coin to the registry | owner broadcasts, you drive | RUNBOOK 2b |
 | 12 | site (ripe0x/new-material): bump the artcoins submodule pin, regenerate its abi and deployments mirrors, deploy the site | you | ripe0x/new-material |
 | 13 | `setDeprecated(false)` last, after the 15 gates in RUNBOOK 2c | owner | RUNBOOK 2c |
 
