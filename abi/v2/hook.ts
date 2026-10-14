@@ -252,6 +252,24 @@ export const hookV2Abi = [
   },
   {
     "type": "function",
+    "name": "lowerBaselineSkim",
+    "inputs": [
+      {
+        "name": "poolId",
+        "type": "bytes32",
+        "internalType": "PoolId"
+      },
+      {
+        "name": "bps",
+        "type": "uint24",
+        "internalType": "uint24"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "poolInfo",
     "inputs": [
       {
@@ -540,6 +558,31 @@ export const hookV2Abi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "BaselineSkimLowered",
+    "inputs": [
+      {
+        "name": "poolId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "PoolId"
+      },
+      {
+        "name": "oldBps",
+        "type": "uint24",
+        "indexed": false,
+        "internalType": "uint24"
+      },
+      {
+        "name": "newBps",
+        "type": "uint24",
+        "indexed": false,
+        "internalType": "uint24"
+      }
+    ],
+    "anonymous": false
   },
   {
     "type": "event",
@@ -1069,6 +1112,11 @@ export const hookV2Abi = [
   },
   {
     "type": "error",
+    "name": "PoolNotStarted",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ProtocolRecipientZero",
     "inputs": []
   },
@@ -1106,6 +1154,22 @@ export const hookV2Abi = [
         "name": "value",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "SkimNotLower",
+    "inputs": [
+      {
+        "name": "current",
+        "type": "uint24",
+        "internalType": "uint24"
+      },
+      {
+        "name": "requested",
+        "type": "uint24",
+        "internalType": "uint24"
       }
     ]
   },
