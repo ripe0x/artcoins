@@ -1079,6 +1079,16 @@ contract HookV2ForkTest is HookV2ForkBase {
         );
         assertEq(referrer, address(0), "dirty high bits: no referrer");
         assertEq(keccak256(ext), keccak256(dirtyInner));
+        // an older (struct, bytes) layout starts with an offset word: no referrer
+        bytes memory oldShape =
+            abi.encode(abi.encode(bytes32("src"), ref, bytes16("cmp"), uint24(25)), bytes(""));
+        (ext, referrer) = h.decode(
+            abi.encode(
+                IArtCoinsHook.PoolSwapData({mevModuleSwapData: "", poolExtensionSwapData: oldShape})
+            )
+        );
+        assertEq(referrer, address(0), "offset word is not a referrer");
+        assertEq(keccak256(ext), keccak256(oldShape), "extension slice kept");
         (ext, referrer) = h.decode("");
         assertEq(ext.length, 0);
         assertEq(referrer, address(0));
