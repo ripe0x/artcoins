@@ -77,7 +77,6 @@ export const V2 = {
   deployer: '0xB2f0086E6EE82f059AD1736dD265a783cE50f473',
   burnRouter: '0x6f159a0BDddB808Ca364cd006fb29C7B52eB88e1',
   protocolFeeController: '0x183De82db1b7AAb798328AB1d7AE181ff39460c2',
-  keeper: '0x9884B79974a51aaa07b3a7f0B45b6Ae294FC7072',
   deployBlock: 26157200n,
 } as const;
 

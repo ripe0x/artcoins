@@ -102,13 +102,13 @@ contract DeployV2Stack is Script {
         view
         returns (string memory)
     {
-        address[9] memory a = DeployV2Lib.addresses(s);
-        string[9] memory n = DeployV2Lib.names();
-        string[9] memory src = DeployV2Lib.paths();
-        string[9] memory role = DeployV2Lib.roles();
-        bytes[9] memory args = DeployV2Lib.ctorArgs(s, p);
+        address[11] memory a = DeployV2Lib.addresses(s);
+        string[11] memory n = DeployV2Lib.names();
+        string[11] memory src = DeployV2Lib.paths();
+        string[11] memory role = DeployV2Lib.roles();
+        bytes[11] memory args = DeployV2Lib.ctorArgs(s, p);
 
-        string[9] memory key = [
+        string[11] memory key = [
             "escrow",
             "allowlist",
             "hook",
@@ -117,12 +117,14 @@ contract DeployV2Stack is Script {
             "factory",
             "tokenDeployer",
             "burnRouter",
-            "controller"
+            "controller",
+            "devBuy",
+            "airdrop"
         ];
         string memory contracts = "";
         string memory verify = "";
         string memory flat = "";
-        for (uint256 i; i < 9; ++i) {
+        for (uint256 i; i < 11; ++i) {
             string memory sep = i == 0 ? "" : ",";
             contracts = string.concat(contracts, sep, _entry(s, p, i, a[i], n[i], src[i], role[i]));
             flat = string.concat(flat, sep, '"', key[i], '":"', vm.toString(a[i]), '"');
@@ -180,7 +182,8 @@ contract DeployV2Stack is Script {
     ) internal view returns (string memory) {
         // owned: escrow 0, allowlist 1, hook 2, locker 3, factory 5, router 7, controller 8
         bool owned = i == 0 || i == 1 || i == 2 || i == 3 || i == 5 || i == 7 || i == 8;
-        string memory state = i == 5 ? "deprecated" : (i == 2 || i == 4) ? "enabled" : "unknown";
+        string memory state =
+            i == 5 ? "deprecated" : (i == 2 || i == 4 || i == 9 || i == 10) ? "enabled" : "unknown";
         string memory note = i == 2
             ? string.concat(
                 "CREATE2 via ", vm.toString(p.create2Deployer), " salt ", vm.toString(s.hookSalt)

@@ -4,6 +4,8 @@ status: architect draft for the build agents. scope: contracts, interfaces, cons
 
 D92 (2026-10-14) supersedes the parts of this draft that describe the fee swapper, the v2 keeper, locker rewards, the pool lp fee, `deployTokenAsOwner`, protocol bps, `pinned`, `lockAllowlist` and `lockRecipients`. the current shape is in docs/v2/DECISIONS.md D92 and `src/v2`.
 
+section 3 block ids are stable references from tests and reviews. ids b1 and d8 are retired, and the remaining ids keep their numbers. d2 describes the launch restriction.
+
 chain facts below were read with `cast call` against mainnet on 2026-10-06 (read only). everything else is from code.
 
 | live fact | value |
@@ -12,10 +14,10 @@ chain facts below were read with `cast call` against mainnet on 2026-10-06 (read
 | current skim hook 0x636c…a9cc | factory 0x4959…, feeEscrow 0x7559…, extension allowlist 0xd6D5…e6E8, runtime 20,612 bytes, `initializePoolOpen` present (open pools enabled, cannot be disabled) |
 | current locker 0x866e…6aab | keeper reward 0 bps, keeper reward cap 0.01 eth, escrow 0x7559… |
 | escrow 0x7559…25F2 | hook and locker are depositors, eth balance 0 |
-| coin 111 0x61C9…B8ae | admin 0xA96a…6258, tax on, taxBps 1500, taxBpsMax 2000, tax sink 0xf5c3…8753 (a contract, not a burn address), supply 1.11e9, renderer 0x7604…eEc7 |
+| coin 111 0x61C9…B8ae | admin 0xA96a…6258, supply 1.11e9, renderer 0x7604…eEc7 |
 | 111 pool | eth/111, dynamic fee, tickSpacing 200, poolId 0xf860…f795, 111 is token1, 14 lp positions |
 | 111 skim config | baseline 6000 (6% of volume), bountyBps 8333, maxReferral 250, lpFee 5000, bounty 0x8C72…CD01 (implements `streamForward`), protocol 0xed3E…ba9, referralPayout 0xB03C…9d4c, quote native eth |
-| 111 locker split | one slot, 100% to 0xeBD9…A961 (a `FeeAutoSwapper`, endRecipient 0x8C72…, native, maxSlippage 500, minBlocks 50, maxStepIn 1e24), slot admin 0x…dEaD (recipient effectively frozen) |
+| 111 locker split | one slot, 100% to 0xeBD9…A961 (a v1 fee converter contract, endRecipient 0x8C72…, native, maxSlippage 500, minBlocks 50, maxStepIn 1e24), slot admin 0x…dEaD (recipient effectively frozen) |
 | LAYER legacy hook 0xa5ea…28cc | factory 0xd159…, `protocolFeeNumerator` 0 (owner settable up to 50% of lp fee), open pools present |
 | older factory 0xf051… | deprecated=false (open), deployFee 0, hook 0xAAd6… (open pools present) |
 | size note | live skim hook runtime is 20,612 bytes. this source built with `FOUNDRY_PROFILE=ci` (runs 200, native solc 0.8.26) is 20,558 bytes, 4,018 bytes of headroom. the foundry.toml comment ("~24,547 bytes, 29 bytes headroom") is stale; the 24,578 figure in `foundry-out/` is the runs 20,000 default profile. the 54 byte gap to live means the live build is close but not identical to this source; the registry agent should settle provenance with a bytecode diff. |
@@ -29,7 +31,7 @@ v1 sources under `src/` stay frozen as the record of deployed bytecode. all v2 c
 | constants | `SkimFeeConstants` (one value), literals duplicated per contract | `src/Constants.sol`, every v2 contract exposes `constantsHash()` and checks it at wiring | new |
 | factory | `ArtCoinsFactory` owner + admins, 3 deploy entrypoints, protocol bps override public | `src/v2/ArtCoinsFactoryV2.sol`, single owner (Ownable2Step), one `deployToken(DeploymentConfigV2)`, the owner calls it while `deprecated` | rewrite |
 | deployer | `ArtCoinsDeployer`, salt = (tokenAdmin, salt) | `src/v2/utils/ArtCoinsDeployerV2.sol`, salt = (sender, configHash) | fix |
-| token | `ArtCoinsToken`, venue tax, frozen venue set | `src/v2/ArtCoinsTokenV2.sol`, tax mode NONE / VENUE / HARD, add only venues, version tag, surfaced sink | rewrite |
+| token | `ArtCoinsToken`, v1 transfer fee on venue outflows, frozen venue set | `src/v2/ArtCoinsTokenV2.sol`, optional either-side transfer allowlist with a transient PoolManager allowance, version tag | rewrite |
 | hook | `ArtCoinsHookSkimFee` on `ArtCoinsHook` base (sniper path, lp fee mev, open pools, extension swapping) | `src/v2/hooks/ArtCoinsHookV2.sol` hot path + `HookColdModule.sol` (immutable delegate), skim only | rewrite |
 | static fee hook | `ArtCoinsHookStaticFee` | dropped | drop |
 | locker | `ArtCoinsLpLocker`, slot admins can repoint recipients, deposits to escrow | `src/v2/lp-lockers/ArtCoinsLpLockerV2.sol`, pure lock (D92): holds the position NFTs, no fee collection | modify |
@@ -40,7 +42,6 @@ v1 sources under `src/` stay frozen as the record of deployed bytecode. all v2 c
 | protocol fee controller | `ProtocolFeeController`, immutable split | `src/v2/protocol-fee/ProtocolFeeControllerV2.sol`, owner split in bounds, rescue | modify |
 | extension allowlist | `ArtCoinsPoolExtensionAllowlist` | reused contract, new instance, hook pointer owner settable | keep |
 | renderers | `DynamicBlockRenderer`, `ExampleOnChainRenderer`, `LiquidityLayerSpriteRenderer` (raw svg text, quadratic concat) | `src/v2/renderer/*V2.sol` + `SvgText.sol` | fix |
-| keepers | none | `src/v2/keepers/CollectFlushKeeperV1.sol` (coin 111, current stack) | new |
 | version | none | `Constants.STACK_VERSION = 2` on token, hook pool registry, factory | new |
 
 ## 2. frozen vs owner mutable boundary
@@ -50,9 +51,9 @@ rule: per coin state is written once inside the launch tx and has no writer afte
 | contract | field | who can change | reason |
 |---|---|---|---|
 | token | name, symbol, supply, decimals, code | nobody | principle 1 |
-| token | taxMode, taxBpsMax, taxSink, canonicalHook, canonicalPoolId, poolManager, exempt set | nobody (immutable or ctor only) | tax caps and sinks fixed at launch |
-| token | taxBps within [0, taxBpsMax] | token admin | rate tuning under a frozen cap (111 relies on this) |
-| token | venue set | venueAdmin, add only, renounceable | can only widen fee dodge coverage, never open a hole |
+| token | canonicalHook, canonicalPoolId, poolManager, launcher, name, symbol | nobody (immutable) | the allowance source and the PoolManager are fixed at launch |
+| token | allowlist entries (`setAllowed`), restriction switch (`unrestrict`, one way) | token admin until `lock()` or renounce | the admin edits every entry, including the seeded locker and extensions. the PoolManager and the canonical hook are rejected (`AllowedForbidden`) |
+| token | `lock()` | token admin, once | freezes `setAllowed`, `unrestrict` and the hook's coin admin setters |
 | token | metadata, image, renderer pointer, admin | token admin | cosmetic, as v1 |
 | token | launcher, launcherVersion | nobody | integrator version tag |
 | hook (per pool) | artCoinIsToken0, locker, mevModule, createdAt, skim rates and caps (baselineSkimBps, bountyBps), protocolRecipient, referralPayout, quote, restricted, extension, launcher, version | nobody | fee caps and the protocol recipient fixed. the pool lp fee is 0 (D92) |
@@ -84,7 +85,7 @@ rule: per coin state is written once inside the launch tx and has no writer afte
 | current | hook 0x636c… | none (no owner) | n/a | token admin of 111 can still call setMaxReferralBpsOfVolume (<= 1000), setPoolExtension, lockPoolExtension, setSniperFeeRecipient (inert for skim) |
 | current | locker 0x866e… | keeper reward bps setter (<= 2%), keeper reward cap setter, withdrawETH, withdrawERC20 | keeper reward is taken from 111 fees | keep bps 0 or tiny; slot admin is 0x…dEaD so the 111 split is frozen |
 | current | escrow 0x7559… | addDepositor (no remove) | none | do not add depositors |
-| current | fee swapper 0xeBD9… | none | eth stranded by a third party `escrow.claim(swapper, 0)` is unrecoverable | run the collect and flush keeper (section 3, d8) |
+| current | 111 fee converter 0xeBD9… | none | eth credited to it by a third party `escrow.claim(converter, 0)` is unrecoverable | none; the exposure is recorded in the runbook (section 3, b5) |
 | current | linear skim 0xb038… | none | | |
 | older | factory 0xf051… | same setters | open to the public with zero fee on a superseded stack | `setDeprecated(true)` now |
 | legacy | factory 0xd159… | same setters | | keep deprecated |
@@ -95,16 +96,6 @@ rule: per coin state is written once inside the launch tx and has no writer afte
 ## 3. changes
 
 each block names the regression test. tests are fork tests against live v4 using `test/v2/harness/ForkBase.sol` and `ForkStack.sol`; file `test/v2/<Area>V2.fork.t.sol`.
-
-### b1. tax exemption minted by add then remove liquidity
-| item | design |
-|---|---|
-| contracts | `ArtCoinsHookV2`, `ArtCoinsTokenV2` |
-| hook | `_beforeAddLiquidity(address sender, PoolKey calldata key, ModifyLiquidityParams calldata p, bytes calldata)`: `tstore(keccak256(abi.encode(pid, sender, p.tickLower, p.tickUpper, p.salt)), 1)`. `_afterRemoveLiquidity`: skip any attestation or flow grant when that slot is set (position added in this tx). otherwise attest the art side delta (principal plus fees) |
-| token | `_consumeCanonicalBudget` only when `from == poolManager`. v2/v3 venue outflows never draw budget |
-| storage | transient only |
-| invariant | exempt amount in a tx <= art coin that left the canonical pool from swaps plus positions that existed before the tx |
-| tests | `test_tax_addThenRemoveSameTx_mintsNoBudget`, `test_tax_budgetNotSpendableOnV3Venue`, `test_tax_priorTxLpExit_isExempt`, `test_tax_lockerCollect_isExempt` |
 
 ### b2. recipient with no code or empty fallback bricks swaps
 v1 `try IPreSwapStream(br).streamForward() {} catch {}` decoded the uint256 return outside the try: an eoa or empty fallback returns no data, decode reverts the swap (whenever the recipient holds >= 0.01 eth). separately, a bounty push failure reverted the swap.
@@ -137,19 +128,15 @@ when the quote side is specified, `_beforeSwap` mints the skim S on the full abs
 | invariant | token address is a function of (factory, sender, full config). a front runner with a different sender, or any different field, gets a different address and cannot block or capture the victim's launch |
 | tests | `test_launch_frontrunCopiedConfig_differentAddress`, `test_launch_changedLockerConfig_differentAddress`, `test_launch_predictTokenMatches` |
 
-### b5. fee swapper eth side fees strandable by third party escrow claim
-
-D92: the v2 fee swapper is deleted; `selfClaimOnly` on the escrow remains.
-
-`escrow.claim(feeOwner, token)` is permissionless; a third party pushes the swapper's eth to it, `flushPaired` then sees `availableFees == 0` and the eth has no exit. live 111 swapper 0xeBD9… is exposed (no sweep).
+### b5. escrow credit strandable by third party claim
+`escrow.claim(feeOwner, token)` is permissionless, so a third party can push a contract recipient's credit to it at a time the recipient does not expect. The live 111 fee converter 0xeBD9… has this exposure and no sweep.
 | item | design |
 |---|---|
-| contracts | `ArtCoinsFeeEscrowV2` (the v1 swapper at 0xeBD9… keeps the exposure) |
-| swapper | `flushPaired()`: claim if escrowed > 0, then `pairedOut = pairedBalance()` (whole native or erc20 balance; the swapper holds no paired funds between calls by invariant). `convert` forwards `received` plus any paired balance |
-| escrow | `mapping(address => bool) public selfClaimOnly; function setSelfClaimOnly(bool on) external` (msg.sender is the feeOwner). `claim` reverts `Unauthorized()` when `selfClaimOnly[feeOwner] && msg.sender != feeOwner`. swapper ctor calls `setSelfClaimOnly(true)` |
+| contract | `ArtCoinsFeeEscrowV2` |
+| escrow | `mapping(address => bool) public selfClaimOnly; function setSelfClaimOnly(bool on) external` (msg.sender is the feeOwner). `claim` reverts `Unauthorized()` when `selfClaimOnly[feeOwner] && msg.sender != feeOwner` |
 | events | `SelfClaimOnlySet(address indexed feeOwner, bool on)` |
-| invariant | after any call, swapper paired balance is 0 |
-| tests | `test_swapperV2_thirdPartyEscrowClaim_thenFlush_forwardsAll`, `test_escrowV2_selfClaimOnly_blocksThirdParty`, `test_swapperV1_111_thirdPartyClaim_strands` (documents the live exposure) |
+| invariant | a feeOwner that opted in receives its credit only through its own call |
+| tests | `test_escrowV2_selfClaimOnly_blocksThirdParty`, `test_escrowV2_selfClaimOnly_ownerCanClaimItself` |
 
 ### b6. burn router clamp loopable in one tx, keeper reward on whole balance
 | item | design |
@@ -190,31 +177,30 @@ v1: `ArtCoinsMevLinearFees` and `ArtCoinsMevLinearSkim` accept up to 180m; the b
 | invariant | delivery never reverts its caller once the caller is a core depositor; every wei reaches `to` or `to`'s escrow balance |
 | tests | `test_delivery_payable_pushed`, `test_delivery_reverting_escrowed`, `test_delivery_gasBurner_escrowed`, `test_lockerV2_collect_revertingRecipient_noRevert` |
 
-### d2. two fee dodge modes selected at launch
-`enum TaxMode { NONE, VENUE, HARD }` (uint8), immutable on the token, mirrored into the hook pool record at init (hook reads `token.taxMode()` and `token.canonicalHook() == address(this)`).
+### d2. launch restriction: either-side allowlist with a transient PoolManager allowance
+`restricted` is set on the token at construction (`RestrictionConfigV2.restricted`) and mirrored into the hook pool record at init. `unrestrict()` clears it permanently.
 
-| item | VENUE (v1 model, hardened) | HARD (transient allowance) |
-|---|---|---|
-| what is taxed or blocked | coin leaving a venue (PoolManager or listed v2/v3 pool) to a non exempt recipient pays `taxBps` to `taxSink` | any coin transfer with `from == poolManager` or `to == poolManager` reverts unless covered by a same tx canonical allowance in that direction; any transfer touching a listed venue reverts |
-| hook call | `attestCanonicalBudget(bytes32 poolId, uint256 outAmount)` from `_afterSwap` (buys) and `_afterRemoveLiquidity` | `grantCanonicalFlow(bytes32 poolId, uint256 outAmount, uint256 inAmount)` from `_afterSwap` (buy: out, sell: in), `_afterAddLiquidity` (in), `_afterRemoveLiquidity` (out) |
-| token storage | transient `BUDGET_SLOT` | transient `FLOW_OUT_SLOT`, `FLOW_IN_SLOT`, cumulative per tx, consumed exactly |
-| venue list | `_taxVenue` set, add only | same set, transfers to or from it revert |
-| venue admin | `address public venueAdmin` (set at launch, default token admin); `addTaxVenue(address)`, `addDerivedTaxVenue(TaxVenue calldata)`, `renounceVenueAdmin()` | same |
-| errors and events | `TaxVenueAdded(address indexed venue)`, `VenueAdminRenounced()` | `CanonicalFlowRequired(address from, address to, uint256 amount)`, `VenueTransferBlocked(address venue)` |
-| known limits | none new | router must settle after the swap (v4 router, universal router, locker, fee swapper, burn router all do); erc6909 claims of the coin can still circulate inside the PoolManager on side pools but cannot exit as erc20 |
-| tests | `test_venue_sideV3Buy_taxed`, `test_venue_addOnly_noRemovePath`, `test_venue_renounce_freezesList` | `test_hard_canonicalBuyAndSell_pass`, `test_hard_sideV4PoolTake_reverts`, `test_hard_sideV4PoolSettle_reverts`, `test_hard_v3VenueTransfer_reverts`, `test_hard_lockerCollect_pass`, `test_hard_feeSwapperConvert_pass`, `test_hard_launchLiquidityPlacement_pass`, `test_hard_prepaySettle_reverts` |
+| item | design |
+|---|---|
+| rule | while restricted, a transfer or transferFrom reverts `TransferRestricted(from, to, amount)` unless `from` or `to` is on the allowlist, or one side is the PoolManager and the amount fits the transient allowance. Mint and burn skip the rule. While not restricted every transfer passes |
+| allowlist | the launch locker, then the launch extensions, then `RestrictionConfigV2.allowed`, assembled by the factory (`_restriction`), at most `Constants.MAX_ALLOWED` entries. `allowed` is empty when `restricted` is false (`InvalidRestrictionConfig`). The PoolManager and the canonical hook are rejected (`AllowedForbidden`) |
+| allowance | `_afterSwap` calls `token.increaseTransferAllowance(poolId, abs(coin delta))` for a restricted pool. The token adds it to a transient slot, `_route` consumes it on a PoolManager side transfer in the same tx. Only `canonicalHook` may call it, and a different pool id or a zero amount returns without effect |
+| admin | `setAllowed`, `unrestrict` and `lock` (token admin). `lock()` freezes `setAllowed` and `unrestrict` |
+| views | `isAllowed(account)`, `isTransferRestricted(from, to)`, `transferAllowance()` |
+| known limits | the token checks the two transfer parties only, so a listed router, aggregator, multicall or smart wallet moves coin between any two wallets. erc6909 claims of the coin can circulate inside the PoolManager on side pools and cannot exit as erc20 without the allowance |
+| tests | `test/v2/TokenV2.t.sol`, `test/v2/HookV2.fork.t.sol` |
 
-taker and exact amount binding: v4 picks the `take` recipient after the hook returns, so the hook cannot name the taker. v2 binds exemption to the source (PoolManager only, never v2/v3 venues), to the tx (transient), to the direction (hard mode), and to the realized delta amount (cumulative, never more than what the canonical pool moved in this tx). b1 removes the add then remove mint. that is the tightest binding v4 allows; see open decision 8.
+v4 picks the `take` recipient after the hook returns, so the hook cannot name the taker. The allowance is bound to the canonical pool, to the tx (transient), and to the realized swap delta amount; see open decision 8.
 
 ### d3. no open pools, official pools distinguishable
 | item | design |
 |---|---|
-| hook | `initializePoolOpen` removed. `_beforeInitialize` reverts unless the hook itself is initializing inside `initializePool` (transient flag). `struct PoolInfo { uint16 version; uint8 taxMode; uint40 createdAt; address launcher; }`, `function poolInfo(PoolId) external view returns (PoolInfo memory)`, `function isOfficialPool(PoolId) external view returns (bool)` (launcher != 0) |
+| hook | `initializePoolOpen` removed. `_beforeInitialize` reverts unless the hook itself is initializing inside `initializePool` (transient flag). `struct PoolInfo { uint16 version; bool restricted; uint40 createdAt; address launcher; }`, `function poolInfo(PoolId) external view returns (PoolInfo memory)`, `function isOfficialPool(PoolId) external view returns (bool)` (launcher != 0) |
 | factory | `function isArtCoin(address token) external view returns (bool)`; `deploymentInfo(token)` returns `DeploymentInfoV2 { address token; address hook; address locker; address mevModule; PoolId poolId; uint16 version; uint40 launchedAt; address[] extensions; }` |
 | tests | `test_hookV2_noOpenInit`, `test_hookV2_directPoolManagerInit_reverts`, `test_hookV2_poolInfo_matchesLaunch` |
 
-### d4. sender in salt, full config in launch event, tax sink
-b4 covers the salt. section 6 covers the event. tax sink: `TaxConfigV2.taxSink` must be `Constants.DEAD` or the pool's `bountyRecipient`, enforced by the factory, stored immutable on the token (`taxSink()`), echoed in `TaxEnabled` and `TokenCreatedV2`. 111's sink 0xf5c3… is an arbitrary contract today; v2 makes that choice explicit and limited. test `test_factoryV2_taxSinkOutsideAllowedSet_reverts`.
+### d4. sender in salt, full config in launch event
+b4 covers the salt. section 6 covers the event.
 
 ### d5. one constants file, checked at init
 `src/Constants.sol` (section 4). every v2 contract has `function constantsHash() external pure returns (bytes32) { return Constants.hash(); }`. checks: factory `setHook`, `setLocker`, `setMevModule`, `setExtension`, `setEscrow`; hook `initializePool` checks locker and module; module `initialize` checks the hook; locker `placeLiquidity` checks the hook. a mismatch reverts `ConstantsMismatch(address module)`. constructor asserts cost no runtime bytes, so the hook may also assert in its constructor that `Hooks.validateHookPermissions` matches section 5. test `test_constants_mismatchedModule_rejected`.
@@ -230,18 +216,7 @@ b4 covers the salt. section 6 covers the event. tax sink: `TaxConfigV2.taxSink` 
 | superseded | registry json lists every stack with `status: active, superseded, deprecated`; owner txs: 0xf051 `setDeprecated(true)`; 0x4959 `setHook(0x636c…, false)` after v2 is live |
 | tests | `test_deployV2Stack_wiringComplete`, `test_deployV2Stack_runtimeMatchesBuild` |
 
-### d8. collect and flush keeper
-| item | coin 111, current stack |
-|---|---|
-| contract | `src/v2/keepers/CollectFlushKeeperV1.sol` |
-| immutables | `locker = 0x866e…`, `token = 0x61C9…`, `swapper = 0xeBD9…` (ctor args, bound) |
-| entry | `function run(bool doConvert, uint256 minOut) external returns (uint256 flushed, uint256 converted)` |
-| steps | 1 `locker.collectRewards(token)` (try). 2 `try swapper.flushPaired()`. 3 if `doConvert` `try swapper.convert(minOut)` (respects minBlocks 50). 4 forward the keeper's eth and coin balance to `msg.sender` |
-| holds funds | never (`receive` then forward in the same call) |
-| why | atomic collect then flush leaves no window between the locker's escrow deposit and the flush for a griefer's `escrow.claim(swapper, 0)` within normal mempool flow; it does not stop a griefer who acts between other txs |
-| tests | `test_keeperV1_111_collectFlushConvert_fork`, `test_keeperV1_nothingToFlush_noRevert` |
-
-the v2 stack has no keeper (D92): protocol fees leave through `ProtocolFeeControllerV2.processFees()` and `BurnRouterV2.processBurn(minOut)`.
+protocol fees leave the stack through `ProtocolFeeControllerV2.processFees()` and `BurnRouterV2.processBurn(minOut)` (D92).
 
 ## 4. constants file
 
@@ -284,10 +259,8 @@ library Constants {
     uint16 internal constant MAX_EXTENSION_BPS = 9_000;
     uint256 internal constant MAX_DEPLOY_FEE = 1 ether;
 
-    // token tax
-    uint16 internal constant TAX_BPS_ABSOLUTE_MAX = 2_000;
-    uint256 internal constant MAX_TAX_VENUES = 32;
-    uint256 internal constant MAX_TAX_EXEMPT = 16;
+    // token restriction
+    uint256 internal constant MAX_ALLOWED = 64;
     address internal constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
     // burn router
@@ -325,14 +298,14 @@ library Constants {
 | permission | v1 | v2 | why |
 |---|---|---|---|
 | beforeInitialize (1<<13) | yes | yes | reject foreign init |
-| beforeAddLiquidity (1<<11) | yes | yes | mev lock, same tx position marker (b1) |
-| afterAddLiquidity (1<<10) | no | yes | hard mode inflow allowance (d2) |
-| afterRemoveLiquidity (1<<8) | yes | yes | exemption or outflow allowance |
+| beforeAddLiquidity (1<<11) | yes | yes | mev lock |
+| afterAddLiquidity (1<<10) | no | no | |
+| afterRemoveLiquidity (1<<8) | yes | no | |
 | beforeSwap (1<<7) | yes | yes | skim on specified quote, stream probe |
-| afterSwap (1<<6) | yes | yes | skim on unspecified quote, refund (b3), flow grant, delivery |
+| afterSwap (1<<6) | yes | yes | skim on unspecified quote, refund (b3), transfer allowance grant (d2), delivery |
 | beforeSwapReturnDelta (1<<3) | yes | yes | |
 | afterSwapReturnDelta (1<<2) | yes | yes | |
-| low 14 bits | 0x29CC (matches live 0x…a9cc) | 0x2DCC | mine with `HookMiner` against CREATE2 deployer 0x4e59…956C |
+| low 14 bits | 0x29CC (matches live 0x…a9cc) | 0x28CC | mine with `HookMiner` against CREATE2 deployer 0x4e59…956C |
 
 size plan. measured: v1 source `ArtCoinsHookSkimFee` is 20,558 bytes at the ci profile (runs 200), 4,018 bytes headroom; `SkimFeeInitLib` 943 bytes. the "29 bytes headroom" note in foundry.toml is stale and must be corrected by h1. so v2 fits even without the cold module, but the margin is thin once the additions land, and raising runs above 200 (cheaper swaps) needs room. v2 target: <= 20,000 bytes at runs 200; ci gate fails below 2,048 bytes headroom.
 
@@ -344,7 +317,7 @@ size plan. measured: v1 source `ArtCoinsHookSkimFee` is 20,558 bytes at the ci p
 | public constant getters replaced by one `constantsHash()` | minus 400 |
 | drop the static fee variant: single concrete hook, no virtual `_setFee` / `_initializeFeeData` indirection | minus 200 |
 | cold module: `fallback()` delegatecalls an immutable `HookColdModule` for `initializePool`, `initializeMevModule`, owner setters, rescue, `skimConfig`, `poolInfo`, ownership. hook keeps one dispatch stub. storage in an erc7201 namespaced struct shared by both (`HookStorage.layout()`) | minus 3,500 |
-| additions: push with fallback, stream probe, partial fill refund, after add liquidity, flow grants, same tx position marker, launcher check | plus 2,700 |
+| additions: push with fallback, stream probe, partial fill refund, transfer allowance grant, launcher check | plus 2,700 |
 | net | about minus 9,300 from 20,558, landing near 11,000 to 12,500 bytes, which leaves room to raise optimizer runs on the hot path |
 
 rules for the cold module: address is a constructor immutable; it is never callable directly with effect (its functions check `address(this) == hook` via an immutable self check); view functions work under staticcall; the published `IArtCoinsHookV2` abi includes the cold selectors so explorers and integrators see one interface. if the module split slips, the first five rows plus the additions alone land near 17,000 bytes, still inside the gate.
@@ -358,14 +331,13 @@ struct TokenConfigV2 {
     string symbol;
     bytes32 salt;          // vanity input, folded into configHash
     string image;
-    string metadata;
-    string context;
+    string description;
     uint256 totalSupply;   // 0 = default
     address renderer;
 }
 struct PoolConfigV2 {
     address hook;
-    int24 tickIfToken0IsArtCoin;
+    int24 tickIfToken0IsCoin;
     int24 tickSpacing;
     address extension;     // frozen per pool, 0 for none
     bytes extensionData;
@@ -386,14 +358,9 @@ struct MevConfigV2 {
     uint24 startingSkimBps;
     uint32 windowSeconds;  // <= MAX_MEV_WINDOW
 }
-struct TaxConfigV2 {
-    uint8 mode;            // 0 none, 1 venue, 2 hard
-    uint16 taxBps;
-    uint16 taxBpsMax;      // <= TAX_BPS_ABSOLUTE_MAX
-    address taxSink;       // DEAD or bountyRecipient
-    address venueAdmin;    // 0 = token admin
-    address[] exempt;      // <= MAX_TAX_EXEMPT
-    TaxVenue[] venues;     // derived v2/v3 pools, <= MAX_TAX_VENUES
+struct RestrictionConfigV2 {
+    bool restricted;       // transfer allowlist on or off
+    address[] allowed;     // extra entries, empty when not restricted; the factory prepends the locker and extensions
 }
 struct ExtensionConfigV2 {
     address extension;
@@ -407,7 +374,7 @@ struct DeploymentConfigV2 {
     FeeConfigV2 fee;
     LockerConfigV2 locker;
     MevConfigV2 mev;
-    TaxConfigV2 tax;
+    RestrictionConfigV2 restriction;
     ExtensionConfigV2[] extensions;
 }
 
@@ -439,7 +406,6 @@ the treasury is the fee recipient. it may or may not implement `IPreSwapStream`,
 | escrow fallback | n/a | `claim(treasury, address(0))` permissionless unless the treasury opts into `selfClaimOnly` | nothing if its fallback is payable; anyone can push the balance. a treasury that cannot receive plain eth must call `claimTo` itself |
 | weth | lp side paid weth on weth pools | v2 pools are native eth only, nothing pays weth | wrap itself if it wants weth |
 | protocol and referral legs | deployer chosen | factory injected | none |
-| tax proceeds | arbitrary sink | `taxSink` is DEAD or the bounty recipient | if the treasury is the sink it receives the coin by erc20 transfer |
 | hookData | `PoolSwapData{mevModuleSwapData, poolExtensionSwapData = abi.encode(PCSwapData)}` | unchanged | none |
 | version and discovery | none | `hook.poolInfo(pid)`, `factory.deploymentInfo(token)`, `token.launcherVersion()` | none |
 | accounting | `LegForwarded` | `FeeDelivered`, `RewardDelivered`, `SkimRefunded` | index these, no callback (open decision 15) |
@@ -451,19 +417,18 @@ v1 files are read only for every package. each package owns its files and its fo
 | pkg | owner files | depends on | deliverable |
 |---|---|---|---|
 | a0 constants and interfaces | `src/Constants.sol`, `src/v2/interfaces/*` (`IArtCoinsHookV2`, `IArtCoinsTokenV2`, `IArtCoinsFactoryV2` with section 6 structs, `IArtCoinsLpLockerV2`, `IArtCoinsFeeEscrowV2`, `IConstantsBound`), `test/v2/ConstantsV2.t.sol` | none | lands first, frozen after review |
-| t1 token and deployer | `src/v2/ArtCoinsTokenV2.sol`, `src/v2/utils/ArtCoinsDeployerV2.sol`, `test/v2/TokenV2*.fork.t.sol` | a0 | b1 token half, d2 token, d4, d6 |
-| h1 hook | `src/v2/hooks/ArtCoinsHookV2.sol`, `HookColdModule.sol`, `HookStorage.sol`, `test/v2/HookV2*.fork.t.sol`, size gate in `foundry.toml` ci profile comment | a0, t1 interface | b1 hook half, b2, b3, b7 hook half, d1 hook, d2 hook, d3, section 5 measured |
+| t1 token and deployer | `src/v2/ArtCoinsTokenV2.sol`, `src/v2/utils/ArtCoinsDeployerV2.sol`, `test/v2/TokenV2*.fork.t.sol` | a0 | d2 token, d6 |
+| h1 hook | `src/v2/hooks/ArtCoinsHookV2.sol`, `HookColdModule.sol`, `HookStorage.sol`, `test/v2/HookV2*.fork.t.sol`, size gate in `foundry.toml` ci profile comment | a0, t1 interface | b2, b3, b7 hook half, d1 hook, d2 hook, d3, section 5 measured |
 | l1 locker, escrow, delivery | `src/v2/lp-lockers/ArtCoinsLpLockerV2.sol`, `src/v2/ArtCoinsFeeEscrowV2.sol`, `src/v2/libraries/FeeDelivery.sol`, `test/v2/LockerV2*.fork.t.sol`, `test/v2/EscrowV2*.fork.t.sol` | a0 | b5 escrow half, d1 |
 | m1 mev | `src/v2/mev-modules/ArtCoinsMevLinearSkimV2.sol`, tests | a0 | b7 module half |
 | p1 periphery | `src/v2/protocol-fee/BurnRouterV2.sol`, `src/v2/protocol-fee/ProtocolFeeControllerV2.sol`, tests | a0, l1 (FeeDelivery) | b6 |
-| k1 keepers | `src/v2/keepers/*`, `test/v2/KeeperV1_111.fork.t.sol` | a0 (v1 keeper has no v2 deps, can ship first) | d8 |
 | r1 renderers | `src/v2/renderer/*`, tests | a0 | b8 |
 | f1 factory | `src/v2/ArtCoinsFactoryV2.sol`, `test/v2/FactoryV2*.fork.t.sol` | a0, t1, h1, l1, m1 | b4, d3 factory half, d4, section 6 |
 | s1 deploy | `script/v2/DeployV2Stack.s.sol`, `script/v2/verify-v2.sh`, `test/v2/DeployV2Stack.fork.t.sol`, `test/v2/harness/ForkStack.sol` additions | all contracts | d7 |
-| i1 integration | `test/v2/IntegrationV2.fork.t.sol` (credits engine style treasury mocks: no code, empty fallback, reverting, gas burner, IPreSwapStream good and bad) | s1 | end to end launch, swaps, collect, keeper, both tax modes |
+| i1 integration | `test/v2/IntegrationV2.fork.t.sol` (credits engine style treasury mocks: no code, empty fallback, reverting, gas burner, IPreSwapStream good and bad) | s1 | end to end launch, swaps, fee delivery, restricted and unrestricted coins |
 | u1 ui and scripts | `ui/src/lib/encode.ts`, `ui/src/lib/abi.ts`, `ui/src/lib/config.ts`, `script-js/*` | a0, s1 | v2 config encoding (ui still encodes the static fee pool data today) |
 
-integration order: a0, then t1 h1 l1 m1 p1 k1 r1 in parallel (k1 v1 helper may deploy independently on the current stack), then f1, then s1, then i1, then u1. h1 owns the size number; f1 may not merge until h1's ci size gate passes.
+integration order: a0, then t1 h1 l1 m1 p1 r1 in parallel, then f1, then s1, then i1, then u1. h1 owns the size number; f1 may not merge until h1's ci size gate passes.
 
 ## 9. open decisions (recommendation first)
 
@@ -471,11 +436,8 @@ integration order: a0, then t1 h1 l1 m1 p1 k1 r1 in parallel (k1 v1 helper may d
 |---|---|---|---|
 | 2 | pool extension after launch | frozen at launch | token admin swap and lock (v1) |
 | 3 | referral cap after launch | frozen | token admin within 1% (v1) |
-| 4 | tax rate | token admin within frozen cap | frozen rate |
-| 5 | who adds venues | `venueAdmin` set at launch (default token admin), add only, renounceable | launcher owner via registry read by the token (makes the token depend on mutable state) |
-| 6 | tax sink | DEAD or bountyRecipient only | any address, surfaced in event |
-| 7 | partial fill over skim | escrow credit to the hookData refund address; a partial fill with no refund address reverts `RefundAddressRequired` (D93) | credit the PoolManager caller (a router cannot claim); revert every partial fill (breaks price limited burners) |
-| 8 | taker binding | source, tx, direction, cumulative realized amount (true taker binding is impossible in v4) | require a recipient in hookData (breaks aggregators) |
+| 7 | partial fill over skim | escrow credit to the hookData refund address; a partial fill with no refund address reverts `RefundAddressRequired` (D93) | credit the router that called the PoolManager (a router cannot claim); revert every partial fill (breaks price limited burners) |
+| 8 | taker binding | canonical pool, tx, realized swap delta amount (true taker binding is impossible in v4) | require a recipient in hookData (breaks aggregators) |
 | 9 | escrow third party claim | permissionless with `selfClaimOnly` opt in | self claim only for contracts (strands treasuries that cannot call out) |
 | 10 | hook size strategy | immutable cold module via fallback | per function delegate stubs, or runs 100 |
 | 11 | baseline skim cap | 10% of volume (111 uses 6%) | keep 90% |
@@ -485,7 +447,6 @@ integration order: a0, then t1 h1 l1 m1 p1 k1 r1 in parallel (k1 v1 helper may d
 | 15 | fee receiver callback | none, events only | erc165 opt in callback |
 | 16 | owner key handling | Ownable2Step on every owned v2 contract | plain Ownable |
 | 17 | LAYER legacy `protocolFeeNumerator` | leave 0, document | none (cannot be removed) |
-| 18 | hard mode erc6909 residual | accept and document | block via extra hook logic on other pools (impossible) |
 | 19 | escrow depositor removal | core depositors (hook) cannot be removed | free removal (can brick fallback) |
 | 20 | v1 lp fee mev modules | not shipped in v2 | port them with a hook fee path (costs size) |
 | 21 | push gas default | 50k (v1 forward gas was 35k) | 35k |

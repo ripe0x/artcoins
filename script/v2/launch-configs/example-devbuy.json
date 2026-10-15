@@ -1,0 +1,58 @@
+{
+  "example": true,
+  "about": "credits engine style coin with a small dev buy through the stack's ArtCoinsUniv4EthDevBuyV2: 0.01 eth buys the new coin from its own pool in the launch tx. extensions[0].data is abi.encode(recipient, refundRecipient, minOut) with recipient and refundRecipient both the launcher placeholder (0x7ea5...0001) and minOut 1; compute a real minOut from the pool curve before a broadcast. msgValue is wei and is added to the deploy fee as the deployToken value. Replace every placeholder (0x7ea5...0001) and set example to false before a broadcast.",
+  "expectedToken": "0x0000000000000000000000000000000000000000",
+  "token": {
+    "tokenAdmin": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+    "name": "Credits Dev Buy Example",
+    "symbol": "CREDB",
+    "salt": "0x0000000000000000000000000000000000000000000000000000000000000001",
+    "image": "ipfs://example",
+    "description": "{\"description\":\"credits engine example coin\"}",
+    "totalSupply": 0,
+    "renderer": "0x0000000000000000000000000000000000000000"
+  },
+  "pool": {
+    "tickIfToken0IsCoin": -200000,
+    "tickSpacing": 200
+  },
+  "fee": {
+    "baselineSkimBps": 600,
+    "bountyBps": 8333,
+    "bountyRecipient": "0x7ea5000000000000000000000000000000000001"
+  },
+  "locker": {
+    "tickLower": [
+      -200000,
+      -160000,
+      -120000
+    ],
+    "tickUpper": [
+      -120000,
+      -100000,
+      -60000
+    ],
+    "positionBps": [
+      5000,
+      3000,
+      2000
+    ]
+  },
+  "mev": {
+    "note": "startingSkimBps and windowSeconds are required when a mev module is set",
+    "startingSkimBps": 6869,
+    "windowSeconds": 4140
+  },
+  "restriction": {
+    "restricted": false,
+    "allowed": []
+  },
+  "extensions": [
+    {
+      "extension": "devBuy",
+      "bps": 0,
+      "msgValue": "10000000000000000",
+      "data": "0x0000000000000000000000007ea50000000000000000000000000000000000010000000000000000000000007ea50000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000001"
+    }
+  ]
+}

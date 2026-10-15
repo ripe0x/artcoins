@@ -48,7 +48,12 @@ contract FirstCoinRehearsal is RehearsalFlow {
 
     function _target() internal pure returns (LaunchV2Lib.Target memory t) {
         t = LaunchV2Lib.Target(
-            Addresses.V2_FACTORY, Addresses.V2_HOOK, Addresses.V2_LOCKER, Addresses.V2_MEV_MODULE
+            Addresses.V2_FACTORY,
+            Addresses.V2_HOOK,
+            Addresses.V2_LOCKER,
+            Addresses.V2_MEV_MODULE,
+            address(0),
+            address(0)
         );
     }
 
@@ -147,7 +152,9 @@ contract FirstCoinRehearsal is RehearsalFlow {
             controller: ProtocolFeeControllerV2(payable(Addresses.V2_PROTOCOL_FEE_CONTROLLER)),
             router: BurnRouterV2(payable(Addresses.V2_BURN_ROUTER)),
             layer: Addresses.COIN_LAYER,
-            launcher: OWNER
+            launcher: OWNER,
+            devBuy: address(0),
+            airdrop: address(0)
         });
         LaunchV2Lib.Launch memory l =
             LaunchV2Lib.parse(vm.readFile("script/v2/launch-configs/example.json"), _target());

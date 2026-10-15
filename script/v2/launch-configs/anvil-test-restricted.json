@@ -1,6 +1,6 @@
 {
   "example": false,
-  "about": "anvil fork rehearsal config, restricted coin with the example on-chain renderer",
+  "about": "anvil fork rehearsal config, restricted coin with the example on-chain renderer The optional extensions array (dev buy, airdrop) is omitted here; see example-devbuy.json.",
   "expectedToken": "0x0000000000000000000000000000000000000000",
   "token": {
     "tokenAdmin": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",

@@ -2,13 +2,16 @@
 // Merges the record written by script/v2/deploy.sh into the registry, then runs verify-registry on the result.
 //   node script-js/merge-v2.mjs <deployments/1.v2.json> [--cutover] [--build] [--file deployments/mainnet.json]
 //   node script-js/merge-v2.mjs --rollback [--build] [--file deployments/mainnet.json]
-// The record's stack (id v2) is merged over the registry entry (fields the record does not set stay) and its contracts
-// replace the stack's contracts. Status: deployed (the stack with status current is untouched), or current when it is
+// A record whose factory differs from the registry's v2 entry moves that entry to the key v2-<its deployedAt> (status
+// superseded, supersededBy v2, supersededAt the record's deployedAt; its contracts and coins follow) and the record
+// becomes the new v2 entry. A record with the same factory is merged over the v2 entry (fields the record does not
+// set stay) and its contracts replace the stack's contracts, so a repeated merge changes nothing. Status: deployed (the stack with status current is untouched), or current when it is
 // already current. --cutover sets v2 to current, the previous current stack and its contracts to superseded, and
 // stores the previous id in stacks.v2.replaces. It needs a record with every contract bytecode verified and no pending
 // ownership. A repeated --cutover changes nothing. --rollback restores the stack named in stacks.v2.replaces and sets
 // v2 to deployed. --build makes verify-registry build every artifact variant first (default: use the foundry-out-*
-// dirs as they are). The target file is replaced only after the schema check and verify-registry both pass.
+// dirs as they are). --no-chain runs the schema check only (tests). --fill lets verify-registry write the discovered
+// bytecodeMatch/owner/state values first (use it when a moved stack no longer matches the current artifacts). The target file is replaced only after the schema check and verify-registry both pass.
 // Then run: cd script-js && npm run gen:addresses
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -21,6 +24,8 @@ const rest = argv.filter((a, i) => !(fi >= 0 && (i === fi || i === fi + 1)));
 const cutover = rest.includes('--cutover');
 const rollback = rest.includes('--rollback');
 const build = rest.includes('--build');
+const noChain = rest.includes('--no-chain');
+const fill = rest.includes('--fill');
 const record = rest.find((a) => !a.startsWith('--'));
 if (rollback ? record || cutover : !record) {
   console.error('usage: node script-js/merge-v2.mjs <record.json> [--cutover] [--build] [--file registry.json]\n       node script-js/merge-v2.mjs --rollback [--build] [--file registry.json]');
@@ -57,8 +62,17 @@ if (rollback) {
   if (cutover && (rec.ownershipPending !== false || rec.contracts.some((c) => c.source.bytecodeMatch !== 'verified'))) {
     die('--cutover needs a record with bytecode verified and ownership accepted (run verify-v2.sh after the accepts, then v2-record.mjs --verified)');
   }
-  const old = reg.stacks.v2;
+  let old = reg.stacks.v2;
   const was = old?.status;
+  if (old?.factory && !eq(old.factory, rec.stacks.v2.factory)) { // replacement: keep the previous record under v2-<deployedAt>
+    const key = `v2-${old.deployedAt}`;
+    if (reg.stacks[key]) die(`registry already has stack ${key} (factory ${reg.stacks[key].factory})`);
+    reg.stacks[key] = { ...old, status: 'superseded', supersededBy: 'v2', supersededAt: rec.stacks.v2.deployedAt };
+    for (const c of reg.contracts) if (c.stack === 'v2') { c.stack = key; if (c.status === was) c.status = 'superseded'; }
+    for (const k of reg.coins) if (k.stack === 'v2') k.stack = key;
+    delete reg.stacks.v2;
+    old = undefined;
+  }
   const oldContracts = Object.fromEntries(reg.contracts.filter((c) => c.stack === 'v2').map((c) => [c.name, c]));
   reg.stacks.v2 = { ...(old ?? {}), ...rec.stacks.v2 };
   reg.contracts = [
@@ -79,7 +93,7 @@ if (rollback) {
 const tmp = file + '.merge-tmp';
 fs.writeFileSync(tmp, JSON.stringify(reg, null, 2) + '\n');
 const run = (flags) => spawnSync('node', ['script-js/verify-registry.mjs', '--file', tmp, ...flags], { stdio: 'inherit' }).status;
-const st = run(['--shape']) || run([build ? '--build' : '--no-build']);
+const st = run(['--shape']) || (noChain ? 0 : (fill && run(['--fill', '--no-build'])) || run([build ? '--build' : '--no-build']));
 if (st) { fs.rmSync(tmp, { force: true }); console.error(`merge-v2: verification failed (exit ${st}), ${file} unchanged`); process.exit(st); }
 fs.renameSync(tmp, file);
 console.log(`merge-v2: ${file} now has stack v2 (${reg.stacks.v2.status})${reg.stacks.v2.replaces ? ', replaces ' + reg.stacks.v2.replaces : ''}`);

@@ -9,7 +9,7 @@
       "status": "planned",
       "factory": null,
       "deployedAt": null,
-      "notes": "skeleton. fill from the json script/v2/DeployV2Stack.s.sol prints (tmp/v2-deploy-1.json): addresses, deployer, deployBlock and deployTxHash (verify-registry --fill --update-blocks), status current, provenance broadcast. see script/v2/README.md"
+      "notes": "skeleton. fill from the json script/v2/DeployV2Stack.s.sol prints (tmp/v2-deploy-1.json): addresses, deployer, deployBlock and deployTxHash (verify-registry --fill --update-blocks), status current, provenance broadcast. see script/v2/README.md. merging a replacement record moves the previous v2 record to `v2-<date>` with status superseded"
     }
   },
   "contracts": [
@@ -210,6 +210,50 @@
       "provenance": "planned",
       "chainVerified": false,
       "notes": "factory protocolRecipient, treasury 0x41c3, 8000/2000 treasury/LAYER burn, escrow depositor (non core)"
+    },
+    {
+      "name": "ArtCoinsUniv4EthDevBuyV2",
+      "address": null,
+      "stack": "v2",
+      "role": "extension",
+      "deployBlock": null,
+      "deployTxHash": null,
+      "deployedAt": null,
+      "deployer": null,
+      "source": {
+        "repoPath": "src/v2/extensions/ArtCoinsUniv4EthDevBuyV2.sol",
+        "commit": null,
+        "bytecodeMatch": "unverified"
+      },
+      "etherscanVerified": "unknown",
+      "owner": null,
+      "state": "unknown",
+      "status": "planned",
+      "provenance": "planned",
+      "chainVerified": false,
+      "notes": "launch extension, constructor (factory, PoolManager), enabled on the factory; refund address in hookData is the config refundRecipient"
+    },
+    {
+      "name": "ArtCoinsAirdropV2",
+      "address": null,
+      "stack": "v2",
+      "role": "extension",
+      "deployBlock": null,
+      "deployTxHash": null,
+      "deployedAt": null,
+      "deployer": null,
+      "source": {
+        "repoPath": "src/v2/extensions/ArtCoinsAirdropV2.sol",
+        "commit": null,
+        "bytecodeMatch": "unverified"
+      },
+      "etherscanVerified": "unknown",
+      "owner": null,
+      "state": "unknown",
+      "status": "planned",
+      "provenance": "planned",
+      "chainVerified": false,
+      "notes": "launch extension, constructor (factory), enabled on the factory"
     }
   ],
   "coins": []

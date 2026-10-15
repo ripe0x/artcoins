@@ -58,8 +58,9 @@ function shape(r) {
   need(r.chainId === 1, 'chainId must be 1'); need(addr(r.owner), 'owner address'); need(/^[0-9a-f]{40}$/.test(r.repoCommit), 'repoCommit sha');
   const planned = (id) => r.stacks?.[id]?.status === 'planned';
   for (const [id, s] of Object.entries(r.stacks || {})) {
-    keys(s, ['label', 'status', 'factory', 'deployedAt', 'notes', ...('replaces' in (s || {}) ? ['replaces'] : [])], `stack ${id}`);
+    keys(s, ['label', 'status', 'factory', 'deployedAt', 'notes', ...('replaces' in (s || {}) ? ['replaces'] : []), ...('supersededBy' in (s || {}) ? ['supersededBy', 'supersededAt'] : [])], `stack ${id}`);
     need(!('replaces' in (s || {})) || (r.stacks[s.replaces] && s.replaces !== id), `stack ${id} replaces an existing other stack`);
+    need(!('supersededBy' in (s || {})) || (s.status === 'superseded' && r.stacks[s.supersededBy] && s.supersededBy !== id && date(s.supersededAt) && id === `${s.supersededBy}-${s.deployedAt}`), `stack ${id} supersededBy names an existing other stack, status superseded, id <supersededBy>-<deployedAt>`);
     need(['current', 'deployed', 'superseded', 'legacy', 'planned'].includes(s.status) && addr(s.factory, planned(id)) && date(s.deployedAt), `stack ${id} values`);
   }
   const seen = new Set();

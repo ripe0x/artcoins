@@ -8,6 +8,10 @@ import {DeployV2Lib} from "../../../script/v2/DeployV2Lib.sol";
 import {LaunchV2Lib} from "../../../script/v2/LaunchV2Coin.s.sol";
 import {Constants} from "../../../src/Constants.sol";
 import {IArtCoinsHook} from "../../../src/interfaces/IArtCoinsHook.sol";
+import {IArtCoinsAirdropV2} from "../../../src/v2/extensions/interfaces/IArtCoinsAirdropV2.sol";
+import {
+    IArtCoinsUniv4EthDevBuyV2
+} from "../../../src/v2/extensions/interfaces/IArtCoinsUniv4EthDevBuyV2.sol";
 import {IArtCoinsFactoryV2} from "../../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsFeeEscrowV2} from "../../../src/v2/interfaces/IArtCoinsFeeEscrowV2.sol";
 import {IArtCoinsHookV2} from "../../../src/v2/interfaces/IArtCoinsHookV2.sol";
@@ -73,12 +77,137 @@ abstract contract RehearsalFlow is Test {
         address layer;
         /// @dev Sender of the launch (factory owner while the factory is deprecated).
         address launcher;
+        /// @dev Launch extension instances of the stack. Zero when the stack has none.
+        address devBuy;
+        address airdrop;
     }
+
+    /// @dev Two leaf airdrop tree and the dev buy parties built by `_addExtensions`.
+    struct ExtensionFixture {
+        address recipient;
+        address refundRecipient;
+        address leafA;
+        address leafB;
+        uint256 amountA;
+        uint256 amountB;
+        bytes32 hashA;
+        bytes32 hashB;
+    }
+
+    uint256 internal constant FC_DEV_BUY_ETH = 0.01 ether;
+    uint16 internal constant FC_AIRDROP_BPS = 100;
+
+    ExtensionFixture internal fx;
 
     receive() external payable virtual {}
 
     function _target(Rig memory r) internal pure returns (LaunchV2Lib.Target memory t) {
-        t = LaunchV2Lib.Target(address(r.factory), r.hook, r.locker, r.mev);
+        t = LaunchV2Lib.Target(address(r.factory), r.hook, r.locker, r.mev, r.devBuy, r.airdrop);
+    }
+
+    // ── launch extensions ─────────────────────────────────────────────────
+
+    /// @dev Replaces `l.cfg.extensions` with a dev buy of `FC_DEV_BUY_ETH` and a 1% airdrop
+    ///      (no lockup, no vesting) over a two leaf tree. Sweep recipient is the launcher.
+    function _addExtensions(Rig memory r, LaunchV2Lib.Launch memory l) internal {
+        fx.recipient = makeAddr("rehearsal.devBuyRecipient");
+        fx.refundRecipient = makeAddr("rehearsal.devBuyRefund");
+        fx.leafA = makeAddr("rehearsal.airdropA");
+        fx.leafB = makeAddr("rehearsal.airdropB");
+        fx.amountA = 1000 ether;
+        fx.amountB = 2000 ether;
+        fx.hashA = keccak256(bytes.concat(keccak256(abi.encode(fx.leafA, fx.amountA))));
+        fx.hashB = keccak256(bytes.concat(keccak256(abi.encode(fx.leafB, fx.amountB))));
+        bytes32 root = fx.hashA < fx.hashB
+            ? keccak256(abi.encodePacked(fx.hashA, fx.hashB))
+            : keccak256(abi.encodePacked(fx.hashB, fx.hashA));
+
+        IArtCoinsFactoryV2.ExtensionConfigV2[] memory e =
+            new IArtCoinsFactoryV2.ExtensionConfigV2[](2);
+        e[0] = IArtCoinsFactoryV2.ExtensionConfigV2({
+            extension: r.devBuy,
+            msgValue: FC_DEV_BUY_ETH,
+            extensionBps: 0,
+            extensionData: abi.encode(fx.recipient, fx.refundRecipient, uint128(1))
+        });
+        e[1] = IArtCoinsFactoryV2.ExtensionConfigV2({
+            extension: r.airdrop,
+            msgValue: 0,
+            extensionBps: FC_AIRDROP_BPS,
+            extensionData: abi.encode(r.launcher, root, uint256(0), uint256(0))
+        });
+        l.cfg.extensions = e;
+    }
+
+    /// @dev Effects of the configured dev buy and airdrop entries, read from the launch logs.
+    function _checkExtensionEffects(
+        Rig memory r,
+        LaunchV2Lib.Launch memory l,
+        Vm.Log[] memory logs,
+        address token
+    ) internal {
+        for (uint256 k; k < l.cfg.extensions.length; ++k) {
+            address ext = l.cfg.extensions[k].extension;
+            if (ext == r.devBuy && ext != address(0)) _checkDevBuy(r, logs, token);
+            if (ext == r.airdrop && ext != address(0)) _checkAirdrop(r, logs, token, k);
+        }
+    }
+
+    function _checkDevBuy(Rig memory r, Vm.Log[] memory logs, address token) internal view {
+        uint256 n;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter != r.devBuy) continue;
+            if (logs[i].topics[0] != IArtCoinsUniv4EthDevBuyV2.EthDevBuy.selector) continue;
+            ++n;
+            assertEq(address(uint160(uint256(logs[i].topics[1]))), token, "dev buy token");
+            assertEq(
+                address(uint160(uint256(logs[i].topics[2]))), fx.recipient, "dev buy recipient"
+            );
+            (uint256 spent, uint256 out, uint256 refunded, address refundTo) =
+                abi.decode(logs[i].data, (uint256, uint256, uint256, address));
+            assertEq(refundTo, fx.refundRecipient, "dev buy refund recipient");
+            assertEq(spent + refunded, FC_DEV_BUY_ETH, "dev buy eth accounted");
+            assertGt(out, 0, "dev buy out");
+            assertEq(IERC20(token).balanceOf(fx.recipient), out, "dev buy recipient coin balance");
+            assertEq(fx.refundRecipient.balance, refunded, "refund recipient eth");
+            // a full fill refunds nothing and credits no skim
+            assertEq(refunded, 0, "full fill: no refund");
+            assertEq(r.escrow.balances(fx.refundRecipient, address(0)), 0, "refund escrow credit");
+        }
+        assertEq(n, 1, "one EthDevBuy");
+        assertEq(r.devBuy.balance, 0, "dev buy holds no eth");
+        assertEq(r.escrow.balances(r.devBuy, address(0)), 0, "dev buy holds no escrow credit");
+    }
+
+    function _checkAirdrop(Rig memory r, Vm.Log[] memory logs, address token, uint256 index)
+        internal
+    {
+        uint256 n;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter != r.airdrop) continue;
+            if (logs[i].topics[0] != IArtCoinsAirdropV2.AirdropCreated.selector) continue;
+            ++n;
+            assertEq(address(uint160(uint256(logs[i].topics[1]))), token, "airdrop token");
+            assertEq(uint256(logs[i].topics[2]), index, "airdrop index");
+            assertEq(
+                address(uint160(uint256(logs[i].topics[3]))), r.launcher, "airdrop sweep recipient"
+            );
+        }
+        assertEq(n, 1, "one AirdropCreated");
+        IArtCoinsAirdropV2 air = IArtCoinsAirdropV2(r.airdrop);
+        uint256 supply = IERC20(token).totalSupply() * FC_AIRDROP_BPS / Constants.BPS;
+        assertEq(air.tranche(token, index).supply, supply, "tranche supply");
+        assertEq(IERC20(token).balanceOf(r.airdrop), supply, "airdrop holds its share");
+
+        // leaf A claims with leaf B as proof, then claiming again reverts
+        bytes32[] memory proof = new bytes32[](1);
+        proof[0] = fx.hashB;
+        assertEq(air.amountAvailableToClaim(token, index, fx.leafA, fx.amountA), fx.amountA);
+        air.claim(token, index, fx.leafA, fx.amountA, proof);
+        assertEq(IERC20(token).balanceOf(fx.leafA), fx.amountA, "leaf A paid");
+        assertEq(air.leafClaimed(token, index, fx.leafA, fx.amountA), fx.amountA, "leaf A claimed");
+        vm.expectRevert(IArtCoinsAirdropV2.UserMaxClaimed.selector);
+        air.claim(token, index, fx.leafA, fx.amountA, proof);
     }
 
     // ── launch ────────────────────────────────────────────────────────────
@@ -112,6 +241,7 @@ abstract contract RehearsalFlow is Test {
 
         _checkCreatedEvent(r, logs, token, pid, cfgHash);
         _checkExtensions(r, l, logs, token);
+        _checkExtensionEffects(r, l, logs, token);
     }
 
     function _checkCreatedEvent(
@@ -255,7 +385,10 @@ abstract contract RehearsalFlow is Test {
 
         // launch config hash, TokenCreatedV2 fields, gas, extensions
         (address token, PoolKey memory key) = _launchChecked(r, l);
-        assertEq(r.escrow.balances(address(rej), address(0)), 0, "no credit before swaps");
+        // the dev buy swap pays the baseline skim, whose bounty leg is credited at launch
+        uint256 launchCredit = r.escrow.balances(address(rej), address(0));
+        if (l.cfg.extensions.length == 0) assertEq(launchCredit, 0, "no credit before swaps");
+        else assertGt(launchCredit, 0, "dev buy skim bounty credited at launch");
         assertEq(r.escrow.balances(refundTo, address(0)), 0, "refund address credit at launch");
 
         // Universal Router buy and sell with a refund address in hookData
