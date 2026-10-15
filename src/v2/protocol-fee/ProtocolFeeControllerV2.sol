@@ -13,22 +13,21 @@ import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/Reentrancy
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
 /// @title  ProtocolFeeControllerV2
-/// @notice Protocol fee recipient. The hook pushes the protocol leg of every
-///         swap here with the eth stipend; a failed push credits this contract
-///         in the fee escrow. `processFees` claims that credit and splits the
-///         eth balance between `treasury` and `burnRouter`.
-/// @dev    Properties:
-///         - the owner sets the treasury share within [PFC_MIN_TREASURY_BPS,
-///           BPS - PFC_MIN_BURN_BPS] (1000 to 9000 bps). Owner setters apply
-///           to every coin.
-///         - `setBurnRouter` does not call the old router, so a faulty router
-///           can be replaced.
-///         - each share is pushed with `PUSH_GAS` and credited in the escrow on
-///           failure (FeeDelivery), which requires this contract to be an escrow
-///           depositor. Until it is, a failed push reverts `processFees` and the
-///           eth stays here for a retry.
-///         - the split is eth only. The owner can rescue any balance, eth
-///           waiting to be split included, and any erc20 sent here.
+/// @notice Protocol fee recipient for every v2 coin. Splits its eth between
+///         `treasury` and `burnRouter` by `treasuryBps`.
+/// @dev    The hook pushes the protocol leg of each swap here. A failed push
+///         credits this contract in the fee escrow. `processFees` claims that
+///         credit and splits the whole eth balance. It is callable by anyone.
+///         Each share is pushed with `PUSH_GAS`. A failed push credits the
+///         share's recipient in the escrow, which requires this contract to be
+///         an escrow depositor. Until it is, a failed push reverts
+///         `processFees` and the eth stays here for a retry.
+///         The split covers eth. Erc20 sent here is recoverable with `rescue`.
+///         Owner powers apply to every coin: `treasury`, `burnRouter`,
+///         `treasuryBps` within [PFC_MIN_TREASURY_BPS, BPS - PFC_MIN_BURN_BPS]
+///         (1000 to 9000 bps), and `rescue` of any balance, including eth
+///         waiting to be split. `setBurnRouter` does not call the old router,
+///         so a faulty router can be replaced.
 contract ProtocolFeeControllerV2 is
     IProtocolFeeControllerV2,
     IConstantsBound,
@@ -69,7 +68,7 @@ contract ProtocolFeeControllerV2 is
         _setSplit(treasuryBps_);
     }
 
-    /// @notice Accepts eth from the hook, the locker, the escrow and anyone else.
+    /// @notice Accepts eth from any sender, including the hook and the escrow.
     receive() external payable {}
 
     // ── processing ────────────────────────────────────────────────────────

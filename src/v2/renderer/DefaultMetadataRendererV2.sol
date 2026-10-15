@@ -8,12 +8,11 @@ import {SvgText} from "./SvgText.sol";
 import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
 
 /// @title  DefaultMetadataRendererV2
-/// @notice Reads the token fields and returns an ERC-7572 json data uri. No svg,
-///         no html, no state, no owner.
-/// @dev    Every field is bounded (`SvgText` caps), cleaned to
-///         valid utf8 and then json escaped, so the json is well formed for any
-///         bytes and the gas is bounded by the caps, not by what the token admin
-///         stored. An image url longer than `SvgText.URL_MAX` is dropped.
+/// @notice Metadata renderer returning an ERC-7572 json data uri of the coin's name, symbol,
+///         description and image url. Stateless and ownerless.
+/// @dev    Each field is capped by `SvgText`, cleaned to valid utf8 and json escaped. The json is
+///         well formed for any stored bytes and the gas is bounded by the caps. An image url
+///         longer than `SvgText.URL_MAX` is replaced by an empty string.
 contract DefaultMetadataRendererV2 is IMetadataRenderer {
     /// @inheritdoc IMetadataRenderer
     function contractURI(address token) external view override returns (string memory) {

@@ -9,12 +9,11 @@ import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
 import {LibString} from "solady/utils/LibString.sol";
 
 /// @title  ExampleOnChainRendererV2
-/// @notice Reference on-chain svg renderer. Fork it for custom art.
-/// @dev    Name and symbol reach the svg only
-///         through `SvgText.text`, which truncates on a utf8 boundary, sanitises
-///         and escapes `& < > " '`, so a hostile name cannot close the text node
-///         or break the xml. json fields use `SvgText.jsonText` (bounded, valid
-///         utf8, `LibString.escapeJSON`). No loops, no state, no owner.
+/// @notice Reference on-chain svg renderer for custom renderers to copy.
+/// @dev    Name and symbol enter the svg through `SvgText.text`, which truncates on a utf8
+///         boundary, sanitises and escapes `& < > " '`, so the text node and the xml stay well
+///         formed. json fields use `SvgText.jsonText`. Stateless and ownerless.
+///         The svg background colors derive from the first nine bytes of the coin address.
 contract ExampleOnChainRendererV2 is IMetadataRenderer {
     uint256 internal constant SYMBOL_SVG_MAX = 6;
     uint256 internal constant NAME_SVG_MAX = 28;

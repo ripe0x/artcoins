@@ -10,33 +10,26 @@ import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 
 /// @title  ArtCoinsMevLinearSkimV2
 /// @notice Anti sniper skim schedule for v2 pools. The skim decays linearly
-///         from `startingSkimBps` to `endSkimBps` over `windowSeconds`, in
-///         bps of volume. The hook reads `currentSkimBps` per swap and clamps
-///         the result to [pool baseline, `MAX_SKIM_BPS`]. The hook ends the
-///         skim at `createdAt + MAX_MEV_WINDOW` whatever this module reports.
+///         from `startingSkimBps` to `endSkimBps` over `windowSeconds`, in bps of
+///         volume. The hook reads `currentSkimBps` per swap and clamps the result
+///         to [pool baseline, MAX_SKIM_BPS]. The hook applies the baseline from
+///         `createdAt + MAX_MEV_WINDOW` whatever this module reports.
 ///
-///         Trust model:
-///         - Ownerless. The only state changing entry is `initialize`,
-///           callable by the immutable `hook`.
-///         - Each pool is configured once, in the launch transaction, and the
-///           config is frozen after that.
-///         - The module has no `beforeSwap` and does not set the lp fee. It
-///           answers only the IArtCoinsMevSkimV2 erc-165 id.
-///         - The window bounds are `Constants.MIN_MEV_WINDOW` and
-///           `Constants.MAX_MEV_WINDOW`, the cap the hook also applies.
+///         Authority: the immutable `hook` is the only caller of `initialize`.
+///         Each pool is configured once, at launch, and the schedule is fixed
+///         after that. The module has no owner. The window is bounded by
+///         `Constants.MIN_MEV_WINDOW` and `Constants.MAX_MEV_WINDOW`.
 ///
 ///         Config encoding for `initialize`:
-///         - `abi.encode(uint24 startingSkimBps, uint32 windowSeconds)` (64 bytes).
-///           `endSkimBps` is 0 and the hook clamps the reported value up to the
-///           pool baseline, so the effective schedule reaches the baseline
-///           before the window closes.
-///         - `abi.encode(uint24 startingSkimBps, uint32 windowSeconds, uint24 endSkimBps)`
-///           (96 bytes). The hook passes the pool baseline as
-///           `endSkimBps` so the decay reaches the baseline exactly at the end of
-///           the window. `endSkimBps <= startingSkimBps` and
-///           `endSkimBps <= Constants.MAX_BASELINE_SKIM_BPS`.
-///         - empty bytes: `Constants.DEFAULT_START_SKIM_BPS`,
+///         - empty: `Constants.DEFAULT_START_SKIM_BPS`,
 ///           `Constants.DEFAULT_MEV_WINDOW`, `endSkimBps = 0`.
+///         - `abi.encode(uint24 startingSkimBps, uint32 windowSeconds)` (64 bytes),
+///           `endSkimBps = 0`. The hook clamps the reported value up to the pool
+///           baseline.
+///         - `abi.encode(uint24 startingSkimBps, uint32 windowSeconds, uint24 endSkimBps)`
+///           (96 bytes), with `endSkimBps <= startingSkimBps` and
+///           `endSkimBps <= Constants.MAX_BASELINE_SKIM_BPS`. The hook passes
+///           this form with the pool baseline as `endSkimBps`.
 contract ArtCoinsMevLinearSkimV2 is IArtCoinsMevSkimV2 {
     /// @notice Per pool schedule, packed in one slot, fixed after `initialize`.
     struct SkimSchedule {

@@ -21,13 +21,11 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 
 /// @title  DeployV2Lib
-/// @notice The one v2 stack deploy routine. `script/v2/DeployV2Stack.s.sol`
-///         runs it inside `vm.startBroadcast()`; the fork harness
-///         (`test/v2/harness/ForkStack.sol` `deployV2Stack`) runs it inside
-///         `vm.startPrank(broadcaster)`. Same code, so tests and the script
-///         cannot drift. Internal functions only: every `new` and call runs in
-///         the caller's context (the broadcaster or the pranked address).
-/// @dev    Order (DESIGN d7, DECISIONS D28, D33, D36, D38):
+/// @notice The v2 stack deploy routine. `script/v2/DeployV2Stack.s.sol` runs it
+///         inside `vm.startBroadcast()` and the fork harness runs it inside
+///         `vm.startPrank(broadcaster)`. All functions are internal, so every
+///         `new` and call runs in the caller's context.
+/// @dev    Order:
 ///          1 escrow                       owner = broadcaster (wired below)
 ///          2 extension allowlist          owner = OWNER (no deploy time owner call)
 ///          3 hook, CREATE2 via 0x4e59     salt mined for flags 0x28CC, owner = broadcaster
@@ -37,12 +35,12 @@ import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 ///          7 token deployer               bound to the factory, then `setTokenDeployer`
 ///          8 burn router                  owner = OWNER, bound to LAYER and its weth pool at construction
 ///          9 protocol fee controller      owner = OWNER, treasury, burn router (ctor needs it, so 8 before 9)
-///         10 wiring                       escrow depositors first (D36), then hook, locker, factory
+///         10 wiring                       escrow depositors first, then hook, locker, factory
 ///         11 ownership                    pending owner = OWNER on escrow, hook, locker, factory when the
 ///                                         broadcaster differs (Ownable2Step, `acceptOwnership` by OWNER)
-///         `check` holds every post deploy assert (step 12 of the script).
+///         `check` holds every post deploy assert.
 library DeployV2Lib {
-    // ── v2 hook address flags (DESIGN section 5) ────────────────────────────
+    // ── v2 hook address flags ───────────────────────────────────────────────
     uint160 internal constant HOOK_FLAGS = uint160(
         Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG
             | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
@@ -143,7 +141,7 @@ library DeployV2Lib {
         // 4, 5
         s.locker = new ArtCoinsLpLockerV2(p.broadcaster, p.positionManager, p.permit2);
         s.mev = new ArtCoinsMevLinearSkimV2(address(s.hook));
-        // 6, 7 (D38)
+        // 6, 7
         s.factory = new ArtCoinsFactoryV2(p.broadcaster, p.poolManager, p.deployFee);
         s.tokenDeployer = new ArtCoinsDeployerV2(address(s.factory));
         s.factory.setTokenDeployer(address(s.tokenDeployer));
@@ -207,9 +205,9 @@ library DeployV2Lib {
         revert("v2: no hook salt");
     }
 
-    /// @dev Step 10. D36: the escrow knows the hook as a core depositor before
-    ///      `setFeeEscrow` (the hook's setter reverts otherwise). D33: the
-    ///      controller is a non core depositor. The factory stays deprecated.
+    /// @dev Step 10. The hook is a core escrow depositor before `setFeeEscrow`,
+    ///      whose setter reverts otherwise. The controller is a non core depositor.
+    ///      The factory stays deprecated.
     function _wire(Stack memory s, Params memory p) private {
         s.escrow.addDepositor(address(s.hook), true);
         s.escrow.addDepositor(address(s.controller), false);

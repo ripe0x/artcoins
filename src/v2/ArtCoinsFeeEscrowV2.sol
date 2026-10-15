@@ -11,14 +11,18 @@ import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/Reentrancy
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
 /// @title  ArtCoinsFeeEscrowV2
-/// @notice Fallback store for fees whose push failed. Balances are keyed by
-///         (feeOwner, token), `token == address(0)` is native eth. Credited
-///         balances are owed: the owner can rescue at most `balance - totalOwed`.
-/// @dev    `claim` pays the fee owner and is callable by anyone unless the fee
-///         owner set `selfClaimOnly`.
-///         `claimTo` is callable by the fee owner only.
-///         Core depositors (hook, locker) are permanent, so the push fallback
-///         of those contracts stays available.
+/// @notice Holds fees whose push to the recipient failed. Balances are keyed by
+///         (feeOwner, token) and `token == address(0)` is native eth.
+/// @dev    The owner allowlists depositors. The deployed stack has the hook
+///         (core) and the ProtocolFeeControllerV2 (non core).
+///         Credited balances are owed to the fee owner and sum to
+///         `totalOwed[token]`. The owner can rescue at most
+///         `balance - totalOwed[token]`.
+///         `claim` pays the fee owner and is callable by anyone unless the fee
+///         owner set `selfClaimOnly`. `claimTo` is callable by the fee owner
+///         and pays a chosen recipient.
+///         A core depositor cannot be removed or downgraded, which keeps its
+///         push fallback available.
 contract ArtCoinsFeeEscrowV2 is IArtCoinsFeeEscrowV2, Ownable2Step, ReentrancyGuardTransient {
     /// @inheritdoc IArtCoinsFeeEscrowV2
     mapping(address feeOwner => mapping(address token => uint256)) public balances;
@@ -68,8 +72,8 @@ contract ArtCoinsFeeEscrowV2 is IArtCoinsFeeEscrowV2, Ownable2Step, ReentrancyGu
     }
 
     /// @inheritdoc IArtCoinsFeeEscrowV2
-    /// @dev Makes no external call. A reentrancy lock would revert a core
-    ///      depositor's fallback that runs inside a claim callback.
+    /// @dev Has no reentrancy guard so a core depositor can credit from inside
+    ///      a `claim` payout callback.
     function storeFeesNative(address feeOwner) external payable onlyDepositor {
         if (feeOwner == address(0)) revert ZeroRecipient();
         if (msg.value == 0) revert ZeroNativeDeposit();
@@ -130,8 +134,8 @@ contract ArtCoinsFeeEscrowV2 is IArtCoinsFeeEscrowV2, Ownable2Step, ReentrancyGu
     // ── owner ─────────────────────────────────────────────────────────────
 
     /// @inheritdoc IArtCoinsFeeEscrowV2
-    /// @dev A core depositor keeps core status. Re adding a non core depositor
-    ///      as core upgrades it.
+    /// @dev A core depositor keeps core status. Adding a non core depositor
+    ///      again with `core == true` upgrades it.
     function addDepositor(address depositor, bool core) external onlyOwner {
         if (depositor == address(0)) revert ZeroAddress();
         if (isCoreDepositor[depositor] && !core) revert CoreDepositor(depositor);

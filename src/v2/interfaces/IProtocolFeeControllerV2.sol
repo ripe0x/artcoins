@@ -53,7 +53,7 @@ interface IProtocolFeeControllerV2 {
     /// @notice Claims the controller's eth credit from the fee escrow, then splits the whole eth
     ///         balance and delivers both shares.
     /// @dev Callable by anyone. Each share is pushed with `PUSH_GAS` and credited to its
-    ///      recipient in the escrow when the push fails (FeeDelivery). Reverts `NothingToProcess`.
+    ///      recipient in the escrow when the push fails. Reverts `NothingToProcess`.
     function processFees() external;
 
     /// @notice Recipient of the treasury share.

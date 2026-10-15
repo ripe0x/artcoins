@@ -27,38 +27,30 @@ interface IHookPoolManager {
 }
 
 /// @title  ArtCoinsFactoryV2
-/// @notice Launches an art coin, its native eth Uniswap v4 pool on the v2 hook
-///         and its locked liquidity in one call. The token address is a
-///         function of (factory, sender, full config):
+/// @notice Launches an art coin, its native eth Uniswap v4 pool and its locked liquidity in one call.
+/// @dev    `deployToken` deploys the coin through `ArtCoinsDeployerV2`, creates the pool on an
+///         enabled hook, places the pool supply in an enabled locker and gives each launch
+///         extension its supply share and eth. The deployer exists because the factory runtime
+///         plus the token initcode exceeds the EIP-170 code size limit. The token address is
+///         a function of (deployer, sender, full config) with
 ///         salt = keccak256(abi.encode(sender, configHash(c))).
 ///
-///         Launch flow (`deployToken`):
-///         1. deprecated gate (owner bypasses); token deployer set.
-///         2. config validated against `Constants` and factory state.
-///         3. `msg.value >= deployFee + sum(extension msgValue)`; the excess is
-///            refunded to the sender at the end of the call.
-///         4. token deployed by CREATE2 with the sender bound salt.
-///         5. `hook.initializePool` with the skim config; protocolRecipient is
-///            injected from factory storage. The token's canonical hook, pool id,
-///            PoolManager and `restricted` flag are checked against the pool just
-///            created.
-///         6. launch record (`isCoin`, `deploymentInfo`) written.
-///         7. pool supply approved to the locker, `placeLiquidity`; the locker
-///            must pull exactly the pool supply.
-///         8. extensions: each gets exactly its own `msgValue` and its own
-///            supply share, and must pull exactly that share.
-///         9. `hook.initializeMevModule`, always (after extensions: a
-///            launch extension such as a dev buy is the deployer's own action;
-///            the call also runs the pool extension's post locker setup).
-///         10. `TokenCreatedV2` with the full config; deploy fee pushed to
-///            `teamFeeRecipient`; excess eth refunded to the sender.
+///         Supply: each extension gets floor(extensionBps * supply / BPS). The pool supply is
+///         the supply minus the sum of extension shares, so rounding dust goes to the pool. The
+///         locker and each extension must pull exactly their share, and the factory holds no
+///         coin after a launch. Eth: `msg.value` must cover `deployFee` plus the sum of
+///         extension `msgValue`. The fee goes to `teamFeeRecipient`, the excess is refunded to
+///         the sender, and the factory holds no eth after a launch and has no `receive`.
 ///
-///         Supply rounding: each extension gets `floor(bps * supply / BPS)`;
-///         the pool supply is `supply - sum(extension shares)`, so rounding
-///         dust goes to the pool. The factory holds no coin after a launch.
-///         Eth: the factory holds no eth after a launch (fee pushed, excess
-///         refunded). It has no `receive`; stray eth (forced sends) or erc20
-///         can be moved by the owner with `rescue`.
+///         Authority: the owner (Ownable2Step) enables hooks, lockers, mev modules and
+///         extensions, sets the token deployer, `deployFee`, `protocolRecipient`,
+///         `teamFeeRecipient` and `deprecated`, and moves forced eth or stray erc20 with
+///         `rescue`. The owner can launch while deprecated and cannot renounce ownership. Any
+///         sender launches while not deprecated, with a config within the `Constants` bounds and
+///         the enabled components. The coin admin (`TokenConfigV2.tokenAdmin`) controls the
+///         launched coin through the coin and the hook. The factory holds no authority over it.
+///         Enabling a component or the token deployer requires its `constantsHash()` to equal
+///         this build's `Constants.hash()`.
 contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardTransient {
     using PoolIdLibrary for PoolKey;
     using SafeERC20 for IERC20;
@@ -67,7 +59,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     /// @notice Parallel arrays of different lengths.
     error ArrayLengthMismatch();
-    /// @notice `baselineSkimBps` is zero: the skim is the pool's only fee.
+    /// @notice `baselineSkimBps` is zero.
     error ZeroFeeLaunch();
     /// @notice Position count is 0 or above `Constants.MAX_LP_POSITIONS`, or position bps do not sum to BPS.
     error InvalidPositions();
@@ -85,16 +77,15 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     /// @inheritdoc IArtCoinsFactoryV2
     uint16 public constant STACK_VERSION = Constants.STACK_VERSION;
 
-    /// @dev Stack contracts a fee recipient cannot be: factory, coin,
-    ///      PoolManager, hook, locker, token deployer, hook fee escrow, mev module.
+    /// @dev Size of the fixed reject set in `_checkRecipients`: factory, coin, PoolManager,
+    ///      hook, locker, token deployer, hook fee escrow, mev module.
     uint256 private constant _REJECT_SET = 8;
 
     /// @notice The Uniswap v4 PoolManager every enabled hook must answer.
     address public immutable poolManager;
-    /// @notice CREATE2 token deployer: its own contract, bound to this
-    ///         factory at its construction, wired with `setTokenDeployer`.
-    ///         Replacing it changes every future token address (the deployer is
-    ///         the CREATE2 origin), so `predictToken` answers for the current one.
+    /// @notice CREATE2 token deployer bound to this factory at its construction. Set with
+    ///         `setTokenDeployer`. It is the CREATE2 origin, so replacing it changes every
+    ///         future token address and `predictToken` answers for the current one.
     address public tokenDeployer;
 
     // ── owner state ───────────────────────────────────────────────────────
@@ -126,9 +117,8 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     /// @param owner_         Initial owner (Ownable2Step).
     /// @param poolManager_   Uniswap v4 PoolManager.
     /// @param deployFee_     Initial `deployFee` (<= MAX_DEPLOY_FEE).
-    /// @dev   Ships deprecated and without a token deployer. Deploy order:
-    ///        factory, then `new ArtCoinsDeployerV2(factory)`, then
-    ///        `setTokenDeployer`, then the remaining wiring, then `setDeprecated(false)`.
+    /// @dev   Starts deprecated with no token deployer. Wiring order: `new ArtCoinsDeployerV2(factory)`,
+    ///        `setTokenDeployer`, the enable calls, `setDeprecated(false)`.
     constructor(address owner_, address poolManager_, uint256 deployFee_) Ownable(owner_) {
         if (poolManager_ == address(0)) revert ZeroAddress();
         if (deployFee_ > Constants.MAX_DEPLOY_FEE) revert DeployFeeTooHigh();
@@ -144,8 +134,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     // ══════════════════════════════════════════════════════════════════════
 
     /// @inheritdoc IArtCoinsFactoryV2
-    /// @dev `msg.value` must be at least `deployFee + sum(extension msgValue)`;
-    ///      any excess is refunded to the sender.
+    /// @dev `msg.value` must be at least `deployFee + sum(extension msgValue)`; any excess is
+    ///      refunded to the sender. Order: coin deployed, pool created, launch record (`isCoin`,
+    ///      `deploymentInfo`) written, liquidity placed, extensions run, mev module initialised.
     function deployToken(DeploymentConfigV2 calldata c)
         external
         payable
@@ -184,9 +175,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         _placeLiquidity(c, poolKey, poolSupply, token);
         _runExtensions(c, poolKey, token, supply);
 
-        // always called: it also runs the pool extension's post locker setup
-        // and arms the hook's per pool `started` flag. Empty config when there
-        // is no module (the hook skips the module call).
+        // Runs after the extensions so a launch extension trade (dev buy) executes before the
+        // anti sniper window starts. Also runs the pool extension's post locker setup.
+        // An empty config is passed when there is no module.
         IArtCoinsHookV2(c.pool.hook)
             .initializeMevModule(
                 poolKey,
@@ -247,21 +238,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         });
     }
 
-    /// @dev Full restriction config passed to the token: this launch's locker
-    ///      and extensions, then the user `allowed` set. Empty when not
-    ///      restricted. The assembled set is folded into the token initcode, so
-    ///      `predictToken` and the deploy share this function and agree on the
-    ///      address.
-    ///
-    ///      ALLOWLIST RULE: allowlist only a contract whose coin outflows are
-    ///      fixed by its own logic (the locker holds positions, an airdrop or
-    ///      vault pays its configured recipients). A contract that sends coin
-    ///      where its caller directs it (a router, aggregator, multicall or
-    ///      smart wallet) is a prohibited entry: the transfer rule checks the
-    ///      two parties only, so an allowlisted forwarder lets any user move
-    ///      coin wallet to wallet through it. A restricted coin reaches the
-    ///      standard routers through the per swap allowance alone, since the
-    ///      only coin move is between the PoolManager and the user.
+    /// @dev Restriction config passed to the token: this launch's locker, then its extensions,
+    ///      then the user `allowed` set. Empty when not restricted. The set is part of the
+    ///      token initcode, so `predictToken` and `deployToken` share this function.
     function _restriction(DeploymentConfigV2 calldata c)
         internal
         pure
@@ -307,7 +286,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         returns (uint256 extensionsSupply, uint256 extensionsValue)
     {
         if (c.token.tokenAdmin == address(0)) revert ZeroAddress();
-        // mirrors the token constructor so the revert is clear (not DeployFailed)
+        // Same check as the token constructor. Reverts here as `InvalidRenderer` instead of `DeployFailed`.
         if (c.token.renderer != address(0) && c.token.renderer.code.length == 0) {
             revert IArtCoinsTokenV2.InvalidRenderer();
         }
@@ -322,9 +301,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         return _validateExtensions(c.extensions, supply);
     }
 
-    /// @dev Checks the token's string caps (`Constants.MAX_*_BYTES`) so a long
-    ///      field reverts with the token's `StringTooLong(field, len)` before any
-    ///      deploy work.
+    /// @dev Enforces the `Constants.MAX_*_BYTES` caps with the token's `StringTooLong` before deploying.
     function _validateStrings(TokenConfigV2 calldata t) internal pure {
         _cap(bytes(t.name).length, Constants.MAX_NAME_BYTES, Constants.FIELD_NAME);
         _cap(bytes(t.symbol).length, Constants.MAX_SYMBOL_BYTES, Constants.FIELD_SYMBOL);
@@ -361,11 +338,10 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         if (sum != Constants.BPS) revert InvalidPositions();
     }
 
-    /// @dev Every fee recipient must be able to receive eth or claim an escrow
-    ///      credit: the pool bounty recipient and the injected protocol
-    ///      recipient. The factory, the coin, the PoolManager, this launch's
-    ///      hook, locker, hook fee escrow, token deployer and mev module, and
-    ///      every extension in the config cannot do either.
+    /// @dev The bounty recipient and the protocol recipient must receive eth or claim an escrow
+    ///      credit. The factory, the coin, the PoolManager, this launch's hook, locker, hook fee
+    ///      escrow, token deployer and mev module, and every extension in the config can do
+    ///      neither, so they are rejected.
     function _checkRecipients(DeploymentConfigV2 calldata c, address token) internal view {
         address[_REJECT_SET] memory fixedSet = [
             address(this),
@@ -381,8 +357,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         _rejectStackRecipient(protocolRecipient, fixedSet, c);
     }
 
-    /// @dev Reverts `RecipientCannotReceive` when `r` is a stack contract or a
-    ///      launch extension that cannot hold a fee.
+    /// @dev Reverts `RecipientCannotReceive` when `r` is in `fixedSet` or is a launch extension.
     function _rejectStackRecipient(
         address r,
         address[_REJECT_SET] memory fixedSet,
@@ -409,10 +384,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         ) revert InvalidMevConfig();
     }
 
-    /// @dev An unrestricted coin carries no allowlist. A restricted coin's user
-    ///      `allowed` set is bounded and holds no zero address; the locker and
-    ///      the extensions are added by `_restriction`, which also bounds the
-    ///      assembled total.
+    /// @dev An unrestricted coin takes an empty `allowed`. A restricted coin's `allowed` has at
+    ///      most `MAX_ALLOWED` nonzero entries. `_restriction` adds the locker and extensions
+    ///      and bounds the total.
     function _validateRestriction(RestrictionConfigV2 calldata r, address hook) internal view {
         if (!r.restricted) {
             if (r.allowed.length != 0) revert InvalidRestrictionConfig();
@@ -423,8 +397,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         for (uint256 i; i < n; ++i) {
             address a = r.allowed[i];
             if (a == address(0)) revert InvalidRestrictionConfig();
-            // the PoolManager and the canonical hook gate the swap path; the
-            // token rejects them too (defense in depth, clearer error here).
+            // The token constructor rejects the same entries. Reverts here with the same error.
             if (a == poolManager || a == hook) {
                 revert IArtCoinsTokenV2.AllowedForbidden(a);
             }
@@ -471,9 +444,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         return IArtCoinsHookV2(c.pool.hook).initializePool(p);
     }
 
-    /// @dev the token's canonical pool must be the pool this factory just created.
-    ///      The token derives it from the same hook, tickSpacing and PoolManager, so
-    ///      this is a cross check that also catches a hook that keys pools differently.
+    /// @dev The token derives its canonical pool id from the hook, tick spacing and PoolManager.
+    ///      It must equal the id of the pool just created, which catches a hook that keys pools
+    ///      differently.
     function _checkCanonical(DeploymentConfigV2 calldata c, address token, PoolId poolId)
         internal
         view
@@ -518,9 +491,8 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         if (before - coin.balanceOf(address(this)) != poolSupply) revert SupplyNotPulled(locker);
     }
 
-    /// @dev Each extension gets exactly its own `msgValue` (never another's) and an
-    ///      allowance of exactly its own supply share, which it must pull in full.
-    ///      Reentry into the launch entrypoint is blocked by `nonReentrant`.
+    /// @dev Each extension receives its own `msgValue` and an allowance equal to its own supply
+    ///      share, which it must pull in full. `deployToken` is `nonReentrant`.
     function _runExtensions(
         DeploymentConfigV2 calldata c,
         PoolKey memory poolKey,
@@ -582,8 +554,8 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     // ══════════════════════════════════════════════════════════════════════
 
     /// @inheritdoc IArtCoinsFactoryV2
-    /// @dev Enabling checks `constantsHash()` and that the hook's PoolManager is ours.
-    ///      Disabling never calls the target.
+    /// @dev Enabling checks `constantsHash()` and that the hook's PoolManager equals the factory's.
+    ///      Disabling makes no call to the hook.
     function setHook(address hook, bool enabled) external onlyOwner {
         if (hook == address(0)) revert ZeroAddress();
         if (enabled) {
@@ -632,10 +604,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         emit ExtensionSet(extension, enabled);
     }
 
-    /// @notice points the factory at a token deployer bound to it.
-    /// @dev    The deployer must have code, answer `factory() == this` and a
-    ///         matching `constantsHash()`. Never 0: launches would revert anyway,
-    ///         use `setDeprecated` to stop public launches.
+    /// @notice Points the factory at a token deployer bound to it.
+    /// @dev    The deployer must answer `factory() == this` and a matching `constantsHash()`.
+    ///         Zero reverts. `setDeprecated` closes public launches.
     function setTokenDeployer(address deployer) external onlyOwner {
         if (deployer == address(0)) revert ZeroAddress();
         (bool ok, bytes memory ret) = deployer.staticcall(abi.encodeWithSignature("factory()"));
@@ -664,9 +635,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     /// @dev Injected into new pools only, as the skim protocol leg recipient.
     function setProtocolRecipient(address payable recipient) external onlyOwner {
         if (recipient == address(0)) revert ZeroAddress();
-        // the launch-specific members (hook, locker, escrow, coin, mev module)
-        // are not knowable here; reject the globally knowable ones. The launch
-        // rechecks the full set against each pool.
+        // Rejects the stack contracts known without a launch. `deployToken` checks the full set per pool.
         if (recipient == address(this) || recipient == poolManager || recipient == tokenDeployer) {
             revert RecipientCannotReceive(recipient);
         }
@@ -675,8 +644,8 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     }
 
     /// @inheritdoc IArtCoinsFactoryV2
-    /// @dev Receives the deploy fee. 0 is allowed only while `deployFee == 0`
-    ///      (a launch with a fee and no recipient reverts `TeamFeeRecipientNotSet`).
+    /// @dev Receives the deploy fee. Zero is accepted. A launch with a nonzero `deployFee`
+    ///      reverts `TeamFeeRecipientNotSet` while it is zero.
     function setTeamFeeRecipient(address recipient) external onlyOwner {
         emit TeamFeeRecipientSet(teamFeeRecipient, recipient);
         teamFeeRecipient = recipient;
@@ -690,12 +659,12 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         emit Rescued(token, to, amount);
     }
 
-    /// @notice Disabled: an ownerless factory would freeze allowlists and rescue.
+    /// @notice Always reverts `RenounceDisabled`. The enable lists and `rescue` require an owner.
     function renounceOwnership() public view override onlyOwner {
         revert RenounceDisabled();
     }
 
-    /// @dev A target with no code, a reverting answer or a short answer is a mismatch.
+    /// @dev A target with no code, a reverting call or a short answer reverts `ConstantsMismatch`.
     function _checkConstants(address target) internal view {
         (bool ok, bytes memory ret) =
             target.staticcall(abi.encodeCall(IConstantsBound.constantsHash, ()));
@@ -704,7 +673,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         }
     }
 
-    /// @dev Never reverts: a reverting or non erc165 target answers false.
+    /// @dev Returns false for a target that reverts or does not implement erc165.
     function _supports(address target, bytes4 id) internal view returns (bool) {
         try IERC165(target).supportsInterface(id) returns (bool ok) {
             return ok;

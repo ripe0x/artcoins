@@ -21,12 +21,14 @@ import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmo
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
 /// @title  ArtCoinsLpLockerV2
-/// @notice Holds each v2 coin's launch liquidity. The positions are minted to
-///         this contract and have no decrease path. v2 pools charge no lp fee,
-///         so the positions accrue nothing.
-/// @dev    Native eth paired pools only: currency0 is eth, currency1 is the
-///         coin. The locker holds nothing between calls; any balance is stray
-///         and rescuable. The position nfts are not rescuable.
+/// @notice Holds each v2 coin's launch liquidity as positions owned by this contract.
+/// @dev    The locker has no function that decreases or removes liquidity.
+///         `placeLiquidity` is called once per coin by an allowlisted launcher.
+///         v2 pools charge no lp fee, so the positions accrue nothing.
+///         Pools pair native eth (currency0) with the coin (currency1).
+///         The locker holds no tokens between calls, so any balance is stray and
+///         the owner can rescue it. The PositionManager is refused by `rescue`,
+///         which keeps the position nfts in the locker.
 contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuardTransient {
     /// @inheritdoc IArtCoinsLpLockerV2
     uint16 public constant STACK_VERSION = Constants.STACK_VERSION;
@@ -62,8 +64,9 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
 
     /// @inheritdoc IArtCoinsLpLockerV2
     /// @dev Pulls `poolSupply` of `token` from the launcher (prior approval) and
-    ///      mints coin only positions below the starting price. Rounding dust
-    ///      of the coin is sent to `Constants.DEAD`.
+    ///      mints coin only positions whose ticks, as if the coin were token0,
+    ///      are at or above `tickIfToken0IsCoin`. Rounding dust of the coin is
+    ///      sent to `Constants.DEAD`.
     function placeLiquidity(
         IArtCoinsFactoryV2.LockerConfigV2 calldata lockerConfig,
         IArtCoinsFactoryV2.PoolConfigV2 calldata poolConfig,
@@ -90,7 +93,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
 
         positionId = _mint(lockerConfig, poolConfig.tickIfToken0IsCoin, poolKey, poolSupply, token);
 
-        // send any coin left after placement (rounding dust) to the burn sink
+        // rounding dust of the coin goes to the burn address
         uint256 balAfter = SafeTransferLib.balanceOf(token, address(this));
         if (balAfter > balBefore) {
             SafeTransferLib.safeTransfer(token, Constants.DEAD, balAfter - balBefore);
@@ -190,9 +193,9 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
         actions[n] = bytes1(uint8(Actions.SETTLE_PAIR));
         params[n] = abi.encode(poolKey.currency0, poolKey.currency1);
 
-        // solady tokens (ArtCoinsTokenV2) fix the Permit2 allowance at
-        // infinity and revert any approve to it; skip the erc20 approve and
-        // its reset for them. Other tokens get the exact amount, reset after.
+        // ArtCoinsTokenV2 fixes the Permit2 allowance at max and reverts any
+        // approve to it, so the erc20 approve and its reset are skipped for it.
+        // Other tokens get the exact amount and a reset after the mint.
         bool fixedInfinite =
             IERC20(token).allowance(address(this), address(permit2)) == type(uint256).max;
         if (!fixedInfinite) SafeTransferLib.safeApprove(token, address(permit2), poolSupply);
@@ -224,7 +227,7 @@ contract ArtCoinsLpLockerV2 is IArtCoinsLpLockerV2, Ownable2Step, ReentrancyGuar
     }
 
     /// @inheritdoc IArtCoinsLpLockerV2
-    /// @dev Lp nfts have no exit: the PositionManager is refused as a token.
+    /// @dev Refuses the PositionManager as `token`, which keeps the position nfts in the locker.
     function rescue(address token, address to, uint256 amount) external onlyOwner nonReentrant {
         if (to == address(0)) revert ZeroAddress();
         if (token == address(positionManager)) revert RescueForbidden();

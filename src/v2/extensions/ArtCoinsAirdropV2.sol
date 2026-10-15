@@ -15,30 +15,23 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
 /// @title  ArtCoinsAirdropV2
-/// @notice Escrows a launch allocation and lets leaves of a frozen merkle tree
-///         claim it with a lockup then linear vesting.
-///
-///         What is frozen at launch: root, sweep recipient, lockup,
-///         vesting, supply. There is no owner, no admin, no root update, no
-///         sweep redirect. Guarantees:
-///         - an empty root is rejected, and tranches are keyed by
-///           `(token, extensionIndex)`, so two airdrop entries in one launch
-///           cannot overwrite each other.
-///         - the root can never be replaced.
-///         - the sweep recipient must be nonzero and is fixed; the sweep
-///           itself is permissionless and only ever pays that recipient.
-///         - leaves are double hashed exactly as OpenZeppelin's
-///           StandardMerkleTree (the openzeppelin merkle-tree js package), types
-///           `["address","uint256"]`, so a leaf cannot collide with an inner node.
-///         - claimed amounts are tracked per leaf, not per address, so an
-///           address with two leaves is paid both. The cap that the total
-///           claimed never exceeds the tranche supply still holds, so an over
-///           allocated tree pays first come first served. The tree builder
-///           must keep the sum of allocations at or below the airdrop supply.
-///
-///         Windows: claims open at `lockupEnd`, vest linearly to `vestingEnd`
-///         and close at `sweepTime = vestingEnd + CLAIM_EXPIRATION_INTERVAL`.
-///         From `sweepTime` anyone may call `sweep`; claims revert from then on.
+/// @notice Holds a launch allocation that the leaves of a merkle tree claim
+///         after a lockup, vesting linearly.
+/// @dev    Root, sweep recipient, lockup, vesting and supply are fixed at
+///         launch. The contract has no owner and no setter.
+///         - Tranches are keyed by `(token, extensionIndex)`, so several
+///           airdrop entries in one launch are independent.
+///         - The root and the sweep recipient are nonzero. `sweep` is
+///           permissionless and pays the sweep recipient.
+///         - Leaves are double hashed as in OpenZeppelin StandardMerkleTree with
+///           types `["address","uint256"]`, so a leaf cannot equal an inner node.
+///         - Claimed amounts are tracked per leaf, so an address with two
+///           leaves is paid for both. Total claimed is capped at the tranche
+///           supply, so an over allocated tree pays first come first served.
+///           The tree builder keeps the sum of allocations at or below the supply.
+///         Claims open at `lockupEnd`, vest linearly to `vestingEnd` and close at
+///         `sweepTime = vestingEnd + CLAIM_EXPIRATION_INTERVAL`. From `sweepTime`
+///         anyone may call `sweep` and claims revert.
 contract ArtCoinsAirdropV2 is ReentrancyGuard, IArtCoinsAirdropV2 {
     using SafeERC20 for IERC20;
 
@@ -144,8 +137,8 @@ contract ArtCoinsAirdropV2 is ReentrancyGuard, IArtCoinsAirdropV2 {
         if (done >= allocatedAmount) revert UserMaxClaimed();
 
         uint256 amount = _vested(t, allocatedAmount) - done;
-        // vested() never returns less than `done` for the same leaf; the
-        // subtraction above cannot underflow because `done` was paid from it.
+        // `_vested` is non decreasing and `done` was paid from an earlier
+        // value, so the subtraction cannot underflow.
         uint256 left = t.supply - t.totalClaimed;
         if (amount > left) amount = left;
         if (amount == 0) revert ZeroToClaim();

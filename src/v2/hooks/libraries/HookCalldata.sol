@@ -35,10 +35,9 @@ library HookCalldata {
         if (len > n - 0x20 - p) return (ext, referrer);
         ext = d[p + 0x20:p + 0x20 + len];
 
-        // inner tuple `abi.encode(address, bytes)`: head word 0 is the
+        // Inner tuple `abi.encode(address, bytes)`: head word 0 is the
         // referrer, head word 1 the payload offset, always 0x40. Any other
-        // layout (an older encoder, a bare payload) names no referrer, so a
-        // stray offset word is never paid as an address.
+        // layout yields no referrer.
         if (len < 0x40) return (ext, referrer);
         if (_word(ext, 0x20) != 0x40) return (ext, referrer);
         uint256 ref = _word(ext, 0);
@@ -50,9 +49,8 @@ library HookCalldata {
     ///         limited swap: `mevModuleSwapData == abi.encode(address)`
     ///         (exactly 32 bytes, clean high bits). Zero if absent or
     ///         malformed (the hook then refunds the PoolManager caller).
-    /// @dev    The swapper chooses its hookData and the refund is its own over
-    ///         charge, so no authorization applies. Never reverts: same bounds
-    ///         checks as `decode`.
+    /// @dev    The refund is the swapper's own over charge, so the address needs no
+    ///         authorization. Never reverts: same bounds checks as `decode`.
     /// @param d The swap `hookData`.
     /// @return to The refund address, or 0.
     function refundTo(bytes calldata d) internal pure returns (address to) {

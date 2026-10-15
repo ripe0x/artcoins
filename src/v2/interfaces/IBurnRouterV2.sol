@@ -13,7 +13,8 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 ///         fee. The keeper reward, paid in eth, is `keeperTip` plus the burn's gas at the
 ///         basefee, capped at `rewardMaxBps` of the weth consumed, and zero when the basefee
 ///         is above `rewardMaxBaseFee`. The impact cap, the floor and every reward value are
-///         owner tunable within Constants bounds.
+///         owner tunable within Constants bounds. The pool hook's `protocolFeeNumerator` must
+///         stay 0, otherwise the fee on the full input of a partial fill counts against the floor.
 interface IBurnRouterV2 {
     /// @notice A burn completed.
     /// @param caller Keeper that called the burn.

@@ -21,8 +21,9 @@ interface IOwnedFactoryV2 {
 /// @title  LaunchV2Lib
 /// @notice Json launch config parsing, preflight and dry run for the v2
 ///         factory. Shared by `LaunchV2Coin` and the fork tests.
-/// @dev    Config format: script/v2/launch-configs/example.json. No launch
-///         extensions and no pool extension (add them by hand if ever needed).
+/// @dev    Config format: script/v2/launch-configs/example.json. The config
+///         covers the token, pool, fee, locker, mev and restriction sections.
+///         Launch extensions and a pool extension are outside this script.
 library LaunchV2Lib {
     Vm internal constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
@@ -231,7 +232,7 @@ library LaunchV2Lib {
 /// @notice Launches one coin through `deployToken` from a json config, as the factory owner.
 ///         Preflight (wiring, `predictToken`), then an eth_call style dry run
 ///         under a snapshot, then the real tx inside `vm.startBroadcast()`.
-///         Nothing is sent without `--broadcast`; the signer must be the factory owner.
+///         Transactions are sent only with `--broadcast`. The signer must be the factory owner.
 ///
 ///   stack addresses: env FACTORY_V2, HOOK_V2, LOCKER_V2, MEV_V2, else
 ///   `.addresses` of tmp/v2-deploy-<chainid>.json (written by DeployV2Stack).

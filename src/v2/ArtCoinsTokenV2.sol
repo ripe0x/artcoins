@@ -22,24 +22,28 @@ import {IArtCoinsTokenV2} from "./interfaces/IArtCoinsTokenV2.sol";
 import {IConstantsBound} from "./interfaces/IConstantsBound.sol";
 
 /// @title  ArtCoinsTokenV2
-/// @notice v2 art coin. Solady ERC20 with Permit and the fixed infinite
-///         Permit2 allowance.
+/// @notice Art coin: Solady ERC20 with Permit and the infinite Permit2 allowance, a transfer
+///         allowlist and a replaceable metadata renderer.
+/// @dev    Deployed by `ArtCoinsDeployerV2` via CREATE2. The whole supply is minted to the
+///         launcher. Name, symbol, initial supply, `launcher`, `canonicalHook`,
+///         `canonicalPoolId` and `poolManager` are fixed at construction.
 ///
-///         `restricted` is set at construction; `unrestrict` is its only writer
-///         and clears it permanently. While restricted, a holder to holder
-///         transfer reverts unless either side is on the allowlist. A transfer
-///         with the PoolManager on one side passes up to the transient allowance
-///         the canonical hook grants for a canonical swap this transaction,
-///         which the transfer consumes. Mint and burn bypass this rule. While
-///         not restricted, every transfer passes.
+///         Transfer rule: `restricted` is set at construction and `unrestrict` clears it
+///         permanently. While restricted, a transfer reverts unless `from` or `to` is on the
+///         allowlist, or one side is the PoolManager and the amount fits the transient allowance
+///         the canonical hook granted for a canonical swap in the same transaction. The transfer
+///         consumes the allowance. Mint and burn bypass the rule. While not restricted, every
+///         transfer passes.
 ///
-///         Frozen at construction: name, symbol, supply, launcher, canonical
-///         hook, pool id, PoolManager. The coin admin manages the allowlist,
-///         may call `unrestrict` once, may `lock` the coin (allowlist, switch and
-///         the hook side settings freeze), and may change the cosmetic fields
-///         (image, description, renderer).
-/// @dev    Deployed by `ArtCoinsDeployerV2` via CREATE2. The whole supply is
-///         minted to the launcher (the factory).
+///         Authority: the launcher (the factory) receives the initial supply and holds no
+///         privilege afterwards. The canonical hook is the sole caller of
+///         `increaseTransferAllowance`. The coin admin calls `setAllowed`, `unrestrict`,
+///         `lock`, `updateAdmin`, `renounceAdmin` and the metadata setters (image,
+///         description, renderer). `lock` freezes `setAllowed`, `unrestrict` and the hook's
+///         coin admin setters. `renounceAdmin` freezes every admin function.
+///
+///         Metadata: `contractURI` and `tokenURI` return `IMetadataRenderer.contractURI(this)`
+///         when a renderer is set, else a built in json over the stored fields.
 contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
     using PoolIdLibrary for PoolKey;
 
@@ -149,15 +153,14 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
             for (uint256 i; i < n; ++i) {
                 address a = r.allowed[i];
                 if (a == address(0)) revert RestrictionConfigInvalid();
-                // the PoolManager and the canonical hook gate the swap path; an
-                // allowlist entry for either would let coin leave the pool
+                // An entry for the PoolManager or the hook would move coin out of the pool
                 // without consuming the per swap allowance.
                 if (a == canon.poolManager || a == canon.hook) revert AllowedForbidden(a);
                 _allowed[a] = true;
                 emit AllowedSet(a, true);
             }
         } else if (r.allowed.length != 0) {
-            // an unrestricted coin carries no allowlist.
+            // An unrestricted coin takes an empty allowlist.
             revert RestrictionConfigInvalid();
         }
 
@@ -179,9 +182,8 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
         return _symbol;
     }
 
-    /// @dev Solady inlines balance moves in `transfer`/`transferFrom`, so both
-    ///      are overridden and routed through `_route`. `transferFrom` debits
-    ///      the full `amount` once (Permit2 short circuit preserved).
+    /// @dev Solady inlines the balance move in `transfer` and `transferFrom`. Both are
+    ///      overridden to call `_route`. `_spendAllowance` applies the Permit2 allowance.
     function transfer(address to, uint256 amount) public override returns (bool) {
         _route(msg.sender, to, amount);
         return true;
@@ -206,10 +208,9 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
 
     // ── transfer rule ──────────────────────────────────────────────────────
 
-    /// @dev Single chokepoint for every holder to holder move. Mint and burn
-    ///      skip it. While restricted, a move with no allowlisted side passes
-    ///      only when one side is the PoolManager and the transient allowance
-    ///      covers it; the allowance is consumed.
+    /// @dev Every transfer and transferFrom passes through here. Mint and burn skip it. While
+    ///      restricted, a move with no allowlisted side needs the PoolManager on one side and
+    ///      a transient allowance of at least `amount`, which it consumes.
     function _route(address from, address to, uint256 amount) private {
         if (restricted && !_allowed[from] && !_allowed[to]) {
             address pm = poolManager;
@@ -224,8 +225,8 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
     }
 
     /// @inheritdoc IArtCoinsTokenV2
-    /// @dev A zero amount or a call for another pool is a no op, never reverts,
-    ///      so a hook misroute cannot brick a swap.
+    /// @dev A zero amount or a different pool id returns without effect, so a misrouted hook
+    ///      call cannot revert a swap.
     function increaseTransferAllowance(bytes32 poolId, uint256 amount) external {
         if (msg.sender != canonicalHook) revert NotCanonicalHook();
         if (poolId != canonicalPoolId || amount == 0) return;
@@ -311,10 +312,8 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
     }
 
     /// @inheritdoc IArtCoinsTokenV2
-    /// @dev Freezes every admin only function (`setAllowed`, `unrestrict`,
-    ///      `lock`, the metadata setters): each requires the admin, which
-    ///      becomes the zero address. The hook's coin admin setters key on
-    ///      `admin()`, so they freeze too.
+    /// @dev Sets the admin to the zero address, which freezes every admin function. The hook's
+    ///      coin admin setters require `admin()` as caller and freeze too.
     function renounceAdmin() external {
         if (msg.sender != _admin) revert NotAdmin();
         address oldAdmin = _admin;
@@ -342,7 +341,9 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
     }
 
     /// @inheritdoc IArtCoinsTokenV2
-    /// @dev Zero falls back to the built in json. A non zero renderer must have code.
+    /// @dev Zero selects the built in json. A nonzero renderer must have code. `contractURI` and
+    ///      `tokenURI` call the renderer on every read, so the admin replaces a reverting renderer
+    ///      with this function.
     function setMetadataRenderer(address renderer_) external {
         if (msg.sender != _admin) revert NotAdmin();
         if (renderer_ != address(0) && renderer_.code.length == 0) revert InvalidRenderer();
@@ -367,8 +368,7 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
         return _defaultContractURI();
     }
 
-    /// @dev Every interpolated field goes through `LibString.escapeJSON`
-    ///      (quotes, backslash, control chars), so any name bytes give valid json.
+    /// @dev Each field is passed through `LibString.escapeJSON`, so any bytes give valid json.
     function _defaultContractURI() private view returns (string memory) {
         string memory json = string.concat(
             '{"name":"',

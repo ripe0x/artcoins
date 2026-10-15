@@ -23,43 +23,37 @@ interface ISpriteToken {
 }
 
 /// @title  SpriteRendererV2
-/// @notice ERC-7572 renderer that overlays a deterministic `+` / `−` glyph pattern
-///         on a token's base art, scaled to the buy and sell counts of an
-///         `IBuySellCounter`. Nothing here is specific to a coin; the counter
-///         is a constructor argument behind a one function interface.
+/// @notice ERC-7572 renderer that overlays a deterministic `+` and minus glyph pattern on a
+///         coin's base image. The glyph counts follow the buy and sell counts of an
+///         `IBuySellCounter`, which is a constructor argument.
 ///
-/// @dev    Properties:
-///         - the base image url goes into the `href` attribute through
-///           `SvgText.attrUrl`: escaped, sanitised, dropped when longer
-///           than `SvgText.URL_MAX`.
-///         - name, symbol and the animation url base go into json through
-///           `SvgText` and `LibString.escapeJSON`.
-///         - glyph layers are built with `DynamicBufferLib` (linear), not
-///           `string.concat` in a loop (quadratic); each glyph type is capped at
-///           `Constants.MAX_GLYPHS` (256).
-///         - no owner: counter, glyph cap and the animation url base are fixed
-///           at construction. Redeploy to change them, the token admin repoints
-///           the token with `setMetadataRenderer`.
+/// @dev    - The base image url enters the `href` attribute through `SvgText.attrUrl`: sanitised,
+///           escaped, and replaced by an empty string when longer than `SvgText.URL_MAX`.
+///         - Name, symbol and the animation url enter the json through `SvgText` and
+///           `LibString.escapeJSON`.
+///         - Each glyph type is built in its own preallocated buffer by `_glyphs`, then appended to
+///           the `DynamicBufferLib` buffer. Each glyph type is capped at `Constants.MAX_GLYPHS`.
+///         - The counter, the glyph cap and the animation url base are fixed at construction.
+///           The coin admin switches renderers with `setMetadataRenderer`.
 contract SpriteRendererV2 is IMetadataRenderer {
     using DynamicBufferLib for DynamicBufferLib.DynamicBuffer;
 
     error AnimationUrlTooLong();
 
-    /// @notice The counter this renderer reads buy/sell totals from.
+    /// @notice Source of the buy and sell totals.
     IBuySellCounter public immutable counter;
 
-    /// @notice Base url for the canvas animation page. The renderer appends
-    ///         `/<chainId>/<tokenAddress>`.
+    /// @notice Base url of the animation page. The renderer appends `/<chainId>/<tokenAddress>`.
     string public animationUrlBase;
 
-    /// @notice Maximum glyphs rendered per type (buy / sell) in the svg.
+    /// @notice Maximum glyphs rendered per type (buy, sell).
     uint256 public constant MAX_GLYPHS = Constants.MAX_GLYPHS;
 
     uint256 internal constant VIEW_SIZE = 1000;
 
     /// @param counter_ Counter to query.
-    /// @param animationUrlBase_ Base url for the animation page (no trailing slash),
-    ///        at most `SvgText.URL_MAX` bytes.
+    /// @param animationUrlBase_ Animation page base url without a trailing slash, at most
+    ///        `SvgText.URL_MAX` bytes. Longer reverts `AnimationUrlTooLong`.
     constructor(IBuySellCounter counter_, string memory animationUrlBase_) {
         if (bytes(animationUrlBase_).length > SvgText.URL_MAX) revert AnimationUrlTooLong();
         counter = counter_;
@@ -151,10 +145,9 @@ contract SpriteRendererV2 is IMetadataRenderer {
         buf.p("</g>");
     }
 
-    /// @dev `count` elements `<text x="X" y="Y">G</text>` written straight into one
-    ///      preallocated buffer (at most 32 bytes per element), no per glyph
-    ///      allocation. Position is `keccak256(abi.encode(token, typeSalt, i))`
-    ///      `glyph` is at most 3 bytes (`+` or the minus sign).
+    /// @dev Writes `count` elements `<text x="X" y="Y">G</text>` into one preallocated buffer of
+    ///      at most 32 bytes per element. The position derives from
+    ///      `keccak256(abi.encode(token, typeSalt, i))`. `glyph` is at most 3 bytes.
     function _glyphs(address token, uint256 count, uint256 typeSalt, bytes memory glyph)
         internal
         pure
