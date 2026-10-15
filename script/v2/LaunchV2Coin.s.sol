@@ -37,7 +37,6 @@ library LaunchV2Lib {
 
     struct Launch {
         IArtCoinsFactoryV2.DeploymentConfigV2 cfg;
-        uint16 protocolBps;
         bool example;
         address expectedToken;
     }
@@ -46,7 +45,6 @@ library LaunchV2Lib {
 
     function parse(string memory j, Target memory t) internal pure returns (Launch memory l) {
         l.example = vm.parseJsonBool(j, ".example");
-        l.protocolBps = _u16(vm.parseJsonUint(j, ".protocolBps"));
         l.expectedToken = vm.parseJsonAddress(j, ".expectedToken");
 
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = l.cfg;
@@ -63,14 +61,11 @@ library LaunchV2Lib {
         c.pool.tickIfToken0IsCoin = _i24(vm.parseJsonInt(j, ".pool.tickIfToken0IsCoin"));
         c.pool.tickSpacing = _i24(vm.parseJsonInt(j, ".pool.tickSpacing"));
 
-        c.fee.lpFeePips = _u24(vm.parseJsonUint(j, ".fee.lpFeePips"));
         c.fee.baselineSkimBps = _u24(vm.parseJsonUint(j, ".fee.baselineSkimBps"));
         c.fee.bountyBps = _u16(vm.parseJsonUint(j, ".fee.bountyBps"));
         c.fee.bountyRecipient = payable(vm.parseJsonAddress(j, ".fee.bountyRecipient"));
 
         c.locker.locker = t.locker;
-        c.locker.rewardRecipients = vm.parseJsonAddressArray(j, ".locker.rewardRecipients");
-        c.locker.rewardBps = _u16s(vm.parseJsonUintArray(j, ".locker.rewardBps"));
         c.locker.tickLower = _i24s(vm.parseJsonIntArray(j, ".locker.tickLower"));
         c.locker.tickUpper = _i24s(vm.parseJsonIntArray(j, ".locker.tickUpper"));
         c.locker.positionBps = _u16s(vm.parseJsonUintArray(j, ".locker.positionBps"));
@@ -83,7 +78,7 @@ library LaunchV2Lib {
         if (c.restriction.restricted) {
             c.restriction.allowed = _addrs(j, ".restriction.allowed");
         }
-        // the factory seeds the escrow, locker, extensions and defaultAllowed set.
+        // the factory seeds this launch's locker and extensions.
     }
 
     // ── preflight ─────────────────────────────────────────────────────────
@@ -127,7 +122,6 @@ library LaunchV2Lib {
         require(
             value == 0 || f.teamFeeRecipient() != address(0), "preflight: team fee recipient unset"
         );
-        require(l.protocolBps <= Constants.MAX_PROTOCOL_FEE_BPS, "preflight: protocolBps above max");
 
         predicted = f.predictToken(owner, l.cfg);
         require(predicted.code.length == 0, "preflight: predicted token already deployed");
@@ -151,7 +145,7 @@ library LaunchV2Lib {
         uint256 snap = vm.snapshotState();
         vm.deal(owner, owner.balance + value);
         vm.prank(owner);
-        token = IArtCoinsFactoryV2(t.factory).deployTokenAsOwner{value: value}(l.cfg, l.protocolBps);
+        token = IArtCoinsFactoryV2(t.factory).deployToken{value: value}(l.cfg);
         poolId = checkLaunched(t, l, token);
         vm.revertToState(snap);
     }
@@ -178,7 +172,7 @@ library LaunchV2Lib {
         require(c.launcherVersion() == Constants.STACK_VERSION, "launch: token version");
         require(c.canonicalPoolId() == PoolId.unwrap(poolId), "launch: canonical pool");
         require(
-            IArtCoinsLpLockerV2(t.locker).tokenRewards(token).numPositions
+            IArtCoinsLpLockerV2(t.locker).lockedLiquidity(token).numPositions
                 == l.cfg.locker.tickLower.length,
             "launch: locker positions"
         );
@@ -234,7 +228,7 @@ library LaunchV2Lib {
 }
 
 /// @title  LaunchV2Coin
-/// @notice Launches one coin through `deployTokenAsOwner` from a json config.
+/// @notice Launches one coin through `deployToken` from a json config, as the factory owner.
 ///         Preflight (wiring, `predictToken`), then an eth_call style dry run
 ///         under a snapshot, then the real tx inside `vm.startBroadcast()`.
 ///         Nothing is sent without `--broadcast`; the signer must be the factory owner.
@@ -297,7 +291,6 @@ contract LaunchV2Coin is Script {
         console2.log("owner        ", owner);
         console2.log("predicted    ", predicted);
         console2.log("msg.value    ", value);
-        console2.log("protocolBps  ", l.protocolBps);
         console2.log("configHash   ", vm.toString(IArtCoinsFactoryV2(t.factory).configHash(l.cfg)));
 
         (address dryToken, PoolId dryPool) = LaunchV2Lib.dryRun(t, l, owner, value);
@@ -312,8 +305,7 @@ contract LaunchV2Coin is Script {
             return;
         }
         require(!l.example || vm.envOr("ALLOW_EXAMPLE", false), "example config: set example=false");
-        address token =
-            IArtCoinsFactoryV2(t.factory).deployTokenAsOwner{value: value}(l.cfg, l.protocolBps);
+        address token = IArtCoinsFactoryV2(t.factory).deployToken{value: value}(l.cfg);
         vm.stopBroadcast();
 
         require(token == predicted, "launch: token differs from predictToken");

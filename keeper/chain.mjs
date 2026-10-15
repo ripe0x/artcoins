@@ -2,14 +2,12 @@
 // through the `io` object built here, so tests can swap it for a fake.
 import { createPublicClient, encodeAbiParameters, encodeFunctionData, getAddress, http, keccak256, parseAbi } from 'viem';
 import { mainnet } from 'viem/chains';
-import { abiFor, erc20Abi, keeper111Abi, keeperLayerAbi, keeperV2Abi } from './abi.mjs';
-import { decodeKeeperLogs, decodeReason, describeError, revertDataOf, servicedFrom } from './events.mjs';
+import { abiFor, erc20Abi, keeper111Abi, keeperLayerAbi } from './abi.mjs';
+import { decodeKeeperLogs, decodeReason, describeError, revertDataOf } from './events.mjs';
 import { decodeSlot0 } from './decide.mjs';
 
 export const POOL_MANAGER = '0x000000000004444c5dc75cB358380D2e3dE08A90';
 export const CANCEL_GAS = 21_000n;
-// type(IFeeAutoSwapperV2).interfaceId: xor of its own selectors (supportsInterface is inherited, not counted)
-export const FEE_SWAPPER_V2_INTERFACE_ID = '0xec420605';
 
 const KEY = '(address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks)';
 export const marketAbi = parseAbi([
@@ -17,22 +15,13 @@ export const marketAbi = parseAbi([
   `function poolKey() view returns (${KEY})`,
   `function canonicalPoolKey() view returns (address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks)`,
   'function maxStepIn() view returns (uint256)',
-  'function accruedCoin() view returns (uint256)',
   'function minLayerOutPerWeth() view returns (uint256)',
-  'function supportsInterface(bytes4) view returns (bool)',
   // v1 SkimFee hook (8 outputs, skim fields out of 100,000)
   'function skimConfig(bytes32) view returns (uint24 baselineSkimBps, uint16 bountyBps, uint24 maxReferralBpsOfVolume, uint24 lpFee, address bountyRecipient, address protocolRecipient, address referralPayout, address quoteToken)',
   // legacy static fee hook (LAYER): per direction lp fee
   'function artCoinFee(bytes32) view returns (uint24)',
   'function pairedFee(bytes32) view returns (uint24)',
   `function tokenRewards(address) view returns ((address token, ${KEY} poolKey, uint256 positionId, uint256 numPositions, uint16[] rewardBps, address[] rewardAdmins, address[] rewardRecipients))`,
-  'function deploymentInfo(address) view returns ((address token, address hook, address locker, address mevModule, address escrow, bytes32 poolId, bytes32 configHash, uint16 version, uint40 launchedAt, bool restricted, address[] extensions))',
-  'function rewardRecipients(address) view returns (address[])',
-]);
-
-/// v2 hook: one struct output, skim fields in bps, lp fee in pips
-const hookV2Abi = parseAbi([
-  'function skimConfig(bytes32) view returns ((uint24 baselineSkimBps, uint16 bountyBps, uint24 lpFeePips, address bountyRecipient, address protocolRecipient))',
 ]);
 
 /// v4 PoolId of a key: keccak256(abi.encode(key))
@@ -51,7 +40,6 @@ export function poolStateSlot(id) {
 
 const asKey = (k) => (Array.isArray(k) ? { currency0: k[0], currency1: k[1], fee: k[2], tickSpacing: k[3], hooks: k[4] } : k);
 const V1_SKIM_TO_PPM = 10; // v1 skim fields are out of 100,000
-const BPS_TO_PPM = 100; // v2 skim fields are bps
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -103,21 +91,18 @@ export function createIo(cfg, { onRetry } = {}) {
   const account = cfg.account;
   const R = (fn) => withRetry(fn, { onRetry });
   const layerStatic = new Map(); // keeper address -> { weth, controller }
-  const marketStatic = new Map(); // keeper (and v2 token) -> immutable addresses and pool keys
+  const marketStatic = new Map(); // keeper -> immutable addresses and pool keys
 
   /// slot0 (and liquidity) of a v4 pool plus the hook's fees. lp fee: the largest of slot0's and the hook's
   /// answers (a larger fee only lowers the floor). skim: the hook's `skimConfig` baseline, 0 when it has none
-  async function readPool(key, { liquidity = false, legacyFees = false, v2 = false } = {}) {
+  async function readPool(key, { liquidity = false, legacyFees = false } = {}) {
     const id = poolIdOf(key);
     const words = await R(() => client.readContract({ address: POOL_MANAGER, abi: marketAbi, functionName: 'extsload', args: [poolStateSlot(id), liquidity ? 4n : 1n] }));
     const { sqrtPriceX96, lpFee } = decodeSlot0(words[0]);
     let lpFeePpm = lpFee;
     let skimPpm = 0;
-    const skim = await R(() => client.readContract({ address: key.hooks, abi: v2 ? hookV2Abi : marketAbi, functionName: 'skimConfig', args: [id] })).catch(() => null);
-    if (skim && v2) {
-      skimPpm = Number(skim.baselineSkimBps) * BPS_TO_PPM;
-      lpFeePpm = Math.max(lpFeePpm, Number(skim.lpFeePips));
-    } else if (skim) {
+    const skim = await R(() => client.readContract({ address: key.hooks, abi: marketAbi, functionName: 'skimConfig', args: [id] })).catch(() => null);
+    if (skim) {
       skimPpm = Number(skim[0]) * V1_SKIM_TO_PPM;
       lpFeePpm = Math.max(lpFeePpm, Number(skim[3]));
     }
@@ -187,52 +172,26 @@ export function createIo(cfg, { onRetry } = {}) {
         ]);
         return { uncollectedLayer, uncollectedWeth, claimable: [...claimable], routerWeth: [...routerWeth], routerThreshold: [...routerThreshold], controllerWeth };
       }
-      const [swappers, accruedPaired, accruedCoin, nextConvertibleBlock] = await R(() =>
-        client.readContract({ address: k.address, abi: keeperV2Abi, functionName: 'preview', args: [k.token] }));
-      return { swappers, accruedPaired, accruedCoin, nextConvertibleBlock };
+      throw new Error(`unknown keeper kind ${k.kind}`);
     },
 
-    /// simulates the run with minOut / rate 0 at the fixed gas limit. 111 and LAYER: `simulateContract`
-    /// (return values). v2 returns nothing, so its convert outputs come from the `SwapperServiced` logs of an
-    /// `eth_simulateV1` call; `null` when the rpc does not support it (the runner then skips convert).
+    /// simulates the run with minOut / rate 0 at the fixed gas limit via `simulateContract` (return values)
     async simulateZero(k) {
       const abi = abiFor(k.kind);
-      if (k.kind !== 'v2') {
-        const fn = 'run';
-        const args = k.kind === '111' ? [true, 0n] : [true, 0n, false];
-        try {
-          const { result } = await R(() => client.simulateContract({ account, address: k.address, abi, functionName: fn, args, gas: k.gas }));
-          return result;
-        } catch (err) {
-          if (isTransient(err)) throw err;
-          throw new SimRevert(k.kind, decodeReason(revertDataOf(err), k.kind));
-        }
-      }
-      const data = encodeFunctionData({ abi, functionName: 'collectAndForward', args: [k.token, true, 0n] });
-      let res;
+      const args = k.kind === '111' ? [true, 0n] : [true, 0n, false];
       try {
-        res = await R(() => client.simulateCalls({ account: account.address, calls: [{ to: k.address, data, gas: k.gas }] }));
+        const { result } = await R(() => client.simulateContract({ account, address: k.address, abi, functionName: 'run', args, gas: k.gas }));
+        return result;
       } catch (err) {
         if (isTransient(err)) throw err;
-        // method not supported (or the node refused the shape): fall back to a plain eth_call for the revert
-        // check and report no quote
-        try {
-          await R(() => client.call({ account: account.address, to: k.address, data, gas: k.gas }));
-        } catch (e2) {
-          if (isTransient(e2)) throw e2;
-          throw new SimRevert(k.kind, decodeReason(revertDataOf(e2), k.kind));
-        }
-        return null;
+        throw new SimRevert(k.kind, decodeReason(revertDataOf(err), k.kind));
       }
-      const r = res.results[0];
-      if (r.status !== 'success') throw new SimRevert(k.kind, decodeReason(r.data ?? revertDataOf(r.error), k.kind));
-      return servicedFrom(decodeKeeperLogs(r.logs || [], 'v2', k.address));
     },
 
     /// pool state for the independent floor (KR-02, KR-03, KR-12): spot from `PoolManager.extsload` of the pool's
     /// slot0, lp fee (slot0, the hook's config, whichever is larger) and the hook's baseline skim. Per kind:
     /// 111 adds the swapper's `maxStepIn` and its locker reward share, LAYER the liquidity, sort order and which
-    /// routers have an owner floor, v2 one entry per fee swapper of the coin. Throws on rpc failure (the runner
+    /// routers have an owner floor. Throws on rpc failure (the runner
     /// then sends without convert or burn).
     async market(k) {
       if (k.kind === '111') {
@@ -265,24 +224,7 @@ export function createIo(cfg, { onRetry } = {}) {
           R(() => client.readContract({ address: r, abi: marketAbi, functionName: 'minLayerOutPerWeth' })).catch(() => null)));
         return { ...pool, wethIsToken0: getAddress(st.key.currency0) === getAddress(st.weth), routerFloors: floors };
       }
-      // v2: swappers are the locker's reward recipients that answer the IFeeAutoSwapperV2 erc165 probe
-      const sk = `${k.address}:${k.token}`;
-      if (!marketStatic.has(sk)) {
-        const factory = await R(() => client.readContract({ address: k.address, abi: keeperV2Abi, functionName: 'factory' }));
-        const info = await R(() => client.readContract({ address: factory, abi: marketAbi, functionName: 'deploymentInfo', args: [k.token] }));
-        marketStatic.set(sk, { locker: info.locker });
-      }
-      const recipients = await R(() => client.readContract({ address: marketStatic.get(sk).locker, abi: marketAbi, functionName: 'rewardRecipients', args: [k.token] }));
-      const unique = [...new Set(recipients.map((r) => getAddress(r)))];
-      const swappers = [];
-      for (const r of unique) {
-        const yes = await R(() => client.readContract({ address: r, abi: marketAbi, functionName: 'supportsInterface', args: [FEE_SWAPPER_V2_INTERFACE_ID] })).catch(() => false);
-        if (!yes) continue;
-        const [accruedCoin, maxStepIn, key] = await Promise.all(['accruedCoin', 'maxStepIn', 'poolKey'].map((fn) =>
-          R(() => client.readContract({ address: r, abi: marketAbi, functionName: fn }))));
-        swappers.push({ address: r, accruedCoin, maxStepIn, ...(await readPool(asKey(key), { v2: true })) });
-      }
-      return { swappers };
+      throw new Error(`unknown keeper kind ${k.kind}`);
     },
 
     /// signs locally and sends the raw tx (private relay for the keepers in PRIVATE_RPC_KEEPERS). `nonce` set means
@@ -328,4 +270,4 @@ export function createIo(cfg, { onRetry } = {}) {
   return io;
 }
 
-export const runCall = (k, args) => (k.kind === 'v2' ? ['collectAndForward', args] : ['run', args]);
+export const runCall = (k, args) => ['run', args];

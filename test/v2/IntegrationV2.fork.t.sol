@@ -15,27 +15,19 @@ pragma solidity ^0.8.26;
 //     --skip "test/v2/review/**" --skip "test/v2/review-v2/**" -vv
 
 import {IntegrationV2Base} from "./integration/IntegrationV2Base.sol";
-import {
-    I1EmptyTreasury,
-    I1GasBurnerTreasury,
-    I1StreamTreasury
-} from "./integration/mocks/I1Mocks.sol";
+import {I1EmptyTreasury, I1GasBurnerTreasury} from "./integration/mocks/I1Mocks.sol";
 
 import {Constants} from "../../src/Constants.sol";
 import {ArtCoinsFeeEscrowV2} from "../../src/v2/ArtCoinsFeeEscrowV2.sol";
 import {ArtCoinsTokenV2} from "../../src/v2/ArtCoinsTokenV2.sol";
-import {FeeAutoSwapperV2} from "../../src/v2/FeeAutoSwapperV2.sol";
 import {IArtCoinsFactoryV2} from "../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsFeeEscrowV2} from "../../src/v2/interfaces/IArtCoinsFeeEscrowV2.sol";
 import {IArtCoinsHookV2} from "../../src/v2/interfaces/IArtCoinsHookV2.sol";
 import {IArtCoinsLpLockerV2} from "../../src/v2/interfaces/IArtCoinsLpLockerV2.sol";
 import {IBurnRouterV2} from "../../src/v2/interfaces/IBurnRouterV2.sol";
-import {IFeeAutoSwapperV2} from "../../src/v2/interfaces/IFeeAutoSwapperV2.sol";
-import {ArtCoinsLpLockerV2} from "../../src/v2/lp-lockers/ArtCoinsLpLockerV2.sol";
 import {ArtCoinsDeployerV2} from "../../src/v2/utils/ArtCoinsDeployerV2.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {Vm} from "forge-std/Vm.sol";
@@ -80,10 +72,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         assertEq(sc.bountyRecipient, address(treasury), "bounty = treasury");
         assertEq(sc.protocolRecipient, address(v2.controller), "protocol injected");
         assertFalse(_token(coin1).restricted(), "credits coin is not restricted");
-        address[] memory rr = v2.locker.rewardRecipients(coin1);
-        assertEq(rr.length, 2, "project slot + protocol slot");
-        assertEq(rr[0], address(treasury));
-        assertEq(rr[1], address(v2.controller));
 
         // open, then a stranger launches the same config and pays the fee
         vm.prank(LIVE_OWNER);
@@ -98,9 +86,10 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         assertEq(LIVE_OWNER.balance - teamBefore, fee, "fee to team recipient");
         assertEq(strangerBefore - stranger.balance, fee, "stranger paid exactly the fee");
         assertEq(
-            v2.locker.rewardRecipients(coin2)[1], address(v2.controller), "default protocol slot"
+            v2.hook.skimConfig(_pid(coin2)).protocolRecipient,
+            address(v2.controller),
+            "default protocol recipient"
         );
-        assertEq(v2.locker.rewardBps(coin2)[1], v2.factory.defaultProtocolFeeBps());
 
         // both pools swap both ways, inside the anti sniper window; the
         // treasury takes the bounty leg directly (empty receive), the
@@ -189,27 +178,17 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
                 uint16 stackVersion,
                 bytes32 cfgHash,
                 address protocolRecipient,
-                uint16 protocolBps,
                 uint256 poolSupply,
                 uint256 extensionsSupply,
                 IArtCoinsFactoryV2.DeploymentConfigV2 memory cfg
             ) = abi.decode(
                 g.data,
-                (
-                    uint16,
-                    bytes32,
-                    address,
-                    uint16,
-                    uint256,
-                    uint256,
-                    IArtCoinsFactoryV2.DeploymentConfigV2
-                )
+                (uint16, bytes32, address, uint256, uint256, IArtCoinsFactoryV2.DeploymentConfigV2)
             );
             assertEq(stackVersion, 2, "event version");
             assertEq(cfgHash, h, "event configHash");
             assertEq(keccak256(abi.encode(cfg)), cfgHash, "event config hashes to configHash");
             assertEq(protocolRecipient, address(v2.controller));
-            assertEq(protocolBps, PROTOCOL_BPS);
             assertEq(poolSupply, Constants.DEFAULT_TOKEN_SUPPLY);
             assertEq(extensionsSupply, 0);
             assertEq(cfg.fee.bountyRecipient, address(treasury));
@@ -223,7 +202,7 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
     // ══════════════════════════════════════════════════════════════════════
 
     /// every per coin field the owner could reach, in one hash.
-    function _perCoin(address coin, FeeAutoSwapperV2 sw) internal view returns (bytes32) {
+    function _perCoin(address coin) internal view returns (bytes32) {
         PoolId pid = _pid(coin);
         ArtCoinsTokenV2 t = _token(coin);
         (,,, uint24 lpFee) = readSlot0(_key(coin));
@@ -231,44 +210,33 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
             v2.hook.poolInfo(pid),
             v2.hook.skimConfig(pid),
             v2.hook.isOfficialPool(pid),
-            v2.locker.tokenRewards(coin),
+            v2.locker.lockedLiquidity(coin),
             v2.mev.schedule(pid),
             lpFee
         );
         bytes memory b = abi.encode(
             t.restricted(),
-            t.allowlistLocked(),
+            t.locked(),
             t.canonicalHook(),
             t.canonicalPoolId(),
             t.poolManager(),
             t.launcher(),
             t.admin()
         );
-        bytes memory c = abi.encode(
-            sw.endRecipient(),
-            sw.coin(),
-            sw.poolKey(),
-            sw.feeEscrow(),
-            v2.factory.deploymentInfo(coin),
-            v2.factory.isCoin(coin)
-        );
+        bytes memory c = abi.encode(v2.factory.deploymentInfo(coin), v2.factory.isCoin(coin));
         return keccak256(bytes.concat(a, b, c));
     }
 
     function test_i1_ownerSetters_cannotChangePerCoinFields() public onlyFork {
         I1EmptyTreasury treasury = new I1EmptyTreasury();
-        FeeAutoSwapperV2 sw = _newSwapper(address(treasury));
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _creditsConfig(address(treasury));
-        c.locker.rewardRecipients[0] = address(sw);
         address coin = _ownerLaunch(c);
-        sw.setup(coin);
         PoolKey memory key = _key(coin);
         _pastWindow();
         _buyAndSell(key, 1 ether);
 
-        bytes32 before = _perCoin(coin, sw);
+        bytes32 before = _perCoin(coin);
         address other = makeAddr("i1.other");
-        I1StreamTreasury otherContract = new I1StreamTreasury();
 
         // a replacement escrow that knows the hook and locker (D36)
         ArtCoinsFeeEscrowV2 escrow2 = new ArtCoinsFeeEscrowV2(LIVE_OWNER);
@@ -278,29 +246,21 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         // factory: every setter, extreme values
         v2.factory.setDeprecated(false);
         v2.factory.setDeployFee(Constants.MAX_DEPLOY_FEE);
-        v2.factory.setDefaultProtocolFeeBps(Constants.MAX_PROTOCOL_FEE_BPS);
         v2.hook.setReferralBps(Constants.MAX_REFERRAL_CAP_OF_VOLUME);
         v2.factory.setProtocolRecipient(payable(other));
         v2.factory.setTeamFeeRecipient(other);
-        address[] memory da = new address[](1);
-        da[0] = address(otherContract);
-        v2.factory.setDefaultAllowed(da);
         v2.factory.setTokenDeployer(address(deployer2));
         v2.factory.setHook(address(v2.hook), false);
         v2.factory.setLocker(address(v2.locker), false);
         v2.factory.setMevModule(address(v2.mev), false);
         // hook: globals only
         escrow2.addDepositor(address(v2.hook), true);
-        escrow2.addDepositor(address(v2.locker), true);
         v2.hook.setExtensionAllowlist(address(0));
         v2.hook.setLauncher(address(v2.factory), false);
         v2.hook.setLauncher(other, true);
         v2.hook.setFeeEscrow(address(escrow2));
         // locker: globals only
-        v2.locker.setKeeperRewardBps(Constants.LOCKER_KEEPER_BPS_MAX);
-        v2.locker.setKeeperRewardCap(Constants.LOCKER_KEEPER_CAP_MAX);
         v2.locker.setLauncher(address(v2.factory), false);
-        v2.locker.setFeeEscrow(address(escrow2));
         // escrow
         v2.escrow.addDepositor(other, false);
         v2.escrow.removeDepositor(address(v2.controller));
@@ -310,22 +270,13 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         v2.controller.setBurnRouter(address(new I1ConstantsStub())); // valid-hash target
 
         v2.burnRouter.setMaxImpactBps(Constants.PRICE_IMPACT_MAX);
-        // the coin's fee swapper: tunables only
-        sw.setMaxSlippageBps(Constants.SWAPPER_SLIPPAGE_MAX);
-        sw.setMinBlocksBetweenConverts(Constants.SWAPPER_MIN_BLOCKS_MAX);
-        sw.setMaxStepIn(1);
-        sw.setMaxImpactBps(Constants.PRICE_IMPACT_MAX);
-        sw.setSpotFloorBps(Constants.SPOT_FLOOR_MIN_BPS);
         vm.stopPrank();
 
-        assertEq(_perCoin(coin, sw), before, "no owner setter reached a per coin field");
+        assertEq(_perCoin(coin), before, "no owner setter reached a per coin field");
         assertEq(
             v2.hook.skimConfig(_pid(coin)).protocolRecipient,
             address(v2.controller),
             "protocol frozen"
-        );
-        assertEq(
-            v2.locker.rewardRecipients(coin)[1], address(v2.controller), "protocol slot frozen"
         );
 
         // the pool still swaps and pays the frozen recipients; failed pushes
@@ -349,21 +300,13 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         );
         assertEq(other.balance, 0, "new protocol recipient gets nothing from this pool");
         assertEq(escrow2.totalOwed(address(0)), 0, "nothing failed");
-
-        // the locker still collects to the frozen slots
-        vm.prank(keeperCaller);
-        v2.locker.collectRewards(coin);
-        assertGt(IERC20(coin).balanceOf(address(sw)), 0, "swapper slot paid");
-        assertEq(_perCoin(coin, sw), before, "still frozen after trading");
+        assertEq(_perCoin(coin), before, "still frozen after trading");
     }
 
     function test_i1_rescue_cannotTouchOwedBalances() public onlyFork {
         I1GasBurnerTreasury burner = new I1GasBurnerTreasury();
-        FeeAutoSwapperV2 sw = _newSwapper(address(new I1EmptyTreasury()));
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _creditsConfig(address(burner));
-        c.locker.rewardRecipients[0] = address(sw);
         address coin = _ownerLaunch(c);
-        sw.setup(coin);
         PoolKey memory key = _key(coin);
         _pastWindow();
         _buyAndSell(key, 1 ether);
@@ -400,18 +343,12 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         v2.hook.rescueClaims(key.currency0, LIVE_OWNER, 1);
 
         // locker: the lp position nfts are not rescuable, it holds no fees
-        uint256 positionId = v2.locker.tokenRewards(coin).positionId;
+        uint256 positionId = v2.locker.lockedLiquidity(coin).positionId;
         address posm = address(v2.locker.positionManager()); // read before expectRevert
         vm.expectRevert(IArtCoinsLpLockerV2.RescueForbidden.selector);
         v2.locker.rescue(posm, LIVE_OWNER, positionId);
         assertEq(address(v2.locker).balance, 0);
         assertEq(IERC20(coin).balanceOf(address(v2.locker)), 0);
-
-        // swapper: never the coin or eth (fees owed to the end recipient)
-        vm.expectRevert(abi.encodeWithSelector(IFeeAutoSwapperV2.CannotRescue.selector, coin));
-        sw.rescue(coin, LIVE_OWNER, 1);
-        vm.expectRevert(abi.encodeWithSelector(IFeeAutoSwapperV2.CannotRescue.selector, address(0)));
-        sw.rescue(address(0), LIVE_OWNER, 1);
 
         // burn router: never eth, weth or LAYER (the burn budget)
         address layer = v2.burnRouter.coin();
@@ -438,7 +375,7 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
 
     /// marks every contract on the hot paths cold, so each number below
     /// approximates a fresh transaction (minus the 21k base and calldata).
-    function _coolAll(address coin, address sw) internal {
+    function _coolAll(address coin) internal {
         vm.cool(POOL_MANAGER);
         vm.cool(address(v2.hook));
         vm.cool(address(v2.locker));
@@ -452,65 +389,48 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         vm.cool(PERMIT2);
         vm.cool(address(swapRouter));
         if (coin != address(0)) vm.cool(coin);
-        if (sw != address(0)) vm.cool(sw);
     }
 
     function test_i1_gasTable() public onlyFork {
         I1EmptyTreasury treasury = new I1EmptyTreasury();
-        FeeAutoSwapperV2 sw = _newSwapper(address(treasury));
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _creditsConfig(address(treasury));
-        c.locker.rewardRecipients[0] = address(sw);
         uint256 fee = v2.factory.deployFee();
         vm.deal(LIVE_OWNER, LIVE_OWNER.balance + fee);
 
-        _coolAll(address(0), address(0));
+        _coolAll(address(0));
         vm.prank(LIVE_OWNER);
         uint256 g = gasleft();
-        address coin = v2.factory.deployTokenAsOwner{value: fee}(c, PROTOCOL_BPS);
+        address coin = v2.factory.deployToken{value: fee}(c);
         uint256 gLaunch = g - gasleft();
 
-        sw.setup(coin);
         PoolKey memory key = _key(coin);
         _pastWindow();
-        _buyAndSell(key, 1 ether); // seed both fee sides and the coin balance
+        _buyAndSell(key, 1 ether); // seed the coin balance
         vm.roll(vm.getBlockNumber() + 1);
 
         vm.deal(address(this), address(this).balance + 1 ether);
-        _coolAll(coin, address(sw));
+        _coolAll(coin);
         g = gasleft();
         swapExactIn(key, true, 0.1 ether, address(this), "");
         uint256 gBuy = g - gasleft();
 
         uint256 sellAmt = IERC20(coin).balanceOf(address(this)) / 4;
-        _coolAll(coin, address(sw));
+        _coolAll(coin);
         g = gasleft();
         swapExactIn(key, false, sellAmt, address(this), "");
         uint256 gSell = g - gasleft();
 
-        _coolAll(coin, address(sw));
-        g = gasleft();
-        v2.locker.collectRewards(coin);
-        uint256 gCollect = g - gasleft();
-
-        vm.roll(vm.getBlockNumber() + 1);
-        _coolAll(coin, address(sw));
-        g = gasleft();
-        sw.convert(0);
-        uint256 gConvert = g - gasleft();
-
         (bool ok,) = address(v2.burnRouter).call{value: 0.5 ether}("");
         assertTrue(ok);
         vm.roll(vm.getBlockNumber() + 1);
-        _coolAll(coin, address(sw));
+        _coolAll(coin);
         g = gasleft();
         v2.burnRouter.processBurn(0);
         uint256 gBurn = g - gasleft();
 
-        console2.log("i1 gas: launch (deployTokenAsOwner, 3 positions)", gLaunch);
+        console2.log("i1 gas: launch (deployToken, 3 positions)", gLaunch);
         console2.log("i1 gas: buy 0.1 eth exact in (PoolSwapTest)", gBuy);
         console2.log("i1 gas: sell exact in (PoolSwapTest)", gSell);
-        console2.log("i1 gas: locker.collectRewards (2 slots, 3 positions)", gCollect);
-        console2.log("i1 gas: swapper.convert", gConvert);
         console2.log("i1 gas: burnRouter.processBurn", gBurn);
         assertGt(gLaunch, 0);
         assertLt(gLaunch, 16_700_000, "launch under the per tx cap");

@@ -35,8 +35,9 @@ import {IConstantsBound} from "./interfaces/IConstantsBound.sol";
 ///
 ///         Frozen at construction: name, symbol, supply, launcher, canonical
 ///         hook, pool id, PoolManager. The coin admin manages the allowlist,
-///         may call `unrestrict` once, may `lockAllowlist` the allowlist and the
-///         switch, and may change the cosmetic fields (image, description, renderer).
+///         may call `unrestrict` once, may `lock` the coin (allowlist, switch and
+///         the hook side settings freeze), and may change the cosmetic fields
+///         (image, description, renderer).
 /// @dev    Deployed by `ArtCoinsDeployerV2` via CREATE2. The whole supply is
 ///         minted to the launcher (the factory).
 contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
@@ -89,15 +90,9 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
     /// @inheritdoc IArtCoinsTokenV2
     bool public restricted;
     /// @inheritdoc IArtCoinsTokenV2
-    bool public allowlistLocked;
-    /// @inheritdoc IArtCoinsTokenV2
-    bool public recipientsLocked;
+    bool public locked;
 
     mapping(address => bool) private _allowed;
-    /// @dev Allowlist entries the factory seeded (the stack escrow, this launch's
-    ///      locker and the launch extensions). `setAllowed` keeps a pinned entry
-    ///      on the list; the coin admin can add and remove its own entries only.
-    mapping(address => bool) private _pinned;
 
     // ── construction ──────────────────────────────────────────────────────
 
@@ -105,14 +100,12 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
     /// @param supply   Supply minted to `launcher_`.
     /// @param r        Restriction config. `restricted` and the full allowlist
     ///                 the factory assembled (empty when not restricted).
-    /// @param pinned   The subset of `r.allowed` the coin admin cannot remove.
     /// @param canon    Canonical pool inputs from the factory.
     /// @param launcher_ The factory. Receives the supply and is the `launcher` tag.
     constructor(
         IArtCoinsFactoryV2.TokenConfigV2 memory t,
         uint256 supply,
         IArtCoinsFactoryV2.RestrictionConfigV2 memory r,
-        address[] memory pinned,
         CanonicalPool memory canon,
         address launcher_
     ) {
@@ -153,9 +146,6 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
         if (r.restricted) {
             uint256 n = r.allowed.length;
             if (n > Constants.MAX_ALLOWED) revert RestrictionConfigInvalid();
-            for (uint256 i; i < pinned.length; ++i) {
-                _pinned[pinned[i]] = true;
-            }
             for (uint256 i; i < n; ++i) {
                 address a = r.allowed[i];
                 if (a == address(0)) revert RestrictionConfigInvalid();
@@ -164,9 +154,9 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
                 // without consuming the per swap allowance.
                 if (a == canon.poolManager || a == canon.hook) revert AllowedForbidden(a);
                 _allowed[a] = true;
-                emit AllowedSet(a, true, _pinned[a]);
+                emit AllowedSet(a, true);
             }
-        } else if (r.allowed.length != 0 || pinned.length != 0) {
+        } else if (r.allowed.length != 0) {
             // an unrestricted coin carries no allowlist.
             revert RestrictionConfigInvalid();
         }
@@ -264,49 +254,34 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
     /// @inheritdoc IArtCoinsTokenV2
     function setAllowed(address account, bool allowed) external {
         if (msg.sender != _admin) revert NotAdmin();
-        if (allowlistLocked) revert AllowlistAlreadyLocked();
+        if (locked) revert CoinLocked();
         if (account == address(0)) revert ZeroAddress();
         if (account == poolManager || account == canonicalHook) revert AllowedForbidden(account);
-        if (_pinned[account] && !allowed) revert AllowedPinned(account);
         _allowed[account] = allowed;
-        emit AllowedSet(account, allowed, _pinned[account]);
+        emit AllowedSet(account, allowed);
     }
 
     /// @inheritdoc IArtCoinsTokenV2
     function unrestrict() external {
         if (msg.sender != _admin) revert NotAdmin();
-        if (allowlistLocked) revert AllowlistAlreadyLocked();
+        if (locked) revert CoinLocked();
         if (!restricted) revert NotRestricted();
         restricted = false;
         emit Unrestricted();
     }
 
     /// @inheritdoc IArtCoinsTokenV2
-    function lockAllowlist() external {
+    /// @dev The hook reads `locked` to freeze its coin admin setters.
+    function lock() external {
         if (msg.sender != _admin) revert NotAdmin();
-        if (allowlistLocked) revert AllowlistAlreadyLocked();
-        allowlistLocked = true;
-        emit AllowlistLocked();
-    }
-
-    /// @inheritdoc IArtCoinsTokenV2
-    /// @dev The hook and locker read `recipientsLocked` to freeze the bounty and
-    ///      reward recipient setters.
-    function lockRecipients() external {
-        if (msg.sender != _admin) revert NotAdmin();
-        if (recipientsLocked) revert RecipientsAlreadyLocked();
-        recipientsLocked = true;
-        emit RecipientsLocked();
+        if (locked) revert CoinLocked();
+        locked = true;
+        emit Locked();
     }
 
     /// @inheritdoc IArtCoinsTokenV2
     function isAllowed(address account) external view returns (bool) {
         return _allowed[account];
-    }
-
-    /// @inheritdoc IArtCoinsTokenV2
-    function isPinned(address account) external view returns (bool) {
-        return _pinned[account];
     }
 
     /// @inheritdoc IArtCoinsTokenV2
@@ -337,9 +312,9 @@ contract ArtCoinsTokenV2 is ERC20, IArtCoinsTokenV2, IConstantsBound {
 
     /// @inheritdoc IArtCoinsTokenV2
     /// @dev Freezes every admin only function (`setAllowed`, `unrestrict`,
-    ///      `lockAllowlist`, `lockRecipients`, the metadata setters): each
-    ///      requires the admin, which becomes the zero address. The hook and
-    ///      locker recipient setters key on `admin()`, so they freeze too.
+    ///      `lock`, the metadata setters): each requires the admin, which
+    ///      becomes the zero address. The hook's coin admin setters key on
+    ///      `admin()`, so they freeze too.
     function renounceAdmin() external {
         if (msg.sender != _admin) revert NotAdmin();
         address oldAdmin = _admin;

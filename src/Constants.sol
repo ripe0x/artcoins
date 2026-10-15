@@ -18,8 +18,6 @@ library Constants {
     uint256 internal constant FEE_DENOMINATOR = 1_000_000;
 
     // ── hook and pool fee config (per pool fields frozen at init; the referral rate is hook wide) ─────
-    /// @notice Max lp fee, 10% in pips (1e6 units).
-    uint24 internal constant MAX_LP_FEE = 100_000;
     /// @notice Anti sniper skim ceiling, 90% of volume in BPS.
     uint24 internal constant MAX_SKIM_BPS = 9000;
     /// @notice Baseline skim ceiling, 10% of volume in BPS.
@@ -31,9 +29,9 @@ library Constants {
     /// @notice Max bounty share of the skim, in BPS.
     uint16 internal constant MAX_BOUNTY_BPS = 9999;
 
-    // ── fee push gas cap ──────────────────────────────────────────────────
-    /// @notice Gas forwarded on a locker or controller fee push; a failed push
-    ///         falls back to the escrow. The hook pushes with a zero gas call.
+    // ── fee push gas cap (not hashed) ─────────────────────────────────────
+    /// @notice Gas forwarded on a controller fee push; a failed push falls back
+    ///         to the escrow. The hook pushes with a zero gas call.
     uint32 internal constant PUSH_GAS_MAX = 150_000;
 
     // ── anti sniper window (module and hook agree) ────────────────────────
@@ -46,16 +44,8 @@ library Constants {
     uint24 internal constant DEFAULT_START_SKIM_BPS = 6869;
 
     // ── locker ────────────────────────────────────────────────────────────
-    /// @notice Max reward slots (project slots plus the protocol slot).
-    uint256 internal constant MAX_REWARD_PARTICIPANTS = 7;
     /// @notice Max lp positions per coin.
     uint256 internal constant MAX_LP_POSITIONS = 14;
-    /// @notice Owner bounds for the locker keeper reward.
-    uint256 internal constant LOCKER_KEEPER_BPS_MAX = 200;
-    uint256 internal constant LOCKER_KEEPER_CAP_MIN = 0.001 ether;
-    uint256 internal constant LOCKER_KEEPER_CAP_MAX = 0.05 ether;
-    /// @notice Initial locker keeper reward cap (not a setter bound, not hashed).
-    uint256 internal constant LOCKER_KEEPER_CAP_DEFAULT = 0.01 ether;
 
     // ── factory ───────────────────────────────────────────────────────────
     /// @notice Supply used when `TokenConfigV2.totalSupply == 0`.
@@ -64,8 +54,6 @@ library Constants {
     /// @notice Launch extension limits.
     uint256 internal constant MAX_EXTENSIONS = 10;
     uint16 internal constant MAX_EXTENSION_BPS = 9000;
-    /// @notice Max protocol slot in the locker split, in BPS.
-    uint16 internal constant MAX_PROTOCOL_FEE_BPS = 3000;
     /// @notice Max flat deploy fee.
     uint256 internal constant MAX_DEPLOY_FEE = 1 ether;
 
@@ -89,22 +77,19 @@ library Constants {
     uint8 internal constant FIELD_IMAGE = 2;
     uint8 internal constant FIELD_DESCRIPTION = 3;
 
-    // ── keepers, swapper, burn router ─────────────────────────────────────
-    /// @notice Keeper reward on consumed amounts, capped.
-    uint256 internal constant KEEPER_REWARD_BPS = 50;
-    uint256 internal constant KEEPER_REWARD_CAP = 0.01 ether;
+    // ── burn router (not hashed) ──────────────────────────────────────────
+    /// @notice Clamp on the lp fee read from the LAYER pool for the output floor, in pips.
+    uint24 internal constant MAX_LP_FEE = 100_000;
     /// @notice Burn router initial output floor, in BPS of the spot output net
     ///         of the pool's buy fee (the spot and fee are read at burn time).
-    ///         Owner tunable within [SPOT_FLOOR_MIN_BPS, SPOT_FLOOR_MAX_BPS]; not hashed.
+    ///         Owner tunable within [SPOT_FLOOR_MIN_BPS, SPOT_FLOOR_MAX_BPS].
     uint256 internal constant BURN_SPOT_FLOOR_BPS = 9000;
-    /// @notice Output floor bounds for the burn router and the fee swapper
-    ///         (the swapper's default, 9500, is contract local).
     uint256 internal constant SPOT_FLOOR_MIN_BPS = 5000;
     uint256 internal constant SPOT_FLOOR_MAX_BPS = 9500;
-    /// @notice Burn router keeper reward: initial values and owner bounds (not
-    ///         hashed). The reward is a flat tip plus the burn's gas at the
-    ///         basefee, paid when the basefee is at or under the gate, capped
-    ///         at a share of the weth consumed.
+    /// @notice Burn router keeper reward: initial values and owner bounds. The
+    ///         reward is a flat tip plus the burn's gas at the basefee, paid when
+    ///         the basefee is at or under the gate, capped at a share of the weth
+    ///         consumed.
     uint256 internal constant BURN_TIP_DEFAULT = 0.0003 ether;
     uint256 internal constant BURN_TIP_MAX = 0.01 ether;
     uint256 internal constant BURN_GAS_OVERHEAD_DEFAULT = 60_000;
@@ -113,23 +98,17 @@ library Constants {
     uint256 internal constant BURN_BASEFEE_GATE_MAX = 100 gwei;
     uint16 internal constant BURN_REWARD_BPS_DEFAULT = 1000;
     uint16 internal constant BURN_REWARD_BPS_MAX = 5000;
-    /// @notice Fee swapper owner bounds.
-    uint256 internal constant SWAPPER_SLIPPAGE_MIN = 50;
-    uint256 internal constant SWAPPER_SLIPPAGE_MAX = 1000;
-    uint256 internal constant SWAPPER_MIN_BLOCKS_MIN = 1;
-    uint256 internal constant SWAPPER_MIN_BLOCKS_MAX = 50_400;
-    /// @notice Per block price impact bounds, in BPS, for the swapper convert
-    ///         and the burn router.
+    /// @notice Per burn price impact bounds, in BPS.
     uint16 internal constant PRICE_IMPACT_MIN = 25;
     uint16 internal constant PRICE_IMPACT_DEFAULT = 100;
     uint16 internal constant PRICE_IMPACT_MAX = 300;
 
-    // ── protocol fee controller ───────────────────────────────────────────
+    // ── protocol fee controller (not hashed) ──────────────────────────────
     /// @notice Minimum shares of the protocol revenue split, in BPS.
     uint16 internal constant PFC_MIN_TREASURY_BPS = 1000;
     uint16 internal constant PFC_MIN_BURN_BPS = 1000;
 
-    // ── renderers ─────────────────────────────────────────────────────────
+    // ── renderers (not hashed) ────────────────────────────────────────────
     uint256 internal constant MAX_GLYPHS = 256;
     uint256 internal constant RENDER_GAS_BUDGET = 8_000_000;
 
@@ -140,12 +119,11 @@ library Constants {
     uint8 internal constant LEG_REFERRAL = 2;
 
     /// @notice Hash of every value two separately deployed contracts must agree on.
-    /// @dev    Single contract tunables (locker keeper, swapper, burn router,
-    ///         fee controller, renderer, deploy fee bounds) and informational
-    ///         values are excluded. `test/v2/ConstantsV2.t.sol` recomputes this
+    /// @dev    Single contract values (burn router, fee controller, renderer,
+    ///         deploy fee bounds, push gas) and informational values are excluded. `test/v2/ConstantsV2.t.sol` recomputes this
     ///         from literals, so an edit without a matching test update fails.
     function hash() internal pure returns (bytes32) {
-        return keccak256(abi.encode(_hashPool(), _hashDelivery(), _hashLaunch(), _hashKeeper()));
+        return keccak256(abi.encode(_hashPool(), _hashLaunch()));
     }
 
     function _hashPool() private pure returns (bytes32) {
@@ -154,7 +132,6 @@ library Constants {
                 STACK_VERSION,
                 BPS,
                 FEE_DENOMINATOR,
-                MAX_LP_FEE,
                 MAX_SKIM_BPS,
                 MAX_BASELINE_SKIM_BPS,
                 MAX_REFERRAL_CAP_OF_VOLUME,
@@ -167,27 +144,17 @@ library Constants {
         );
     }
 
-    function _hashDelivery() private pure returns (bytes32) {
-        return keccak256(abi.encode(PUSH_GAS_MAX));
-    }
-
     function _hashLaunch() private pure returns (bytes32) {
         return keccak256(
             abi.encode(
-                MAX_REWARD_PARTICIPANTS,
                 MAX_LP_POSITIONS,
                 DEFAULT_TOKEN_SUPPLY,
                 MIN_TOKEN_SUPPLY,
                 MAX_EXTENSIONS,
                 MAX_EXTENSION_BPS,
-                MAX_PROTOCOL_FEE_BPS,
                 MAX_ALLOWED,
                 DEAD
             )
         );
-    }
-
-    function _hashKeeper() private pure returns (bytes32) {
-        return keccak256(abi.encode(KEEPER_REWARD_BPS, KEEPER_REWARD_CAP));
     }
 }

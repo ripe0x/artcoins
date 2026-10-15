@@ -1,7 +1,6 @@
 {
   "example": false,
   "about": "anvil fork rehearsal config, restricted coin with the example on-chain renderer",
-  "protocolBps": 2000,
   "expectedToken": "0x0000000000000000000000000000000000000000",
   "token": {
     "tokenAdmin": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
@@ -18,18 +17,11 @@
     "tickSpacing": 200
   },
   "fee": {
-    "lpFeePips": 5000,
     "baselineSkimBps": 600,
     "bountyBps": 8333,
     "bountyRecipient": "0x000000000000000000000000000000000000bEEF"
   },
   "locker": {
-    "rewardRecipients": [
-      "0x000000000000000000000000000000000000bEEF"
-    ],
-    "rewardBps": [
-      8000
-    ],
     "tickLower": [
       -200000,
       -160000,

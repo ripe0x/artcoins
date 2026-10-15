@@ -12,7 +12,7 @@
 # confirmation (WALLET_MODE=account), broadcast (--slow), readback, record at $RECORD, verify-v2.sh (VERIFY=full|chain).
 #
 # Env file values: CHAIN_ID RPC_DEFAULT FOUNDRY_PROFILE WALLET_MODE (account|unlocked) KEYSTORE OWNER
-#   TREASURY TREASURY_BPS DEPLOY_FEE (wei) PROTOCOL_BPS REFERRAL_BPS
+#   TREASURY TREASURY_BPS DEPLOY_FEE (wei) REFERRAL_BPS
 #   VERIFY (full|chain|none) REQUIRE_CLEAN_GIT BROADCAST_DIR DEPLOY_JSON RECORD.
 # Shell:
 #   RPC_URL            rpc endpoint, overrides RPC_DEFAULT. Cast and forge read it from the environment, messages show scheme and host
@@ -47,7 +47,7 @@ soft() { # enforced on a real run, reported on a dry run
   if [ "$DRY_RUN" = 1 ]; then echo "warn (dry run): $*" >&2; else die "$*"; fi
 }
 
-for v in CHAIN_ID RPC_DEFAULT FOUNDRY_PROFILE WALLET_MODE OWNER TREASURY TREASURY_BPS DEPLOY_FEE PROTOCOL_BPS \
+for v in CHAIN_ID RPC_DEFAULT FOUNDRY_PROFILE WALLET_MODE OWNER TREASURY TREASURY_BPS DEPLOY_FEE \
   REFERRAL_BPS VERIFY REQUIRE_CLEAN_GIT BROADCAST_DIR DEPLOY_JSON RECORD; do
   [ -n "${!v:-}" ] || die "$ENV_FILE has no $v. Set it before deploying."
 done
@@ -169,7 +169,7 @@ J="$DEPLOY_JSON"
 [ "$(jq -r '.chainId // empty' "$J")" = "$CHAIN_ID" ] || die "$J is for another chain"
 addr_of() { local a; a=$(jq -r ".addresses.$1 // empty" "$J"); [ -n "$a" ] || die "no $1 address in $J"; printf '%s' "$a"; }
 code_at() { local c; c=$(cast code "$2") || die "cast code failed for $1 $2"; { [ -n "$c" ] && [ "$c" != 0x ]; } || die "no code at $1 $2"; }
-for k in escrow allowlist hook locker mev factory tokenDeployer burnRouter controller keeper; do
+for k in escrow allowlist hook locker mev factory tokenDeployer burnRouter controller; do
   code_at "$k" "$(addr_of "$k")"
 done
 echo "ok   code at all 10 contracts"

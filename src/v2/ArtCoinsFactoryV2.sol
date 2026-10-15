@@ -28,11 +28,11 @@ interface IHookPoolManager {
 
 /// @title  ArtCoinsFactoryV2
 /// @notice Launches an art coin, its native eth Uniswap v4 pool on the v2 hook
-///         and its locked liquidity in one call. Every per coin value is frozen
-///         in the launch tx. The token address is a function of
-///         (factory, sender, full config): salt = keccak256(abi.encode(sender, configHash(c))).
+///         and its locked liquidity in one call. The token address is a
+///         function of (factory, sender, full config):
+///         salt = keccak256(abi.encode(sender, configHash(c))).
 ///
-///         Launch flow (`deployToken`, `deployTokenAsOwner`):
+///         Launch flow (`deployToken`):
 ///         1. deprecated gate (owner bypasses); token deployer set.
 ///         2. config validated against `Constants` and factory state.
 ///         3. `msg.value >= deployFee + sum(extension msgValue)`; the excess is
@@ -43,8 +43,8 @@ interface IHookPoolManager {
 ///            PoolManager and `restricted` flag are checked against the pool just
 ///            created.
 ///         6. launch record (`isCoin`, `deploymentInfo`) written.
-///         7. pool supply approved to the locker, `placeLiquidity` with the
-///            protocol slot appended; the locker must pull exactly the pool supply.
+///         7. pool supply approved to the locker, `placeLiquidity`; the locker
+///            must pull exactly the pool supply.
 ///         8. extensions: each gets exactly its own `msgValue` and its own
 ///            supply share, and must pull exactly that share.
 ///         9. `hook.initializeMevModule`, always (after extensions: a
@@ -67,21 +67,11 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     /// @notice Parallel arrays of different lengths.
     error ArrayLengthMismatch();
-    /// @notice A launch must earn some fee: both `lpFeePips` and `baselineSkimBps`
-    ///         are zero, so the pool, the locker and the protocol earn nothing.
+    /// @notice `baselineSkimBps` is zero: the skim is the pool's only fee.
     error ZeroFeeLaunch();
-    /// @notice A restricted launch's hook has no fee escrow set, so the seeded
-    ///         allowlist cannot be assembled.
-    error HookEscrowNotSet(address hook);
-
-    // ── events and errors declared on the contract ───────────────────────
-
     /// @notice Position count is 0 or above `Constants.MAX_LP_POSITIONS`, or position bps do not sum to BPS.
     error InvalidPositions();
-    /// @notice Reward slot count (project slots plus protocol slot) is 0 or above
-    ///         `Constants.MAX_REWARD_PARTICIPANTS`, or a project slot has 0 bps.
-    error InvalidRewardSlots();
-    /// @notice lpFeePips or baselineSkimBps above its Constants cap.
+    /// @notice `baselineSkimBps` above its Constants cap.
     error FeeConfigOutOfBounds();
     /// @notice The hook answers a different PoolManager than the factory's.
     error PoolManagerMismatch(address hook);
@@ -95,10 +85,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     /// @inheritdoc IArtCoinsFactoryV2
     uint16 public constant STACK_VERSION = Constants.STACK_VERSION;
 
-    /// @dev Stack contracts a reward recipient cannot be: factory, coin,
-    ///      PoolManager, hook, locker, token deployer, locker fee escrow, hook
-    ///      fee escrow, mev module.
-    uint256 private constant _REJECT_SET = 9;
+    /// @dev Stack contracts a fee recipient cannot be: factory, coin,
+    ///      PoolManager, hook, locker, token deployer, hook fee escrow, mev module.
+    uint256 private constant _REJECT_SET = 8;
 
     /// @notice The Uniswap v4 PoolManager every enabled hook must answer.
     address public immutable poolManager;
@@ -112,8 +101,6 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     /// @inheritdoc IArtCoinsFactoryV2
     bool public deprecated;
-    /// @inheritdoc IArtCoinsFactoryV2
-    uint16 public defaultProtocolFeeBps;
     /// @inheritdoc IArtCoinsFactoryV2
     uint256 public deployFee;
     /// @inheritdoc IArtCoinsFactoryV2
@@ -129,22 +116,6 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     mapping(address => bool) public enabledMevModules;
     /// @inheritdoc IArtCoinsFactoryV2
     mapping(address => bool) public enabledExtensions;
-    /// @notice Owner set addresses seeded into every restricted coin's launch
-    ///         allowlist, on top of the stack escrow, the launch locker and the
-    ///         launch extensions. Ships empty.
-    ///
-    ///         ALLOWLIST RULE (canonical, referenced elsewhere): allowlist only
-    ///         a contract whose coin outflows are fixed by its own logic (the
-    ///         locker pays frozen reward slots, the escrow pays the credited
-    ///         owner, an airdrop or vault pays its configured recipients). A
-    ///         contract that sends coin where its caller directs it (a router,
-    ///         aggregator, multicall or smart wallet) is a prohibited entry: the
-    ///         transfer rule checks the two parties only, so an allowlisted
-    ///         forwarder lets any user move coin wallet to wallet through it. A
-    ///         restricted coin reaches the standard routers through the per swap
-    ///         allowance alone, since the only coin move is between the
-    ///         PoolManager and the user.
-    address[] private _defaultAllowed;
 
     // ── launch records ────────────────────────────────────────────────────
 
@@ -154,23 +125,17 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     /// @param owner_         Initial owner (Ownable2Step).
     /// @param poolManager_   Uniswap v4 PoolManager.
-    /// @param protocolBps_   Initial `defaultProtocolFeeBps` (<= MAX_PROTOCOL_FEE_BPS).
     /// @param deployFee_     Initial `deployFee` (<= MAX_DEPLOY_FEE).
     /// @dev   Ships deprecated and without a token deployer. Deploy order:
     ///        factory, then `new ArtCoinsDeployerV2(factory)`, then
     ///        `setTokenDeployer`, then the remaining wiring, then `setDeprecated(false)`.
-    constructor(address owner_, address poolManager_, uint16 protocolBps_, uint256 deployFee_)
-        Ownable(owner_)
-    {
+    constructor(address owner_, address poolManager_, uint256 deployFee_) Ownable(owner_) {
         if (poolManager_ == address(0)) revert ZeroAddress();
-        if (protocolBps_ > Constants.MAX_PROTOCOL_FEE_BPS) revert ProtocolFeeBpsTooHigh();
         if (deployFee_ > Constants.MAX_DEPLOY_FEE) revert DeployFeeTooHigh();
         poolManager = poolManager_;
-        defaultProtocolFeeBps = protocolBps_;
         deployFee = deployFee_;
         deprecated = true;
         emit DeprecatedSet(true);
-        emit DefaultProtocolFeeBpsSet(0, protocolBps_);
         emit DeployFeeSet(0, deployFee_);
     }
 
@@ -179,28 +144,70 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     // ══════════════════════════════════════════════════════════════════════
 
     /// @inheritdoc IArtCoinsFactoryV2
-    /// @dev Uses `defaultProtocolFeeBps`. `msg.value` must be at least
-    ///      `deployFee + sum(extension msgValue)`; any excess is refunded to the sender.
+    /// @dev `msg.value` must be at least `deployFee + sum(extension msgValue)`;
+    ///      any excess is refunded to the sender.
     function deployToken(DeploymentConfigV2 calldata c)
         external
         payable
         nonReentrant
         returns (address token)
     {
-        return _launch(c, defaultProtocolFeeBps);
-    }
+        if (deprecated && msg.sender != owner()) revert Deprecated();
+        ArtCoinsDeployerV2 deployer = _deployer();
 
-    /// @inheritdoc IArtCoinsFactoryV2
-    /// @dev Owner only. `protocolBps` in [0, MAX_PROTOCOL_FEE_BPS]; 0 appends no protocol slot.
-    function deployTokenAsOwner(DeploymentConfigV2 calldata c, uint16 protocolBps)
-        external
-        payable
-        onlyOwner
-        nonReentrant
-        returns (address token)
-    {
-        if (protocolBps > Constants.MAX_PROTOCOL_FEE_BPS) revert ProtocolFeeBpsTooHigh();
-        return _launch(c, protocolBps);
+        uint256 supply = _supply(c.token.totalSupply);
+        (uint256 extensionsSupply, uint256 extensionsValue) = _validate(c, supply);
+
+        uint256 fee = deployFee;
+        uint256 required = fee + extensionsValue;
+        if (msg.value < required) revert MsgValueMismatch(required, msg.value);
+
+        bytes32 h = configHash(c);
+        token = deployer.deploy(
+            c.token,
+            supply,
+            _restriction(c),
+            _canon(c),
+            address(this),
+            keccak256(abi.encode(msg.sender, h))
+        );
+
+        _checkRecipients(c, token);
+
+        PoolKey memory poolKey = _initializePool(c, token);
+        PoolId poolId = poolKey.toId();
+        _checkCanonical(c, token, poolId);
+
+        _record(c, token, poolId);
+
+        uint256 poolSupply = supply - extensionsSupply;
+        _placeLiquidity(c, poolKey, poolSupply, token);
+        _runExtensions(c, poolKey, token, supply);
+
+        // always called: it also runs the pool extension's post locker setup
+        // and arms the hook's per pool `started` flag. Empty config when there
+        // is no module (the hook skips the module call).
+        IArtCoinsHookV2(c.pool.hook)
+            .initializeMevModule(
+                poolKey,
+                c.mev.module == address(0)
+                    ? bytes("")
+                    : abi.encode(c.mev.startingSkimBps, c.mev.windowSeconds)
+            );
+
+        emit TokenCreatedV2(
+            msg.sender,
+            token,
+            poolId,
+            STACK_VERSION,
+            h,
+            protocolRecipient,
+            poolSupply,
+            extensionsSupply,
+            c
+        );
+
+        _settleEth(fee, msg.value - required);
     }
 
     /// @inheritdoc IArtCoinsFactoryV2
@@ -209,13 +216,11 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         view
         returns (address)
     {
-        (RestrictionConfigV2 memory r, address[] memory pinned) = _restriction(c);
         return _deployer()
             .predict(
                 c.token,
                 _supply(c.token.totalSupply),
-                r,
-                pinned,
+                _restriction(c),
                 _canon(c),
                 address(this),
                 _salt(sender, c)
@@ -242,43 +247,39 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         });
     }
 
-    /// @dev Full restriction config passed to the token: the user `allowed` set
-    ///      plus the stack escrow, this launch's locker and extensions, and the
-    ///      owner `defaultAllowed` set. `pinned` is the subset the coin admin
-    ///      cannot remove (locker, escrow, extensions). Empty when not
+    /// @dev Full restriction config passed to the token: this launch's locker
+    ///      and extensions, then the user `allowed` set. Empty when not
     ///      restricted. The assembled set is folded into the token initcode, so
     ///      `predictToken` and the deploy share this function and agree on the
-    ///      address. The result depends on `defaultAllowed` and the hook escrow,
-    ///      which the owner can change between a `predictToken` read and launch.
+    ///      address.
+    ///
+    ///      ALLOWLIST RULE: allowlist only a contract whose coin outflows are
+    ///      fixed by its own logic (the locker holds positions, an airdrop or
+    ///      vault pays its configured recipients). A contract that sends coin
+    ///      where its caller directs it (a router, aggregator, multicall or
+    ///      smart wallet) is a prohibited entry: the transfer rule checks the
+    ///      two parties only, so an allowlisted forwarder lets any user move
+    ///      coin wallet to wallet through it. A restricted coin reaches the
+    ///      standard routers through the per swap allowance alone, since the
+    ///      only coin move is between the PoolManager and the user.
     function _restriction(DeploymentConfigV2 calldata c)
         internal
-        view
-        returns (RestrictionConfigV2 memory r, address[] memory pinned)
+        pure
+        returns (RestrictionConfigV2 memory r)
     {
         r.restricted = c.restriction.restricted;
-        if (!r.restricted) return (r, pinned);
+        if (!r.restricted) return r;
 
-        address escrow = IArtCoinsHookV2(c.pool.hook).globals().feeEscrow;
-        if (escrow == address(0)) revert HookEscrowNotSet(c.pool.hook);
-        uint256 nDefault = _defaultAllowed.length;
         uint256 nUser = c.restriction.allowed.length;
         uint256 nExt = c.extensions.length;
-        uint256 total = nDefault + 2 + nExt + nUser;
+        uint256 total = 1 + nExt + nUser;
         if (total > Constants.MAX_ALLOWED) revert InvalidRestrictionConfig();
 
         address[] memory a = new address[](total);
-        pinned = new address[](2 + nExt);
         uint256 k;
-        for (uint256 i; i < nDefault; ++i) {
-            a[k++] = _defaultAllowed[i];
-        }
         a[k++] = c.locker.locker;
-        pinned[0] = c.locker.locker;
-        a[k++] = escrow;
-        pinned[1] = escrow;
         for (uint256 i; i < nExt; ++i) {
             a[k++] = c.extensions[i].extension;
-            pinned[2 + i] = c.extensions[i].extension;
         }
         for (uint256 i; i < nUser; ++i) {
             a[k++] = c.restriction.allowed[i];
@@ -296,76 +297,11 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         return requested;
     }
 
-    function _launch(DeploymentConfigV2 calldata c, uint16 protocolBps)
-        internal
-        returns (address token)
-    {
-        if (deprecated && msg.sender != owner()) revert Deprecated();
-        ArtCoinsDeployerV2 deployer = _deployer();
-
-        uint256 supply = _supply(c.token.totalSupply);
-        (uint256 extensionsSupply, uint256 extensionsValue) = _validate(c, supply, protocolBps);
-
-        uint256 fee = deployFee;
-        uint256 required = fee + extensionsValue;
-        if (msg.value < required) revert MsgValueMismatch(required, msg.value);
-
-        bytes32 h = configHash(c);
-        (RestrictionConfigV2 memory r, address[] memory pinned) = _restriction(c);
-        token = deployer.deploy(
-            c.token,
-            supply,
-            r,
-            pinned,
-            _canon(c),
-            address(this),
-            keccak256(abi.encode(msg.sender, h))
-        );
-
-        _checkRecipients(c, token);
-
-        PoolKey memory poolKey = _initializePool(c, token);
-        PoolId poolId = poolKey.toId();
-        _checkCanonical(c, token, poolId);
-
-        _record(c, token, poolId);
-
-        uint256 poolSupply = supply - extensionsSupply;
-        _placeLiquidity(c, poolKey, poolSupply, token, protocolBps);
-        _runExtensions(c, poolKey, token, supply);
-
-        // always called: it also runs the pool extension's post locker setup
-        // and arms the hook's per pool `started` flag. Empty config when there
-        // is no module (the hook skips the module call).
-        IArtCoinsHookV2(c.pool.hook)
-            .initializeMevModule(
-                poolKey,
-                c.mev.module == address(0)
-                    ? bytes("")
-                    : abi.encode(c.mev.startingSkimBps, c.mev.windowSeconds)
-            );
-
-        emit TokenCreatedV2(
-            msg.sender,
-            token,
-            poolId,
-            STACK_VERSION,
-            h,
-            protocolRecipient,
-            protocolBps,
-            poolSupply,
-            extensionsSupply,
-            c
-        );
-
-        _settleEth(fee, msg.value - required);
-    }
-
     // ── validation ────────────────────────────────────────────────────────
 
     /// @return extensionsSupply Sum of per extension floors.
     /// @return extensionsValue  Sum of extension msgValue.
-    function _validate(DeploymentConfigV2 calldata c, uint256 supply, uint16 protocolBps)
+    function _validate(DeploymentConfigV2 calldata c, uint256 supply)
         internal
         view
         returns (uint256 extensionsSupply, uint256 extensionsValue)
@@ -380,7 +316,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         if (protocolRecipient == address(0)) revert ZeroAddress();
 
         _validateFee(c.fee);
-        _validateLocker(c.locker, protocolBps);
+        _validateLocker(c.locker);
         _validateMev(c.mev, c.pool.hook, c.fee.baselineSkimBps);
         _validateRestriction(c.restriction, c.pool.hook);
         return _validateExtensions(c.extensions, supply);
@@ -406,38 +342,19 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     function _validateFee(FeeConfigV2 calldata f) internal pure {
         if (f.bountyRecipient == address(0)) revert ZeroAddress();
-        // a launch must earn some fee on one of the two legs.
-        if (f.lpFeePips == 0 && f.baselineSkimBps == 0) revert ZeroFeeLaunch();
-        if (
-            f.lpFeePips > Constants.MAX_LP_FEE
-                || f.baselineSkimBps > Constants.MAX_BASELINE_SKIM_BPS
-        ) revert FeeConfigOutOfBounds();
+        if (f.baselineSkimBps == 0) revert ZeroFeeLaunch();
+        if (f.baselineSkimBps > Constants.MAX_BASELINE_SKIM_BPS) revert FeeConfigOutOfBounds();
         if (f.bountyBps > Constants.MAX_BOUNTY_BPS) {
             revert BountyBpsTooHigh(f.bountyBps, Constants.MAX_BOUNTY_BPS);
         }
     }
 
-    function _validateLocker(LockerConfigV2 calldata l, uint16 protocolBps) internal view {
+    function _validateLocker(LockerConfigV2 calldata l) internal view {
         if (!enabledLockers[l.locker]) revert LockerNotEnabled();
-
-        // reward split (lengths must match before the protocol slot is appended)
-        uint256 n = l.rewardRecipients.length;
-        if (n != l.rewardBps.length) revert ArrayLengthMismatch();
-        uint256 slots = n + (protocolBps == 0 ? 0 : 1);
-        if (slots == 0 || slots > Constants.MAX_REWARD_PARTICIPANTS) revert InvalidRewardSlots();
-        uint256 sum = protocolBps;
-        for (uint256 i; i < n; ++i) {
-            if (l.rewardRecipients[i] == address(0)) revert ZeroAddress();
-            if (l.rewardBps[i] == 0) revert InvalidRewardSlots();
-            sum += l.rewardBps[i];
-        }
-        if (sum != Constants.BPS) revert ProjectSideBpsMismatch();
-
-        // positions
         uint256 p = l.tickLower.length;
         if (p != l.tickUpper.length || p != l.positionBps.length) revert ArrayLengthMismatch();
         if (p == 0 || p > Constants.MAX_LP_POSITIONS) revert InvalidPositions();
-        sum = 0;
+        uint256 sum;
         for (uint256 i; i < p; ++i) {
             sum += l.positionBps[i];
         }
@@ -445,10 +362,10 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     }
 
     /// @dev Every fee recipient must be able to receive eth or claim an escrow
-    ///      credit: the project reward recipients, the pool bounty recipient and
-    ///      the injected protocol recipient. The factory, the coin, the
-    ///      PoolManager, this launch's hook, locker, fee escrows, token deployer
-    ///      and mev module, and every extension in the config cannot do either.
+    ///      credit: the pool bounty recipient and the injected protocol
+    ///      recipient. The factory, the coin, the PoolManager, this launch's
+    ///      hook, locker, hook fee escrow, token deployer and mev module, and
+    ///      every extension in the config cannot do either.
     function _checkRecipients(DeploymentConfigV2 calldata c, address token) internal view {
         address[_REJECT_SET] memory fixedSet = [
             address(this),
@@ -457,14 +374,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
             c.pool.hook,
             c.locker.locker,
             tokenDeployer,
-            IArtCoinsLpLockerV2(c.locker.locker).feeEscrow(),
             IArtCoinsHookV2(c.pool.hook).globals().feeEscrow,
             c.mev.module
         ];
-        uint256 n = c.locker.rewardRecipients.length;
-        for (uint256 i; i < n; ++i) {
-            _rejectStackRecipient(c.locker.rewardRecipients[i], fixedSet, c);
-        }
         _rejectStackRecipient(c.fee.bountyRecipient, fixedSet, c);
         _rejectStackRecipient(protocolRecipient, fixedSet, c);
     }
@@ -498,9 +410,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     }
 
     /// @dev An unrestricted coin carries no allowlist. A restricted coin's user
-    ///      `allowed` set is bounded and holds no zero address; the stack
-    ///      escrow, locker, extensions and `defaultAllowed` are added by
-    ///      `_restriction`, which also bounds the assembled total.
+    ///      `allowed` set is bounded and holds no zero address; the locker and
+    ///      the extensions are added by `_restriction`, which also bounds the
+    ///      assembled total.
     function _validateRestriction(RestrictionConfigV2 calldata r, address hook) internal view {
         if (!r.restricted) {
             if (r.allowed.length != 0) revert InvalidRestrictionConfig();
@@ -553,7 +465,6 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         p.skim = IArtCoinsHookV2.SkimConfig({
             baselineSkimBps: c.fee.baselineSkimBps,
             bountyBps: c.fee.bountyBps,
-            lpFeePips: c.fee.lpFeePips,
             bountyRecipient: c.fee.bountyRecipient,
             protocolRecipient: protocolRecipient
         });
@@ -596,38 +507,20 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         DeploymentConfigV2 calldata c,
         PoolKey memory poolKey,
         uint256 poolSupply,
-        address token,
-        uint16 protocolBps
+        address token
     ) internal {
-        LockerConfigV2 memory l = c.locker;
-        // the protocol slot is appended as the last reward element.
-        bool hasProtocolSlot = protocolBps != 0;
-        if (hasProtocolSlot) {
-            uint256 n = l.rewardRecipients.length;
-            address[] memory recipients = new address[](n + 1);
-            uint16[] memory bps = new uint16[](n + 1);
-            for (uint256 i; i < n; ++i) {
-                recipients[i] = l.rewardRecipients[i];
-                bps[i] = l.rewardBps[i];
-            }
-            recipients[n] = protocolRecipient;
-            bps[n] = protocolBps;
-            l.rewardRecipients = recipients;
-            l.rewardBps = bps;
-        }
-
+        address locker = c.locker.locker;
         IERC20 coin = IERC20(token);
         uint256 before = coin.balanceOf(address(this));
-        coin.forceApprove(l.locker, poolSupply);
-        IArtCoinsLpLockerV2(l.locker)
-            .placeLiquidity(l, c.pool, poolKey, poolSupply, token, hasProtocolSlot);
-        if (coin.allowance(address(this), l.locker) != 0) coin.forceApprove(l.locker, 0);
-        if (before - coin.balanceOf(address(this)) != poolSupply) revert SupplyNotPulled(l.locker);
+        coin.forceApprove(locker, poolSupply);
+        IArtCoinsLpLockerV2(locker).placeLiquidity(c.locker, c.pool, poolKey, poolSupply, token);
+        if (coin.allowance(address(this), locker) != 0) coin.forceApprove(locker, 0);
+        if (before - coin.balanceOf(address(this)) != poolSupply) revert SupplyNotPulled(locker);
     }
 
     /// @dev Each extension gets exactly its own `msgValue` (never another's) and an
     ///      allowance of exactly its own supply share, which it must pull in full.
-    ///      Reentry into the launch entrypoints is blocked by `nonReentrant`.
+    ///      Reentry into the launch entrypoint is blocked by `nonReentrant`.
     function _runExtensions(
         DeploymentConfigV2 calldata c,
         PoolKey memory poolKey,
@@ -713,7 +606,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     /// @inheritdoc IArtCoinsFactoryV2
     /// @dev Enabling requires `supportsInterface(type(IArtCoinsMevSkimV2).interfaceId)`
-    ///      (refuses lp fee modules) and a matching `constantsHash()`.
+    ///      and a matching `constantsHash()`.
     function setMevModule(address module, bool enabled) external onlyOwner {
         if (module == address(0)) revert ZeroAddress();
         if (enabled) {
@@ -737,23 +630,6 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         }
         enabledExtensions[extension] = enabled;
         emit ExtensionSet(extension, enabled);
-    }
-
-    /// @inheritdoc IArtCoinsFactoryV2
-    function defaultAllowed() external view returns (address[] memory) {
-        return _defaultAllowed;
-    }
-
-    /// @inheritdoc IArtCoinsFactoryV2
-    /// @dev Replaces the whole set. Entries are nonzero. Affects new launches only.
-    function setDefaultAllowed(address[] calldata accounts) external onlyOwner {
-        uint256 n = accounts.length;
-        if (n > Constants.MAX_ALLOWED) revert InvalidRestrictionConfig();
-        for (uint256 i; i < n; ++i) {
-            if (accounts[i] == address(0)) revert ZeroAddress();
-        }
-        _defaultAllowed = accounts;
-        emit DefaultAllowedSet(accounts);
     }
 
     /// @notice points the factory at a token deployer bound to it.
@@ -785,17 +661,10 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     }
 
     /// @inheritdoc IArtCoinsFactoryV2
-    function setDefaultProtocolFeeBps(uint16 bps) external onlyOwner {
-        if (bps > Constants.MAX_PROTOCOL_FEE_BPS) revert ProtocolFeeBpsTooHigh();
-        emit DefaultProtocolFeeBpsSet(defaultProtocolFeeBps, bps);
-        defaultProtocolFeeBps = bps;
-    }
-
-    /// @inheritdoc IArtCoinsFactoryV2
-    /// @dev Injected into new pools only: the skim protocol leg and the locker protocol slot.
+    /// @dev Injected into new pools only, as the skim protocol leg recipient.
     function setProtocolRecipient(address payable recipient) external onlyOwner {
         if (recipient == address(0)) revert ZeroAddress();
-        // the launch-specific members (hook, locker, escrows, coin, mev module)
+        // the launch-specific members (hook, locker, escrow, coin, mev module)
         // are not knowable here; reject the globally knowable ones. The launch
         // rechecks the full set against each pool.
         if (recipient == address(this) || recipient == poolManager || recipient == tokenDeployer) {

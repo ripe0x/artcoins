@@ -16,19 +16,6 @@ export const lockerV2Abi = [
   },
   {
     "type": "function",
-    "name": "collectRewards",
-    "inputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "constantsHash",
     "inputs": [],
     "outputs": [
@@ -39,19 +26,6 @@ export const lockerV2Abi = [
       }
     ],
     "stateMutability": "pure"
-  },
-  {
-    "type": "function",
-    "name": "feeEscrow",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -74,26 +48,68 @@ export const lockerV2Abi = [
   },
   {
     "type": "function",
-    "name": "keeperRewardBps",
-    "inputs": [],
-    "outputs": [
+    "name": "lockedLiquidity",
+    "inputs": [
       {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
       }
     ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "keeperRewardCap",
-    "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
+        "type": "tuple",
+        "internalType": "struct IArtCoinsLpLockerV2.LockedLiquidity",
+        "components": [
+          {
+            "name": "token",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "poolKey",
+            "type": "tuple",
+            "internalType": "struct PoolKey",
+            "components": [
+              {
+                "name": "currency0",
+                "type": "address",
+                "internalType": "Currency"
+              },
+              {
+                "name": "currency1",
+                "type": "address",
+                "internalType": "Currency"
+              },
+              {
+                "name": "fee",
+                "type": "uint24",
+                "internalType": "uint24"
+              },
+              {
+                "name": "tickSpacing",
+                "type": "int24",
+                "internalType": "int24"
+              },
+              {
+                "name": "hooks",
+                "type": "address",
+                "internalType": "contract IHooks"
+              }
+            ]
+          },
+          {
+            "name": "positionId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "numPositions",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
       }
     ],
     "stateMutability": "view"
@@ -111,16 +127,6 @@ export const lockerV2Abi = [
             "name": "locker",
             "type": "address",
             "internalType": "address"
-          },
-          {
-            "name": "rewardRecipients",
-            "type": "address[]",
-            "internalType": "address[]"
-          },
-          {
-            "name": "rewardBps",
-            "type": "uint16[]",
-            "internalType": "uint16[]"
           },
           {
             "name": "tickLower",
@@ -212,11 +218,6 @@ export const lockerV2Abi = [
         "name": "token",
         "type": "address",
         "internalType": "address"
-      },
-      {
-        "name": "hasProtocolSlot",
-        "type": "bool",
-        "internalType": "bool"
       }
     ],
     "outputs": [
@@ -227,30 +228,6 @@ export const lockerV2Abi = [
       }
     ],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "protocolSlotIndex",
-    "inputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "exists",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "index",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -277,83 +254,6 @@ export const lockerV2Abi = [
   },
   {
     "type": "function",
-    "name": "rewardBps",
-    "inputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint16[]",
-        "internalType": "uint16[]"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "rewardRecipients",
-    "inputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address[]",
-        "internalType": "address[]"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "setFeeEscrow",
-    "inputs": [
-      {
-        "name": "escrow",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setKeeperRewardBps",
-    "inputs": [
-      {
-        "name": "newBps",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setKeeperRewardCap",
-    "inputs": [
-      {
-        "name": "newCap",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "setLauncher",
     "inputs": [
       {
@@ -369,195 +269,6 @@ export const lockerV2Abi = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setRewardRecipient",
-    "inputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "index",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "newRecipient",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "tokenRewards",
-    "inputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "tuple",
-        "internalType": "struct IArtCoinsLpLockerV2.TokenRewardInfoV2",
-        "components": [
-          {
-            "name": "token",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "poolKey",
-            "type": "tuple",
-            "internalType": "struct PoolKey",
-            "components": [
-              {
-                "name": "currency0",
-                "type": "address",
-                "internalType": "Currency"
-              },
-              {
-                "name": "currency1",
-                "type": "address",
-                "internalType": "Currency"
-              },
-              {
-                "name": "fee",
-                "type": "uint24",
-                "internalType": "uint24"
-              },
-              {
-                "name": "tickSpacing",
-                "type": "int24",
-                "internalType": "int24"
-              },
-              {
-                "name": "hooks",
-                "type": "address",
-                "internalType": "contract IHooks"
-              }
-            ]
-          },
-          {
-            "name": "positionId",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "numPositions",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "rewardBps",
-            "type": "uint16[]",
-            "internalType": "uint16[]"
-          },
-          {
-            "name": "rewardRecipients",
-            "type": "address[]",
-            "internalType": "address[]"
-          }
-        ]
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "event",
-    "name": "FeeEscrowSet",
-    "inputs": [
-      {
-        "name": "oldEscrow",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "newEscrow",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "KeeperRewardBpsSet",
-    "inputs": [
-      {
-        "name": "oldBps",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "newBps",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "KeeperRewardCapSet",
-    "inputs": [
-      {
-        "name": "oldCap",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "newCap",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "KeeperRewarded",
-    "inputs": [
-      {
-        "name": "keeper",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "token",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "currency",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "amount",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
   },
   {
     "type": "event",
@@ -580,125 +291,7 @@ export const lockerV2Abi = [
   },
   {
     "type": "event",
-    "name": "Rescued",
-    "inputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "to",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "amount",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "RewardDelivered",
-    "inputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "currency",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "to",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "amount",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "escrowed",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "RewardRecipientSet",
-    "inputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "index",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "oldRecipient",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      },
-      {
-        "name": "newRecipient",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "RewardsCollected",
-    "inputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "amount0",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "amount1",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "TokenRewardAdded",
+    "name": "LiquidityLocked",
     "inputs": [
       {
         "name": "token",
@@ -758,18 +351,6 @@ export const lockerV2Abi = [
         "internalType": "uint256"
       },
       {
-        "name": "rewardBps",
-        "type": "uint16[]",
-        "indexed": false,
-        "internalType": "uint16[]"
-      },
-      {
-        "name": "rewardRecipients",
-        "type": "address[]",
-        "indexed": false,
-        "internalType": "address[]"
-      },
-      {
         "name": "tickLower",
         "type": "int24[]",
         "indexed": false,
@@ -786,12 +367,31 @@ export const lockerV2Abi = [
         "type": "uint16[]",
         "indexed": false,
         "internalType": "uint16[]"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Rescued",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
       },
       {
-        "name": "hasProtocolSlot",
-        "type": "bool",
+        "name": "to",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
         "indexed": false,
-        "internalType": "bool"
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -810,11 +410,6 @@ export const lockerV2Abi = [
   {
     "type": "error",
     "name": "InvalidPositionBps",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InvalidRewardBps",
     "inputs": []
   },
   {
@@ -840,22 +435,7 @@ export const lockerV2Abi = [
   },
   {
     "type": "error",
-    "name": "MismatchedRewardArrays",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "NativeTransferFailed",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NoRewardRecipients",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NotCoinAdmin",
     "inputs": []
   },
   {
@@ -865,89 +445,17 @@ export const lockerV2Abi = [
   },
   {
     "type": "error",
-    "name": "OutOfBounds",
-    "inputs": [
-      {
-        "name": "value",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "min",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "max",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "PoolManagerUnlocked",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "ProtocolSlotFrozen",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "RecipientCannotReceive",
-    "inputs": [
-      {
-        "name": "recipient",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "RecipientCheckFailed",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "RecipientsLocked",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "RescueForbidden",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "RewardIndexOutOfRange",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "TokenAlreadyHasRewards",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "TokenNotFound",
+    "name": "TokenAlreadyLocked",
     "inputs": []
   },
   {
     "type": "error",
     "name": "TooManyPositions",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "TooManyRewardParticipants",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "UnexpectedEth",
     "inputs": []
   },
   {
@@ -958,11 +466,6 @@ export const lockerV2Abi = [
   {
     "type": "error",
     "name": "ZeroAddress",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "ZeroRewardAmount",
     "inputs": []
   }
 ] as const;

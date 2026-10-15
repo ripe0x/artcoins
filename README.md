@@ -86,7 +86,7 @@ The fee-decay approach is inspired by PunkStrategy's launch mechanics.
 
 ## v2 (branch `v2`, not deployed)
 
-The `v2` branch carries the next stack: immutable coins, an owner changeable factory side, fee recipients get only the 2,300 gas stipend during swaps (escrow fallback), two fee dodge modes (venue tax or hard transfer restriction), locker only liquidity on taxed pools, a version tag per pool, and a verified deployment registry. Nothing from v2 is deployed yet.
+The `v2` branch carries the next stack of 9 contracts: immutable coins, an owner changeable factory side, a pool lp fee of 0 with the skim as the pool's only fee, fee recipients that get the 2,300 gas stipend during swaps (escrow fallback), an optional restricted-transfer mode, a locker that holds the position NFTs, one `deployToken` launch entrypoint, protocol fees processed by `ProtocolFeeControllerV2.processFees()` and `BurnRouterV2.processBurn(minOut)`, a version tag per pool, and a verified deployment registry. Nothing from v2 is deployed yet.
 
 | read | what |
 |---|---|
@@ -113,7 +113,7 @@ The factory ships `deprecated = true`: only the owner can deploy until the owner
 
 | path | script | state |
 |---|---|---|
-| v2 | `script/v2/DeployV2Stack.s.sol` | being written, not in the tree yet. It will land under `script/v2/` and is the path to use once it does |
+| v2 | `script/v2/deploy.sh <env>` (wraps `script/v2/DeployV2Stack.s.sol`) | deploys and wires the 9 contract v2 stack. See [script/v2/README.md](script/v2/README.md) |
 | v1 (superseded) | `script/DeployV1Stack.s.sol`, run with `FOUNDRY_PROFILE=tune` | deploys and wires the skim stack (factory, hook, locker, escrow, mev modules). Superseded by v2 |
 | older stacks | `Deploy.s.sol`, `DeployNativeEthStack.s.sol`, `DeployProtocolFeeStack.s.sol` | deploy the legacy and open stacks, history only. Do not use them for a new deployment |
 

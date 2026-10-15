@@ -536,12 +536,10 @@ contract HookV2ForkTest is HookV2ForkBase {
         assertEq(info.extension, address(ext));
         assertTrue(hook.isOfficialPool(pid));
         assertEq(PoolId.unwrap(pid), token.canonicalPoolId());
-        assertEq(_lpFee(key), LP_FEE, "lp fee frozen at init");
 
         IArtCoinsHookV2.SkimConfig memory c = hook.skimConfig(pid);
         assertEq(c.baselineSkimBps, BASELINE);
         assertEq(c.bountyBps, BOUNTY_BPS);
-        assertEq(c.lpFeePips, LP_FEE);
         assertEq(c.bountyRecipient, bountyEoa);
         assertEq(c.protocolRecipient, protocolR);
 
@@ -613,11 +611,6 @@ contract HookV2ForkTest is HookV2ForkBase {
 
     function test_skimConfig_bounds() public {
         IArtCoinsHookV2.PoolInitParams memory p = _params(_defaults(bountyEoa), address(1));
-        p.skim.lpFeePips = Constants.MAX_LP_FEE + 1;
-        vm.expectRevert(IArtCoinsHookV2.LpFeeTooHigh.selector);
-        hook.initializePool(p);
-
-        p = _params(_defaults(bountyEoa), address(1));
         p.skim.baselineSkimBps = Constants.MAX_BASELINE_SKIM_BPS + 1;
         vm.expectRevert(IArtCoinsHookV2.BaselineSkimBpsTooHigh.selector);
         hook.initializePool(p);
@@ -930,6 +923,10 @@ contract HookV2ForkTest is HookV2ForkBase {
             abi.encodeWithSelector(IArtCoinsHookV2.SkimNotLower.selector, BASELINE, BASELINE + 1)
         );
         hook.lowerBaselineSkim(pid, BASELINE + 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsHookV2.SkimNotLower.selector, BASELINE, uint24(0))
+        );
+        hook.lowerBaselineSkim(pid, 0);
         vm.prank(makeAddr("stranger"));
         vm.expectRevert(IArtCoinsHookV2.NotCoinAdmin.selector);
         hook.lowerBaselineSkim(pid, half);
@@ -956,17 +953,14 @@ contract HookV2ForkTest is HookV2ForkBase {
         );
         hook.lowerBaselineSkim(pid, BASELINE);
         // the lock freezes it
-        token.lockRecipients();
-        vm.expectRevert(IArtCoinsHookV2.RecipientsLocked.selector);
+        token.lock();
+        vm.expectRevert(IArtCoinsHookV2.CoinLocked.selector);
         hook.lowerBaselineSkim(pid, 1);
     }
 
-    /// a pool with no lp fee keeps a nonzero skim (the launch rule, D77).
-    function test_lowerBaselineSkim_zeroNeedsLpFee() public onlyFork {
-        ArtCoinsTokenV2 t = _newToken(false, bountyEoa, address(hook));
-        IArtCoinsHookV2.PoolInitParams memory p = _params(_defaults(bountyEoa), address(t));
-        p.skim.lpFeePips = 0;
-        PoolKey memory k = hook.initializePool(p);
+    /// the skim never reaches zero: every pool keeps a nonzero baseline.
+    function test_lowerBaselineSkim_zeroRefused() public onlyFork {
+        (PoolKey memory k,) = _launch(_defaults(bountyEoa));
         vm.expectRevert(
             abi.encodeWithSelector(IArtCoinsHookV2.SkimNotLower.selector, BASELINE, uint24(0))
         );
@@ -977,9 +971,9 @@ contract HookV2ForkTest is HookV2ForkBase {
 
     function test_setBountyRecipient_lockFreezes() public onlyFork {
         (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(_defaults(bountyEoa));
-        token.lockRecipients();
-        assertTrue(token.recipientsLocked());
-        vm.expectRevert(IArtCoinsHookV2.RecipientsLocked.selector);
+        token.lock();
+        assertTrue(token.locked());
+        vm.expectRevert(IArtCoinsHookV2.CoinLocked.selector);
         hook.setBountyRecipient(key.toId(), payable(makeAddr("x")));
     }
 
@@ -1052,8 +1046,8 @@ contract HookV2ForkTest is HookV2ForkBase {
         vm.expectRevert(IArtCoinsHookV2.PoolNotStarted.selector);
         hook.setPoolExtension(k2, address(ext), "");
 
-        token.lockRecipients();
-        vm.expectRevert(IArtCoinsHookV2.RecipientsLocked.selector);
+        token.lock();
+        vm.expectRevert(IArtCoinsHookV2.CoinLocked.selector);
         hook.setPoolExtension(key, address(0), "");
     }
 
@@ -1191,20 +1185,18 @@ contract HookV2ForkTest is HookV2ForkBase {
 }
 
 /// End to end with the real v2 locker, the live v4 PositionManager and
-/// Permit2. A restricted coin: the allowlisted locker places and collects, and
+/// Permit2. A restricted coin: the allowlisted locker places, and
 /// a non allowlisted third party add reverts. An unrestricted coin keeps lp open.
 contract HookV2RealLockerTest is HookV2ForkBase {
     address internal constant POSM = 0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e;
     address internal constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     int24 internal constant START = -200_000;
-    address internal project = makeAddr("project");
 
     function _realLaunch(bool restricted)
         internal
         returns (PoolKey memory k, ArtCoinsTokenV2 t, ArtCoinsLpLockerV2 rl)
     {
-        rl = new ArtCoinsLpLockerV2(address(this), POSM, PERMIT2, address(escrow));
-        escrow.addDepositor(address(rl), true);
+        rl = new ArtCoinsLpLockerV2(address(this), POSM, PERMIT2);
         rl.setLauncher(address(this), true);
         Launch memory l = _defaults(bountyEoa);
         l.restricted = restricted;
@@ -1219,10 +1211,6 @@ contract HookV2RealLockerTest is HookV2ForkBase {
 
         IArtCoinsFactoryV2.LockerConfigV2 memory lc;
         lc.locker = address(rl);
-        lc.rewardRecipients = new address[](1);
-        lc.rewardRecipients[0] = project;
-        lc.rewardBps = new uint16[](1);
-        lc.rewardBps[0] = 10_000;
         lc.tickLower = new int24[](1);
         lc.tickUpper = new int24[](1);
         lc.positionBps = new uint16[](1);
@@ -1235,30 +1223,29 @@ contract HookV2RealLockerTest is HookV2ForkBase {
         pc.tickSpacing = TS;
         uint256 supply = 500_000_000e18;
         t.approve(address(rl), supply);
-        rl.placeLiquidity(lc, pc, k, supply, address(t), false); // through the PositionManager
+        rl.placeLiquidity(lc, pc, k, supply, address(t)); // through the PositionManager
         hook.initializeMevModule(k, "");
 
-        // trade both ways so the position earns eth and coin fees
+        // trade both ways through the placed position
         uint256 b0 = t.balanceOf(address(this));
         _swap(k, true, -1 ether, 0, "");
         uint256 bought = t.balanceOf(address(this)) - b0;
         _swap(k, false, -int256(bought / 2), 0, "");
     }
 
-    /// The allowlisted real locker places and collects coin on a restricted
+    /// The allowlisted real locker places coin on a restricted
     /// coin (the launch path). The non allowlisted third party add is proven to
     /// revert in `HookV2ForkTest.test_restricted_thirdPartyLpAdd_reverts`, which
     /// launches with no prior swap, so no leftover same tx allowance covers it.
-    function test_realLocker_restricted_placeAndCollect_pass() public onlyFork {
+    function test_realLocker_restricted_place_pass() public onlyFork {
         (, ArtCoinsTokenV2 t, ArtCoinsLpLockerV2 rl) = _realLaunch(true);
-        rl.collectRewards(address(t));
-        assertGt(t.balanceOf(project) + escrow.balances(project, address(t)), 0, "coin fees out");
+        assertEq(rl.lockedLiquidity(address(t)).numPositions, 1);
+        assertEq(t.balanceOf(address(rl)), 0, "locker holds no coin");
     }
 
     function test_realLocker_unrestricted_lpOpen() public onlyFork {
         (PoolKey memory k, ArtCoinsTokenV2 t, ArtCoinsLpLockerV2 rl) = _realLaunch(false);
-        rl.collectRewards(address(t));
-        assertGt(t.balanceOf(project) + escrow.balances(project, address(t)), 0, "coin fees out");
+        assertEq(rl.lockedLiquidity(address(t)).numPositions, 1);
         // an unrestricted coin keeps lp open: a third party add passes.
         HV2AddRemoveRouter r = new HV2AddRemoveRouter(pm);
         vm.deal(address(r), 10 ether);

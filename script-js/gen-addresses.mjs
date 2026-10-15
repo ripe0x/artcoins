@@ -80,7 +80,6 @@ const STACK_CONSTS = [
     ['DEPLOYER', C('v2', 'ArtCoinsDeployerV2')],
     ['BURN_ROUTER', C('v2', 'BurnRouterV2')],
     ['PROTOCOL_FEE_CONTROLLER', C('v2', 'ProtocolFeeControllerV2')],
-    ['KEEPER', C('v2', 'ArtCoinsKeeperV2')],
   ]]] : []),
   ['LEGACY', [
     ['FACTORY', C('legacy', 'ArtCoinsFactory')],

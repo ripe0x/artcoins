@@ -1,5 +1,5 @@
 // Decodes keeper receipts and revert data: the skip events (FlushSkipped, ConvertSkipped, StepSkipped), the run
-// summaries (KeeperRun, SwapperServiced) and errors (InsufficientGas, and the reason bytes inside skip events).
+// summaries (KeeperRun) and errors (InsufficientGas, and the reason bytes inside skip events).
 import { decodeErrorResult, isAddressEqual, parseEventLogs } from 'viem';
 import { abiFor, reasonsAbi } from './abi.mjs';
 
@@ -7,7 +7,6 @@ const SKIP_EVENTS = new Set(['FlushSkipped', 'ConvertSkipped', 'StepSkipped']);
 export const STEP_NAMES = Object.freeze({
   '111': { 1: 'collect', 2: 'flush', 3: 'convert' },
   layer: { 1: 'collect', 2: 'claim', 3: 'processFees', 4: 'processBurnLayer', 5: 'processBurnWeth' },
-  v2: { 1: 'collect', 2: 'flush', 3: 'convert', 4: 'erc165 probe' },
 });
 
 /// revert or reason bytes to { name, args } using the keeper abi plus every known downstream error.
@@ -45,11 +44,6 @@ export function decodeKeeperLogs(logs, kind, address) {
     }
     return out;
   });
-}
-
-/// `SwapperServiced` events of a v2 run as { swapper, flushed, converted }
-export function servicedFrom(decoded) {
-  return decoded.filter((e) => e.event === 'SwapperServiced').map((e) => ({ swapper: e.args.swapper, flushed: e.args.flushed, converted: e.args.converted }));
 }
 
 /// walks a viem error chain for revert bytes

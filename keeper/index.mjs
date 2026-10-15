@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// artcoins keeper runner: every INTERVAL_SECONDS reads the 111, LAYER and v2 keepers' previews, runs the due
+// artcoins keeper runner: every INTERVAL_SECONDS reads the 111 and LAYER keepers' previews, runs the due
 // ones with quoted min outs and fixed gas limits, one tx at a time. See README.md.
 import { createRuntime, preflight, safeTick } from './app.mjs';
 import { startServer } from './server.mjs';

@@ -7,7 +7,6 @@ import {ArtCoinsFactoryV2} from "../../src/v2/ArtCoinsFactoryV2.sol";
 import {ArtCoinsFeeEscrowV2} from "../../src/v2/ArtCoinsFeeEscrowV2.sol";
 import {ArtCoinsHookV2} from "../../src/v2/hooks/ArtCoinsHookV2.sol";
 import {IArtCoinsHookV2} from "../../src/v2/interfaces/IArtCoinsHookV2.sol";
-import {ArtCoinsKeeperV2} from "../../src/v2/keepers/ArtCoinsKeeperV2.sol";
 import {ArtCoinsLpLockerV2} from "../../src/v2/lp-lockers/ArtCoinsLpLockerV2.sol";
 import {ArtCoinsMevLinearSkimV2} from "../../src/v2/mev-modules/ArtCoinsMevLinearSkimV2.sol";
 import {BurnRouterV2} from "../../src/v2/protocol-fee/BurnRouterV2.sol";
@@ -32,17 +31,16 @@ import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 ///          1 escrow                       owner = broadcaster (wired below)
 ///          2 extension allowlist          owner = OWNER (no deploy time owner call)
 ///          3 hook, CREATE2 via 0x4e59     salt mined for flags 0x28CC, owner = broadcaster
-///          4 locker                       owner = broadcaster
+///          4 locker                       owner = broadcaster, a pure lock (no fee path)
 ///          5 linear skim module           ctor takes the hook, ownerless
 ///          6 factory                      owner = broadcaster, ships deprecated
 ///          7 token deployer               bound to the factory, then `setTokenDeployer`
 ///          8 burn router                  owner = OWNER, bound to LAYER and its weth pool at construction
 ///          9 protocol fee controller      owner = OWNER, treasury, burn router (ctor needs it, so 8 before 9)
-///         10 keeper                       `ArtCoinsKeeperV2(factory)`, ownerless
-///         11 wiring                       escrow depositors first (D36), then hook, locker, factory
-///         12 ownership                    pending owner = OWNER on escrow, hook, locker, factory when the
+///         10 wiring                       escrow depositors first (D36), then hook, locker, factory
+///         11 ownership                    pending owner = OWNER on escrow, hook, locker, factory when the
 ///                                         broadcaster differs (Ownable2Step, `acceptOwnership` by OWNER)
-///         `check` holds every post deploy assert (step 13 of the script).
+///         `check` holds every post deploy assert (step 12 of the script).
 library DeployV2Lib {
     // ── v2 hook address flags (DESIGN section 5) ────────────────────────────
     uint160 internal constant HOOK_FLAGS = uint160(
@@ -57,7 +55,6 @@ library DeployV2Lib {
     /// @dev Launches are free at the v2 opening; the owner can set a fee later
     ///      (`setDeployFee`, up to MAX_DEPLOY_FEE).
     uint256 internal constant DEPLOY_FEE = 0;
-    uint16 internal constant PROTOCOL_BPS = 2000;
     /// @dev Controller split at launch: 80% to the treasury, 20% buys and
     ///      burns LAYER. Owner tunable within [PFC_MIN_TREASURY_BPS, BPS - PFC_MIN_BURN_BPS].
     uint16 internal constant TREASURY_BPS = 8000;
@@ -83,7 +80,6 @@ library DeployV2Lib {
         address treasury;
         uint16 treasuryBps;
         uint256 deployFee;
-        uint16 protocolBps;
         uint24 referralBps;
         /// @dev Enforce EIP-170 in `check`. Always true in the script. The
         ///      token deployer is over the limit at the default profile
@@ -103,7 +99,6 @@ library DeployV2Lib {
         ArtCoinsDeployerV2 tokenDeployer;
         BurnRouterV2 burnRouter;
         ProtocolFeeControllerV2 controller;
-        ArtCoinsKeeperV2 keeper;
     }
 
     /// @notice Mainnet infra plus the d7 defaults. `treasury` defaults to `owner`.
@@ -124,7 +119,6 @@ library DeployV2Lib {
         p.treasury = owner;
         p.treasuryBps = TREASURY_BPS;
         p.deployFee = DEPLOY_FEE;
-        p.protocolBps = PROTOCOL_BPS;
         p.referralBps = REFERRAL_BPS;
         p.checkSizes = true;
     }
@@ -147,11 +141,10 @@ library DeployV2Lib {
         // 3
         (s.hook, s.hookSalt) = _deployHook(p, address(s.escrow), address(s.allowlist));
         // 4, 5
-        s.locker =
-            new ArtCoinsLpLockerV2(p.broadcaster, p.positionManager, p.permit2, address(s.escrow));
+        s.locker = new ArtCoinsLpLockerV2(p.broadcaster, p.positionManager, p.permit2);
         s.mev = new ArtCoinsMevLinearSkimV2(address(s.hook));
         // 6, 7 (D38)
-        s.factory = new ArtCoinsFactoryV2(p.broadcaster, p.poolManager, p.protocolBps, p.deployFee);
+        s.factory = new ArtCoinsFactoryV2(p.broadcaster, p.poolManager, p.deployFee);
         s.tokenDeployer = new ArtCoinsDeployerV2(address(s.factory));
         s.factory.setTokenDeployer(address(s.tokenDeployer));
         // 8, 9
@@ -159,9 +152,6 @@ library DeployV2Lib {
         s.controller = new ProtocolFeeControllerV2(
             p.owner, address(s.escrow), p.treasury, address(s.burnRouter), p.treasuryBps
         );
-        // 10
-        s.keeper = new ArtCoinsKeeperV2(address(s.factory));
-
         _wire(s, p);
         _handOver(s, p);
     }
@@ -217,13 +207,11 @@ library DeployV2Lib {
         revert("v2: no hook salt");
     }
 
-    /// @dev Step 11. D36: the escrow knows the hook and locker as core
-    ///      depositors before either `setFeeEscrow` (the hook's setter reverts
-    ///      otherwise). D33: the controller is a non core depositor. D28: locker
-    ///      keeper reward 0. The factory stays deprecated.
+    /// @dev Step 10. D36: the escrow knows the hook as a core depositor before
+    ///      `setFeeEscrow` (the hook's setter reverts otherwise). D33: the
+    ///      controller is a non core depositor. The factory stays deprecated.
     function _wire(Stack memory s, Params memory p) private {
         s.escrow.addDepositor(address(s.hook), true);
-        s.escrow.addDepositor(address(s.locker), true);
         s.escrow.addDepositor(address(s.controller), false);
 
         s.hook.setFeeEscrow(address(s.escrow));
@@ -231,9 +219,7 @@ library DeployV2Lib {
         s.hook.setLauncher(address(s.factory), true);
         s.hook.setReferralBps(p.referralBps);
 
-        s.locker.setFeeEscrow(address(s.escrow));
         s.locker.setLauncher(address(s.factory), true);
-        s.locker.setKeeperRewardBps(0);
 
         ArtCoinsFactoryV2 f = s.factory;
         f.setHook(address(s.hook), true);
@@ -242,13 +228,10 @@ library DeployV2Lib {
         f.setProtocolRecipient(payable(address(s.controller)));
         f.setTeamFeeRecipient(p.owner);
         f.setDeployFee(p.deployFee);
-        f.setDefaultProtocolFeeBps(p.protocolBps);
-        // defaultAllowed ships empty; see the allowlist rule on
-        // ArtCoinsFactoryV2._defaultAllowed for what may be added.
         // deprecated stays true (constructor). opening is a separate owner tx.
     }
 
-    /// @dev Step 12. Two step: OWNER must `acceptOwnership` on each.
+    /// @dev Step 11. Two step: OWNER must `acceptOwnership` on each.
     function _handOver(Stack memory s, Params memory p) private {
         if (p.owner == p.broadcaster) return;
         s.escrow.transferOwnership(p.owner);
@@ -323,20 +306,13 @@ library DeployV2Lib {
             e.isDepositor(address(s.hook)) && e.isCoreDepositor(address(s.hook)), "v2: hook dep"
         );
         require(
-            e.isDepositor(address(s.locker)) && e.isCoreDepositor(address(s.locker)),
-            "v2: locker dep"
-        );
-        require(
             e.isDepositor(address(s.controller)) && !e.isCoreDepositor(address(s.controller)),
             "v2: controller dep"
         );
     }
 
     function _checkLocker(Stack memory s) private view {
-        ArtCoinsLpLockerV2 l = s.locker;
-        require(l.feeEscrow() == address(s.escrow), "v2: locker escrow");
-        require(l.isLauncher(address(s.factory)), "v2: locker launcher");
-        require(l.keeperRewardBps() == 0, "v2: locker keeper reward");
+        require(s.locker.isLauncher(address(s.factory)), "v2: locker launcher");
     }
 
     function _checkFactory(Stack memory s, Params memory p) private view {
@@ -350,15 +326,12 @@ library DeployV2Lib {
         require(f.protocolRecipient() == address(s.controller), "v2: protocol recipient");
         require(f.teamFeeRecipient() == p.owner, "v2: team fee recipient");
         require(f.deployFee() == p.deployFee, "v2: deploy fee");
-        require(f.defaultProtocolFeeBps() == p.protocolBps, "v2: protocol bps");
-        require(f.defaultAllowed().length == 0, "v2: default allowed must ship empty");
         require(f.deprecated(), "v2: factory must ship deprecated");
         require(f.STACK_VERSION() == Constants.STACK_VERSION, "v2: stack version");
     }
 
     function _checkPeriphery(Stack memory s, Params memory p) private view {
         require(s.mev.hook() == address(s.hook), "v2: mev hook");
-        require(s.keeper.factory() == address(s.factory), "v2: keeper factory");
         require(s.controller.feeEscrow() == address(s.escrow), "v2: controller escrow");
         require(s.controller.treasury() == p.treasury, "v2: controller treasury");
         require(s.controller.burnRouter() == address(s.burnRouter), "v2: controller router");
@@ -391,7 +364,7 @@ library DeployV2Lib {
     }
 
     function _checkSizes(Stack memory s) private view {
-        address[10] memory a = addresses(s);
+        address[9] memory a = addresses(s);
         for (uint256 i; i < a.length; ++i) {
             uint256 n = a[i].code.length;
             require(n != 0 && n <= EIP170, "v2: runtime size over EIP-170 (use FOUNDRY_PROFILE=ci)");
@@ -403,7 +376,7 @@ library DeployV2Lib {
     // ══════════════════════════════════════════════════════════════════════
 
     /// @notice Registry order. Names, source paths and roles in `names`, `paths`, `roles`.
-    function addresses(Stack memory s) internal pure returns (address[10] memory a) {
+    function addresses(Stack memory s) internal pure returns (address[9] memory a) {
         a[0] = address(s.escrow);
         a[1] = address(s.allowlist);
         a[2] = address(s.hook);
@@ -413,10 +386,9 @@ library DeployV2Lib {
         a[6] = address(s.tokenDeployer);
         a[7] = address(s.burnRouter);
         a[8] = address(s.controller);
-        a[9] = address(s.keeper);
     }
 
-    function names() internal pure returns (string[10] memory n) {
+    function names() internal pure returns (string[9] memory n) {
         n[0] = "ArtCoinsFeeEscrowV2";
         n[1] = "ArtCoinsPoolExtensionAllowlist";
         n[2] = "ArtCoinsHookV2";
@@ -426,11 +398,10 @@ library DeployV2Lib {
         n[6] = "ArtCoinsDeployerV2";
         n[7] = "BurnRouterV2";
         n[8] = "ProtocolFeeControllerV2";
-        n[9] = "ArtCoinsKeeperV2";
     }
 
     /// @dev Path qualified: `src/hooks/legacy/ArtCoinsHookV2.sol` has the same contract name.
-    function paths() internal pure returns (string[10] memory n) {
+    function paths() internal pure returns (string[9] memory n) {
         n[0] = "src/v2/ArtCoinsFeeEscrowV2.sol";
         n[1] = "src/hooks/ArtCoinsPoolExtensionAllowlist.sol";
         n[2] = "src/v2/hooks/ArtCoinsHookV2.sol";
@@ -440,11 +411,10 @@ library DeployV2Lib {
         n[6] = "src/v2/utils/ArtCoinsDeployerV2.sol";
         n[7] = "src/v2/protocol-fee/BurnRouterV2.sol";
         n[8] = "src/v2/protocol-fee/ProtocolFeeControllerV2.sol";
-        n[9] = "src/v2/keepers/ArtCoinsKeeperV2.sol";
     }
 
     /// @dev Registry roles (script-js/verify-registry.mjs ROLES).
-    function roles() internal pure returns (string[10] memory n) {
+    function roles() internal pure returns (string[9] memory n) {
         n[0] = "escrow";
         n[1] = "allowlist";
         n[2] = "hook";
@@ -454,22 +424,20 @@ library DeployV2Lib {
         n[6] = "other";
         n[7] = "router";
         n[8] = "controller";
-        n[9] = "other";
     }
 
     /// @notice abi encoded constructor args, for `forge verify-contract`.
-    function ctorArgs(Stack memory s, Params memory p) internal pure returns (bytes[10] memory a) {
+    function ctorArgs(Stack memory s, Params memory p) internal pure returns (bytes[9] memory a) {
         a[0] = abi.encode(p.broadcaster);
         a[1] = abi.encode(p.owner);
         a[2] = hookArgs(p, address(s.escrow), address(s.allowlist));
-        a[3] = abi.encode(p.broadcaster, p.positionManager, p.permit2, address(s.escrow));
+        a[3] = abi.encode(p.broadcaster, p.positionManager, p.permit2);
         a[4] = abi.encode(address(s.hook));
-        a[5] = abi.encode(p.broadcaster, p.poolManager, p.protocolBps, p.deployFee);
+        a[5] = abi.encode(p.broadcaster, p.poolManager, p.deployFee);
         a[6] = abi.encode(address(s.factory));
         a[7] = abi.encode(p.owner, p.poolManager, p.weth, p.layer, p.layerPoolKey);
         a[8] = abi.encode(
             p.owner, address(s.escrow), p.treasury, address(s.burnRouter), p.treasuryBps
         );
-        a[9] = abi.encode(address(s.factory));
     }
 }

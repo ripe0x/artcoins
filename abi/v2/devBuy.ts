@@ -108,11 +108,6 @@ export const devBuyV2Abi = [
             "internalType": "struct IArtCoinsFactoryV2.FeeConfigV2",
             "components": [
               {
-                "name": "lpFeePips",
-                "type": "uint24",
-                "internalType": "uint24"
-              },
-              {
                 "name": "baselineSkimBps",
                 "type": "uint24",
                 "internalType": "uint24"
@@ -138,16 +133,6 @@ export const devBuyV2Abi = [
                 "name": "locker",
                 "type": "address",
                 "internalType": "address"
-              },
-              {
-                "name": "rewardRecipients",
-                "type": "address[]",
-                "internalType": "address[]"
-              },
-              {
-                "name": "rewardBps",
-                "type": "uint16[]",
-                "internalType": "uint16[]"
               },
               {
                 "name": "tickLower",

@@ -2,7 +2,7 @@
 // Writes the keeper runner abis from the foundry artifacts. Run after
 //   /tmp/claude-0/forge.sh build --skip "test/**" --skip script     (or: forge build --skip "test/**" --skip script)
 // Usage: node scripts/gen-abi.mjs [--out-dir ../foundry-out] [--check]
-// Outputs (committed): abi/CollectFlushKeeperV1.json, abi/CollectFlushKeeperLayer.json, abi/ArtCoinsKeeperV2.json
+// Outputs (committed): abi/CollectFlushKeeperV1.json, abi/CollectFlushKeeperLayer.json
 // (full contract abi minus the constructor) and abi/reasons.json (custom errors of every contract a keeper
 // calls, used to decode the `reason` bytes of FlushSkipped, ConvertSkipped and StepSkipped). --check exits 1
 // when a committed file differs from what the artifacts give.
@@ -21,12 +21,10 @@ const ABI_DIR = path.resolve(HERE, '..', 'abi');
 const KEEPERS = [
   ['CollectFlushKeeperV1', 'CollectFlushKeeperV1.sol/CollectFlushKeeperV1.json'],
   ['CollectFlushKeeperLayer', 'CollectFlushKeeperLayer.sol/CollectFlushKeeperLayer.json'],
-  ['ArtCoinsKeeperV2', 'ArtCoinsKeeperV2.sol/ArtCoinsKeeperV2.json'],
 ];
 // contracts whose reverts a keeper reports as reason bytes (swappers, routers, fee lockers, lockers, escrows)
 const REASON_SOURCES = [
   'FeeAutoSwapper.sol/FeeAutoSwapper.json',
-  'FeeAutoSwapperV2.sol/FeeAutoSwapperV2.json',
   'legacy/BurnRouter.sol/BurnRouter.json',
   'BurnRouter.sol/BurnRouter.json',
   'ArtCoinsFeeLocker.sol/ArtCoinsFeeLocker.json',

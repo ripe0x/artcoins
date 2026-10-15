@@ -10,12 +10,11 @@ import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 ///         (factory, sender, full config).
 ///
 ///         Frozen at launch: the pool, hook, locker, mev module, tick spacing,
-///         lp fee, skim rates and caps, the reward split bps, the protocol
-///         floor, supply and the restriction allowlist seed. Mutable by the coin
-///         admin afterwards: the pool bounty recipient and project reward
-///         recipients (until `lockRecipients` or admin renounce), the coin
-///         description, image and metadata renderer, the allowlist entries, and
-///         turning restriction off once (until `lockAllowlist`).
+///         the bounty share, supply and the positions. Mutable by the coin admin
+///         afterwards, until the coin's `lock` or admin renounce: the bounty
+///         recipient, the pool extension, the baseline skim (lower only), the
+///         allowlist entries and turning restriction off once. Always mutable
+///         by the admin: description, image and metadata renderer.
 /// @dev    Units: bps = 1/10,000 (Constants.BPS); pips = 1/1,000,000
 ///         (Constants.FEE_DENOMINATOR); amounts are in wei or coin base units;
 ///         durations are in seconds. Owner functions are restricted to the
@@ -63,41 +62,29 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
         bytes extensionData;
     }
 
-    /// @notice Pool fee parameters. The factory injects `protocolRecipient` from its own state.
-    /// @param lpFeePips Pool lp fee in pips. At most `Constants.MAX_LP_FEE`, else
-    ///        `FeeConfigOutOfBounds`.
-    /// @param baselineSkimBps Baseline skim in bps of swap volume. At most
-    ///        `Constants.MAX_BASELINE_SKIM_BPS`, else `FeeConfigOutOfBounds`. `lpFeePips` and this
-    ///        field both 0 reverts `ZeroFeeLaunch`.
+    /// @notice Pool fee parameters. The skim is the pool's only fee (the lp fee
+    ///         is 0). The factory injects `protocolRecipient` from its own state.
+    /// @param baselineSkimBps Baseline skim in bps of swap volume. Above zero, else `ZeroFeeLaunch`;
+    ///        at most `Constants.MAX_BASELINE_SKIM_BPS`, else `FeeConfigOutOfBounds`.
     /// @param bountyBps Bounty share of the skim in bps. At most `Constants.MAX_BOUNTY_BPS`, else
     ///        `BountyBpsTooHigh`. The referral rate is hook wide (`IArtCoinsHookV2.referralBps`)
     ///        and is carved from the protocol leg.
     /// @param bountyRecipient Receives the bounty leg. Nonzero, else `ZeroAddress`.
     struct FeeConfigV2 {
-        uint24 lpFeePips;
         uint24 baselineSkimBps;
         uint16 bountyBps;
         address payable bountyRecipient;
     }
 
-    /// @notice Locker and liquidity layout. Lists project slots only; the factory
-    ///         appends the protocol slot.
+    /// @notice Locker and liquidity layout.
     /// @param locker Locker contract. Must be enabled, else `LockerNotEnabled`.
-    /// @param rewardRecipients Project reward recipients, parallel to `rewardBps`. Nonzero entries.
-    ///        Lengths differing reverts `ArrayLengthMismatch`. Contracts that cannot receive eth
-    ///        revert `RecipientCannotReceive`.
-    /// @param rewardBps Reward share per recipient in bps. Each entry is nonzero. Together with the
-    ///        protocol slot the sum is `Constants.BPS`, else `ProjectSideBpsMismatch`. Slot count
-    ///        above `Constants.MAX_REWARD_PARTICIPANTS` or zero reverts `InvalidRewardSlots`.
     /// @param tickLower Lower tick of each position, parallel to `tickUpper` and `positionBps`.
     /// @param tickUpper Upper tick of each position.
     /// @param positionBps Share of the pool supply per position in bps. Sums to `Constants.BPS`.
     ///        Zero positions, more than `Constants.MAX_LP_POSITIONS` or a wrong sum reverts
-    ///        `InvalidPositions`.
+    ///        `InvalidPositions`; lengths differing reverts `ArrayLengthMismatch`.
     struct LockerConfigV2 {
         address locker;
-        address[] rewardRecipients;
-        uint16[] rewardBps;
         int24[] tickLower;
         int24[] tickUpper;
         uint16[] positionBps;
@@ -119,9 +106,8 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     }
 
     /// @notice Launch restriction. `allowed` holds extra allowlist entries; the
-    ///         factory seeds the stack's escrow, this launch's locker, the
-    ///         launch extensions and the owner `defaultAllowed` set on top.
-    ///         Must be empty when `restricted` is false.
+    ///         factory seeds this launch's locker and the launch extensions on
+    ///         top. Must be empty when `restricted` is false.
     /// @dev    A violation reverts `InvalidRestrictionConfig`, except the
     ///         PoolManager and the pool hook, which revert with the token's
     ///         `AllowedForbidden`.
@@ -187,15 +173,13 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     // ── events ────────────────────────────────────────────────────────────
 
     /// @notice Full launch record. An indexer can rebuild every frozen field from
-    ///         this log. When `protocolBps != 0` the protocol reward slot is the
-    ///         last element of the locker reward arrays.
+    ///         this log.
     /// @param sender Launching account.
     /// @param token Launched coin.
     /// @param poolId Pool id of the coin's native eth pool.
     /// @param stackVersion Stack version of this factory.
     /// @param configHash keccak256(abi.encode(config)).
-    /// @param protocolRecipient Protocol reward recipient at launch.
-    /// @param protocolBps Protocol share of the locker reward split in bps. 0 means no protocol slot.
+    /// @param protocolRecipient Protocol skim leg recipient at launch.
     /// @param poolSupply Coin amount placed in the pool, in coin base units.
     /// @param extensionsSupply Coin amount sent to extensions, in coin base units.
     /// @param config The launch configuration as submitted.
@@ -206,7 +190,6 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
         uint16 stackVersion,
         bytes32 configHash,
         address protocolRecipient,
-        uint16 protocolBps,
         uint256 poolSupply,
         uint256 extensionsSupply,
         DeploymentConfigV2 config
@@ -240,16 +223,10 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     event DeprecatedSet(bool deprecated);
     /// @notice The owner changed the deploy fee. Values are in wei.
     event DeployFeeSet(uint256 oldFee, uint256 newFee);
-    /// @notice The owner changed the default protocol fee. Values are in bps.
-    event DefaultProtocolFeeBpsSet(uint16 oldBps, uint16 newBps);
     /// @notice The owner changed the protocol recipient.
     event ProtocolRecipientSet(address indexed oldRecipient, address indexed newRecipient);
     /// @notice The owner changed the team fee recipient.
     event TeamFeeRecipientSet(address indexed oldRecipient, address indexed newRecipient);
-    /// @notice The owner `defaultAllowed` set was replaced. Seeded into every
-    ///         restricted coin's launch allowlist.
-    /// @param accounts The new set.
-    event DefaultAllowedSet(address[] accounts);
     /// @notice The owner moved eth or an erc20 out of the factory.
     /// @param token Erc20 address, or address(0) for eth.
     /// @param to Receiver.
@@ -292,14 +269,10 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     error MsgValueMismatch(uint256 expected, uint256 sent);
     /// @notice The deploy fee exceeds `Constants.MAX_DEPLOY_FEE`.
     error DeployFeeTooHigh();
-    /// @notice A protocol fee exceeds `Constants.MAX_PROTOCOL_FEE_BPS`.
-    error ProtocolFeeBpsTooHigh();
     /// @notice `bountyBps` exceeds the allowed maximum.
     /// @param bountyBps Submitted value in bps.
     /// @param max Allowed maximum in bps.
     error BountyBpsTooHigh(uint16 bountyBps, uint16 max);
-    /// @notice Project reward bps plus the protocol slot do not sum to `Constants.BPS`.
-    error ProjectSideBpsMismatch();
     /// @notice A nonzero `totalSupply` is below `Constants.MIN_TOKEN_SUPPLY`.
     error TotalSupplyTooLow();
     /// @notice More than `Constants.MAX_EXTENSIONS` extensions.
@@ -314,15 +287,15 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     error TeamFeeRecipientNotSet();
     /// @notice An eth transfer failed.
     error NativeTransferFailed();
-    /// @notice A project reward recipient is a contract with no way to receive
-    ///         eth or claim an escrow credit: the factory, the coin, the
-    ///         PoolManager, the launch's hook, locker, fee escrows, token
-    ///         deployer, mev module, or an extension in the config.
+    /// @notice A fee recipient is a contract with no way to receive eth or claim
+    ///         an escrow credit: the factory, the coin, the PoolManager, the
+    ///         launch's hook, locker, hook fee escrow, token deployer, mev
+    ///         module, or an extension in the config.
     error RecipientCannotReceive(address recipient);
 
     // ── launch ────────────────────────────────────────────────────────────
 
-    /// @notice Public launch with the protocol slot set to `defaultProtocolFeeBps`.
+    /// @notice Launches a coin.
     /// @dev    `msg.value` must be at least the deploy fee plus the sum of extension
     ///         `msgValue`, else `MsgValueMismatch`. The excess is refunded to the
     ///         sender. Reverts `Deprecated` for a non-owner while deprecated.
@@ -330,25 +303,10 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     /// @return token The launched coin.
     function deployToken(DeploymentConfigV2 calldata c) external payable returns (address token);
 
-    /// @notice Owner launch with an explicit protocol slot size.
-    /// @dev    Owner only. Same `msg.value` rule as `deployToken`. A `protocolBps`
-    ///         above `Constants.MAX_PROTOCOL_FEE_BPS` reverts `ProtocolFeeBpsTooHigh`;
-    ///         0 appends no protocol slot.
-    /// @param c Launch configuration.
-    /// @param protocolBps Protocol share of the locker reward split in bps.
-    /// @return token The launched coin.
-    function deployTokenAsOwner(DeploymentConfigV2 calldata c, uint16 protocolBps)
-        external
-        payable
-        returns (address token);
-
     /// @notice Address `deployToken(c)` yields when called by `sender`. The
-    ///         result depends on the full config and, for a restricted launch,
-    ///         on the owner `defaultAllowed` set, the hook's fee escrow and the
-    ///         current token deployer, since those are folded into the token's
-    ///         constructor arguments.
-    /// @dev    Reverts `DeployerNotSet` before a token deployer is wired, and
-    ///         `HookEscrowNotSet` for a restricted launch whose hook has no escrow.
+    ///         result depends on the full config and the current token deployer,
+    ///         since the deployer is the CREATE2 origin.
+    /// @dev    Reverts `DeployerNotSet` before a token deployer is wired.
     /// @param sender Launching account.
     /// @param c Launch configuration.
     /// @return The predicted coin address.
@@ -383,10 +341,7 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     /// @notice Flat fee in wei charged per launch and sent to `teamFeeRecipient`.
     function deployFee() external view returns (uint256);
 
-    /// @notice Protocol share of the locker reward split for public launches, in bps.
-    function defaultProtocolFeeBps() external view returns (uint16);
-
-    /// @notice Recipient of the protocol skim leg and the locker protocol slot for new launches.
+    /// @notice Recipient of the protocol skim leg for new launches.
     function protocolRecipient() external view returns (address payable);
 
     /// @notice Recipient of the deploy fee.
@@ -403,9 +358,6 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
 
     /// @notice Whether `extension` may be used by new launches.
     function enabledExtensions(address extension) external view returns (bool);
-
-    /// @notice Owner set addresses seeded into every restricted coin's allowlist.
-    function defaultAllowed() external view returns (address[] memory);
 
     // ── owner ─────────────────────────────────────────────────────────────
 
@@ -444,10 +396,6 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     /// @param fee Fee in wei. Above `Constants.MAX_DEPLOY_FEE` reverts `DeployFeeTooHigh`.
     function setDeployFee(uint256 fee) external;
 
-    /// @notice Set the protocol share used by `deployToken`. Owner only.
-    /// @param bps Share in bps. Above `Constants.MAX_PROTOCOL_FEE_BPS` reverts `ProtocolFeeBpsTooHigh`.
-    function setDefaultProtocolFeeBps(uint16 bps) external;
-
     /// @notice Set the protocol recipient for new launches. Owner only.
     /// @dev    Reverts `ZeroAddress` for address(0).
     function setProtocolRecipient(address payable recipient) external;
@@ -456,11 +404,6 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     /// @dev    address(0) is accepted. A launch with a nonzero fee then reverts
     ///         `TeamFeeRecipientNotSet`.
     function setTeamFeeRecipient(address recipient) external;
-
-    /// @notice Replace the `defaultAllowed` set. Owner only. Affects new launches only.
-    /// @dev    More than `Constants.MAX_ALLOWED` entries reverts
-    ///         `InvalidRestrictionConfig`. A zero entry reverts `ZeroAddress`.
-    function setDefaultAllowed(address[] calldata accounts) external;
 
     /// @notice Sends stray eth (`token == address(0)`) or erc20 held by the factory. Owner only.
     /// @dev    Reverts `ZeroAddress` for `to == address(0)` and `NativeTransferFailed`

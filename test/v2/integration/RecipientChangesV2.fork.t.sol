@@ -1,23 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-// D76: the coin admin changes a coin's locker reward recipients after launch,
-// the change takes effect on the next collect, the protocol slot stays frozen,
-// and a lock or a renounce freezes the setter. Also D76(2): a launch with lp
-// fee 0 works and the protocol skim floor still pays. Full v2 stack on a
-// mainnet fork; skips cleanly without an rpc.
+// D76: the coin admin changes a coin's bounty recipient after launch, the
+// protocol recipient is fixed at launch, and lock() or a renounce freezes the
+// setter. Also D76(2): the protocol skim floor pays on every swap. Full v2
+// stack on a mainnet fork; skips cleanly without an rpc.
 
 import {IntegrationV2Base} from "./IntegrationV2Base.sol";
 
 import {Constants} from "../../../src/Constants.sol";
-import {ArtCoinsFeeEscrowV2} from "../../../src/v2/ArtCoinsFeeEscrowV2.sol";
-import {ArtCoinsHookV2} from "../../../src/v2/hooks/ArtCoinsHookV2.sol";
-import {IArtCoinsFactoryV2} from "../../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsHookV2} from "../../../src/v2/interfaces/IArtCoinsHookV2.sol";
-import {IArtCoinsLpLockerV2} from "../../../src/v2/interfaces/IArtCoinsLpLockerV2.sol";
-import {ArtCoinsLpLockerV2} from "../../../src/v2/lp-lockers/ArtCoinsLpLockerV2.sol";
 
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {console2} from "forge-std/console2.sol";
@@ -30,122 +23,35 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
     function _launchCredits() internal returns (address coin, PoolKey memory key) {
         coin = _ownerLaunch(_creditsConfig(treasury));
         key = _key(coin);
-        // reward slots: [0] project (treasury), [1] protocol (controller).
-        address[] memory rr = v2.locker.rewardRecipients(coin);
-        assertEq(rr.length, 2, "project + protocol slot");
-        assertEq(rr[0], treasury, "project slot");
-        assertEq(rr[1], address(v2.controller), "protocol slot");
+        assertEq(v2.hook.skimConfig(key.toId()).bountyRecipient, treasury, "bounty recipient");
     }
 
-    // ── locker reward recipient ──────────────────────────────────────────
+    // ── hook bounty recipient ────────────────────────────────────────────
 
-    /// accrued lp fees go to the old recipient (the change collects first); only
-    /// fees after the change reach the new recipient.
-    function test_locker_setRewardRecipient_accruedToOld_newAfterChange() public onlyFork {
-        (address coin, PoolKey memory key) = _launchCredits();
+    /// the change applies to later swaps: the new recipient takes the bounty leg.
+    function test_hook_setBountyRecipient_newRecipientGetsLegs() public onlyFork {
+        (, PoolKey memory key) = _launchCredits();
         address payable newArtist = payable(makeAddr("rc.newArtist"));
-
-        // accrue lp fees on both sides.
-        _buyAndSell(key, 0.5 ether);
-
-        // the change collects the accrued fees to the current (old) recipient.
-        uint256 oldEth0 = treasury.balance;
-        uint256 oldCoin0 = IERC20(coin).balanceOf(treasury);
-        vm.expectEmit(true, true, false, true, address(v2.locker));
-        emit IArtCoinsLpLockerV2.RewardRecipientSet(coin, 0, treasury, newArtist);
+        vm.expectEmit(true, false, false, true, address(v2.hook));
+        emit IArtCoinsHookV2.BountyRecipientSet(key.toId(), treasury, newArtist);
         vm.prank(admin);
-        v2.locker.setRewardRecipient(coin, 0, newArtist);
-        assertEq(v2.locker.rewardRecipients(coin)[0], newArtist, "project slot repointed");
-        uint256 toOld = (treasury.balance - oldEth0) + (IERC20(coin).balanceOf(treasury) - oldCoin0);
-        assertGt(toOld, 0, "accrued share paid to the old recipient at the change");
-        assertEq(newArtist.balance, 0, "new recipient no eth from accrued fees");
-        assertEq(IERC20(coin).balanceOf(newArtist), 0, "new recipient no coin from accrued fees");
+        v2.hook.setBountyRecipient(key.toId(), newArtist);
+        assertEq(v2.hook.skimConfig(key.toId()).bountyRecipient, newArtist, "repointed");
 
-        // fees accrued after the change reach the new recipient.
-        _buyAndSell(key, 0.5 ether);
-        uint256 nEth0 = newArtist.balance;
-        uint256 nCoin0 = IERC20(coin).balanceOf(newArtist);
-        v2.locker.collectRewards(coin);
-        uint256 toNew = (newArtist.balance - nEth0) + (IERC20(coin).balanceOf(newArtist) - nCoin0);
-        assertGt(toNew, 0, "post-change fees paid to the new recipient");
+        uint256 t0 = treasury.balance;
+        vm.recordLogs();
+        _buy(key, 0.5 ether);
+        Legs memory l = _legs(vm.getRecordedLogs());
+        assertGt(l.bounty, 0, "bounty leg paid");
+        assertEq(newArtist.balance, l.bounty, "new recipient takes the bounty leg");
+        assertEq(treasury.balance, t0, "old recipient takes nothing");
     }
 
-    function test_locker_setRewardRecipient_protocolSlotFrozen() public onlyFork {
-        (address coin,) = _launchCredits();
-        vm.prank(admin);
-        vm.expectRevert(IArtCoinsLpLockerV2.ProtocolSlotFrozen.selector);
-        v2.locker.setRewardRecipient(coin, 1, makeAddr("rc.x"));
-    }
-
-    function test_locker_setRewardRecipient_nonAdminReverts() public onlyFork {
-        (address coin,) = _launchCredits();
+    function test_hook_setBountyRecipient_nonAdminReverts() public onlyFork {
+        (, PoolKey memory key) = _launchCredits();
         vm.prank(stranger);
-        vm.expectRevert(IArtCoinsLpLockerV2.NotCoinAdmin.selector);
-        v2.locker.setRewardRecipient(coin, 0, makeAddr("rc.x"));
-    }
-
-    function test_locker_setRewardRecipient_rejectedAddressesRevert() public onlyFork {
-        (address coin, PoolKey memory key) = _launchCredits();
-        // parity with the factory launch checks the locker can look up.
-        address[9] memory bad = [
-            coin,
-            address(v2.locker),
-            v2.locker.feeEscrow(),
-            address(key.hooks),
-            POOL_MANAGER,
-            POSITION_MANAGER,
-            address(v2.mev),
-            address(v2.factory),
-            address(v2.tokenDeployer)
-        ];
-        for (uint256 i; i < bad.length; ++i) {
-            vm.prank(admin);
-            vm.expectRevert(
-                abi.encodeWithSelector(IArtCoinsLpLockerV2.RecipientCannotReceive.selector, bad[i])
-            );
-            v2.locker.setRewardRecipient(coin, 0, bad[i]);
-        }
-        vm.prank(admin);
-        vm.expectRevert(IArtCoinsLpLockerV2.ZeroAddress.selector);
-        v2.locker.setRewardRecipient(coin, 0, address(0));
-    }
-
-    /// both setters reject both escrows, even when the hook and locker run on
-    /// distinct escrows (each setter reads the sibling's escrow).
-    function test_recipientSetters_rejectBothEscrows() public onlyFork {
-        (address coin, PoolKey memory key) = _launchCredits();
-        PoolId pid = key.toId();
-        address hookEscrow = address(v2.escrow);
-
-        // give the locker a distinct escrow (owner only; new escrow lists the
-        // locker as a core depositor and matches constantsHash).
-        ArtCoinsFeeEscrowV2 escrow2 = new ArtCoinsFeeEscrowV2(LIVE_OWNER);
-        vm.prank(LIVE_OWNER);
-        escrow2.addDepositor(address(v2.locker), true);
-        vm.prank(LIVE_OWNER);
-        v2.locker.setFeeEscrow(address(escrow2));
-        assertTrue(address(escrow2) != hookEscrow, "distinct escrows");
-        assertEq(v2.locker.feeEscrow(), address(escrow2), "locker on escrow2");
-        assertEq(v2.hook.globals().feeEscrow, hookEscrow, "hook on the stack escrow");
-
-        // the hook setter rejects its own escrow and the locker's escrow.
-        for (uint256 i; i < 2; ++i) {
-            address esc = i == 0 ? hookEscrow : address(escrow2);
-            vm.prank(admin);
-            vm.expectRevert(
-                abi.encodeWithSelector(IArtCoinsHookV2.RecipientCannotReceive.selector, esc)
-            );
-            v2.hook.setBountyRecipient(pid, payable(esc));
-        }
-        // the locker setter rejects its own escrow and the hook's escrow.
-        for (uint256 i; i < 2; ++i) {
-            address esc = i == 0 ? address(escrow2) : hookEscrow;
-            vm.prank(admin);
-            vm.expectRevert(
-                abi.encodeWithSelector(IArtCoinsLpLockerV2.RecipientCannotReceive.selector, esc)
-            );
-            v2.locker.setRewardRecipient(coin, 0, esc);
-        }
+        vm.expectRevert(IArtCoinsHookV2.NotCoinAdmin.selector);
+        v2.hook.setBountyRecipient(key.toId(), payable(makeAddr("rc.x")));
     }
 
     /// fail closed: when a reject-set lookup reverts, the setter refuses.
@@ -154,50 +60,17 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
         PoolId pid = key.toId();
         address ok = makeAddr("rc.okHook");
 
-        bytes[3] memory reads = [
-            abi.encodeWithSignature("tokenDeployer()"),
-            abi.encodeWithSignature("positionManager()"),
-            abi.encodeWithSignature("feeEscrow()")
+        bytes[2] memory reads = [
+            abi.encodeWithSignature("tokenDeployer()"), abi.encodeWithSignature("positionManager()")
         ];
-        address[3] memory on = [address(v2.factory), address(v2.locker), address(v2.locker)];
-        for (uint256 i; i < 3; ++i) {
+        address[2] memory on = [address(v2.factory), address(v2.locker)];
+        for (uint256 i; i < 2; ++i) {
             vm.mockCallRevert(on[i], reads[i], "");
             vm.prank(admin);
             vm.expectRevert(IArtCoinsHookV2.RecipientCheckFailed.selector);
             v2.hook.setBountyRecipient(pid, payable(ok));
             vm.clearMockedCalls();
         }
-    }
-
-    function test_locker_setRewardRecipient_failsClosedOnBadRead() public onlyFork {
-        (address coin, PoolKey memory key) = _launchCredits();
-        PoolId pid = key.toId();
-        address ok = makeAddr("rc.okLocker");
-
-        // factory.tokenDeployer()
-        vm.mockCallRevert(address(v2.factory), abi.encodeWithSignature("tokenDeployer()"), "");
-        vm.prank(admin);
-        vm.expectRevert(IArtCoinsLpLockerV2.RecipientCheckFailed.selector);
-        v2.locker.setRewardRecipient(coin, 0, ok);
-        vm.clearMockedCalls();
-
-        // hook.poolInfo(pid)
-        vm.mockCallRevert(
-            address(v2.hook), abi.encodeWithSelector(IArtCoinsHookV2.poolInfo.selector, pid), ""
-        );
-        vm.prank(admin);
-        vm.expectRevert(IArtCoinsLpLockerV2.RecipientCheckFailed.selector);
-        v2.locker.setRewardRecipient(coin, 0, ok);
-        vm.clearMockedCalls();
-
-        // hook.globals()
-        vm.mockCallRevert(
-            address(v2.hook), abi.encodeWithSelector(IArtCoinsHookV2.globals.selector), ""
-        );
-        vm.prank(admin);
-        vm.expectRevert(IArtCoinsLpLockerV2.RecipientCheckFailed.selector);
-        v2.locker.setRewardRecipient(coin, 0, ok);
-        vm.clearMockedCalls();
     }
 
     function test_hook_setBountyRecipient_rejectedAddressesRevert() public onlyFork {
@@ -226,90 +99,28 @@ contract RecipientChangesV2ForkTest is IntegrationV2Base {
         v2.hook.setBountyRecipient(pid, payable(address(0)));
     }
 
-    /// a project slot whose recipient equals the protocol recipient is still
-    /// editable; only the recorded protocol slot index is frozen.
-    function test_locker_setRewardRecipient_projectSlotEqualProtocolRecipientEditable()
-        public
-        onlyFork
-    {
-        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _creditsConfig(treasury);
-        address[] memory rr = new address[](1);
-        rr[0] = address(v2.controller); // a project recipient equal to the protocol recipient
-        uint16[] memory bps = new uint16[](1);
-        bps[0] = 8000;
-        c.locker.rewardRecipients = rr;
-        c.locker.rewardBps = bps;
-        address coin = _ownerLaunch(c);
-
-        address[] memory got = v2.locker.rewardRecipients(coin);
-        assertEq(got[0], address(v2.controller), "project slot is the controller");
-        assertEq(got[1], address(v2.controller), "protocol slot is the controller");
-
-        // the recorded protocol slot (index 1) is frozen
+    function test_hook_setBountyRecipient_lockFreezes() public onlyFork {
+        (address coin, PoolKey memory key) = _launchCredits();
         vm.prank(admin);
-        vm.expectRevert(IArtCoinsLpLockerV2.ProtocolSlotFrozen.selector);
-        v2.locker.setRewardRecipient(coin, 1, makeAddr("rc.x"));
-
-        // the project slot (index 0) is editable despite equalling the protocol recipient
-        address newR = makeAddr("rc.newProject");
+        _token(coin).lock();
         vm.prank(admin);
-        v2.locker.setRewardRecipient(coin, 0, newR);
-        assertEq(v2.locker.rewardRecipients(coin)[0], newR, "project slot editable");
+        vm.expectRevert(IArtCoinsHookV2.CoinLocked.selector);
+        v2.hook.setBountyRecipient(key.toId(), payable(makeAddr("rc.x")));
     }
 
-    function test_locker_setRewardRecipient_outOfRangeReverts() public onlyFork {
-        (address coin,) = _launchCredits();
-        vm.prank(admin);
-        vm.expectRevert(IArtCoinsLpLockerV2.RewardIndexOutOfRange.selector);
-        v2.locker.setRewardRecipient(coin, 2, makeAddr("rc.x"));
-    }
-
-    function test_locker_protocolSlotIndex_view() public onlyFork {
-        (address coin,) = _launchCredits();
-        (bool exists, uint256 index) = v2.locker.protocolSlotIndex(coin);
-        assertTrue(exists, "credits launch reserves a protocol slot");
-        assertEq(index, 1, "protocol slot is the appended last index");
-    }
-
-    function test_locker_setRewardRecipient_lockFreezes() public onlyFork {
-        (address coin,) = _launchCredits();
-        vm.prank(admin);
-        _token(coin).lockRecipients();
-        vm.prank(admin);
-        vm.expectRevert(IArtCoinsLpLockerV2.RecipientsLocked.selector);
-        v2.locker.setRewardRecipient(coin, 0, makeAddr("rc.x"));
-    }
-
-    function test_locker_setRewardRecipient_renounceFreezes() public onlyFork {
-        (address coin,) = _launchCredits();
+    function test_hook_setBountyRecipient_renounceFreezes() public onlyFork {
+        (address coin, PoolKey memory key) = _launchCredits();
         vm.prank(admin);
         _token(coin).renounceAdmin();
         vm.prank(admin);
-        vm.expectRevert(IArtCoinsLpLockerV2.NotCoinAdmin.selector);
-        v2.locker.setRewardRecipient(coin, 0, makeAddr("rc.x"));
+        vm.expectRevert(IArtCoinsHookV2.NotCoinAdmin.selector);
+        v2.hook.setBountyRecipient(key.toId(), payable(makeAddr("rc.x")));
     }
 
-    /// one call freezes both the hook bounty and the locker reward setters.
-    function test_lockRecipients_freezesHookAndLocker() public onlyFork {
-        (address coin, PoolKey memory key) = _launchCredits();
-        vm.prank(admin);
-        _token(coin).lockRecipients();
-        vm.prank(admin);
-        vm.expectRevert();
-        v2.hook.setBountyRecipient(key.toId(), payable(makeAddr("rc.b")));
-        vm.prank(admin);
-        vm.expectRevert(IArtCoinsLpLockerV2.RecipientsLocked.selector);
-        v2.locker.setRewardRecipient(coin, 0, makeAddr("rc.x"));
-    }
+    // ── D76(2): protocol skim floor pays ──────────────────────────────────
 
-    // ── D76(2): lp fee 0 launch, protocol skim floor still pays ───────────
-
-    function test_lpFeeZero_launch_skimProtocolStillPays() public onlyFork {
-        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _creditsConfig(treasury);
-        c.fee.lpFeePips = 0; // pure skim, no lp fee
-        address coin = _ownerLaunch(c);
-        PoolKey memory key = _key(coin);
-        assertEq(v2.hook.skimConfig(key.toId()).lpFeePips, 0, "lp fee 0 frozen");
+    function test_poolLpFeeZero_skimProtocolStillPays() public onlyFork {
+        (, PoolKey memory key) = _launchCredits();
         (,,, uint24 poolFee) = readSlot0(key);
         assertEq(poolFee, 0, "pool runs with 0 lp fee");
 

@@ -16,19 +16,6 @@ export const tokenV2Abi = [
   },
   {
     "type": "function",
-    "name": "allowlistLocked",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "burn",
     "inputs": [
       {
@@ -162,25 +149,6 @@ export const tokenV2Abi = [
   },
   {
     "type": "function",
-    "name": "isPinned",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "isTransferRestricted",
     "inputs": [
       {
@@ -231,17 +199,23 @@ export const tokenV2Abi = [
   },
   {
     "type": "function",
-    "name": "lockAllowlist",
+    "name": "lock",
     "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
   {
     "type": "function",
-    "name": "lockRecipients",
+    "name": "locked",
     "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -265,19 +239,6 @@ export const tokenV2Abi = [
         "name": "",
         "type": "address",
         "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "recipientsLocked",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -433,25 +394,19 @@ export const tokenV2Abi = [
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
-      },
-      {
-        "name": "pinned",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
       }
     ],
     "anonymous": false
   },
   {
     "type": "event",
-    "name": "AllowlistLocked",
+    "name": "ContractURIUpdated",
     "inputs": [],
     "anonymous": false
   },
   {
     "type": "event",
-    "name": "ContractURIUpdated",
+    "name": "Locked",
     "inputs": [],
     "anonymous": false
   },
@@ -466,12 +421,6 @@ export const tokenV2Abi = [
         "internalType": "address"
       }
     ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "RecipientsLocked",
-    "inputs": [],
     "anonymous": false
   },
   {
@@ -538,23 +487,12 @@ export const tokenV2Abi = [
   },
   {
     "type": "error",
-    "name": "AllowedPinned",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "AllowlistAlreadyLocked",
+    "name": "CanonicalPoolInvalid",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "CanonicalPoolInvalid",
+    "name": "CoinLocked",
     "inputs": []
   },
   {
@@ -575,11 +513,6 @@ export const tokenV2Abi = [
   {
     "type": "error",
     "name": "NotRestricted",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "RecipientsAlreadyLocked",
     "inputs": []
   },
   {

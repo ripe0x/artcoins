@@ -404,7 +404,6 @@ abstract contract ForkStack is ForkBase {
         vm.label(address(s.tokenDeployer), "v2TokenDeployer");
         vm.label(address(s.burnRouter), "v2BurnRouter");
         vm.label(address(s.controller), "v2Controller");
-        vm.label(address(s.keeper), "v2Keeper");
         v2 = s;
         v2Params = p;
     }

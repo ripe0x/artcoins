@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseEther } from 'viem';
 import {
-  decide111, decideLayer, decideV2, weeklyDue, feeCaps, minOutFromSim, rateFromSim, args111, argsLayer, argsV2, combinedLayerWeth,
+  decide111, decideLayer, weeklyDue, feeCaps, minOutFromSim, rateFromSim, args111, argsLayer, combinedLayerWeth,
   decodeSlot0, spotOut, spotNetOut, inRangeOut, floorQuote, progressMade, triggerMetrics, nextBackoff, bumpFee, pendingValueWei,
 } from '../decide.mjs';
 import { Q96, sqrtFor } from './helpers.mjs';
@@ -66,15 +66,6 @@ test('LAYER: combined rule routerWeth[0] + claimable[3] + 0.4 * (claimable[1] + 
 
 test('LAYER: weekly', () => {
   assert.deepEqual(decideLayer(pl(), 0n, tl, { lastRunAt: 0, now: WEEK, weeklySeconds: WEEK }).reasons, ['weekly']);
-});
-
-test('v2: paired and coin thresholds and weekly', () => {
-  const t = { accruedPaired: E('0.02'), accruedCoin: E(10000) };
-  const p = (o) => ({ swappers: 1n, accruedPaired: 0n, accruedCoin: 0n, nextConvertibleBlock: 0n, ...o });
-  assert.deepEqual(decideV2(p({}), t, fresh).reasons, []);
-  assert.deepEqual(decideV2(p({ accruedPaired: E('0.021') }), t, fresh).reasons, ['accrued_paired']);
-  assert.deepEqual(decideV2(p({ accruedCoin: E(10001) }), t, fresh).reasons, ['accrued_coin']);
-  assert.deepEqual(decideV2(p({}), t, { lastRunAt: null, now: 1, weeklySeconds: WEEK }).reasons, ['weekly']);
 });
 
 test('gas cap: skip when base fee plus priority is above the cap', () => {
@@ -183,30 +174,6 @@ test('KR-12 LAYER: rate from the largest router balance; impact above MAX_IMPACT
   const mid = argsLayer(sim, 200, thin, pLayer({ routerWeth: [E('0.02'), E('0.5'), 0n] }));
   assert.equal(mid.status, 'ok');
   assert.ok(mid.estRate < mid.simRate && mid.rate <= mid.estRate);
-});
-
-// KR-03: one minOut must satisfy every converting swapper's own floor, else no convert and the blocker is named
-test('KR-03 v2: per swapper floors, convert only when one minOut fits every swapper', () => {
-  const tok = '0x4444444444444444444444444444444444444444';
-  const A = '0x' + 'a'.repeat(40);
-  const B = '0x' + 'b'.repeat(40);
-  const sw = (address, accruedCoin, maxStepIn = E(1_000_000)) => ({ address, accruedCoin, maxStepIn, sqrtPriceX96: Q96, lpFeePpm: 0, skimPpm: 0 });
-  // price 1: 1 coin wei buys 1 eth wei
-  const same = argsV2(tok, [{ swapper: A, converted: E(1) }, { swapper: B, converted: E('0.999') }], 100, { swappers: [sw(A, E(1)), sw(B, E(1))] });
-  assert.equal(same.status, 'ok');
-  assert.deepEqual(same.args, [tok, true, E('0.99')]);
-  const apart = argsV2(tok, [{ swapper: A, converted: E(1) }, { swapper: B, converted: E('0.001') }], 100, { swappers: [sw(A, E(1)), sw(B, E('0.001'))] });
-  assert.equal(apart.status, 'floor_above_quote');
-  assert.equal(apart.blockedBy, B);
-  assert.deepEqual(apart.args, [tok, false, 0n]);
-  // the step cap sizes the floor: 1 eth pending, 0.1 eth per step
-  const step = argsV2(tok, [{ swapper: A, converted: E('0.1') }], 100, { swappers: [sw(A, E(1), E('0.1'))] });
-  assert.deepEqual(step.args, [tok, true, E('0.099')]);
-  // a swapper missing from the market read: no quote
-  assert.equal(argsV2(tok, [{ swapper: A, converted: E(1) }], 100, { swappers: [] }).status, 'no_quote');
-  assert.deepEqual(argsV2(tok, [{ swapper: A, converted: 0n }], 100, { swappers: [] }).args, [tok, false, 0n]);
-  assert.deepEqual(argsV2(tok, [], 100, null).args, [tok, false, 0n]);
-  assert.deepEqual(argsV2(tok, null, 100, null).args, [tok, false, 0n]);
 });
 
 test('progress, backoff, value and fee bump helpers', () => {

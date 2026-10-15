@@ -2,7 +2,7 @@
 // is due, decide, quote by simulation plus an independent pool floor, send one tx at a time, wait for the receipt,
 // decode its events, check the run made progress, persist state. All chain access goes through `io`.
 import {
-  decide111, decideLayer, decideV2, feeCaps, args111, argsLayer, argsV2, triggerMetrics, progressMade, nextBackoff,
+  decide111, decideLayer, feeCaps, args111, argsLayer, triggerMetrics, progressMade, nextBackoff,
   pendingValueWei, bumpFee,
 } from './decide.mjs';
 import { decodeKeeperLogs, describeError } from './events.mjs';
@@ -20,16 +20,14 @@ const QUIET_QUOTES = new Set(['ok', 'no_convert', 'no_burn']);
 export function decideFor(k, preview, cfg, st, now) {
   const timer = { lastRunAt: st.lastRunAt, now, weeklySeconds: cfg.weeklySeconds };
   if (k.kind === '111') return decide111(preview, cfg.thresholds['111'], timer);
-  if (k.kind === 'layer') return decideLayer(preview, preview.controllerWeth, cfg.thresholds.layer, timer);
-  return decideV2(preview, cfg.thresholds.v2, timer);
+  return decideLayer(preview, preview.controllerWeth, cfg.thresholds.layer, timer);
 }
 
-/// quote with the independent floor: { args, status, ... } (decide.mjs args111 / argsLayer / argsV2)
+/// quote with the independent floor: { args, status, ... } (decide.mjs args111 / argsLayer)
 export function argsFor(k, sim, market, preview, cfg) {
   const impact = cfg?.maxImpactBps ?? 100;
   if (k.kind === '111') return args111(sim, k.slippageBps, market, preview, impact);
-  if (k.kind === 'layer') return argsLayer(sim, k.slippageBps, market, preview, impact);
-  return argsV2(k.token, sim, k.slippageBps, market, impact);
+  return argsLayer(sim, k.slippageBps, market, preview, impact);
 }
 
 /// KR-11: every send and receipt outcome lands in the state file and in `keeper_tx_outcomes_total`
@@ -180,7 +178,6 @@ export async function tick(ctx) {
       save();
       continue;
     }
-    if (k.kind === 'v2' && sim === null) log.warn('rpc has no eth_simulateV1, sending without convert', { keeper: k.id });
     const q = argsFor(k, sim, market, preview, cfg);
     const args = q.args;
     const [fn] = runCall(k, args);

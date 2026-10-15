@@ -10,27 +10,26 @@ export const DEFAULT_REGISTRY = fileURLToPath(new URL('../deployments/mainnet.js
 
 // fixed gas limits (RUNBOOK part 1 actions 3 and 2b, 2b keeper table). never estimated: the keepers revert
 // `InsufficientGas` on a shortfall, and an estimateGas search would only find the cheapest passing path
-export const GAS_LIMIT = Object.freeze({ '111': 1_200_000n, layer: 3_500_000n, v2: 2_000_000n });
-export const SLIPPAGE_DEFAULT = Object.freeze({ '111': 100, layer: 200, v2: 100 });
+export const GAS_LIMIT = Object.freeze({ '111': 1_200_000n, layer: 3_500_000n });
+export const SLIPPAGE_DEFAULT = Object.freeze({ '111': 100, layer: 200 });
 // KR-01: minimum spacing between successful runs, enforced from the state file (the weekly timer never shortens it)
-export const MIN_RUN_INTERVAL_DEFAULT = Object.freeze({ '111': 6 * 3600, layer: 24 * 3600, v2: 6 * 3600 });
-// KR-14: how often each keeper's preview is read and decided, RUNBOOK cadence rows (111 hourly, LAYER daily cron,
-// v2 hourly cron). the loop itself ticks every INTERVAL_SECONDS to settle and replace a tx in flight
-export const CHECK_INTERVAL_DEFAULT = Object.freeze({ '111': 3600, layer: 24 * 3600, v2: 3600 });
+export const MIN_RUN_INTERVAL_DEFAULT = Object.freeze({ '111': 6 * 3600, layer: 24 * 3600 });
+// KR-14: how often each keeper's preview is read and decided, RUNBOOK cadence rows (111 hourly, LAYER daily cron).
+// the loop itself ticks every INTERVAL_SECONDS to settle and replace a tx in flight
+export const CHECK_INTERVAL_DEFAULT = Object.freeze({ '111': 3600, layer: 24 * 3600 });
 // KR-14 value vs gas rule (runbook: skip when pending is worth less than the gas unless the timer is due). typical
-// gas of one run, not the limit: 111 measured 870k, v2 unmeasured (v1 figures plus room)
-export const EXPECTED_GAS = Object.freeze({ '111': 900_000n, layer: 900_000n, v2: 1_200_000n });
+// gas of one run, not the limit: 111 measured 870k
+export const EXPECTED_GAS = Object.freeze({ '111': 900_000n, layer: 900_000n });
 // KR-09: privileged eoas the hot key must never be, whatever the registry says (owner of nearly everything and the
 // ui protocol payout). OWNER_ADDRESS env adds one more
 export const DEFAULT_OWNER = '0xCB43078C32423F5348Cab5885911C3B5faE217F9';
 export const REFUSED_KEYS = Object.freeze([DEFAULT_OWNER, '0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4']);
-export const KEEPER_IDS = Object.freeze(['111', 'layer', 'v2']);
+export const KEEPER_IDS = Object.freeze(['111', 'layer']);
 export const MAX_SLIPPAGE_BPS = 1000; // same bound as script/v2/RunKeeper*.s.sol
 
 export const KEEPER_NAMES = Object.freeze({
   '111': 'CollectFlushKeeperV1',
   layer: 'CollectFlushKeeperLayer',
-  v2: 'ArtCoinsKeeperV2',
 });
 
 export class ConfigError extends Error {}
@@ -128,17 +127,12 @@ export function loadConfig(env = process.env, reg = readRegistry(env.REGISTRY_PA
   }
 
   const enabled = new Set(csv(env.KEEPERS ?? KEEPER_IDS.join(',')));
-  for (const k of enabled) if (!KEEPER_IDS.includes(k)) fail(`KEEPERS: unknown keeper ${k} (111, layer, v2)`);
+  for (const k of enabled) if (!KEEPER_IDS.includes(k)) fail(`KEEPERS: unknown keeper ${k} (111, layer)`);
 
   // env overrides the registry until the keepers are recorded there (RUNBOOK actions 3 and 2b)
   const k111 = envAddress(env, 'KEEPER_111') ?? findContract(reg, KEEPER_NAMES['111']);
   const kLayer = envAddress(env, 'KEEPER_LAYER') ?? findContract(reg, KEEPER_NAMES.layer);
 
-  // v2: only when a deployed v2 stack exists. coins are the registry coins with stack "v2"
-  const v2Stack = reg.stacks?.v2;
-  const v2Live = Boolean(v2Stack && v2Stack.status !== 'planned');
-  const kV2 = v2Live ? envAddress(env, 'KEEPER_V2') ?? findContract(reg, KEEPER_NAMES.v2, 'v2') : null;
-  const v2Coins = v2Live ? (reg.coins || []).filter((c) => c.stack === 'v2' && c.address).map((c) => ({ symbol: c.symbol, address: getAddress(c.address) })) : [];
 
   const common = (id) => ({
     gas: GAS_LIMIT[id],
@@ -150,16 +144,11 @@ export function loadConfig(env = process.env, reg = readRegistry(env.REGISTRY_PA
   const keepers = [];
   if (enabled.has('111')) keepers.push({ id: '111', kind: '111', address: k111, ...common('111') });
   if (enabled.has('layer')) keepers.push({ id: 'layer', kind: 'layer', address: kLayer, ...common('layer') });
-  if (enabled.has('v2')) {
-    for (const coin of v2Coins) {
-      keepers.push({ id: `v2:${coin.symbol}`, kind: 'v2', address: kV2, token: coin.address, symbol: coin.symbol, ...common('v2') });
-    }
-  }
 
-  // KR-08: every keeper goes through the relay when one is set (LAYER burns and v2 converts are sandwichable too).
+  // KR-08: every keeper goes through the relay when one is set (LAYER burns are sandwichable too).
   // unknown entries are an error, not ignored
   const privateKeepers = new Set(csv(env.PRIVATE_RPC_KEEPERS ?? KEEPER_IDS.join(',')));
-  for (const k of privateKeepers) if (!KEEPER_IDS.includes(k)) fail(`PRIVATE_RPC_KEEPERS: unknown keeper ${k} (111, layer, v2)`);
+  for (const k of privateKeepers) if (!KEEPER_IDS.includes(k)) fail(`PRIVATE_RPC_KEEPERS: unknown keeper ${k} (111, layer)`);
   const privateRpcUrl = env.PRIVATE_RPC_URL || null;
   const dryRun = parseDryRun(env.DRY_RUN);
   const allowPublicMempool = env.ALLOW_PUBLIC_MEMPOOL === '1';
@@ -214,12 +203,7 @@ export function loadConfig(env = process.env, reg = readRegistry(env.REGISTRY_PA
         escrowedEth: envAmount(env, 'K111_MAX_ESCROWED_ETH', '0.05'),
       },
       layer: { combinedWeth: envAmount(env, 'KLAYER_MIN_COMBINED_WETH', '0.01') },
-      v2: {
-        accruedPaired: envAmount(env, 'KV2_MIN_PAIRED_ETH', '0.02'),
-        accruedCoin: envAmount(env, 'KV2_MIN_COIN', '10000'),
-      },
     },
-    v2: { live: v2Live, keeper: kV2, coins: v2Coins },
     keepers,
   };
 }

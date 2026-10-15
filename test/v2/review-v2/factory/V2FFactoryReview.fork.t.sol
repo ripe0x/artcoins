@@ -51,7 +51,6 @@ contract V2FFactoryReviewTest is ForkBase {
     );
     int24 internal constant START = -200_000;
     int24 internal constant TS = 200;
-    uint16 internal constant PROTOCOL_BPS = 2000;
     uint256 internal constant FEE = 0.01 ether;
     /// EIP-7825 (fusaka) per transaction gas cap on mainnet.
     uint256 internal constant TX_GAS_CAP = 16_777_216;
@@ -69,7 +68,6 @@ contract V2FFactoryReviewTest is ForkBase {
     address internal team = makeAddr("v2f.team");
     address internal alice = makeAddr("v2f.alice");
     address internal admin = makeAddr("v2f.tokenAdmin");
-    address internal project = makeAddr("v2f.project");
     address internal referrerEoa = makeAddr("v2f.referrer");
     address payable internal bounty = payable(makeAddr("v2f.bounty"));
 
@@ -83,7 +81,7 @@ contract V2FFactoryReviewTest is ForkBase {
         );
         vm.deal(alice, 100 ether);
 
-        factory = new ArtCoinsFactoryV2(address(this), POOL_MANAGER, PROTOCOL_BPS, FEE);
+        factory = new ArtCoinsFactoryV2(address(this), POOL_MANAGER, FEE);
         deployer = new ArtCoinsDeployerV2(address(factory));
         factory.setTokenDeployer(address(deployer));
 
@@ -97,9 +95,8 @@ contract V2FFactoryReviewTest is ForkBase {
             IPoolManager(POOL_MANAGER), address(this), address(escrow), address(allowlist)
         );
         require(address(hook) == at, "miner mismatch");
-        locker = new ArtCoinsLpLockerV2(address(this), POSITION_MANAGER, PERMIT2, address(escrow));
+        locker = new ArtCoinsLpLockerV2(address(this), POSITION_MANAGER, PERMIT2);
         escrow.addDepositor(address(hook), true);
-        escrow.addDepositor(address(locker), true);
         locker.setLauncher(address(factory), true);
         mev = new ArtCoinsMevLinearSkimV2(address(hook));
         vault = new ArtCoinsVaultV2(address(factory));
@@ -131,14 +128,10 @@ contract V2FFactoryReviewTest is ForkBase {
         c.pool.tickSpacing = TS;
 
         c.fee = IArtCoinsFactoryV2.FeeConfigV2({
-            lpFeePips: 5000, baselineSkimBps: 600, bountyBps: 8333, bountyRecipient: bounty
+            baselineSkimBps: 600, bountyBps: 8333, bountyRecipient: bounty
         });
 
         c.locker.locker = address(locker);
-        c.locker.rewardRecipients = new address[](1);
-        c.locker.rewardRecipients[0] = project;
-        c.locker.rewardBps = new uint16[](1);
-        c.locker.rewardBps[0] = 10_000 - PROTOCOL_BPS;
         c.locker.tickLower = new int24[](2);
         c.locker.tickUpper = new int24[](2);
         c.locker.positionBps = new uint16[](2);
@@ -213,7 +206,7 @@ contract V2FFactoryReviewTest is ForkBase {
         assertLt(total, TX_GAS_CAP);
     }
 
-    /// every cap at its maximum: strings at D30 caps, 7 reward slots, 14
+    /// every cap at its maximum: strings at D30 caps, 14
     /// positions, VENUE with 16 exempt and 32 venues, 10 extensions (9 vaults
     /// plus a dev buy). reports whether the factory accepts a config that no
     /// mainnet transaction can carry.
@@ -230,12 +223,6 @@ contract V2FFactoryReviewTest is ForkBase {
             c.token.description = _filled(4096);
         }
         if (slots) {
-            c.locker.rewardRecipients = new address[](6);
-            c.locker.rewardBps = new uint16[](6);
-            for (uint256 i; i < 6; ++i) {
-                c.locker.rewardRecipients[i] = address(uint160(0xbeef0 + i));
-                c.locker.rewardBps[i] = i == 5 ? 1335 : 1333;
-            }
             c.locker.tickLower = new int24[](14);
             c.locker.tickUpper = new int24[](14);
             c.locker.positionBps = new uint16[](14);

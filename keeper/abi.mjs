@@ -3,7 +3,6 @@ import fs from 'node:fs';
 const load = (f) => JSON.parse(fs.readFileSync(new URL(`./abi/${f}.json`, import.meta.url), 'utf8'));
 export const keeper111Abi = load('CollectFlushKeeperV1');
 export const keeperLayerAbi = load('CollectFlushKeeperLayer');
-export const keeperV2Abi = load('ArtCoinsKeeperV2');
 export const reasonsAbi = load('reasons');
 export const erc20Abi = [{ type: 'function', name: 'balanceOf', stateMutability: 'view', inputs: [{ name: 'a', type: 'address' }], outputs: [{ name: '', type: 'uint256' }] }];
-export const abiFor = (kind) => ({ '111': keeper111Abi, layer: keeperLayerAbi, v2: keeperV2Abi })[kind];
+export const abiFor = (kind) => ({ '111': keeper111Abi, layer: keeperLayerAbi })[kind];

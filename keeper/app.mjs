@@ -38,7 +38,6 @@ export async function preflight(ctx) {
   L.info('preflight ok', {
     address: io.address, rpc: new URL(cfg.rpcUrl).host, privateRpc: cfg.privateRpcUrl ? new URL(cfg.privateRpcUrl).host : null,
     keepers: cfg.keepers.map((k) => ({ id: k.id, address: k.address, token: k.token, gas: k.gas, slippageBps: k.slippageBps })),
-    v2: cfg.v2.live ? `v2 stack live, ${cfg.v2.coins.length} coins` : 'no v2 stack in the registry, v2 keeper skipped',
     dryRun: cfg.dryRun, intervalSeconds: cfg.intervalSeconds, maxGasWei: cfg.maxGasWei, requiredBalanceWei: cfg.requiredBalanceWei,
     privateKeepers: [...cfg.privateKeepers], publicMempool: cfg.allowPublicMempool, statusRoutes: Boolean(cfg.statusToken),
     cadence: cfg.keepers.map((k) => ({ id: k.id, checkIntervalSeconds: k.checkIntervalSeconds, minRunIntervalSeconds: k.minRunIntervalSeconds })),

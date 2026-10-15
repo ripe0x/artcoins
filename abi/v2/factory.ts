@@ -115,11 +115,6 @@ export const factoryV2Abi = [
             "internalType": "struct IArtCoinsFactoryV2.FeeConfigV2",
             "components": [
               {
-                "name": "lpFeePips",
-                "type": "uint24",
-                "internalType": "uint24"
-              },
-              {
                 "name": "baselineSkimBps",
                 "type": "uint24",
                 "internalType": "uint24"
@@ -145,16 +140,6 @@ export const factoryV2Abi = [
                 "name": "locker",
                 "type": "address",
                 "internalType": "address"
-              },
-              {
-                "name": "rewardRecipients",
-                "type": "address[]",
-                "internalType": "address[]"
-              },
-              {
-                "name": "rewardBps",
-                "type": "uint16[]",
-                "internalType": "uint16[]"
               },
               {
                 "name": "tickLower",
@@ -266,32 +251,6 @@ export const factoryV2Abi = [
   },
   {
     "type": "function",
-    "name": "defaultAllowed",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address[]",
-        "internalType": "address[]"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "defaultProtocolFeeBps",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "deployFee",
     "inputs": [],
     "outputs": [
@@ -397,11 +356,6 @@ export const factoryV2Abi = [
             "internalType": "struct IArtCoinsFactoryV2.FeeConfigV2",
             "components": [
               {
-                "name": "lpFeePips",
-                "type": "uint24",
-                "internalType": "uint24"
-              },
-              {
                 "name": "baselineSkimBps",
                 "type": "uint24",
                 "internalType": "uint24"
@@ -427,16 +381,6 @@ export const factoryV2Abi = [
                 "name": "locker",
                 "type": "address",
                 "internalType": "address"
-              },
-              {
-                "name": "rewardRecipients",
-                "type": "address[]",
-                "internalType": "address[]"
-              },
-              {
-                "name": "rewardBps",
-                "type": "uint16[]",
-                "internalType": "uint16[]"
               },
               {
                 "name": "tickLower",
@@ -522,241 +466,6 @@ export const factoryV2Abi = [
             ]
           }
         ]
-      }
-    ],
-    "outputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "payable"
-  },
-  {
-    "type": "function",
-    "name": "deployTokenAsOwner",
-    "inputs": [
-      {
-        "name": "c",
-        "type": "tuple",
-        "internalType": "struct IArtCoinsFactoryV2.DeploymentConfigV2",
-        "components": [
-          {
-            "name": "token",
-            "type": "tuple",
-            "internalType": "struct IArtCoinsFactoryV2.TokenConfigV2",
-            "components": [
-              {
-                "name": "tokenAdmin",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "name",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "symbol",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "salt",
-                "type": "bytes32",
-                "internalType": "bytes32"
-              },
-              {
-                "name": "image",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "description",
-                "type": "string",
-                "internalType": "string"
-              },
-              {
-                "name": "totalSupply",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "renderer",
-                "type": "address",
-                "internalType": "address"
-              }
-            ]
-          },
-          {
-            "name": "pool",
-            "type": "tuple",
-            "internalType": "struct IArtCoinsFactoryV2.PoolConfigV2",
-            "components": [
-              {
-                "name": "hook",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "tickIfToken0IsCoin",
-                "type": "int24",
-                "internalType": "int24"
-              },
-              {
-                "name": "tickSpacing",
-                "type": "int24",
-                "internalType": "int24"
-              },
-              {
-                "name": "extension",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "extensionData",
-                "type": "bytes",
-                "internalType": "bytes"
-              }
-            ]
-          },
-          {
-            "name": "fee",
-            "type": "tuple",
-            "internalType": "struct IArtCoinsFactoryV2.FeeConfigV2",
-            "components": [
-              {
-                "name": "lpFeePips",
-                "type": "uint24",
-                "internalType": "uint24"
-              },
-              {
-                "name": "baselineSkimBps",
-                "type": "uint24",
-                "internalType": "uint24"
-              },
-              {
-                "name": "bountyBps",
-                "type": "uint16",
-                "internalType": "uint16"
-              },
-              {
-                "name": "bountyRecipient",
-                "type": "address",
-                "internalType": "address payable"
-              }
-            ]
-          },
-          {
-            "name": "locker",
-            "type": "tuple",
-            "internalType": "struct IArtCoinsFactoryV2.LockerConfigV2",
-            "components": [
-              {
-                "name": "locker",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "rewardRecipients",
-                "type": "address[]",
-                "internalType": "address[]"
-              },
-              {
-                "name": "rewardBps",
-                "type": "uint16[]",
-                "internalType": "uint16[]"
-              },
-              {
-                "name": "tickLower",
-                "type": "int24[]",
-                "internalType": "int24[]"
-              },
-              {
-                "name": "tickUpper",
-                "type": "int24[]",
-                "internalType": "int24[]"
-              },
-              {
-                "name": "positionBps",
-                "type": "uint16[]",
-                "internalType": "uint16[]"
-              }
-            ]
-          },
-          {
-            "name": "mev",
-            "type": "tuple",
-            "internalType": "struct IArtCoinsFactoryV2.MevConfigV2",
-            "components": [
-              {
-                "name": "module",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "startingSkimBps",
-                "type": "uint24",
-                "internalType": "uint24"
-              },
-              {
-                "name": "windowSeconds",
-                "type": "uint32",
-                "internalType": "uint32"
-              }
-            ]
-          },
-          {
-            "name": "restriction",
-            "type": "tuple",
-            "internalType": "struct IArtCoinsFactoryV2.RestrictionConfigV2",
-            "components": [
-              {
-                "name": "restricted",
-                "type": "bool",
-                "internalType": "bool"
-              },
-              {
-                "name": "allowed",
-                "type": "address[]",
-                "internalType": "address[]"
-              }
-            ]
-          },
-          {
-            "name": "extensions",
-            "type": "tuple[]",
-            "internalType": "struct IArtCoinsFactoryV2.ExtensionConfigV2[]",
-            "components": [
-              {
-                "name": "extension",
-                "type": "address",
-                "internalType": "address"
-              },
-              {
-                "name": "msgValue",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "extensionBps",
-                "type": "uint16",
-                "internalType": "uint16"
-              },
-              {
-                "name": "extensionData",
-                "type": "bytes",
-                "internalType": "bytes"
-              }
-            ]
-          }
-        ]
-      },
-      {
-        "name": "protocolBps",
-        "type": "uint16",
-        "internalType": "uint16"
       }
     ],
     "outputs": [
@@ -1090,11 +799,6 @@ export const factoryV2Abi = [
             "internalType": "struct IArtCoinsFactoryV2.FeeConfigV2",
             "components": [
               {
-                "name": "lpFeePips",
-                "type": "uint24",
-                "internalType": "uint24"
-              },
-              {
                 "name": "baselineSkimBps",
                 "type": "uint24",
                 "internalType": "uint24"
@@ -1120,16 +824,6 @@ export const factoryV2Abi = [
                 "name": "locker",
                 "type": "address",
                 "internalType": "address"
-              },
-              {
-                "name": "rewardRecipients",
-                "type": "address[]",
-                "internalType": "address[]"
-              },
-              {
-                "name": "rewardBps",
-                "type": "uint16[]",
-                "internalType": "uint16[]"
               },
               {
                 "name": "tickLower",
@@ -1264,32 +958,6 @@ export const factoryV2Abi = [
         "name": "amount",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setDefaultAllowed",
-    "inputs": [
-      {
-        "name": "accounts",
-        "type": "address[]",
-        "internalType": "address[]"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setDefaultProtocolFeeBps",
-    "inputs": [
-      {
-        "name": "bps",
-        "type": "uint16",
-        "internalType": "uint16"
       }
     ],
     "outputs": [],
@@ -1470,38 +1138,6 @@ export const factoryV2Abi = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "event",
-    "name": "DefaultAllowedSet",
-    "inputs": [
-      {
-        "name": "accounts",
-        "type": "address[]",
-        "indexed": false,
-        "internalType": "address[]"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "DefaultProtocolFeeBpsSet",
-    "inputs": [
-      {
-        "name": "oldBps",
-        "type": "uint16",
-        "indexed": false,
-        "internalType": "uint16"
-      },
-      {
-        "name": "newBps",
-        "type": "uint16",
-        "indexed": false,
-        "internalType": "uint16"
-      }
-    ],
-    "anonymous": false
   },
   {
     "type": "event",
@@ -1803,12 +1439,6 @@ export const factoryV2Abi = [
         "internalType": "address"
       },
       {
-        "name": "protocolBps",
-        "type": "uint16",
-        "indexed": false,
-        "internalType": "uint16"
-      },
-      {
         "name": "poolSupply",
         "type": "uint256",
         "indexed": false,
@@ -1911,11 +1541,6 @@ export const factoryV2Abi = [
             "internalType": "struct IArtCoinsFactoryV2.FeeConfigV2",
             "components": [
               {
-                "name": "lpFeePips",
-                "type": "uint24",
-                "internalType": "uint24"
-              },
-              {
                 "name": "baselineSkimBps",
                 "type": "uint24",
                 "internalType": "uint24"
@@ -1941,16 +1566,6 @@ export const factoryV2Abi = [
                 "name": "locker",
                 "type": "address",
                 "internalType": "address"
-              },
-              {
-                "name": "rewardRecipients",
-                "type": "address[]",
-                "internalType": "address[]"
-              },
-              {
-                "name": "rewardBps",
-                "type": "uint16[]",
-                "internalType": "uint16[]"
               },
               {
                 "name": "tickLower",
@@ -2134,17 +1749,6 @@ export const factoryV2Abi = [
   },
   {
     "type": "error",
-    "name": "HookEscrowNotSet",
-    "inputs": [
-      {
-        "name": "hook",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "HookNotEnabled",
     "inputs": []
   },
@@ -2193,11 +1797,6 @@ export const factoryV2Abi = [
   {
     "type": "error",
     "name": "InvalidRestrictionConfig",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InvalidRewardSlots",
     "inputs": []
   },
   {
@@ -2278,16 +1877,6 @@ export const factoryV2Abi = [
         "internalType": "address"
       }
     ]
-  },
-  {
-    "type": "error",
-    "name": "ProjectSideBpsMismatch",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "ProtocolFeeBpsTooHigh",
-    "inputs": []
   },
   {
     "type": "error",

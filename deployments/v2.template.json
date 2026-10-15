@@ -99,7 +99,7 @@
       "status": "planned",
       "provenance": "planned",
       "chainVerified": false,
-      "notes": "keeper reward 0 bps (D28)"
+      "notes": "pure lock: launch positions, no fee path (D92)"
     },
     {
       "name": "ArtCoinsMevLinearSkimV2",
@@ -209,29 +209,7 @@
       "status": "planned",
       "provenance": "planned",
       "chainVerified": false,
-      "notes": "factory protocolRecipient, treasury OWNER, 9000/1000 treasury/burn"
-    },
-    {
-      "name": "ArtCoinsKeeperV2",
-      "address": null,
-      "stack": "v2",
-      "role": "other",
-      "deployBlock": null,
-      "deployTxHash": null,
-      "deployedAt": null,
-      "deployer": null,
-      "source": {
-        "repoPath": "src/v2/keepers/ArtCoinsKeeperV2.sol",
-        "commit": null,
-        "bytecodeMatch": "unverified"
-      },
-      "etherscanVerified": "unknown",
-      "owner": null,
-      "state": "unknown",
-      "status": "planned",
-      "provenance": "planned",
-      "chainVerified": false,
-      "notes": "stateless keeper bound to the factory, ownerless"
+      "notes": "factory protocolRecipient, treasury 0x41c3, 8000/2000 treasury/LAYER burn"
     }
   ],
   "coins": []

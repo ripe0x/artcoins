@@ -65,18 +65,10 @@ abstract contract TokenV2Base is Test {
         internal
         returns (ArtCoinsTokenV2 token)
     {
-        return _newToken(restricted, allowed, new address[](0));
-    }
-
-    function _newToken(bool restricted, address[] memory allowed, address[] memory pinned)
-        internal
-        returns (ArtCoinsTokenV2 token)
-    {
         token = new ArtCoinsTokenV2(
             _tokenConfig(),
             Constants.DEFAULT_TOKEN_SUPPLY,
             _restriction(restricted, allowed),
-            pinned,
             _canon(),
             address(this)
         );
@@ -271,16 +263,16 @@ contract TokenV2Test is TokenV2Base {
         ArtCoinsTokenV2 token = _restricted(new address[](0));
         vm.prank(address(0xDEAD));
         vm.expectRevert(IArtCoinsTokenV2.NotAdmin.selector);
-        token.lockAllowlist();
+        token.lock();
 
-        token.lockAllowlist();
-        assertTrue(token.allowlistLocked());
-        vm.expectRevert(IArtCoinsTokenV2.AllowlistAlreadyLocked.selector);
+        token.lock();
+        assertTrue(token.locked());
+        vm.expectRevert(IArtCoinsTokenV2.CoinLocked.selector);
         token.setAllowed(address(0xA11CE), true);
-        vm.expectRevert(IArtCoinsTokenV2.AllowlistAlreadyLocked.selector);
+        vm.expectRevert(IArtCoinsTokenV2.CoinLocked.selector);
         token.unrestrict();
-        vm.expectRevert(IArtCoinsTokenV2.AllowlistAlreadyLocked.selector);
-        token.lockAllowlist();
+        vm.expectRevert(IArtCoinsTokenV2.CoinLocked.selector);
+        token.lock();
     }
 
     function test_constructor_unrestrictedRejectsAllowlist() public {
@@ -337,7 +329,6 @@ contract TokenV2Test is TokenV2Base {
             t,
             Constants.DEFAULT_TOKEN_SUPPLY,
             _restriction(false, new address[](0)),
-            new address[](0),
             _canon(),
             address(this)
         );
@@ -369,29 +360,9 @@ contract TokenV2Test is TokenV2Base {
             t,
             Constants.DEFAULT_TOKEN_SUPPLY,
             _restriction(false, new address[](0)),
-            new address[](0),
             bad,
             address(this)
         );
-    }
-
-    function test_pinned_cannotBeRemoved() public {
-        address keep = address(0xACE1);
-        address user = address(0xACE2);
-        address[] memory allowed = new address[](2);
-        allowed[0] = keep;
-        allowed[1] = user;
-        ArtCoinsTokenV2 token = _newToken(true, allowed, _one(keep)); // keep is pinned
-        assertTrue(token.isPinned(keep));
-        assertFalse(token.isPinned(user));
-        // a pinned entry cannot be removed
-        vm.expectRevert(abi.encodeWithSelector(IArtCoinsTokenV2.AllowedPinned.selector, keep));
-        token.setAllowed(keep, false);
-        // a non pinned entry can be removed, and re-adding a pinned is fine
-        token.setAllowed(user, false);
-        assertFalse(token.isAllowed(user));
-        token.setAllowed(keep, true);
-        assertTrue(token.isAllowed(keep));
     }
 
     // ── deployer ─────────────────────────────────────────────────────────
@@ -399,14 +370,11 @@ contract TokenV2Test is TokenV2Base {
     function test_deployer_predictMatchesDeploy() public {
         IArtCoinsFactoryV2.TokenConfigV2 memory t = _tokenConfig();
         IArtCoinsFactoryV2.RestrictionConfigV2 memory r = _restriction(false, new address[](0));
-        address[] memory pinned = new address[](0);
         bytes32 salt = keccak256("t1");
-        address predicted = deployer.predict(
-            t, Constants.DEFAULT_TOKEN_SUPPLY, r, pinned, _canon(), address(this), salt
-        );
-        address token = deployer.deploy(
-            t, Constants.DEFAULT_TOKEN_SUPPLY, r, pinned, _canon(), address(this), salt
-        );
+        address predicted =
+            deployer.predict(t, Constants.DEFAULT_TOKEN_SUPPLY, r, _canon(), address(this), salt);
+        address token =
+            deployer.deploy(t, Constants.DEFAULT_TOKEN_SUPPLY, r, _canon(), address(this), salt);
         assertEq(token, predicted);
     }
 
@@ -415,15 +383,7 @@ contract TokenV2Test is TokenV2Base {
         IArtCoinsFactoryV2.RestrictionConfigV2 memory r = _restriction(false, new address[](0));
         vm.prank(address(0xDEAD));
         vm.expectRevert(ArtCoinsDeployerV2.NotFactory.selector);
-        deployer.deploy(
-            t,
-            Constants.DEFAULT_TOKEN_SUPPLY,
-            r,
-            new address[](0),
-            _canon(),
-            address(this),
-            bytes32(0)
-        );
+        deployer.deploy(t, Constants.DEFAULT_TOKEN_SUPPLY, r, _canon(), address(this), bytes32(0));
     }
 
     function test_constantsHash_matches() public view {

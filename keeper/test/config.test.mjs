@@ -1,23 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { getAddress, parseEther } from 'viem';
-import { loadConfig, findContract, ConfigError, GAS_LIMIT } from '../config.mjs';
-import { realRegistry, registryWithV2, baseEnv, tmpDir, TEST_KEY, K111, KLAYER, KV2, COIN_V2 } from './helpers.mjs';
+import { loadConfig, findContract, ConfigError } from '../config.mjs';
+import { realRegistry, baseEnv, tmpDir, TEST_KEY, K111, KLAYER } from './helpers.mjs';
 
 // the owner eoa's key is not known here: emulate by making the test key's address the registry owner
 const TEST_ADDR = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
 
-test('defaults: fixed gas limits, slippage 100 / 200, thresholds, rpc fallback, no v2 stack', () => {
+test('defaults: fixed gas limits, slippage 100 / 200, thresholds, rpc fallback', () => {
   const cfg = loadConfig(baseEnv(tmpDir()), realRegistry());
   assert.equal(cfg.rpcUrl, 'https://mainnet.gateway.tenderly.co');
   assert.deepEqual(cfg.keepers.map((k) => [k.id, k.address, k.gas, k.slippageBps]), [
     ['111', K111, 1_200_000n, 100],
     ['layer', KLAYER, 3_500_000n, 200],
   ]);
-  assert.equal(cfg.v2.live, false);
   assert.equal(cfg.maxGasWei, 14_000_000_000n);
   assert.equal(cfg.intervalSeconds, 600);
-  // KR-01 / KR-14 cadence: checks 111 hourly, LAYER daily, v2 hourly; runs at most every 6 h, 24 h, 6 h
+  // KR-01 / KR-14 cadence: checks 111 hourly, LAYER daily; runs at most every 6 h, 24 h
   assert.deepEqual(cfg.keepers.map((k) => [k.id, k.checkIntervalSeconds, k.minRunIntervalSeconds]), [['111', 3600, 21600], ['layer', 86400, 86400]]);
   assert.equal(cfg.progressMinBps, 5000);
   assert.equal(cfg.maxImpactBps, 100);
@@ -30,9 +29,8 @@ test('defaults: fixed gas limits, slippage 100 / 200, thresholds, rpc fallback, 
   assert.equal(cfg.thresholds['111'].uncollectedCoin, 10_000n * 10n ** 18n);
   assert.equal(cfg.thresholds['111'].escrowedEth, parseEther('0.05'));
   assert.equal(cfg.thresholds.layer.combinedWeth, parseEther('0.01'));
-  assert.deepEqual([...cfg.privateKeepers], ['111', 'layer', 'v2']);
+  assert.deepEqual([...cfg.privateKeepers], ['111', 'layer']);
   assert.equal(cfg.statusToken, null);
-  assert.equal(GAS_LIMIT.v2, 2_000_000n);
 });
 
 test('env overrides thresholds and slippage, global and per keeper', () => {
@@ -87,14 +85,9 @@ test('keeper addresses come from the registry when recorded, env overrides', () 
   assert.throws(() => findContract(reg, 'CollectFlushKeeperV1'), /2 live/);
 });
 
-test('v2: skipped without a deployed v2 stack, one keeper per v2 coin when present', () => {
-  assert.equal(loadConfig(baseEnv(tmpDir()), registryWithV2({ status: 'planned' })).v2.live, false);
-  const cfg = loadConfig(baseEnv(tmpDir()), registryWithV2());
-  const v2 = cfg.keepers.filter((k) => k.kind === 'v2');
-  assert.deepEqual(v2.map((k) => [k.id, k.address, k.token, k.gas, k.slippageBps]), [['v2:CRED', KV2, COIN_V2, 2_000_000n, 100]]);
-  const only = loadConfig(baseEnv(tmpDir(), { KEEPERS: 'v2' }), registryWithV2());
-  assert.deepEqual(only.keepers.map((k) => k.id), ['v2:CRED']);
+test('KEEPERS rejects unknown keeper ids, including the removed v2', () => {
   assert.throws(() => loadConfig(baseEnv(tmpDir(), { KEEPERS: '111,foo' }), realRegistry()), /unknown keeper/);
+  assert.throws(() => loadConfig(baseEnv(tmpDir(), { KEEPERS: 'v2' }), realRegistry()), /unknown keeper/);
 });
 
 // KR-07: anything but unset, empty, "0" or "false" is a dry run
@@ -114,7 +107,7 @@ test('KR-08 111 live without PRIVATE_RPC_URL refuses to start unless ALLOW_PUBLI
   assert.throws(() => loadConfig(env({ PRIVATE_RPC_URL: 'https://rpc.flashbots.net/fast', PRIVATE_RPC_KEEPERS: 'layer' }), realRegistry()), /PRIVATE_RPC_URL/);
   assert.throws(() => loadConfig(env({ PRIVATE_RPC_URL: 'https://rpc.flashbots.net/fast', PRIVATE_RPC_KEEPERS: 'v2:CRED' }), realRegistry()), /unknown keeper/);
   const ok = loadConfig(env({ PRIVATE_RPC_URL: 'https://rpc.flashbots.net/fast' }), realRegistry());
-  assert.deepEqual([...ok.privateKeepers], ['111', 'layer', 'v2']);
+  assert.deepEqual([...ok.privateKeepers], ['111', 'layer']);
   assert.equal(loadConfig(env({ ALLOW_PUBLIC_MEMPOOL: '1' }), realRegistry()).allowPublicMempool, true);
   assert.equal(loadConfig(env({ DRY_RUN: '1' }), realRegistry()).dryRun, true); // dry run sends nothing
   assert.equal(loadConfig(env({ KEEPERS: 'layer' }), realRegistry()).keepers.length, 1); // no 111, no rule

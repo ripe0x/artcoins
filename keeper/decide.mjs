@@ -1,5 +1,5 @@
 // Pure decision and quote math. No network, no clocks: callers pass `now` (unix seconds).
-// Rules: docs/v2/RUNBOOK.md part 1 action 3 (111), action 2b (LAYER), part 2 2b keeper table (v2 coins).
+// Rules: docs/v2/RUNBOOK.md part 1 action 3 (111), action 2b (LAYER).
 
 export const BPS = 10_000n;
 const E18 = 10n ** 18n;
@@ -39,16 +39,6 @@ export function combinedLayerWeth(p, controllerWeth) {
   return p.routerWeth[0] + p.claimable[3] + ((p.claimable[1] + controllerWeth) * 4n) / 10n;
 }
 
-/// v2 coin: run when the fee swappers hold more than 0.02 eth or 10,000 coin (held plus escrowed), or weekly.
-/// uncollected lp fees are not readable through the v2 locker, so the weekly timer is what collects them.
-export function decideV2(p, t, timer) {
-  const reasons = [];
-  if (p.accruedPaired > t.accruedPaired) reasons.push('accrued_paired');
-  if (p.accruedCoin > t.accruedCoin) reasons.push('accrued_coin');
-  if (weeklyDue(timer.lastRunAt, timer.now, timer.weeklySeconds)) reasons.push('weekly');
-  return { run: reasons.length > 0, reasons, alerts: [] };
-}
-
 /// Fee caps for one tx. Skips (ok false) when base fee plus priority is above `capWei`: a tx priced under the
 /// base fee would sit unmined and block the next tick. Otherwise maxFee = min(2 * base + priority, cap).
 export function feeCaps({ baseFeePerGas, priorityEstimate, capWei, maxPriorityWei }) {
@@ -62,7 +52,7 @@ export function feeCaps({ baseFeePerGas, priorityEstimate, capWei, maxPriorityWe
   return { ok: true, maxFeePerGas, maxPriorityFeePerGas: priority, baseFeePerGas, capWei };
 }
 
-/// 111 and v2 minOut: the simulated convert output at minOut 0 minus slippage (RunKeeper111.quoteMinOut)
+/// 111 minOut: the simulated convert output at minOut 0 minus slippage (RunKeeper111.quoteMinOut)
 export function minOutFromSim(converted, slippageBps) {
   return (converted * (BPS - BigInt(slippageBps))) / BPS;
 }
@@ -192,32 +182,6 @@ export function argsLayer(sim, slippageBps, m, preview, impactBps = 100) {
   return { ...detail, ...q, rate: q.minOut, args: q.status === 'ok' ? [true, q.minOut, true] : [false, 0n, true] };
 }
 
-/// v2 call args from the `SwapperServiced(token, swapper, flushed, converted)` events of a simulated
-/// `collectAndForward(token, true, 0)` and the per swapper market read (KR-03). The keeper passes one minOut to every
-/// swapper, so each converting swapper gets its own floor (its pending coin capped at its `maxStepIn`, at its
-/// pool's spot net of fees), minOut is the largest floor, and doConvert is true only when every converting swapper's
-/// simulated output clears it. Otherwise doConvert false and `blockedBy` names the swapper; a later run converts
-/// once the swappers' steps line up (pacing, a drained step). `null` events (no simulation) mean doConvert false.
-export function argsV2(token, servicedEvents, slippageBps, m, impactBps = 100) {
-  if (!servicedEvents) return { args: [token, false, 0n], status: 'no_sim' };
-  const converting = servicedEvents.filter((e) => e.converted > 0n);
-  if (converting.length === 0) return { args: [token, false, 0n], status: 'no_convert' };
-  if (!m || !m.swappers) return { args: [token, false, 0n], status: 'no_quote' };
-  const per = [];
-  for (const e of converting) {
-    const sw = m.swappers.find((x) => x.address.toLowerCase() === e.swapper.toLowerCase());
-    const amountIn = sw ? min(sw.accruedCoin, sw.maxStepIn || sw.accruedCoin) : 0n;
-    const spotNet = sw ? spotNetOut(amountIn, sw, false) : 0n; // v2 pools: eth is currency0, the coin currency1
-    per.push({ swapper: e.swapper, simulated: e.converted, ...floorQuote(e.converted, spotNet, slippageBps, impactBps) });
-  }
-  const missing = per.find((p) => p.status === 'no_quote');
-  if (missing) return { args: [token, false, 0n], status: 'no_quote', blockedBy: missing.swapper, swappers: per };
-  const minOut = per.reduce((a, p) => max(a, p.minOut), 0n);
-  const blocked = per.find((p) => p.simulated < minOut);
-  if (blocked) return { args: [token, false, 0n], status: 'floor_above_quote', blockedBy: blocked.swapper, minOut, swappers: per };
-  return { args: [token, true, minOut], status: 'ok', minOut, swappers: per };
-}
-
 // ── progress, backoff and value rules (KR-01, KR-14) ────────────────────────────────────────────────────
 
 /// the preview metric behind each threshold reason. `weekly` has none (it never counts for progress)
@@ -232,9 +196,6 @@ export function triggerMetrics(kind, reasons, p) {
       const m = /^router(\d)_due$/.exec(r);
       if (m) out[r] = p.routerWeth[Number(m[1])];
       if (r === 'combined_weth') out[r] = combinedLayerWeth(p, p.controllerWeth ?? 0n);
-    } else {
-      if (r === 'accrued_paired') out[r] = p.accruedPaired;
-      if (r === 'accrued_coin') out[r] = p.accruedCoin;
     }
   }
   return out;
@@ -260,17 +221,12 @@ export function nextBackoff(prevSeconds, minS, maxS) {
 }
 
 /// value of what a run moves, in wei, for the value vs gas rule. 111: eth uncollected and escrowed plus the
-/// coin (uncollected plus held) at spot net of fees. v2: accrued eth plus each swapper's coin at spot. LAYER: null
+/// coin (uncollected plus held) at spot net of fees. LAYER: null
 /// (the runbook rule is the thresholds). coin without a market read counts 0
 export function pendingValueWei(kind, p, m) {
   if (kind === '111') {
     const coin = m ? spotNetOut(p.uncollectedCoin + p.swapperCoin, m, m.coinIsToken0 ?? false) : 0n;
     return p.uncollectedEth + p.escrowedEth + coin;
-  }
-  if (kind === 'v2') {
-    let coin = 0n;
-    for (const sw of m?.swappers || []) coin += spotNetOut(sw.accruedCoin, sw, false);
-    return p.accruedPaired + coin;
   }
   return null;
 }

@@ -34,10 +34,10 @@ you are taking over the artcoins v2 project from the cloud session that built it
 |---|---|
 | registry | deployments/mainnet.json verified on chain (56 contracts, 2 coins, 0 drift), profile aware bytecode compare, readme / AGENTS.md / ui / 32 scripts read from it via generated files |
 | system review | docs/v2/SYSTEM-REVIEW.md: 8 area reviews with 70 v1 proof tests on a fork, second pass on v2 (38 findings, all resolved or accepted), external review 1 |
-| v2 stack | factory, deployer, token (NONE / VENUE / HARD tax modes), hook, locker, escrow, fee delivery, mev skim module, fee swapper, burn router, fee controller, airdrop, vault, dev buy, renderers, three keepers. 589 fork and unit tests at block 26130269 |
+| v2 stack | factory, deployer, token (NONE / VENUE / HARD tax modes), hook, locker, escrow, fee delivery, mev skim module, burn router, fee controller, airdrop, vault, dev buy, renderers (9 deployed contracts after D92; the fee swapper and the v2 keeper are deleted). 589 fork and unit tests at block 26130269 |
 | deploy tooling | script/v2/DeployV2Lib.sol, DeployV2Stack.s.sol, LaunchV2Coin.s.sol, verify-v2.sh, README.md; fork dry run passes every post deploy assert |
 | runbook | docs/v2/RUNBOOK.md: 11 owner actions, each simulated; v2 rollout order; 15 gate public checklist |
-| keepers | on chain helpers src/v2/keepers/CollectFlushKeeperV1.sol (111), CollectFlushKeeperLayer.sol (optional, D64), ArtCoinsKeeperV2.sol (v2 coins); hosted runner keeper/ for fly.io (`KEEPERS=111,v2`, independently reviewed, 70 tests) |
+| keepers | on chain helpers src/v2/keepers/CollectFlushKeeperV1.sol (111), CollectFlushKeeperLayer.sol (optional, D64); the v2 stack needs a bot step for `ProtocolFeeControllerV2.processFees()` and `BurnRouterV2.processBurn(minOut)`; hosted runner keeper/ for fly.io (`KEEPERS=111`, independently reviewed; the v2 steps run in the LAYER bot, D92) |
 | ui | v2 abis and encoder, factory validators mirrored, browser e2e on an anvil fork (19/19), six bugs fixed; waits for v2 addresses |
 
 ## open items, in order
@@ -48,13 +48,13 @@ you are taking over the artcoins v2 project from the cloud session that built it
 | 2 | create and push the audit tags: `git tag -a v2-audit-1 9fed001 -m "external review target 1"`, `git tag -a v2-audit-2 d8575db -m "external review target 2: review 1 corrections"`, `git push origin v2-audit-1 v2-audit-2` | you | AUDIT-BRIEF.md |
 | 3 | reviewer recheck of `src/Constants.sol` and `src/v2/protocol-fee/BurnRouterV2.sol` between the two tags | owner sends | external-review-1.md |
 | 4 | record the deployed keepers (`KEEPER_111`, optional `KEEPER_LAYER`) in deployments/mainnet.json with role `keeper`, regenerate: `cd script-js && npm run gen:addresses && node verify-registry.mjs --build --require-artifacts`, commit | you, after step 1 | registry-notes.md |
-| 5 | fly runner: `fly launch` per keeper/README.md with `KEEPERS=111,v2`, `DRY_RUN=1` first, then live; `KEEPER_PRIVATE_KEY` from the `artcoins-keeper` keystore into fly secrets. LAYER stays with the existing `layer-keeper` in new-material (D64) | owner runs fly, you prepare | keeper/README.md, D62, D64 |
+| 5 | fly runner: `fly launch` per keeper/README.md with `KEEPERS=111`, `DRY_RUN=1` first, then live; `KEEPER_PRIVATE_KEY` from the `artcoins-keeper` keystore into fly secrets. LAYER stays with the existing `layer-keeper` in new-material (D64) | owner runs fly, you prepare | keeper/README.md, D62, D64 |
 | 6 | delete the public copy: branch `v2` and pr #34 on ripe0x/artcoins | owner | D63 |
 | 7 | decisions the owner has not answered yet: D26 (public exposure, now moot once step 6 is done), D7, D41/D60, D46, D58 (behavior changing). if any is overruled, implement, retest, retag `v2-audit-3` | owner, then you | DECISIONS.md |
-| 8 | check the credits engine treasury against docs/v2/CREDITS-ENGINE-INTERFACE.md (the bundle was never available; the interface is from assumptions). if the treasury needs something the interface does not give, change the hook delivery or swapper, retest | owner provides the bundle, you check | CREDITS-ENGINE-INTERFACE.md |
+| 8 | check the credits engine treasury against docs/v2/CREDITS-ENGINE-INTERFACE.md (the bundle was never available; the interface is from assumptions). if the treasury needs something the interface does not give, change the hook delivery, retest | owner provides the bundle, you check | CREDITS-ENGINE-INTERFACE.md |
 | 9 | ci secrets on the private repo: `MAINNET_RPC_URL` is set; add `ETHERSCAN_API_KEY` | owner | registry.yml, verify-v2.sh |
 | 10 | mainnet deploy: RUNBOOK part 2a. `FOUNDRY_PROFILE=ci forge script script/v2/DeployV2Stack.s.sol --rpc-url $ETH_RPC_URL --sender $OWNER` dry run, then the owner broadcasts with `--account ripe0x --broadcast --slow`; `acceptOwnership` on escrow, hook, locker, factory; `script/v2/verify-v2.sh`; fill deployments/v2.template.json into mainnet.json as stack `v2`; verifier; commit | owner broadcasts, you drive | RUNBOOK 2a, script/v2/README.md |
-| 11 | first coin via `deployTokenAsOwner` while the factory is deprecated; pre launch `addDepositor(feeSwapper)`; one keeper run; add the coin to the registry | owner broadcasts, you drive | RUNBOOK 2b |
+| 11 | first coin via `deployToken` (owner calls it while the factory is deprecated); one `processFees()` and `processBurn(minOut)` run; add the coin to the registry | owner broadcasts, you drive | RUNBOOK 2b |
 | 12 | site (ripe0x/new-material): bump the artcoins submodule pin, regenerate its abi and deployments mirrors, deploy the site | you | ripe0x/new-material |
 | 13 | `setDeprecated(false)` last, after the 15 gates in RUNBOOK 2c | owner | RUNBOOK 2c |
 
@@ -62,8 +62,8 @@ you are taking over the artcoins v2 project from the cloud session that built it
 
 | group | command | expected |
 |---|---|---|
-| v2 unit, no fork | `forge test --match-path "test/v2/**" --match-contract "^(EscrowV2Test|FeeDeliveryTest|TokenV2Test|ConstantsV2Test|MevLinearSkimV2Test|KeeperV2Test|ProtocolFeeControllerV2Test|RendererV2Test|AirdropV2Test|VaultV2Test)$"` | 238 pass |
-| v2 tree, fork | `FOUNDRY_PROFILE=ci forge test --match-path "test/v2/**" --fork-url $ETH_RPC_URL --fork-block-number 26130269 --fork-retries 8 --fork-retry-backoff 2000 --no-match-contract "^(EscrowV2Test|FeeDeliveryTest|TokenV2Test|ConstantsV2Test|MevLinearSkimV2Test|KeeperV2Test|ProtocolFeeControllerV2Test|RendererV2Test|AirdropV2Test|VaultV2Test)$"` | 364 pass |
+| v2 unit, no fork | `forge test --match-path "test/v2/**" --match-contract "^(EscrowV2Test|FeeDeliveryTest|TokenV2Test|ConstantsV2Test|MevLinearSkimV2Test|ProtocolFeeControllerV2Test|RendererV2Test|AirdropV2Test|VaultV2Test)$"` | 238 pass |
+| v2 tree, fork | `FOUNDRY_PROFILE=ci forge test --match-path "test/v2/**" --fork-url $ETH_RPC_URL --fork-block-number 26130269 --fork-retries 8 --fork-retry-backoff 2000 --no-match-contract "^(EscrowV2Test|FeeDeliveryTest|TokenV2Test|ConstantsV2Test|MevLinearSkimV2Test|ProtocolFeeControllerV2Test|RendererV2Test|AirdropV2Test|VaultV2Test)$"` | 364 pass |
 | deploy rehearsal | `FOUNDRY_PROFILE=ci forge test --match-path "test/v2/DeployV2Stack.fork.t.sol" --fork-url $ETH_RPC_URL --fork-block-number 26130269 -vv` | 6 pass |
 | review proofs | `forge test --match-path "test/v2/{review,review-v2}/**" --fork-url $ETH_RPC_URL --fork-block-number 26130269 --fork-retries 8 --fork-retry-backoff 2000` | 101 pass |
 | keeper runner | `cd keeper && npm ci && npm test` | 70 pass |

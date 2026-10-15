@@ -31,6 +31,8 @@ const TARGETS = [
   ['v2', 'devBuy', 'IArtCoinsUniv4EthDevBuyV2.sol', 'IArtCoinsUniv4EthDevBuyV2', 'devBuyV2Abi'],
   ['v2', 'vault', 'IArtCoinsVaultV2.sol', 'IArtCoinsVaultV2', 'vaultV2Abi'],
   ['v2', 'airdrop', 'IArtCoinsAirdropV2.sol', 'IArtCoinsAirdropV2', 'airdropV2Abi'],
+  ['v2', 'protocolFeeController', 'IProtocolFeeControllerV2.sol', 'IProtocolFeeControllerV2', 'protocolFeeControllerV2Abi'],
+  ['v2', 'burnRouter', 'IBurnRouterV2.sol', 'IBurnRouterV2', 'burnRouterV2Abi'],
   ['v1', 'factory', 'ArtCoinsFactory.sol', 'ArtCoinsFactory', 'factoryV1Abi'],
   ['v1', 'hook', 'ArtCoinsHookSkimFee.sol', 'ArtCoinsHookSkimFee', 'hookV1Abi'],
   ['v1', 'token', 'ArtCoinsToken.sol', 'ArtCoinsToken', 'tokenV1Abi'],

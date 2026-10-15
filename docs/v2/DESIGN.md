@@ -2,13 +2,15 @@
 
 status: architect draft for the build agents. scope: contracts, interfaces, constants, work breakdown. source of truth for v1 behavior is `src/` at commit `8f8c62a`. no `docs/v2/review/*.md` existed while this was written; reviewers should diff their findings against section 3 and file anything missing as a new open decision.
 
+D92 (2026-10-14) supersedes the parts of this draft that describe the fee swapper, the v2 keeper, locker rewards, the pool lp fee, `deployTokenAsOwner`, protocol bps, `pinned`, `lockAllowlist` and `lockRecipients`. the current shape is in docs/v2/DECISIONS.md D92 and `src/v2`.
+
 chain facts below were read with `cast call` against mainnet on 2026-10-06 (read only). everything else is from code.
 
 | live fact | value |
 |---|---|
-| current factory 0x4959…4e0e | owner 0xCB43…17F9, deprecated, deployFee 0.069 eth, defaultProtocolFeeBps 2000, teamFeeRecipient 0xCB43…17F9 |
+| current factory 0x4959…4e0e | owner 0xCB43…17F9, deprecated, deployFee 0.069 eth, default protocol fee 2000 bps, teamFeeRecipient 0xCB43…17F9 |
 | current skim hook 0x636c…a9cc | factory 0x4959…, feeEscrow 0x7559…, extension allowlist 0xd6D5…e6E8, runtime 20,612 bytes, `initializePoolOpen` present (open pools enabled, cannot be disabled) |
-| current locker 0x866e…6aab | keeperRewardBps 0, keeperRewardCap 0.01 eth, escrow 0x7559… |
+| current locker 0x866e…6aab | keeper reward 0 bps, keeper reward cap 0.01 eth, escrow 0x7559… |
 | escrow 0x7559…25F2 | hook and locker are depositors, eth balance 0 |
 | coin 111 0x61C9…B8ae | admin 0xA96a…6258, tax on, taxBps 1500, taxBpsMax 2000, tax sink 0xf5c3…8753 (a contract, not a burn address), supply 1.11e9, renderer 0x7604…eEc7 |
 | 111 pool | eth/111, dynamic fee, tickSpacing 200, poolId 0xf860…f795, 111 is token1, 14 lp positions |
@@ -25,21 +27,20 @@ v1 sources under `src/` stay frozen as the record of deployed bytecode. all v2 c
 | role | v1 (current stack, coin 111) | v2 | kind |
 |---|---|---|---|
 | constants | `SkimFeeConstants` (one value), literals duplicated per contract | `src/Constants.sol`, every v2 contract exposes `constantsHash()` and checks it at wiring | new |
-| factory | `ArtCoinsFactory` owner + admins, 3 deploy entrypoints, protocol bps override public | `src/v2/ArtCoinsFactoryV2.sol`, single owner (Ownable2Step), one `deployToken(DeploymentConfigV2)`, owner only override | rewrite |
+| factory | `ArtCoinsFactory` owner + admins, 3 deploy entrypoints, protocol bps override public | `src/v2/ArtCoinsFactoryV2.sol`, single owner (Ownable2Step), one `deployToken(DeploymentConfigV2)`, the owner calls it while `deprecated` | rewrite |
 | deployer | `ArtCoinsDeployer`, salt = (tokenAdmin, salt) | `src/v2/utils/ArtCoinsDeployerV2.sol`, salt = (sender, configHash) | fix |
 | token | `ArtCoinsToken`, venue tax, frozen venue set | `src/v2/ArtCoinsTokenV2.sol`, tax mode NONE / VENUE / HARD, add only venues, version tag, surfaced sink | rewrite |
 | hook | `ArtCoinsHookSkimFee` on `ArtCoinsHook` base (sniper path, lp fee mev, open pools, extension swapping) | `src/v2/hooks/ArtCoinsHookV2.sol` hot path + `HookColdModule.sol` (immutable delegate), skim only | rewrite |
 | static fee hook | `ArtCoinsHookStaticFee` | dropped | drop |
-| locker | `ArtCoinsLpLocker`, slot admins can repoint recipients, deposits to escrow | `src/v2/lp-lockers/ArtCoinsLpLockerV2.sol`, recipients frozen, push with escrow fallback | modify |
+| locker | `ArtCoinsLpLocker`, slot admins can repoint recipients, deposits to escrow | `src/v2/lp-lockers/ArtCoinsLpLockerV2.sol`, pure lock (D92): holds the position NFTs, no fee collection | modify |
 | escrow | `ArtCoinsFeeEscrow`, add only depositors, permissionless claim | `src/v2/ArtCoinsFeeEscrowV2.sol`, core depositors, `selfClaimOnly` opt in, rescue of unowed excess | modify |
 | delivery | inline per contract | `src/v2/libraries/FeeDelivery.sol` (internal lib) | new |
 | mev | `ArtCoinsMevLinearSkim` (180m cap) + lp fee modules capped by hook at 15m | `src/v2/mev-modules/ArtCoinsMevLinearSkimV2.sol`, cap from Constants; lp fee modules not shipped | modify |
-| fee swapper | `FeeAutoSwapper`, no owner, bookkeeping based flush | `src/v2/FeeAutoSwapperV2.sol`, owner tunables in bounds, balance based flush, rescue | modify |
 | burn router | `BurnRouter` (weth, LAYER only), loopable clamp | `src/v2/protocol-fee/BurnRouterV2.sol`, native eth, one burn per block, reward on consumed | modify |
 | protocol fee controller | `ProtocolFeeController`, immutable split | `src/v2/protocol-fee/ProtocolFeeControllerV2.sol`, owner split in bounds, rescue | modify |
 | extension allowlist | `ArtCoinsPoolExtensionAllowlist` | reused contract, new instance, hook pointer owner settable | keep |
 | renderers | `DynamicBlockRenderer`, `ExampleOnChainRenderer`, `LiquidityLayerSpriteRenderer` (raw svg text, quadratic concat) | `src/v2/renderer/*V2.sol` + `SvgText.sol` | fix |
-| keepers | none | `src/v2/keepers/CollectFlushKeeperV1.sol` (coin 111, current stack), `ArtCoinsKeeperV2.sol` | new |
+| keepers | none | `src/v2/keepers/CollectFlushKeeperV1.sol` (coin 111, current stack) | new |
 | version | none | `Constants.STACK_VERSION = 2` on token, hook pool registry, factory | new |
 
 ## 2. frozen vs owner mutable boundary
@@ -54,27 +55,22 @@ rule: per coin state is written once inside the launch tx and has no writer afte
 | token | venue set | venueAdmin, add only, renounceable | can only widen fee dodge coverage, never open a hole |
 | token | metadata, image, renderer pointer, admin | token admin | cosmetic, as v1 |
 | token | launcher, launcherVersion | nobody | integrator version tag |
-| hook (per pool) | artCoinIsToken0, locker, mevModule, createdAt, skim rates and caps (lpFee, baselineSkimBps, bountyBps, maxReferralBpsOfVolume), protocolRecipient, referralPayout, quote, restricted, extension, launcher, version | nobody | fee rates, caps and the protocol/referral recipients fixed. lpFee may be 0 (D76) |
-| hook (per pool) | bountyRecipient | coin admin, until recipients locked or admin renounced (D76) | the coin admin moves its own recipient; the rejected set mirrors the factory launch checks |
+| hook (per pool) | artCoinIsToken0, locker, mevModule, createdAt, skim rates and caps (baselineSkimBps, bountyBps), protocolRecipient, referralPayout, quote, restricted, extension, launcher, version | nobody | fee caps and the protocol recipient fixed. the pool lp fee is 0 (D92) |
+| hook (per pool) | bountyRecipient | coin admin, until the coin is locked (`lock()`) or the admin renounced (D76) | the coin admin moves its own recipient; the rejected set mirrors the factory launch checks |
 | hook (global) | launchers allowlist | owner | factory side is replaceable; a new factory must be able to init pools |
 | hook (global) | feeEscrow pointer | owner | escrow is replaceable; only affects where failed pushes land from now on |
 | hook (global) | extensionAllowlist pointer | owner | affects new pools only (checked at init) |
 | hook | rescue eth, erc20, erc6909 claims | owner | hook holds nothing between swaps by invariant, so any balance is stray |
-| locker (per coin) | poolKey, positionIds, numPositions, rewardBps, the protocol reward slot | nobody | lp lock, bps and the protocol slot fixed |
-| locker (per coin) | project reward recipients | coin admin, until recipients locked or admin renounced (D76) | collects pending fees to the old recipient first; the rejected set mirrors the launch checks |
-| locker (per coin) | liquidity | nobody | no decrease path except zero liquidity fee collection |
-| locker (global) | keeperRewardBps (<= 200), keeperRewardCap (0.001..0.05 eth) | owner | as v1 |
-| locker (global) | feeEscrow pointer, launchers allowlist | owner | replaceable modules |
+| locker (per coin) | poolKey, positionId, numPositions | nobody | lp lock |
+| locker (per coin) | liquidity | nobody | no decrease path |
+| locker (global) | launchers allowlist | owner | replaceable modules |
 | locker | rescue eth, erc20 | owner | locker holds nothing between calls; no erc721 path exists |
 | escrow | credited balances | nobody (owner cannot touch) | owed money |
 | escrow | depositors | owner adds; removes only non core | removing hook or locker would brick their fallback |
 | escrow | rescue of `balance minus totalOwed[token]` | owner | stray funds only |
 | escrow | selfClaimOnly[feeOwner] | the feeOwner | fixes third party claim stranding |
 | mev module | per pool decay config | nobody | set at init |
-| factory | everything (fees, recipients, enabled modules, pause, protocol bps, minProtocolSkimShareBps, rescue) | owner | principle 2 |
-| fee swapper | artCoin, poolKey, endRecipient | nobody | endRecipient is effectively a coin fee recipient (it sits in a frozen locker slot) |
-| fee swapper | maxSlippageBps, minBlocksBetweenConverts, maxStepIn | owner, within Constants bounds | tuning |
-| fee swapper | rescue of non paired, non artcoin tokens | owner | stray funds |
+| factory | everything (fees, recipients, enabled modules, pause, rescue) | owner | principle 2 |
 | burn router | coin, poolKey | nobody after init | |
 | burn router | minProcessThreshold, maxImpactBps (bounded) | owner | tuning |
 | protocol fee controller | treasury, burnRouter, split within MIN bounds, rescue | owner | protocol's own revenue |
@@ -86,7 +82,7 @@ rule: per coin state is written once inside the launch tx and has no writer afte
 |---|---|---|---|---|
 | current | factory 0x4959… | setDeprecated, setTeamFeeRecipient, setDefaultProtocolFeeBps, setDeployFee, setHook/Locker/MevModule/Extension, setAdmin, recoverETH, claimTeamFees | none on 111 (future deploys only) | keep deprecated; after v2 ships, `setHook(0x636c…, false)` |
 | current | hook 0x636c… | none (no owner) | n/a | token admin of 111 can still call setMaxReferralBpsOfVolume (<= 1000), setPoolExtension, lockPoolExtension, setSniperFeeRecipient (inert for skim) |
-| current | locker 0x866e… | setKeeperRewardBps (<= 2%), setKeeperRewardCap, withdrawETH, withdrawERC20 | keeper reward is taken from 111 fees | keep bps 0 or tiny; slot admin is 0x…dEaD so the 111 split is frozen |
+| current | locker 0x866e… | keeper reward bps setter (<= 2%), keeper reward cap setter, withdrawETH, withdrawERC20 | keeper reward is taken from 111 fees | keep bps 0 or tiny; slot admin is 0x…dEaD so the 111 split is frozen |
 | current | escrow 0x7559… | addDepositor (no remove) | none | do not add depositors |
 | current | fee swapper 0xeBD9… | none | eth stranded by a third party `escrow.claim(swapper, 0)` is unrecoverable | run the collect and flush keeper (section 3, d8) |
 | current | linear skim 0xb038… | none | | |
@@ -142,10 +138,13 @@ when the quote side is specified, `_beforeSwap` mints the skim S on the full abs
 | tests | `test_launch_frontrunCopiedConfig_differentAddress`, `test_launch_changedLockerConfig_differentAddress`, `test_launch_predictTokenMatches` |
 
 ### b5. fee swapper eth side fees strandable by third party escrow claim
+
+D92: the v2 fee swapper is deleted; `selfClaimOnly` on the escrow remains.
+
 `escrow.claim(feeOwner, token)` is permissionless; a third party pushes the swapper's eth to it, `flushPaired` then sees `availableFees == 0` and the eth has no exit. live 111 swapper 0xeBD9… is exposed (no sweep).
 | item | design |
 |---|---|
-| contracts | `FeeAutoSwapperV2`, `ArtCoinsFeeEscrowV2` |
+| contracts | `ArtCoinsFeeEscrowV2` (the v1 swapper at 0xeBD9… keeps the exposure) |
 | swapper | `flushPaired()`: claim if escrowed > 0, then `pairedOut = pairedBalance()` (whole native or erc20 balance; the swapper holds no paired funds between calls by invariant). `convert` forwards `received` plus any paired balance |
 | escrow | `mapping(address => bool) public selfClaimOnly; function setSelfClaimOnly(bool on) external` (msg.sender is the feeOwner). `claim` reverts `Unauthorized()` when `selfClaimOnly[feeOwner] && msg.sender != feeOwner`. swapper ctor calls `setSelfClaimOnly(true)` |
 | events | `SelfClaimOnlySet(address indexed feeOwner, bool on)` |
@@ -185,7 +184,7 @@ v1: `ArtCoinsMevLinearFees` and `ArtCoinsMevLinearSkim` accept up to 180m; the b
 | item | design |
 |---|---|
 | library | `FeeDelivery` (internal): `function sendNative(address escrow, address to, uint256 amount, uint256 gasCap) internal returns (bool pushed)`: `call{value: amount, gas: gasCap}("")`, on failure `IArtCoinsFeeEscrowV2(escrow).storeFeesNative{value: amount}(to)`. `function sendErc20(address escrow, address token, address to, uint256 amount) internal returns (bool pushed)`: low level `transfer` with success and return check, on failure approve and `storeFees` |
-| users | hook (bounty, protocol, referral legs), locker (every slot, both currencies), FeeAutoSwapperV2, ProtocolFeeControllerV2 |
+| users | hook (bounty, protocol, referral legs), ProtocolFeeControllerV2 |
 | referral | pushed straight to the referrer with the 2,300 gas stipend like the other legs, escrow on failure (D16, D59); `referralPayout` stays in the frozen config but is not called during a swap (D41) |
 | events | hook `FeeDelivered(PoolId indexed poolId, uint8 indexed leg, address indexed to, uint256 amount, bool escrowed)` replaces `LegForwarded`; locker `RewardDelivered(address indexed token, address indexed currency, address indexed to, uint256 amount, bool escrowed)` |
 | invariant | delivery never reverts its caller once the caller is a core depositor; every wei reaches `to` or `to`'s escrow balance |
@@ -226,21 +225,23 @@ b4 covers the salt. section 6 covers the event. tax sink: `TaxConfigV2.taxSink` 
 ### d7. deployment hygiene
 | item | design |
 |---|---|
-| one factory | `script/v2/DeployV2Stack.s.sol` deploys constants checked stack in one broadcast: escrow, extension allowlist, hook cold module, hook (mined salt, flags in section 5), locker, linear skim module, factory, fee delivery users (protocol fee controller, burn router), keeper. wires core depositors, launchers, enables modules, sets `deprecated = false` last |
+| one factory | `script/v2/DeployV2Stack.s.sol` deploys constants checked stack in one broadcast: escrow, extension allowlist, hook cold module, hook (mined salt, flags in section 5), locker, linear skim module, factory, fee delivery users (protocol fee controller, burn router). wires core depositors, launchers, enables modules, sets `deprecated = false` last |
 | verify | `script/v2/verify-v2.sh` runs `forge verify-contract` for every address with profile `tune`, then a fork check that the on chain runtime equals the local build (fixes the provenance gap above) |
 | superseded | registry json lists every stack with `status: active, superseded, deprecated`; owner txs: 0xf051 `setDeprecated(true)`; 0x4959 `setHook(0x636c…, false)` after v2 is live |
 | tests | `test_deployV2Stack_wiringComplete`, `test_deployV2Stack_runtimeMatchesBuild` |
 
-### d8. collect and flush keepers
-| item | coin 111, current stack | generic v2 |
-|---|---|---|
-| contract | `src/v2/keepers/CollectFlushKeeperV1.sol` | `src/v2/keepers/ArtCoinsKeeperV2.sol` |
-| immutables | `locker = 0x866e…`, `token = 0x61C9…`, `swapper = 0xeBD9…` (ctor args, pinned) | `factory` |
-| entry | `function run(bool doConvert, uint256 minOut) external returns (uint256 flushed, uint256 converted)` | `function collectAndForward(address token, bool doConvert, uint256 minOut) external` |
-| steps | 1 `locker.collectRewards(token)` (try). 2 `try swapper.flushPaired()`. 3 if `doConvert` `try swapper.convert(minOut)` (respects minBlocks 50). 4 forward the keeper's eth and coin balance to `msg.sender` | read `deploymentInfo(token).locker`, collect, then for each locker recipient that answers `supportsInterface(type(IFeeAutoSwapperV2).interfaceId)` flush and optionally convert; forward rewards |
-| holds funds | never (`receive` then forward in the same call) | never |
-| why | atomic collect then flush leaves no window between the locker's escrow deposit and the flush for a griefer's `escrow.claim(swapper, 0)` within normal mempool flow; it does not stop a griefer who acts between other txs | v2 delivery pushes, so flush is only needed after fallback deposits; convert remains needed for coin side fees |
-| tests | `test_keeperV1_111_collectFlushConvert_fork`, `test_keeperV1_nothingToFlush_noRevert` | `test_keeperV2_collectAndForward_swapperRecipient` |
+### d8. collect and flush keeper
+| item | coin 111, current stack |
+|---|---|
+| contract | `src/v2/keepers/CollectFlushKeeperV1.sol` |
+| immutables | `locker = 0x866e…`, `token = 0x61C9…`, `swapper = 0xeBD9…` (ctor args, bound) |
+| entry | `function run(bool doConvert, uint256 minOut) external returns (uint256 flushed, uint256 converted)` |
+| steps | 1 `locker.collectRewards(token)` (try). 2 `try swapper.flushPaired()`. 3 if `doConvert` `try swapper.convert(minOut)` (respects minBlocks 50). 4 forward the keeper's eth and coin balance to `msg.sender` |
+| holds funds | never (`receive` then forward in the same call) |
+| why | atomic collect then flush leaves no window between the locker's escrow deposit and the flush for a griefer's `escrow.claim(swapper, 0)` within normal mempool flow; it does not stop a griefer who acts between other txs |
+| tests | `test_keeperV1_111_collectFlushConvert_fork`, `test_keeperV1_nothingToFlush_noRevert` |
+
+the v2 stack has no keeper (D92): protocol fees leave through `ProtocolFeeControllerV2.processFees()` and `BurnRouterV2.processBurn(minOut)`.
 
 ## 4. constants file
 
@@ -264,7 +265,7 @@ library Constants {
     uint24 internal constant MAX_REFERRAL_CAP_OF_VOLUME = 1_000; // 1% of volume
     uint16 internal constant MAX_BOUNTY_BPS = 9_999;
 
-    // fee push gas cap (locker and controller; the hook pushes with zero gas)
+    // fee push gas cap (controller; the hook pushes with zero gas)
     uint32 internal constant PUSH_GAS_MAX = 150_000;
 
     // anti sniper window (module and hook agree)
@@ -274,18 +275,13 @@ library Constants {
     uint24 internal constant DEFAULT_START_SKIM_BPS = 68_690;
 
     // locker
-    uint256 internal constant MAX_REWARD_PARTICIPANTS = 7;
     uint256 internal constant MAX_LP_POSITIONS = 14;
-    uint256 internal constant LOCKER_KEEPER_BPS_MAX = 200;
-    uint256 internal constant LOCKER_KEEPER_CAP_MIN = 0.001 ether;
-    uint256 internal constant LOCKER_KEEPER_CAP_MAX = 0.05 ether;
 
     // factory
     uint256 internal constant DEFAULT_TOKEN_SUPPLY = 1_000_000_000e18;
     uint256 internal constant MIN_TOKEN_SUPPLY = 1e18;
     uint256 internal constant MAX_EXTENSIONS = 10;
     uint16 internal constant MAX_EXTENSION_BPS = 9_000;
-    uint16 internal constant MAX_PROTOCOL_FEE_BPS = 3_000;
     uint256 internal constant MAX_DEPLOY_FEE = 1 ether;
 
     // token tax
@@ -294,14 +290,8 @@ library Constants {
     uint256 internal constant MAX_TAX_EXEMPT = 16;
     address internal constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
-    // keepers, swapper, burn router
-    uint256 internal constant KEEPER_REWARD_BPS = 50;
-    uint256 internal constant KEEPER_REWARD_CAP = 0.01 ether;
+    // burn router
     uint256 internal constant SPOT_FLOOR_BPS = 8_000;
-    uint256 internal constant SWAPPER_SLIPPAGE_MIN = 50;
-    uint256 internal constant SWAPPER_SLIPPAGE_MAX = 1_000;
-    uint256 internal constant SWAPPER_MIN_BLOCKS_MIN = 1;
-    uint256 internal constant SWAPPER_MIN_BLOCKS_MAX = 50_400;
     uint16 internal constant BURN_IMPACT_MIN = 25;
     uint16 internal constant BURN_IMPACT_DEFAULT = 100;
     uint16 internal constant BURN_IMPACT_MAX = 300;
@@ -316,13 +306,12 @@ library Constants {
     uint256 internal constant RENDER_GAS_BUDGET = 8_000_000;
 
     function hash() internal pure returns (bytes32) {
-        // grouped: pool fee config, the push gas cap, launch limits, keeper.
+        // grouped: pool fee config, the push gas cap, launch limits.
         return keccak256(
             abi.encode(
-                STACK_VERSION, MAX_LP_FEE, MAX_SKIM_BPS, MAX_BASELINE_SKIM_BPS,
+                STACK_VERSION, MAX_SKIM_BPS, MAX_BASELINE_SKIM_BPS,
                 MAX_REFERRAL_CAP_OF_VOLUME, MAX_BOUNTY_BPS, MIN_MEV_WINDOW, MAX_MEV_WINDOW,
-                MAX_REWARD_PARTICIPANTS, MAX_LP_POSITIONS, MAX_PROTOCOL_FEE_BPS, MAX_ALLOWED,
-                KEEPER_REWARD_BPS, KEEPER_REWARD_CAP, SPOT_FLOOR_BPS, PUSH_GAS_MAX
+                MAX_LP_POSITIONS, MAX_ALLOWED, SPOT_FLOOR_BPS, PUSH_GAS_MAX
             )
         );
     }
@@ -382,16 +371,12 @@ struct PoolConfigV2 {
     bytes extensionData;
 }                          // paired currency is always native eth
 struct FeeConfigV2 {
-    uint24 lpFee;
     uint24 baselineSkimBps;
-    uint16 bountyBps;      // factory enforces <= BPS minus minProtocolSkimShareBps
-    uint24 maxReferralBpsOfVolume;
+    uint16 bountyBps;      // <= MAX_BOUNTY_BPS
     address payable bountyRecipient;
-}                          // protocolRecipient and referralPayout are injected by the factory
+}                          // protocolRecipient is injected by the factory
 struct LockerConfigV2 {
     address locker;
-    address[] rewardRecipients;  // project slots; factory appends the protocol slot
-    uint16[] rewardBps;
     int24[] tickLower;
     int24[] tickUpper;
     uint16[] positionBps;
@@ -427,7 +412,6 @@ struct DeploymentConfigV2 {
 }
 
 function deployToken(DeploymentConfigV2 calldata c) external payable returns (address token);
-function deployTokenAsOwner(DeploymentConfigV2 calldata c, uint16 protocolBps) external payable returns (address token);
 
 event TokenCreatedV2(
     address indexed sender,
@@ -436,15 +420,13 @@ event TokenCreatedV2(
     uint16 stackVersion,
     bytes32 configHash,
     address protocolRecipient,
-    address referralPayout,
-    uint16 protocolBps,
     uint256 poolSupply,
     uint256 extensionsSupply,
     DeploymentConfigV2 config
 );
 ```
 
-notes: the whole config is emitted, so an indexer can rebuild every frozen field from one log. `deployTokenAsOwner` is the only path that overrides protocol bps (v1 let any caller pass 0 on an open factory).
+notes: the whole config is emitted, so an indexer can rebuild every frozen field from one log.
 
 ## 7. credits engine coin: interface changes
 
@@ -455,7 +437,6 @@ the treasury is the fee recipient. it may or may not implement `IPreSwapStream`,
 | `IPreSwapStream.streamForward()` probe | high level call, all gas, return decoded outside try: eoa or empty fallback with >= 0.01 eth bricks swaps | low level, gas capped (`preSwapStreamGas`), return ignored, only if code and balance >= `preSwapStreamMin` | optional. if implemented: finish under the gas cap, never touch the PoolManager, no reliance on the return value |
 | bounty leg | push all gas, revert swap on failure | push with `pushGas`, escrow on failure, `FeeDelivered` event | `receive` or payable fallback under `pushGas` (default 50k). otherwise funds sit in escrow under the treasury |
 | escrow fallback | n/a | `claim(treasury, address(0))` permissionless unless the treasury opts into `selfClaimOnly` | nothing if its fallback is payable; anyone can push the balance. a treasury that cannot receive plain eth must call `claimTo` itself |
-| locker rewards | escrow deposit, pull | push with fallback, both currencies | eth via plain transfer. coin side arrives as erc20 with no callback; to receive only eth, put a `FeeAutoSwapperV2` (endRecipient = treasury) in that slot |
 | weth | lp side paid weth on weth pools | v2 pools are native eth only, nothing pays weth | wrap itself if it wants weth |
 | protocol and referral legs | deployer chosen | factory injected | none |
 | tax proceeds | arbitrary sink | `taxSink` is DEAD or the bounty recipient | if the treasury is the sink it receives the coin by erc20 transfer |
@@ -469,13 +450,13 @@ v1 files are read only for every package. each package owns its files and its fo
 
 | pkg | owner files | depends on | deliverable |
 |---|---|---|---|
-| a0 constants and interfaces | `src/Constants.sol`, `src/v2/interfaces/*` (`IArtCoinsHookV2`, `IArtCoinsTokenV2`, `IArtCoinsFactoryV2` with section 6 structs, `IArtCoinsLpLockerV2`, `IArtCoinsFeeEscrowV2`, `IFeeAutoSwapperV2`, `IConstantsBound`), `test/v2/ConstantsV2.t.sol` | none | lands first, frozen after review |
+| a0 constants and interfaces | `src/Constants.sol`, `src/v2/interfaces/*` (`IArtCoinsHookV2`, `IArtCoinsTokenV2`, `IArtCoinsFactoryV2` with section 6 structs, `IArtCoinsLpLockerV2`, `IArtCoinsFeeEscrowV2`, `IConstantsBound`), `test/v2/ConstantsV2.t.sol` | none | lands first, frozen after review |
 | t1 token and deployer | `src/v2/ArtCoinsTokenV2.sol`, `src/v2/utils/ArtCoinsDeployerV2.sol`, `test/v2/TokenV2*.fork.t.sol` | a0 | b1 token half, d2 token, d4, d6 |
 | h1 hook | `src/v2/hooks/ArtCoinsHookV2.sol`, `HookColdModule.sol`, `HookStorage.sol`, `test/v2/HookV2*.fork.t.sol`, size gate in `foundry.toml` ci profile comment | a0, t1 interface | b1 hook half, b2, b3, b7 hook half, d1 hook, d2 hook, d3, section 5 measured |
 | l1 locker, escrow, delivery | `src/v2/lp-lockers/ArtCoinsLpLockerV2.sol`, `src/v2/ArtCoinsFeeEscrowV2.sol`, `src/v2/libraries/FeeDelivery.sol`, `test/v2/LockerV2*.fork.t.sol`, `test/v2/EscrowV2*.fork.t.sol` | a0 | b5 escrow half, d1 |
 | m1 mev | `src/v2/mev-modules/ArtCoinsMevLinearSkimV2.sol`, tests | a0 | b7 module half |
-| p1 periphery | `src/v2/FeeAutoSwapperV2.sol`, `src/v2/protocol-fee/BurnRouterV2.sol`, `src/v2/protocol-fee/ProtocolFeeControllerV2.sol`, tests | a0, l1 (FeeDelivery) | b5 swapper half, b6 |
-| k1 keepers | `src/v2/keepers/*`, `test/v2/KeeperV1_111.fork.t.sol`, `test/v2/KeeperV2.fork.t.sol` | a0 (v1 keeper has no v2 deps, can ship first) | d8 |
+| p1 periphery | `src/v2/protocol-fee/BurnRouterV2.sol`, `src/v2/protocol-fee/ProtocolFeeControllerV2.sol`, tests | a0, l1 (FeeDelivery) | b6 |
+| k1 keepers | `src/v2/keepers/*`, `test/v2/KeeperV1_111.fork.t.sol` | a0 (v1 keeper has no v2 deps, can ship first) | d8 |
 | r1 renderers | `src/v2/renderer/*`, tests | a0 | b8 |
 | f1 factory | `src/v2/ArtCoinsFactoryV2.sol`, `test/v2/FactoryV2*.fork.t.sol` | a0, t1, h1, l1, m1 | b4, d3 factory half, d4, section 6 |
 | s1 deploy | `script/v2/DeployV2Stack.s.sol`, `script/v2/verify-v2.sh`, `test/v2/DeployV2Stack.fork.t.sol`, `test/v2/harness/ForkStack.sol` additions | all contracts | d7 |
@@ -488,7 +469,6 @@ integration order: a0, then t1 h1 l1 m1 p1 k1 r1 in parallel (k1 v1 helper may d
 
 | # | decision | recommendation | alternative |
 |---|---|---|---|
-| 1 | locker reward recipients after launch | frozen, slot admins removed | keep slot admins (v1) |
 | 2 | pool extension after launch | frozen at launch | token admin swap and lock (v1) |
 | 3 | referral cap after launch | frozen | token admin within 1% (v1) |
 | 4 | tax rate | token admin within frozen cap | frozen rate |
@@ -506,6 +486,6 @@ integration order: a0, then t1 h1 l1 m1 p1 k1 r1 in parallel (k1 v1 helper may d
 | 16 | owner key handling | Ownable2Step on every owned v2 contract | plain Ownable |
 | 17 | LAYER legacy `protocolFeeNumerator` | leave 0, document | none (cannot be removed) |
 | 18 | hard mode erc6909 residual | accept and document | block via extra hook logic on other pools (impossible) |
-| 19 | escrow depositor removal | core depositors (hook, locker) cannot be removed | free removal (can brick fallback) |
+| 19 | escrow depositor removal | core depositors (hook) cannot be removed | free removal (can brick fallback) |
 | 20 | v1 lp fee mev modules | not shipped in v2 | port them with a hook fee path (costs size) |
 | 21 | push gas default | 50k (v1 forward gas was 35k) | 35k |

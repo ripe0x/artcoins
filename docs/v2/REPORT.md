@@ -1,6 +1,6 @@
 # artcoins v2: report for the owner
 
-branch `v2`, draft pr https://github.com/ripe0x/artcoins/pull/34. nothing deployed, nothing broadcast, no key used. 59 decisions logged in docs/v2/DECISIONS.md. this is not a formal audit.
+branch `v2`, draft pr https://github.com/ripe0x/artcoins/pull/34. nothing deployed, nothing broadcast, no key used. D92 (2026-10-14) removed the fee swapper, the v2 keeper, locker rewards and the pool lp fee after this report was written; rows that cite them describe the state at review time. 59 decisions logged in docs/v2/DECISIONS.md. this is not a formal audit.
 
 ## read first
 
@@ -98,7 +98,7 @@ this is still not a formal audit; two independent passes by subagents with proof
 
 ## credits engine interface changes
 
-docs/v2/CREDITS-ENGINE-INTERFACE.md. in short: `streamForward` is never called; fees arrive by a 2,300 gas push or sit in the escrow for anyone to `claim(treasury, 0)`; coin side rewards need a `FeeAutoSwapperV2` slot registered as an escrow depositor; the treasury must be on the exempt allowlist if it is to hold the coin untaxed; the referral payout is the escrow; pools are native eth only.
+docs/v2/CREDITS-ENGINE-INTERFACE.md. in short: `streamForward` is never called; fees arrive by a 2,300 gas push or sit in the escrow for anyone to `claim(treasury, 0)`; the treasury must be on the exempt allowlist if it is to hold the coin untaxed; the referral payout is the escrow; pools are native eth only.
 
 
 ## addendum after the morning review (wave 4)
@@ -130,6 +130,6 @@ docs/v2/CREDITS-ENGINE-INTERFACE.md. in short: `streamForward` is never called; 
 | 3 | external review of the hook and the HARD mode token (gate 5 and 6) |
 | 4 | ci green on github (note: a cold full tree compile needs ~14 gb; warm in batches or raise the runner) |
 | 5 | `FOUNDRY_PROFILE=ci forge script script/v2/DeployV2Stack.s.sol --rpc-url $MAINNET_RPC_URL --sender $OWNER` dry run, then `--ledger --broadcast`, `acceptOwnership` x4, `script/v2/verify-v2.sh`, fill deployments/v2.template.json into mainnet.json, `node script-js/verify-registry.mjs` |
-| 6 | pre launch owner calls for the credits engine coin: `setExemptAllowed(treasury)` if needed, `addDepositor(feeSwapper)`; then `LaunchV2Coin.s.sol` dry run and broadcast with `deployTokenAsOwner` while deprecated; run the v2 keeper once |
+| 6 | `LaunchV2Coin.s.sol` dry run and broadcast for the credits engine coin (`deployToken`, the owner calls it while deprecated); run `processFees()` and `processBurn(minOut)` once |
 | 7 | ui: set the v2 stack (`VITE_V2_*` or the generator), run a fork launch and a referred swap through it |
 | 8 | `setDeprecated(false)` last, after the 14 gates in RUNBOOK part 2c |
