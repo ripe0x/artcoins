@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {Test, console2} from "forge-std/Test.sol";
+import {console2} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
 
 import {Addresses} from "../../../script/Addresses.sol";
@@ -10,60 +10,28 @@ import {IArtCoinsFactoryV2} from "../../../src/v2/interfaces/IArtCoinsFactoryV2.
 import {IArtCoinsFeeEscrowV2} from "../../../src/v2/interfaces/IArtCoinsFeeEscrowV2.sol";
 import {IArtCoinsHookV2} from "../../../src/v2/interfaces/IArtCoinsHookV2.sol";
 import {IArtCoinsLpLockerV2} from "../../../src/v2/interfaces/IArtCoinsLpLockerV2.sol";
+import {BurnRouterV2} from "../../../src/v2/protocol-fee/BurnRouterV2.sol";
+import {ProtocolFeeControllerV2} from "../../../src/v2/protocol-fee/ProtocolFeeControllerV2.sol";
+import {FcRejecter, FcTreasury, RehearsalFlow} from "./RehearsalFlow.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
-struct FcExactIn {
-    PoolKey poolKey;
-    bool zeroForOne;
-    uint128 amountIn;
-    uint128 amountOutMinimum;
-    bytes hookData;
-}
-
-interface IFcUniversalRouter {
-    function execute(bytes calldata commands, bytes[] calldata inputs, uint256 deadline)
-        external
-        payable;
-}
-
-interface IFcPermit2 {
-    function approve(address token, address spender, uint160 amount, uint48 expiration) external;
-}
-
-/// Treasury stand in: accepts eth within the 2300 gas stipend.
-contract FcTreasury {
-    receive() external payable {}
-}
-
-/// Recipient that reverts on eth, so the hook falls back to the escrow.
-contract FcRejecter {
-    function claimTo(IArtCoinsFeeEscrowV2 e, address to) external {
-        e.claimTo(address(this), address(0), payable(to));
-    }
-}
-
 /// @notice Rehearsal of RUNBOOK 2b steps 3 to 6 against the deployed v2 stack.
 ///         Env: MAINNET_RPC_URL (default tenderly public), FORK_BLOCK (default
 ///         latest at or after the deploy block; must be >= 26_157_260).
-contract FirstCoinRehearsal is Test {
+contract FirstCoinRehearsal is RehearsalFlow {
     using PoolIdLibrary for PoolKey;
 
-    address internal constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
-    address internal constant UNIVERSAL_ROUTER = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af;
     address internal constant OWNER = 0xCB43078C32423F5348Cab5885911C3B5faE217F9;
-    uint256 internal constant TX_CAP = 16_700_000;
 
     bool internal onFork;
     IArtCoinsFactoryV2 internal factory = IArtCoinsFactoryV2(Addresses.V2_FACTORY);
     IArtCoinsFeeEscrowV2 internal escrow = IArtCoinsFeeEscrowV2(Addresses.V2_ESCROW);
     address internal alice = makeAddr("alice");
     address internal bob = makeAddr("bob");
-
-    receive() external payable {}
 
     function setUp() public {
         string memory rpc =
@@ -106,8 +74,8 @@ contract FirstCoinRehearsal is Test {
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
         console2.log("launch gas", g);
-        console2.log("launch gas headroom to 16.7M cap", TX_CAP > g ? TX_CAP - g : 0);
-        assertLt(g, TX_CAP, "launch gas above tx cap");
+        console2.log("launch gas headroom to 16.7M cap", FC_TX_CAP > g ? FC_TX_CAP - g : 0);
+        assertLt(g, FC_TX_CAP, "launch gas above tx cap");
         assertEq(token, predicted, "token != predicted");
         PoolId pid = LaunchV2Lib.checkLaunched(t, l, token);
         assertTrue(factory.isCoin(token), "isCoin");
@@ -133,63 +101,6 @@ contract FirstCoinRehearsal is Test {
         return false;
     }
 
-    // ── swaps through the live universal router ───────────────────────────
-
-    function _buy(PoolKey memory key, uint256 ethIn) internal returns (uint256 got) {
-        address coin = Currency.unwrap(key.currency1);
-        bytes memory actions = abi.encodePacked(uint8(0x06), uint8(0x0c), uint8(0x0f));
-        bytes[] memory params = new bytes[](3);
-        params[0] = abi.encode(FcExactIn(key, true, uint128(ethIn), 0, ""));
-        params[1] = abi.encode(key.currency0, ethIn);
-        params[2] = abi.encode(key.currency1, uint256(0));
-        bytes[] memory inputs = new bytes[](2);
-        inputs[0] = abi.encode(actions, params);
-        inputs[1] = abi.encode(address(0), address(this), uint256(0));
-        vm.deal(address(this), address(this).balance + ethIn);
-        uint256 c0 = IERC20(coin).balanceOf(address(this));
-        uint256 g = gasleft();
-        IFcUniversalRouter(UNIVERSAL_ROUTER).execute{value: ethIn}(
-            abi.encodePacked(uint8(0x10), uint8(0x04)), inputs, block.timestamp
-        );
-        g -= gasleft();
-        got = IERC20(coin).balanceOf(address(this)) - c0;
-        console2.log("buy gas", g);
-        assertGt(got, 0, "buy got nothing");
-    }
-
-    function _sell(PoolKey memory key, uint256 coinIn) internal returns (uint256 got) {
-        address coin = Currency.unwrap(key.currency1);
-        IERC20(coin).approve(PERMIT2, type(uint256).max);
-        IFcPermit2(PERMIT2)
-            .approve(coin, UNIVERSAL_ROUTER, type(uint160).max, uint48(block.timestamp + 1 days));
-        bytes memory actions = abi.encodePacked(uint8(0x06), uint8(0x0c), uint8(0x0f));
-        bytes[] memory params = new bytes[](3);
-        params[0] = abi.encode(FcExactIn(key, false, uint128(coinIn), 0, ""));
-        params[1] = abi.encode(key.currency1, coinIn);
-        params[2] = abi.encode(key.currency0, uint256(0));
-        bytes[] memory inputs = new bytes[](1);
-        inputs[0] = abi.encode(actions, params);
-        uint256 e0 = address(this).balance;
-        uint256 g = gasleft();
-        IFcUniversalRouter(UNIVERSAL_ROUTER)
-            .execute(abi.encodePacked(uint8(0x10)), inputs, block.timestamp);
-        g -= gasleft();
-        got = address(this).balance - e0;
-        console2.log("sell gas", g);
-        assertGt(got, 0, "sell got nothing");
-    }
-
-    function _flow(PoolKey memory key, address token) internal returns (uint256 coinHeld) {
-        // inside the anti sniper window
-        _buy(key, 0.5 ether);
-        // after the window
-        vm.warp(block.timestamp + 5000);
-        vm.roll(block.number + 400);
-        _buy(key, 0.5 ether);
-        coinHeld = IERC20(token).balanceOf(address(this));
-        _sell(key, coinHeld / 4);
-    }
-
     // ── tests ─────────────────────────────────────────────────────────────
 
     function test_credits_plainTreasury() public {
@@ -198,7 +109,7 @@ contract FirstCoinRehearsal is Test {
             _launch("script/v2/launch-configs/example.json", treasury);
         assertFalse(_restricted(token), "not restricted");
         uint256 t0 = treasury.balance;
-        _flow(key, token);
+        _flow(key, token, "");
         uint256 t1 = treasury.balance;
         console2.log("treasury eth after swaps (bounty pushes)", t1 - t0);
         assertGt(t1, t0, "bounty pushed");
@@ -213,7 +124,7 @@ contract FirstCoinRehearsal is Test {
         FcRejecter rej = new FcRejecter();
         (address token, PoolKey memory key,) =
             _launch("script/v2/launch-configs/example.json", address(rej));
-        _flow(key, token);
+        _flow(key, token, "");
         uint256 credit1 = escrow.balances(address(rej), address(0));
         console2.log("escrow credit after swaps", credit1);
         assertGt(credit1, 0, "bounty credited to escrow");
@@ -223,12 +134,32 @@ contract FirstCoinRehearsal is Test {
         assertEq(escrow.balances(address(rej), address(0)), 0, "credit cleared");
     }
 
+    /// @notice RUNBOOK gate 7 in full against the deployed stack: launch config hash and event,
+    ///         gas, extensions, Universal Router legs with a refund address, escrow claim,
+    ///         `processFees()` split, `processBurn(minOut)`.
+    function test_gate7_fullSequence() public {
+        Rig memory r = Rig({
+            factory: factory,
+            hook: Addresses.V2_HOOK,
+            locker: Addresses.V2_LOCKER,
+            mev: Addresses.V2_MEV_MODULE,
+            escrow: escrow,
+            controller: ProtocolFeeControllerV2(payable(Addresses.V2_PROTOCOL_FEE_CONTROLLER)),
+            router: BurnRouterV2(payable(Addresses.V2_BURN_ROUTER)),
+            layer: Addresses.COIN_LAYER,
+            launcher: OWNER
+        });
+        LaunchV2Lib.Launch memory l =
+            LaunchV2Lib.parse(vm.readFile("script/v2/launch-configs/example.json"), _target());
+        _rehearse(r, l);
+    }
+
     function test_restricted() public {
         address treasury = address(new FcTreasury());
         (address token, PoolKey memory key,) =
             _launch("script/v2/launch-configs/example-restricted.json", treasury);
         assertTrue(_restricted(token), "restricted");
-        uint256 held = _flow(key, token);
+        uint256 held = _flow(key, token, "");
         assertGt(held, 0);
         // wallet to wallet transfer between two EOAs reverts
         vm.prank(address(this));

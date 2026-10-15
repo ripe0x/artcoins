@@ -292,12 +292,12 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     error TeamFeeRecipientNotSet();
     /// @notice An eth transfer failed.
     error NativeTransferFailed();
-    /// @notice A fee recipient is a contract with no way to receive eth or claim
-    ///         an escrow credit: the factory, the coin, the PoolManager, the
-    ///         launch's hook, locker, locker PositionManager, hook fee escrow,
-    ///         token deployer, mev module, pool extension, or a launch extension
-    ///         in the config, or an extension ever enabled. The bounty recipient also
-    ///         cannot be `protocolRecipient`. Other contract recipients are the chooser's
+    /// @notice A fee recipient is a contract that can neither receive eth nor claim an escrow credit.
+    /// @dev    The reject set: the factory, the coin, the PoolManager, the launch's hook,
+    ///         locker, locker PositionManager, token deployer, mev module and pool extension,
+    ///         any fee escrow the hook has used (current or former), a launch extension in
+    ///         the config and any extension ever enabled. The bounty recipient also cannot
+    ///         be `protocolRecipient`. Other contract recipients are the chooser's
     ///         responsibility: the hook pushes with 2,300 gas and falls back to an escrow
     ///         credit the recipient must claim.
     error RecipientCannotReceive(address recipient);

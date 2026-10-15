@@ -7,11 +7,12 @@ pragma solidity ^0.8.26;
 ///           hookData = abi.encode(SwapData{bytes mevModuleSwapData, bytes poolExtensionSwapData})
 ///           mevModuleSwapData = "" or abi.encode(address refundTo)
 ///           poolExtensionSwapData = "" or abi.encode(address referrer, bytes extensionPayload)
-/// @dev    Never reverts: every offset and length is checked against the
+/// @dev    The parser never reverts: every offset and length is checked against the
 ///         calldata bounds before it is used, every sum is bounded by a small
 ///         multiple of `hookData.length`, so no checked arithmetic can
-///         overflow. Malformed input yields an empty extension payload and/or
-///         a zero referrer, never a swap revert. A referrer word with dirty
+///         overflow. Malformed input yields an empty extension payload, a zero
+///         referrer and a zero refund address. The hook decides what a zero
+///         value means for the swap. A referrer word with dirty
 ///         high bits, or an inner layout other than (address, bytes), yields a
 ///         zero referrer.
 library HookCalldata {
@@ -45,13 +46,11 @@ library HookCalldata {
         referrer = address(uint160(ref));
     }
 
-    /// @notice Optional refund address for the unfilled skim of a price
-    ///         limited swap: `mevModuleSwapData == abi.encode(address)`
-    ///         (exactly 32 bytes, clean high bits). Missing or
-    ///         malformed data returns zero. A charged partial quote fill then
-    ///         reverts `RefundAddressRequired`.
-    /// @dev    The refund is the swapper's own over charge, so the address needs no
-    ///         authorization. Never reverts: same bounds checks as `decode`.
+    /// @notice Parses the optional refund address out of `mevModuleSwapData`.
+    /// @dev    A valid refund address is `abi.encode(address)`: exactly 32 bytes with
+    ///         clean high bits. Other data returns zero, and a charged partial quote
+    ///         fill then reverts `RefundAddressRequired` in the hook. The refund is the
+    ///         swapper's own over charge, so the address needs no authorization.
     /// @param d The swap `hookData`.
     /// @return to The refund address, or 0.
     function refundTo(bytes calldata d) internal pure returns (address to) {

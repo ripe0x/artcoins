@@ -13,8 +13,9 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 ///         fee. The keeper reward, paid in eth, is `keeperTip` plus the burn's gas at the
 ///         basefee, capped at `rewardMaxBps` of the weth consumed, and zero when the basefee
 ///         is above `rewardMaxBaseFee`. The impact cap, the floor and every reward value are
-///         owner tunable within Constants bounds. The pool hook's `protocolFeeNumerator` must
-///         stay 0, otherwise the fee on the full input of a partial fill counts against the floor.
+///         owner tunable within Constants bounds. A nonzero hook `protocolFee` is charged on the
+///         full input of an exact input swap and reduces the weth the floor prices at spot.
+///         The deployment keeps the hook's `protocolFeeNumerator` at 0.
 interface IBurnRouterV2 {
     /// @notice A burn completed.
     /// @param caller Keeper that called the burn.
@@ -122,12 +123,19 @@ interface IBurnRouterV2 {
     ///         the pool's hook when it exposes a per direction fee (`pairedFee`), else from the pool.
     function poolBuyFeePips() external view returns (uint24);
 
-    /// @notice Minimum coin output a burn enforces for `wethIn` wei consumed at the current spot:
+    /// @notice Minimum coin output of a full fill that consumes `wethIn` wei at the current spot:
     ///         spot output, net of `poolBuyFeePips` and the hook's `protocolFee()` charge on
-    ///         the input, times `spotFloorBps`.
-    /// @dev The effective minimum is `max(minOut, floorFor(consumed))`.
+    ///         `wethIn`, times `spotFloorBps`.
+    /// @dev Equals `floorForPartial(wethIn, wethIn)`. The effective minimum is `max(minOut, floor)`.
     /// @param wethIn Weth consumed, in wei.
     function floorFor(uint256 wethIn) external view returns (uint256);
+
+    /// @notice Minimum coin output a burn enforces when it offers `budget` and consumes `consumed`.
+    /// @dev The hook charge is taken on `budget`, the weth priced at spot is `consumed` less that
+    ///      charge. Equals `floorFor(consumed)` when `consumed == budget`.
+    /// @param budget Weth offered to the swap, in wei.
+    /// @param consumed Weth the swap consumed, in wei.
+    function floorForPartial(uint256 budget, uint256 consumed) external view returns (uint256);
 
     /// @notice Keeper reward in wei: zero when `baseFee > rewardMaxBaseFee`, else
     ///         `min(keeperTip + gasUsed * baseFee, consumed * rewardMaxBps / 10,000)`.

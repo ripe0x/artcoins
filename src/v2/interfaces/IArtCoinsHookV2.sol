@@ -25,10 +25,10 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 ///         Swap `hookData` is optional. Malformed data supplies no referrer, and a
 ///         charged partial quote fill requires a valid refund address:
 ///           abi.encode(bytes mevModuleSwapData, bytes poolExtensionSwapData)
-///         mevModuleSwapData is empty or exactly 32 bytes, abi.encode(address
-///         refundTo), with clean high 12 bytes (`HookCalldata.refundTo`). A quote
-///         specified swap that fills partially reverts `RefundAddressRequired`
-///         without a valid refundTo.
+///         A valid mevModuleSwapData is abi.encode(address refundTo): exactly 32
+///         bytes with clean high 12 bytes (`HookCalldata.refundTo`). Other lengths
+///         carry no refund address. A quote specified swap that fills partially
+///         reverts `RefundAddressRequired` without a valid refundTo.
 ///         poolExtensionSwapData is empty or abi.encode(address referrer,
 ///         bytes extensionPayload) and goes whole to the pool extension. The
 ///         referrer is paid `referralBps` of the swap volume out of the protocol
@@ -299,7 +299,7 @@ interface IArtCoinsHookV2 is IConstantsBound {
     error EscrowNotCoreDepositor(address escrow);
 
     /// @notice A recipient cannot hold a fee: the coin, this hook, the PoolManager,
-    ///         a fee escrow this hook has used, the pool's mev module, locker or
+    ///         a fee escrow this hook has used (`everFeeEscrow`), the pool's mev module, locker or
     ///         pool extension, any launch extension the factory has ever enabled,
     ///         the coin's launcher, its token deployer or the locker's PositionManager.
     ///         Also reverts when a skim recipient is this hook or the PoolManager at
@@ -334,11 +334,10 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @notice Creates and registers the pool, initializes it in the PoolManager
     ///         and writes the pool record and skim config.
     /// @dev    Callable by allowlisted launchers. The locker and the mev module (when
-    ///         set) must report this build's `constantsHash()`. Reverts with
-    ///         `NotLauncher`, `ZeroAddress`, `ConstantsMismatch`, `BaselineSkimOutOfBounds`,
-    ///         `BountyBpsTooHigh`, `BountyRecipientZero`, `ProtocolRecipientZero`,
-    ///         `RecipientCannotReceive`, `CanonicalHookMismatch`, `ExtensionNotAllowed`
-    ///         or `EscrowNotCoreDepositor`.
+    ///         set) must report this build's `constantsHash()`. Reverts `NotLauncher`,
+    ///         `ZeroAddress`, `ConstantsMismatch`, `BaselineSkimOutOfBounds`, `BountyBpsTooHigh`,
+    ///         `BountyRecipientZero`, `ProtocolRecipientZero`, `RecipientCannotReceive`,
+    ///         `CanonicalHookMismatch`, `ExtensionNotAllowed` or `EscrowNotCoreDepositor`.
     /// @param p Pool parameters.
     /// @return poolKey Key of the created pool.
     function initializePool(PoolInitParams calldata p) external returns (PoolKey memory poolKey);
@@ -374,6 +373,10 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @notice Hook wide referral rate, bps of swap volume, paid out of the protocol
     ///         leg to the referrer a swap names.
     function referralBps() external view returns (uint24);
+
+    /// @notice Whether `escrow` is the current or a former fee escrow of this hook.
+    /// @param escrow Address to check.
+    function everFeeEscrow(address escrow) external view returns (bool);
 
     /// @notice Current fee escrow and extension allowlist.
     /// @return The hook wide addresses.
@@ -431,11 +434,9 @@ interface IArtCoinsHookV2 is IConstantsBound {
 
     /// @notice Sets the pool's bounty recipient. Coin admin only, until the coin
     ///         is locked or the admin is 0.
-    /// @dev    `newRecipient` must be nonzero and not in the set listed at
-    ///         `RecipientCannotReceive`, which includes the pool extension and
-    ///         every launch extension the factory has ever enabled.
-    ///         Reverts with `UnknownPool`, `NotCoinAdmin`, `CoinLocked`,
-    ///         `BountyRecipientZero`, `RecipientCannotReceive` or `RecipientCheckFailed`.
+    /// @dev    `newRecipient` is nonzero and outside the `RecipientCannotReceive` set.
+    ///         Reverts `UnknownPool`, `NotCoinAdmin`, `CoinLocked`, `BountyRecipientZero`,
+    ///         `RecipientCannotReceive` or `RecipientCheckFailed`.
     /// @param poolId Pool id.
     /// @param newRecipient New bounty recipient.
     function setBountyRecipient(PoolId poolId, address payable newRecipient) external;
@@ -452,12 +453,10 @@ interface IArtCoinsHookV2 is IConstantsBound {
 
     /// @notice Sets the pool's extension. Coin admin only, until the coin is
     ///         locked or the admin is 0.
-    /// @dev    `newExtension` is zero or enabled on the extension allowlist. A new
-    ///         extension receives both locker setup calls in this call. The old
-    ///         extension is not called. Callable after `initializeMevModule`.
-    ///         Reverts with `UnknownPool`, `NotCoinAdmin`, `CoinLocked`,
-    ///         `PoolNotStarted`, `ExtensionNotAllowed` or `RecipientCannotReceive`
-    ///         (when `newExtension` is the pool's bounty recipient).
+    /// @dev    `newExtension` is zero or enabled on the extension allowlist and receives both
+    ///         locker setup calls. The old extension is not called. Callable after
+    ///         `initializeMevModule`. Reverts `UnknownPool`, `NotCoinAdmin`, `CoinLocked`,
+    ///         `PoolNotStarted`, `ExtensionNotAllowed` or `RecipientCannotReceive`.
     /// @param key Key of the pool.
     /// @param newExtension New extension, zero for none.
     /// @param initData Opaque bytes passed to the new extension's pre locker setup.

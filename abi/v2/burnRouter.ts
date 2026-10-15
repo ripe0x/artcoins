@@ -61,6 +61,30 @@ export const burnRouterV2Abi = [
   },
   {
     "type": "function",
+    "name": "floorForPartial",
+    "inputs": [
+      {
+        "name": "budget",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "consumed",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "keeperGasOverhead",
     "inputs": [],
     "outputs": [

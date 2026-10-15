@@ -345,7 +345,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     /// @dev The bounty recipient and the protocol recipient must receive eth or claim an escrow
     ///      credit. The factory, the coin, the PoolManager, this launch's hook, locker, locker
-    ///      PositionManager, hook fee escrow, token deployer, mev module and pool extension, every
+    ///      PositionManager, hook fee escrow (current or former), token deployer, mev module and pool extension, every
     ///      launch extension in the config and every extension ever enabled can do neither, so
     ///      they are rejected. The bounty recipient also cannot be `protocolRecipient`.
     function _checkRecipients(DeploymentConfigV2 calldata c, address token) internal view {
@@ -374,7 +374,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         address[_REJECT_SET] memory fixedSet,
         DeploymentConfigV2 calldata c
     ) private view {
-        if (everEnabledExtensions[r]) {
+        if (everEnabledExtensions[r] || IArtCoinsHookV2(c.pool.hook).everFeeEscrow(r)) {
             revert RecipientCannotReceive(r);
         }
         for (uint256 j; j < _REJECT_SET; ++j) {
