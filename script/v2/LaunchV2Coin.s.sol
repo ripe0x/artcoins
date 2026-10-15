@@ -22,8 +22,14 @@ interface IOwnedFactoryV2 {
 /// @notice Json launch config parsing, preflight and dry run for the v2
 ///         factory. Shared by `LaunchV2Coin` and the fork tests.
 /// @dev    Config format: script/v2/launch-configs/example.json. The config
-///         covers the token, pool, fee, locker, mev and restriction sections.
-///         Launch extensions and a pool extension are outside this script.
+///         covers the token, pool, fee, locker, mev and restriction sections, and an
+///         optional `extensions` array of launch extensions (example-devbuy.json). A pool
+///         extension is outside this script.
+///         Each `extensions` entry is `{extension, bps, msgValue, data}`: `extension` is an
+///         address or the key `devBuy` or `airdrop` (the stack's own instances), `bps` the
+///         share of supply, `msgValue` wei forwarded to the extension and `data` the hex
+///         abi encoded `extensionData`. `deployToken` takes `msg.value` of the deploy fee plus
+///         the sum of the `msgValue` entries; `preflight` returns that sum.
 library LaunchV2Lib {
     Vm internal constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
@@ -34,6 +40,9 @@ library LaunchV2Lib {
         address hook;
         address locker;
         address mev;
+        /// @dev Launch extensions of the stack, resolved from the `devBuy` and `airdrop` keys.
+        address devBuy;
+        address airdrop;
     }
 
     struct Launch {
@@ -44,7 +53,7 @@ library LaunchV2Lib {
 
     // ── parse ─────────────────────────────────────────────────────────────
 
-    function parse(string memory j, Target memory t) internal pure returns (Launch memory l) {
+    function parse(string memory j, Target memory t) internal view returns (Launch memory l) {
         l.example = vm.parseJsonBool(j, ".example");
         l.expectedToken = vm.parseJsonAddress(j, ".expectedToken");
 
@@ -80,6 +89,37 @@ library LaunchV2Lib {
             c.restriction.allowed = _addrs(j, ".restriction.allowed");
         }
         // the factory seeds this launch's locker and extensions.
+
+        c.extensions = _extensions(j, t);
+    }
+
+    /// @dev Optional `extensions` array. Absent or empty gives no extension.
+    function _extensions(string memory j, Target memory t)
+        private
+        view
+        returns (IArtCoinsFactoryV2.ExtensionConfigV2[] memory e)
+    {
+        uint256 n;
+        while (vm.keyExistsJson(j, string.concat(".extensions[", vm.toString(n), "]"))) {
+            ++n;
+        }
+        e = new IArtCoinsFactoryV2.ExtensionConfigV2[](n);
+        for (uint256 i; i < n; ++i) {
+            string memory k = string.concat(".extensions[", vm.toString(i), "]");
+            e[i].extension =
+                _extensionAddr(vm.parseJsonString(j, string.concat(k, ".extension")), t);
+            e[i].extensionBps = _u16(vm.parseJsonUint(j, string.concat(k, ".bps")));
+            e[i].msgValue = vm.parseJsonUint(j, string.concat(k, ".msgValue"));
+            e[i].extensionData = vm.parseJsonBytes(j, string.concat(k, ".data"));
+        }
+    }
+
+    function _extensionAddr(string memory v, Target memory t) private pure returns (address a) {
+        bytes32 h = keccak256(bytes(v));
+        if (h == keccak256("devBuy")) a = t.devBuy;
+        else if (h == keccak256("airdrop")) a = t.airdrop;
+        else a = vm.parseAddress(v);
+        require(a != address(0), "json: extension address unset");
     }
 
     // ── preflight ─────────────────────────────────────────────────────────
@@ -123,6 +163,15 @@ library LaunchV2Lib {
         require(
             value == 0 || f.teamFeeRecipient() != address(0), "preflight: team fee recipient unset"
         );
+        for (uint256 i; i < l.cfg.extensions.length; ++i) {
+            IArtCoinsFactoryV2.ExtensionConfigV2 memory e = l.cfg.extensions[i];
+            require(f.enabledExtensions(e.extension), "preflight: extension not enabled");
+            require(
+                IConstantsBound(e.extension).constantsHash() == h,
+                "preflight: extension constantsHash"
+            );
+            value += e.msgValue;
+        }
 
         predicted = f.predictToken(owner, l.cfg);
         require(predicted.code.length == 0, "preflight: predicted token already deployed");
@@ -234,8 +283,9 @@ library LaunchV2Lib {
 ///         under a snapshot, then the real tx inside `vm.startBroadcast()`.
 ///         Transactions are sent only with `--broadcast`. The signer must be the factory owner.
 ///
-///   stack addresses: env FACTORY_V2, HOOK_V2, LOCKER_V2, MEV_V2, else
-///   `.addresses` of tmp/v2-deploy-<chainid>.json (written by DeployV2Stack).
+///   stack addresses: env FACTORY_V2, HOOK_V2, LOCKER_V2, MEV_V2 (and DEV_BUY_V2, AIRDROP_V2
+///   for configs that use the `devBuy` and `airdrop` extension keys), else `.addresses` of
+///   tmp/v2-deploy-<chainid>.json (written by DeployV2Stack).
 ///
 ///   config: env LAUNCH_CONFIG_JSON (the json text), else the file at
 ///   LAUNCH_CONFIG (default script/v2/launch-configs/example.json). Reading a
@@ -268,6 +318,20 @@ contract LaunchV2Coin is Script {
         t.hook = _addr("HOOK_V2", deployed, ".addresses.hook");
         t.locker = _addr("LOCKER_V2", deployed, ".addresses.locker");
         t.mev = _addr("MEV_V2", deployed, ".addresses.mev");
+        t.devBuy = _optAddr("DEV_BUY_V2", deployed, ".addresses.devBuy");
+        t.airdrop = _optAddr("AIRDROP_V2", deployed, ".addresses.airdrop");
+    }
+
+    /// @dev Zero when neither the env var nor the deploy record names the extension.
+    function _optAddr(string memory env, string memory deployed, string memory key)
+        internal
+        view
+        returns (address a)
+    {
+        a = vm.envOr(env, address(0));
+        if (a == address(0) && bytes(deployed).length != 0 && vm.keyExistsJson(deployed, key)) {
+            a = vm.parseJsonAddress(deployed, key);
+        }
     }
 
     function _addr(string memory env, string memory deployed, string memory key)
@@ -292,6 +356,7 @@ contract LaunchV2Coin is Script {
         console2.log("owner        ", owner);
         console2.log("predicted    ", predicted);
         console2.log("msg.value    ", value);
+        console2.log("extensions   ", l.cfg.extensions.length);
         console2.log("configHash   ", vm.toString(IArtCoinsFactoryV2(t.factory).configHash(l.cfg)));
 
         (address dryToken, PoolId dryPool) = LaunchV2Lib.dryRun(t, l, owner, value);

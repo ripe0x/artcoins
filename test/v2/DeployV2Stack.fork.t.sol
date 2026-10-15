@@ -19,6 +19,7 @@ import {ForkStack} from "./harness/ForkStack.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
@@ -66,7 +67,7 @@ contract DeployV2StackForkTest is ForkStack {
     // ══════════════════════════════════════════════════════════════════════
 
     function test_deployV2Stack_wiringComplete() public onlyFork {
-        // every step 12 assert, pending ownership state
+        // every post deploy assert, pending ownership state
         DeployV2Lib.check(s, p, false);
 
         // the routine's own asserts, spelled out
@@ -77,6 +78,11 @@ contract DeployV2StackForkTest is ForkStack {
         assertTrue(s.hook.isLauncher(address(s.factory)), "hook launcher");
         assertTrue(s.locker.isLauncher(address(s.factory)), "locker launcher");
         assertTrue(s.factory.deprecated(), "ships deprecated");
+        assertTrue(s.factory.enabledExtensions(address(s.devBuy)), "dev buy enabled");
+        assertTrue(s.factory.enabledExtensions(address(s.airdrop)), "airdrop enabled");
+        assertEq(s.devBuy.factory(), address(s.factory), "dev buy factory");
+        assertEq(address(s.devBuy.poolManager()), POOL_MANAGER, "dev buy PoolManager");
+        assertEq(s.airdrop.factory(), address(s.factory), "airdrop factory");
         assertEq(s.factory.tokenDeployer(), address(s.tokenDeployer), "D38 deployer");
         assertEq(s.factory.deployFee(), 0, "deploy fee: free at launch");
         assertEq(s.hook.referralBps(), 25, "hook referral rate (D89)");
@@ -127,20 +133,20 @@ contract DeployV2StackForkTest is ForkStack {
     // ══════════════════════════════════════════════════════════════════════
 
     function test_deployV2Stack_runtimeMatchesBuild() public onlyFork {
-        address[9] memory a = DeployV2Lib.addresses(s);
-        string[9] memory n = DeployV2Lib.names();
-        string[9] memory src = DeployV2Lib.paths();
+        address[11] memory a = DeployV2Lib.addresses(s);
+        string[11] memory n = DeployV2Lib.names();
+        string[11] memory src = DeployV2Lib.paths();
         // every immutable in the stack is one of these addresses
-        bytes32[] memory imm = new bytes32[](14);
+        bytes32[] memory imm = new bytes32[](16);
         imm[0] = bytes32(uint256(uint160(POOL_MANAGER)));
         imm[1] = bytes32(uint256(uint160(POSITION_MANAGER)));
         imm[2] = bytes32(uint256(uint160(PERMIT2)));
         imm[3] = bytes32(uint256(uint160(WETH)));
         imm[4] = bytes32(uint256(uint160(Addresses.COIN_LAYER)));
-        for (uint256 i; i < 9; ++i) {
+        for (uint256 i; i < 11; ++i) {
             imm[5 + i] = bytes32(uint256(uint160(a[i])));
         }
-        for (uint256 i; i < 9; ++i) {
+        for (uint256 i; i < 11; ++i) {
             bytes memory art = vm.getDeployedCode(string.concat(src[i], ":", n[i]));
             bytes memory chain = a[i].code;
             assertGt(art.length, 0, n[i]);
@@ -254,6 +260,34 @@ contract DeployV2StackForkTest is ForkStack {
         script.run(json);
         assertEq(predicted.code.length, 0, "dry run only");
         assertFalse(s.factory.isCoin(predicted), "no record");
+    }
+
+    /// @dev example-devbuy.json: the `devBuy` key resolves to the stack's instance, the
+    ///      deploy value is the fee plus the extension msgValue, and the launch buys the coin.
+    function test_launchConfig_devBuyExample() public {
+        acceptV2Ownership(s, p);
+        string memory j;
+        try vm.readFile("script/v2/launch-configs/example-devbuy.json") returns (string memory r) {
+            j = r;
+        } catch {
+            vm.skip(true);
+            return;
+        }
+        LaunchV2Lib.Target memory t = _target();
+        t.devBuy = address(s.devBuy);
+        t.airdrop = address(s.airdrop);
+        LaunchV2Lib.Launch memory l = LaunchV2Lib.parse(j, t);
+        assertEq(l.cfg.extensions.length, 1, "one extension");
+        assertEq(l.cfg.extensions[0].extension, address(s.devBuy), "devBuy key");
+        l.cfg.fee.bountyRecipient = payable(address(treasury));
+        (address predicted, uint256 value) = LaunchV2Lib.preflight(t, l, LIVE_OWNER);
+        assertEq(value, 0.01 ether, "value: fee 0 plus dev buy");
+        vm.deal(LIVE_OWNER, LIVE_OWNER.balance + value);
+        vm.prank(LIVE_OWNER);
+        address coin = s.factory.deployToken{value: value}(l.cfg);
+        assertEq(coin, predicted, "predicted");
+        address buyer = address(0x7eA5000000000000000000000000000000000001);
+        assertGt(IERC20(coin).balanceOf(buyer), 0, "dev buy recipient holds coin");
     }
 
     function test_launchConfig_embeddedCopyMatchesFile() public {

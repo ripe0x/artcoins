@@ -7,6 +7,7 @@
     "check:abi": "node gen-abis.mjs --check",
     "gen:addresses": "node gen-addresses.mjs",
     "check:addresses": "node gen-addresses.mjs --check",
+    "test": "cd .. && node --test script-js/test/merge-v2.test.mjs",
     "verify:registry": "cd .. && node script-js/verify-registry.mjs --no-build",
     "verify:registry:build": "cd .. && node script-js/verify-registry.mjs --build"
   },

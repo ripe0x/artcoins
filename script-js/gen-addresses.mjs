@@ -42,6 +42,9 @@ const factoryOf = (id) => reg.contracts.find((c) => c.stack === id && c.role ===
 // ---- constant table: [constName, contract, note] ----
 // nth picks among same named contracts of a stack in registry order (e.g. two LL renderers, two open routers).
 const C = (stack, name, nth = 0) => contract(stack, name, nth);
+// Optional constant: emitted only when the stack carries the contract (launch extensions joined the v2 stack after its first deploy).
+const Copt = (stack, name, nth = 0) => reg.contracts.filter((c) => c.stack === stack && c.name === name)[nth] ?? null;
+const present = (entries) => entries.filter(([, c]) => c !== null);
 const STACK_CONSTS = [
   ['CURRENT', [
     ['FACTORY', C('current', 'ArtCoinsFactory')],
@@ -80,6 +83,8 @@ const STACK_CONSTS = [
     ['DEPLOYER', C('v2', 'ArtCoinsDeployerV2')],
     ['BURN_ROUTER', C('v2', 'BurnRouterV2')],
     ['PROTOCOL_FEE_CONTROLLER', C('v2', 'ProtocolFeeControllerV2')],
+    ['DEV_BUY', Copt('v2', 'ArtCoinsUniv4EthDevBuyV2')],
+    ['AIRDROP', Copt('v2', 'ArtCoinsAirdropV2')],
   ]]] : []),
   ['LEGACY', [
     ['FACTORY', C('legacy', 'ArtCoinsFactory')],
@@ -121,7 +126,7 @@ const INFRA = [
 
 for (const id of Object.keys(reg.stacks)) {
   if (!deployed(id)) console.log(`skip  stack ${id} (${reg.stacks[id].status}, no deployed factory): no constants generated`);
-  else if (!STACK_CONSTS.some(([n]) => n.toLowerCase() === id)) die(`stack ${id} is deployed but has no constant table in STACK_CONSTS`);
+  else if (!reg.stacks[id].supersededBy && !STACK_CONSTS.some(([n]) => n.toLowerCase() === id)) die(`stack ${id} is deployed but has no constant table in STACK_CONSTS`);
 }
 
 const COIN_CONSTS = reg.coins.map((k) => ['COIN_' + k.symbol.toUpperCase().replace(/[^A-Z0-9]/g, '_'), cs(k.address), k]);
@@ -151,7 +156,8 @@ function solidity() {
   L.push('    /// @dev owner of nearly every contract below (single eoa).');
   L.push(`    address internal constant OWNER = ${cs(reg.owner)};`);
   L.push('');
-  for (const [id, entries] of STACK_CONSTS) {
+  for (const [id, rawEntries] of STACK_CONSTS) {
+    const entries = present(rawEntries);
     const sid = id.toLowerCase();
     const st = reg.stacks[sid];
     L.push(`    // ${id} stack (${st.status}): ${st.label}, factory deployed ${st.deployedAt}`);
@@ -208,7 +214,8 @@ function typescript() {
   L.push('};');
   L.push('');
   const camel = (n) => n.toLowerCase().replace(/_([a-z])/g, (_, x) => x.toUpperCase());
-  const stackObj = (name, id, entries, doc, withBlock) => {
+  const stackObj = (name, id, rawEntries, doc, withBlock) => {
+    const entries = present(rawEntries);
     L.push(`/** ${doc} */`);
     L.push(`export const ${name} = {`);
     for (const [n, c] of entries) L.push(`  ${camel(n)}: ${q(cs(c.address))},`);

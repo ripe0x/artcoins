@@ -58,7 +58,6 @@ library Addresses {
     address internal constant V2_BURN_ROUTER = 0x6f159a0BDddB808Ca364cd006fb29C7B52eB88e1;
     address internal constant V2_PROTOCOL_FEE_CONTROLLER =
         0x183De82db1b7AAb798328AB1d7AE181ff39460c2;
-    address internal constant V2_KEEPER = 0x9884B79974a51aaa07b3a7f0B45b6Ae294FC7072;
     uint256 internal constant V2_FACTORY_DEPLOY_BLOCK = 26_157_200;
 
     // LEGACY stack (legacy): legacy stack (LAYER), factory deployed 2026-05-07

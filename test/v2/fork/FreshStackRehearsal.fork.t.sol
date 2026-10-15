@@ -30,10 +30,14 @@ contract FreshStackRehearsalForkTest is ForkStack, RehearsalFlow {
             controller: s.controller,
             router: s.burnRouter,
             layer: Addresses.COIN_LAYER,
-            launcher: LIVE_OWNER
+            launcher: LIVE_OWNER,
+            devBuy: address(s.devBuy),
+            airdrop: address(s.airdrop)
         });
         LaunchV2Lib.Launch memory l =
             LaunchV2Lib.parse(vm.readFile(LaunchV2Lib.EXAMPLE_PATH), _target(r));
+        // dev buy and airdrop on the fresh stack, asserted inside the launch
+        _addExtensions(r, l);
         _rehearse(r, l);
     }
 }
