@@ -254,6 +254,28 @@
       "provenance": "planned",
       "chainVerified": false,
       "notes": "launch extension, constructor (factory), enabled on the factory"
+    },
+    {
+      "name": "ArtCoinsVaultV2",
+      "address": null,
+      "stack": "v2",
+      "role": "extension",
+      "deployBlock": null,
+      "deployTxHash": null,
+      "deployedAt": null,
+      "deployer": null,
+      "source": {
+        "repoPath": "src/v2/extensions/ArtCoinsVaultV2.sol",
+        "commit": null,
+        "bytecodeMatch": "unverified"
+      },
+      "etherscanVerified": "unknown",
+      "owner": null,
+      "state": "unknown",
+      "status": "planned",
+      "provenance": "planned",
+      "chainVerified": false,
+      "notes": "launch extension, constructor (factory), enabled on the factory; no owner"
     }
   ],
   "coins": []

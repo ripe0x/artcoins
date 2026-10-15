@@ -169,10 +169,10 @@ J="$DEPLOY_JSON"
 [ "$(jq -r '.chainId // empty' "$J")" = "$CHAIN_ID" ] || die "$J is for another chain"
 addr_of() { local a; a=$(jq -r ".addresses.$1 // empty" "$J"); [ -n "$a" ] || die "no $1 address in $J"; printf '%s' "$a"; }
 code_at() { local c; c=$(cast code "$2") || die "cast code failed for $1 $2"; { [ -n "$c" ] && [ "$c" != 0x ]; } || die "no code at $1 $2"; }
-for k in escrow allowlist hook locker mev factory tokenDeployer burnRouter controller devBuy airdrop; do
+for k in escrow allowlist hook locker mev factory tokenDeployer burnRouter controller devBuy airdrop vault; do
   code_at "$k" "$(addr_of "$k")"
 done
-echo "ok   code at all 11 contracts"
+echo "ok   code at all 12 contracts"
 F=$(addr_of factory)
 [ "$(cast call "$F" 'deprecated()(bool)')" = true ] || die "factory is not deprecated"
 fee=$(cast call "$F" 'deployFee()(uint256)' | awk '{print $1}')
