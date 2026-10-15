@@ -9,13 +9,11 @@ import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
 import {LibString} from "solady/utils/LibString.sol";
 
 /// @title  DynamicBlockRendererV2
-/// @notice Dynamic on-chain svg renderer that shows live block data. Every call
-///         reads `block.number`, the previous block hash and `block.timestamp`, so
-///         the metadata changes every block.
-/// @dev    Name and symbol reach the svg only
-///         through `SvgText.text` (utf8 safe truncation, sanitising, escaping of
-///         `& < > " '`); json fields use `SvgText.jsonText`. No loops, no state,
-///         no owner, a few hundred thousand gas at most.
+/// @notice On-chain svg renderer that shows live block data. Each call reads `block.number`,
+///         the previous block hash and `block.timestamp`, so the output changes every block.
+/// @dev    Name and symbol enter the svg through `SvgText.text` (utf8 safe truncation,
+///         sanitising, escaping of `& < > " '`) and the json through `SvgText.jsonText`.
+///         Stateless and ownerless. Rendering costs at most a few hundred thousand gas.
 contract DynamicBlockRendererV2 is IMetadataRenderer {
     uint256 internal constant SYMBOL_SVG_MAX = 8;
     uint256 internal constant NAME_SVG_MAX = 30;

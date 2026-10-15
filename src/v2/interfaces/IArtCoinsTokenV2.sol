@@ -2,15 +2,13 @@
 pragma solidity ^0.8.26;
 
 /// @title  IArtCoinsTokenV2
-/// @notice v2 coin surface beyond erc20. The canonical pool, hook and launcher
-///         are immutable. `restricted` is set at launch. While restricted, a
-///         transfer passes if it is a mint or burn, if either side is on the
-///         allowlist, or if one side is the PoolManager and the amount fits the
-///         transient allowance the canonical hook granted this transaction. The
-///         coin admin manages the allowlist, may turn restriction off once, and
-///         may `lock` the coin: the allowlist, the restriction switch and the
-///         coin's hook side settings (bounty recipient, pool extension, skim)
-///         freeze permanently.
+/// @notice v2 coin surface beyond erc20. The canonical pool, hook, PoolManager and launcher
+///         are immutable. `restricted` is set at launch. While restricted, a transfer passes
+///         if it is a mint or burn, if either side is on the allowlist, or if one side is the
+///         PoolManager and the amount fits the transient allowance the canonical hook granted
+///         this transaction. The coin admin manages the allowlist, turns restriction off once,
+///         and can `lock` the coin. `lock` freezes the allowlist, the restriction switch and
+///         the hook's coin admin settings (bounty recipient, pool extension, baseline skim).
 interface IArtCoinsTokenV2 {
     // ── events ────────────────────────────────────────────────────────────
 
@@ -97,10 +95,9 @@ interface IArtCoinsTokenV2 {
 
     // ── restriction admin (coin admin only) ───────────────────────────────
 
-    /// @notice Add or remove an allowlist entry. Reverts once locked, or if
-    ///         `account` is zero, the PoolManager or the hook. The factory seeds
-    ///         this launch's locker and extensions; removing them is the admin's
-    ///         own loss.
+    /// @notice Add or remove an allowlist entry. Reverts `CoinLocked` once locked and
+    ///         `ZeroAddress` or `AllowedForbidden` for zero, the PoolManager or the hook.
+    ///         The factory seeds this launch's locker and extensions into the allowlist.
     function setAllowed(address account, bool allowed) external;
     /// @notice Turn restriction off permanently. Reverts once locked.
     function unrestrict() external;
@@ -131,7 +128,7 @@ interface IArtCoinsTokenV2 {
     function contractURI() external view returns (string memory);
     /// @notice Same output as `contractURI`.
     function tokenURI() external view returns (string memory);
-    /// @notice Set the coin admin. Coin admin only; `admin_` must be nonzero.
+    /// @notice Set the coin admin. Coin admin only. `admin_` must be nonzero.
     function updateAdmin(address admin_) external;
     /// @notice Renounce the coin admin. Freezes every admin only function.
     function renounceAdmin() external;

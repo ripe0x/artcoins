@@ -5,8 +5,7 @@ import {IArtCoinsExtensionV2} from "../../interfaces/IArtCoinsExtensionV2.sol";
 
 /// @title  IArtCoinsAirdropV2
 /// @notice Merkle airdrop launch extension. Every field of a tranche is fixed
-///         in the launch tx: there is no admin, no root replacement and no
-///         setter. Unclaimed tokens go to a sweep recipient fixed at launch.
+///         in the launch tx. Unclaimed tokens go to a sweep recipient fixed at launch.
 /// @dev    Tranches are keyed by `(token, extensionIndex)`, so two airdrop
 ///         entries in one launch are independent.
 interface IArtCoinsAirdropV2 is IArtCoinsExtensionV2 {

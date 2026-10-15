@@ -17,7 +17,7 @@ library Constants {
     /// @notice Uniswap v4 lp fee denominator (1_000_000 = 100%).
     uint256 internal constant FEE_DENOMINATOR = 1_000_000;
 
-    // ── hook and pool fee config (per pool fields frozen at init; the referral rate is hook wide) ─────
+    // ── hook and pool fee config (per pool fields are set at launch; the referral rate is hook wide) ──
     /// @notice Anti sniper skim ceiling, 90% of volume in BPS.
     uint24 internal constant MAX_SKIM_BPS = 9000;
     /// @notice Baseline skim ceiling, 10% of volume in BPS.
@@ -120,8 +120,7 @@ library Constants {
 
     /// @notice Hash of every value two separately deployed contracts must agree on.
     /// @dev    Single contract values (burn router, fee controller, renderer,
-    ///         deploy fee bounds, push gas) and informational values are excluded. `test/v2/ConstantsV2.t.sol` recomputes this
-    ///         from literals, so an edit without a matching test update fails.
+    ///         deploy fee bounds, push gas) and informational values are excluded.
     function hash() internal pure returns (bytes32) {
         return keccak256(abi.encode(_hashPool(), _hashLaunch()));
     }

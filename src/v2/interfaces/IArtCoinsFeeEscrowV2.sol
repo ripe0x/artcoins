@@ -4,7 +4,7 @@ pragma solidity ^0.8.26;
 import {IConstantsBound} from "./IConstantsBound.sol";
 
 /// @title  IArtCoinsFeeEscrowV2
-/// @notice Fallback store for fees whose direct push failed. Balances are keyed by
+/// @notice Holds fees whose push to the recipient failed. Balances are keyed by
 ///         (feeOwner, token) and `token == address(0)` is native eth.
 /// @dev    Credited balances are owed to the fee owner. `rescue` is bounded by
 ///         `balance - totalOwed[token]`. Amounts are in token base units (wei for eth).
@@ -143,8 +143,8 @@ interface IArtCoinsFeeEscrowV2 is IConstantsBound {
 
     // ── owner ─────────────────────────────────────────────────────────────
 
-    /// @notice Authorizes `depositor`. A core depositor (hook, locker) is permanent.
-    /// @dev Owner only. Re adding a non core depositor with `core == true` upgrades it.
+    /// @notice Authorizes `depositor`. A core depositor is permanent.
+    /// @dev Owner only. Adding a non core depositor again with `core == true` upgrades it.
     ///      Reverts `ZeroAddress`, and `CoreDepositor` when downgrading a core depositor.
     /// @param depositor Account to authorize.
     /// @param core True to mark the depositor permanent.

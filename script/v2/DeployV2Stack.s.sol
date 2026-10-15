@@ -8,11 +8,11 @@ import {DeployV2Lib} from "./DeployV2Lib.sol";
 import {Script, console2} from "forge-std/Script.sol";
 
 /// @title  DeployV2Stack
-/// @notice Deploys and wires the whole v2 stack in one broadcast (DESIGN d7),
-///         runs every post deploy assert, prints the registry json and writes
-///         it to `tmp/v2-deploy-<chainid>.json` (input of `verify-v2.sh`).
-///         No key is read: the operator signs with `--ledger`, `--account` or
-///         `--private-key` on the command line. Nothing is sent without `--broadcast`.
+/// @notice Deploys and wires the whole v2 stack in one broadcast, runs every
+///         post deploy assert, prints the registry json and writes it to
+///         `tmp/v2-deploy-<chainid>.json` (input of `verify-v2.sh`).
+///         The operator signs with `--ledger`, `--account` or `--private-key` on
+///         the command line. Transactions are sent only with `--broadcast`.
 ///
 ///   dry run on a fork (no key):
 ///     FOUNDRY_PROFILE=ci forge script script/v2/DeployV2Stack.s.sol --rpc-url $MAINNET_RPC_URL --sender $OWNER

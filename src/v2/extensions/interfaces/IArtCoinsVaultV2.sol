@@ -5,8 +5,7 @@ import {IArtCoinsExtensionV2} from "../../interfaces/IArtCoinsExtensionV2.sol";
 
 /// @title  IArtCoinsVaultV2
 /// @notice Cliff plus linear vesting vault launch extension. The beneficiary,
-///         the cliff and the vesting period are fixed in the launch tx. There
-///         is no admin, no beneficiary change and no early unlock.
+///         the cliff and the vesting period are fixed in the launch tx.
 /// @dev    Allocations are keyed by `(token, extensionIndex)`.
 interface IArtCoinsVaultV2 is IArtCoinsExtensionV2 {
     /// @notice `extensionData` layout: `abi.encode(beneficiary, lockupDuration, vestingDuration)`.

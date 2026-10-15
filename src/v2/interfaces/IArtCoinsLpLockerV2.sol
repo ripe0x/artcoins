@@ -6,8 +6,9 @@ import {IConstantsBound} from "./IConstantsBound.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
 /// @title  IArtCoinsLpLockerV2
-/// @notice Holds a coin's launch liquidity. The positions have no decrease
-///         path and the pool charges no lp fee, so nothing accrues to them.
+/// @notice Holds a coin's launch liquidity as positions owned by the locker.
+///         The locker has no function that decreases or removes liquidity.
+///         The pool charges no lp fee, so the positions accrue nothing.
 ///
 ///         Units: bps = 1/10,000; amounts in wei or token units.
 interface IArtCoinsLpLockerV2 is IConstantsBound {
@@ -81,7 +82,7 @@ interface IArtCoinsLpLockerV2 is IConstantsBound {
     /// @notice Pool key is not a native eth pair of `token` with the configured
     ///         hook and tick spacing.
     error UnsupportedPoolKey();
-    /// @notice `rescue` was called with the PositionManager as `token`; lp nfts have no exit.
+    /// @notice `rescue` was called with the PositionManager as `token`, which holds the position nfts.
     error RescueForbidden();
 
     // ── launcher ──────────────────────────────────────────────────────────

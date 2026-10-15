@@ -15,10 +15,8 @@ import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 ///         recipient, the pool extension, the baseline skim (lower only), the
 ///         allowlist entries and turning restriction off once. Always mutable
 ///         by the admin: description, image and metadata renderer.
-/// @dev    Units: bps = 1/10,000 (Constants.BPS); pips = 1/1,000,000
-///         (Constants.FEE_DENOMINATOR); amounts are in wei or coin base units;
-///         durations are in seconds. Owner functions are restricted to the
-///         factory owner.
+/// @dev    Units: bps = 1/10,000 (Constants.BPS). Amounts are in wei or coin base units.
+///         Durations are in seconds. Functions marked owner only require the factory owner.
 interface IArtCoinsFactoryV2 is IConstantsBound {
     // ── launch config ─────────────────────────────────────────────────────
 
@@ -62,8 +60,7 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
         bytes extensionData;
     }
 
-    /// @notice Pool fee parameters. The skim is the pool's only fee (the lp fee
-    ///         is 0). The factory injects `protocolRecipient` from its own state.
+    /// @notice Pool skim parameters. The factory injects `protocolRecipient` from its own state.
     /// @param baselineSkimBps Baseline skim in bps of swap volume. Above zero, else `ZeroFeeLaunch`;
     ///        at most `Constants.MAX_BASELINE_SKIM_BPS`, else `FeeConfigOutOfBounds`.
     /// @param bountyBps Bounty share of the skim in bps. At most `Constants.MAX_BOUNTY_BPS`, else
@@ -105,10 +102,15 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
         uint32 windowSeconds;
     }
 
-    /// @notice Launch restriction. `allowed` holds extra allowlist entries; the
-    ///         factory seeds this launch's locker and the launch extensions on
-    ///         top. Must be empty when `restricted` is false.
-    /// @dev    A violation reverts `InvalidRestrictionConfig`, except the
+    /// @notice Launch restriction. The allowlist is this launch's locker, then its
+    ///         launch extensions, then `allowed`. `allowed` must be empty when
+    ///         `restricted` is false.
+    /// @dev    List only a contract whose coin outflows its own logic fixes, such as
+    ///         an airdrop or a vault. A listed router, aggregator, multicall or smart
+    ///         wallet moves coin between any two wallets, because the token checks
+    ///         only the two transfer parties. Standard routers trade a restricted
+    ///         coin through the per swap PoolManager allowance.
+    ///         A violation reverts `InvalidRestrictionConfig`, except the
     ///         PoolManager and the pool hook, which revert with the token's
     ///         `AllowedForbidden`.
     /// @param restricted Whether the coin ships with a transfer allowlist.

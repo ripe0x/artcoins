@@ -26,32 +26,25 @@ import {IWETH9} from "@uniswap/v4-periphery/src/interfaces/external/IWETH9.sol";
 
 /// @title  BurnRouterV2
 /// @notice Buys the protocol coin (LAYER) with the eth it receives and burns it.
-///         The coin and its weth pool are constructor immutables; the pool may
-///         sit on any hook.
-/// @dev    Properties:
-///         - eth received is wrapped at the start of every burn; the budget is
-///           the weth balance minus the keeper reward reserve.
-///         - one burn per block (`lastBurnBlock`).
-///         - the swap is exact input with a price limit `maxImpactBps` from the
-///           pre swap spot (owner bounded to [PRICE_IMPACT_MIN, PRICE_IMPACT_MAX]).
-///           A balance above the limit fills partially and drains over later blocks.
-///         - output must reach the caller's `minOut` and `spotFloorBps` of the
-///           spot output for the weth consumed, net of the pool's buy fee. Spot
-///           and fee are read from the pool at burn time.
-///         - keeper reward: when `block.basefee <= rewardMaxBaseFee`, a flat
-///           `keeperTip` plus the burn's gas at the basefee, capped at
-///           `rewardMaxBps` of the weth consumed; zero above that basefee.
-///           Reserved before the swap (`rewardMaxBps` of the balance), paid in
-///           eth after it.
-///         - every reward value, the output floor and the impact cap are owner
-///           tunable within Constants bounds.
-///         Dependency on the LAYER pool: its legacy hook charges `protocolFeeNumerator`
-///         in beforeSwap on the full input of an exact input swap, before the price
-///         limit cuts the fill. That fee is 0 (D21) and must stay 0: a nonzero value
-///         is paid on the whole budget of every partial fill and counts against the
-///         floor, so a large balance would fail the floor until the fee is reset.
-///         - every coin held, including coin sent directly, burns on the next burn.
-///         - eth, weth and the coin cannot be rescued.
+/// @dev    The coin and its weth pool are constructor immutables. The constructor
+///         accepts any initialized key for that pair. The deployment uses the
+///         LAYER pool on the legacy static fee hook, whose `pairedFee` is the buy
+///         fee (weth in) that `poolBuyFeePips` returns. A pool hook without
+///         `pairedFee` falls back to the pool's lp fee.
+///         `processBurn` is callable by anyone, once per block (`lastBurnBlock`).
+///         It swaps exact input with a price limit `maxImpactBps` from the pre
+///         swap spot, requires the output to meet `minOut` and `spotFloorBps` of
+///         the spot output net of the buy fee, burns every coin held and pays the
+///         caller a reward in eth.
+///         The owner sets `maxImpactBps` within [PRICE_IMPACT_MIN, PRICE_IMPACT_MAX],
+///         `spotFloorBps` within [SPOT_FLOOR_MIN_BPS, SPOT_FLOOR_MAX_BPS] and the
+///         reward values within Constants bounds. Eth, weth and the coin cannot
+///         be rescued.
+///         The pool's hook must keep `protocolFeeNumerator` at 0. The legacy hook
+///         charges it in beforeSwap on the full input of an exact input swap,
+///         before the price limit cuts the fill. A nonzero value is paid on the
+///         whole budget of every partial fill and counts against the floor, so a
+///         large balance fails the floor until it is reset to 0.
 contract BurnRouterV2 is
     IBurnRouterV2,
     IConstantsBound,
@@ -142,6 +135,11 @@ contract BurnRouterV2 is
     // ── permissionless ────────────────────────────────────────────────────
 
     /// @inheritdoc IBurnRouterV2
+    /// @dev Wraps all eth held. The swap budget is the weth balance minus a reserve
+    ///      of `rewardMaxBps` of the balance. A balance above the price limit fills partially and
+    ///      drains over later blocks. The reward is `keeperTip` plus the burn's
+    ///      gas at the basefee, capped at `rewardMaxBps` of the weth consumed, and
+    ///      is zero when `block.basefee` exceeds `rewardMaxBaseFee`.
     function processBurn(uint256 minOut)
         external
         nonReentrant
@@ -303,10 +301,9 @@ contract BurnRouterV2 is
 
     /// @dev Exact input weth to coin with the price limit `maxImpactBps` from
     ///      `spot`. Weth as currency0 lowers the price, so the limit is
-    ///      spot / sqrt(1 + bps / BPS) rounded up; weth as currency1 raises it,
+    ///      spot / sqrt(1 + bps / BPS) rounded up. Weth as currency1 raises it,
     ///      so the limit is spot * sqrt(1 + bps / BPS) rounded down. Runs inside
-    ///      the unlock. Settles and takes this router's net PoolManager deltas
-    ///      read before and after the swap.
+    ///      the unlock and settles the net PoolManager deltas of the swap.
     function _swapAndSettle(uint256 budget, uint160 spot)
         internal
         returns (uint256 wethIn, uint256 coinOut)
@@ -352,9 +349,9 @@ contract BurnRouterV2 is
     }
 
     /// @dev The pool's fee on a coin buy: the static fee hook's `pairedFee`, the
-    ///      fee it sets when the paired currency (weth) is the input, else the
-    ///      pool's current lp fee. A read failure or a value above MAX_LP_FEE
-    ///      uses the pool value, clamped to MAX_LP_FEE.
+    ///      fee it sets when the paired currency (weth) is the input. A failed
+    ///      read or a value above MAX_LP_FEE uses the pool's current lp fee,
+    ///      clamped to MAX_LP_FEE.
     function _buyFeePips() internal view returns (uint24) {
         PoolId pid = _poolKey.toId();
         address h = address(_poolKey.hooks);

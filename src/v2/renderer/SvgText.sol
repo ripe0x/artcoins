@@ -25,21 +25,19 @@ import {LibString} from "solady/utils/LibString.sol";
 ///         text node and in a single or double quoted attribute value. The json
 ///         helpers apply `LibString.escapeJSON`.
 ///
-///         Not covered: an escaped url is still a url. Consumers that follow
-///         `href` values are their own responsibility (an svg rendered through
-///         `<img>` does not execute scripts or load external resources).
+///         An escaped url remains a url. A consumer that follows `href` values resolves it. An svg
+///         rendered through `<img>` is inert.
 library SvgText {
-    /// @dev Caps: token name 64, symbol 16, image url 2048, description 4096
-    ///      bytes. The token bounds its own strings; these caps are the
-    ///      defensive second line so render gas stays provable.
+    /// @dev Caps: name 64, symbol 16, image url 2048, description 4096 bytes. They equal the
+    ///      token's own caps and bound render gas for any renderer input.
     /// @dev json `name` field.
     uint256 internal constant NAME_MAX = 64;
     /// @dev json `symbol` field.
     uint256 internal constant SYMBOL_MAX = 16;
     /// @dev json description / metadata field.
     uint256 internal constant DESC_MAX = 4096;
-    /// @dev image, external and animation urls. Longer values are dropped, not
-    ///      truncated: a cut url points at the wrong thing.
+    /// @dev image, external and animation urls. A longer value becomes an empty string,
+    ///      since a truncated url resolves to a different target.
     uint256 internal constant URL_MAX = 2048;
 
     /// @notice Text node content: `clean` then escape `& < > " '`.

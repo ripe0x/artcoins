@@ -35,80 +35,61 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {BaseHook} from "@uniswap/v4-periphery/src/utils/BaseHook.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
-/// @dev Minimal read of the pool locker for the bounty recipient reject set.
+/// @dev Locker read used by the bounty recipient reject set.
 interface ILockerReads {
     /// @notice The locker's PositionManager.
     function positionManager() external view returns (address);
 }
 
 /// @title  ArtCoinsHookV2
-/// @notice Skim fee hook for v2 coin pools. Every pool is native eth
-///         (currency0) against the coin (currency1), created only by an
-///         allowlisted launcher. The fee rates and caps are set once at init.
-///         The coin admin may change the pool's bounty recipient and its
-///         extension, and lower its baseline skim, until the coin calls `lock`
-///         or renounces its admin. Pools charge no lp fee: the skim is the only fee. Anti sniper skim above
-///         the baseline goes to the bounty recipient.
+/// @notice Uniswap v4 hook that charges a skim on the eth side of every swap in a v2 coin pool.
+/// @dev    Pool: native eth (currency0) against the coin (currency1), lp fee 0.
+///         The skim is the pool's only fee. Its rate is the pool baseline, or
+///         the pool mev module's decaying rate while the anti sniper window is
+///         open, capped at MAX_SKIM_BPS. The window ends no later than
+///         `createdAt + MAX_MEV_WINDOW`.
 ///
-///         Per swap, on the quote (eth) side, with `r` the realized pool side
-///         quote amount for all four swap shapes:
-///           totalSkim    = the skim on the trader side
-///           baselineSkim = totalSkim * baselineSkimBps / currentSkimBps
-///           bounty       = baselineSkim * bountyBps / BPS + (totalSkim - baselineSkim)
-///           protocol     = baselineSkim - baselineSkim * bountyBps / BPS - referral
-///           referral     = min(volume * referralBps / BPS, protocol) when hookData
-///                          names a referrer other than the PoolManager caller
+///         Split, with `volume` the realized eth side amount:
+///           baselineSkim  = totalSkim * baselineSkimBps / currentSkimBps
+///           bountyShare   = baselineSkim * bountyBps / BPS
+///           bounty        = bountyShare + (totalSkim - baselineSkim)
+///           protocolShare = baselineSkim - bountyShare
+///           referral      = min(volume * referralBps / BPS, protocolShare)
+///           protocol      = protocolShare - referral
+///         The referral is paid only when `hookData` names a referrer other than
+///         the PoolManager caller. Each leg is an eth push with the 2,300 gas
+///         stipend, and a failed push credits the recipient in the fee escrow.
 ///
-///         No recipient code runs with useful gas while the PoolManager is
-///         unlocked: every leg (bounty, protocol, referral) is a plain eth push
-///         carrying the EVM 2,300 gas stipend, and a failed push credits the
-///         recipient in the fee escrow. The hook holds no erc6909 claims and no
-///         eth between swaps.
-///
-///         Quote specified swaps (exact in buy, exact out sell) are charged in
-///         `beforeSwap` on the requested amount, then trued up in `afterSwap`
-///         on the realized fill. The over charge on an unfilled part is credited
-///         in the fee escrow to the refund address the swapper names in hookData,
-///         else to the PoolManager caller; a v4 return delta adjusts only the
-///         unspecified currency, which is the coin for these two shapes, so the
-///         eth refund cannot ride the return delta. Known limit: on a partial
-///         exact out sell the caller's eth delta is negative until the refund is
-///         claimed, so a router that cannot claim must pass a refund address.
-///
-///         The referral rate is hook wide and owner tunable (`referralBps`, at
-///         most MAX_REFERRAL_CAP_OF_VOLUME). Self referral through a router is
-///         accepted and bounded by it. The PoolManager caller cannot be the referrer.
-///
-/// @dev    Single contract; calldata parsing is inlined from
-///         `HookCalldata`. The PoolManager never calls `beforeInitialize` on a
-///         self initialized pool, so `_beforeInitialize` reverts unconditionally
-///         and `initializePool` is the only init path.
+///         Authority: allowlisted launchers create pools. The owner sets
+///         launchers, fee escrow, extension allowlist and `referralBps`. The coin
+///         admin sets the pool's bounty recipient and extension and lowers its
+///         baseline skim, until the coin is locked or the admin is 0. Swaps are
+///         permissionless.
 contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     using PoolIdLibrary for PoolKey;
 
     // ── constants ─────────────────────────────────────────────────────────
 
-    /// @dev Gas for the mev module view reads. The module is factory enabled
-    ///      and does two storage reads; a failed read falls back to the
-    ///      baseline skim and an open add lock (fail open). The cap is
-    ///      far above the module's need, so a caller cannot starve the read
-    ///      and still complete the swap (63/64 rule).
+    /// @dev Gas cap for mev module view calls, far above what the module needs.
+    ///      Under the 63/64 rule a caller that starves the call cannot finish the
+    ///      swap, so a failed call yields the baseline skim and no add lock only
+    ///      when the module itself fails.
     uint256 private constant _MODULE_GAS = 100_000;
-    /// @dev Gas forwarded on a fee push: 0, so the recipient runs on the EVM's
-    ///      2,300 stipend only. Passing 2,300 here would give it 4,600.
-    ///      Under 2,300 a recipient cannot send value or write storage, so it
-    ///      cannot `take`, `mint`, `burn` or `settle` on the PoolManager.
+    /// @dev Gas argument of a fee push. A value call adds the 2,300 stipend, so
+    ///      the recipient runs on 2,300 gas. That is too little to send value or
+    ///      write storage, so it cannot `take`, `mint`, `burn` or `settle` on the
+    ///      PoolManager.
     uint256 private constant _PUSH_GAS = 0;
-    /// @dev Gas for the pool extension's `afterSwap`. Below ~3m, so a caller
-    ///      that starves the extension leaves too little gas to finish.
+    /// @dev Gas cap for the pool extension's `afterSwap`. A caller that gives the
+    ///      call less than the cap keeps under 1/64 of it for the rest of the swap.
     uint256 private constant _EXTENSION_GAS = 2_000_000;
 
     /// @dev Transient: skim charged in `beforeSwap` on a quote specified swap.
-    ///      keccak256("artcoins.hookV2.skim") (a literal: inline assembly
-    ///      accepts number constants only).
+    ///      keccak256("artcoins.hookV2.skim"), written as a literal because
+    ///      inline assembly accepts number constants only.
     uint256 private constant _SKIM_SLOT =
         0x7aee84292610e1817940dfa3b53a7600205e6137c5ca860d9c51840e6feafea5;
-    /// @dev Transient: `(amountToSwap << 32) | skimBps` for that swap.
+    /// @dev Transient: `(amountToSwap << 32) | skimBps` of that swap.
     ///      keccak256("artcoins.hookV2.requested").
     uint256 private constant _REQ_SLOT =
         0x1ed2782058d87e2c0cc971c5cc47936f85ed6b62abd4c00f9ad4c24ce7f27f87;
@@ -117,22 +98,21 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
 
     mapping(PoolId => PoolInfo) internal _info;
     mapping(PoolId => SkimConfig) internal _skim;
-    /// @dev Set once by `initializeMevModule`: the window started and the
-    ///      extension finished its post locker setup.
+    /// @dev Set by `initializeMevModule`, which starts the anti sniper window
+    ///      and runs the extension's post locker setup.
     mapping(PoolId => bool) internal _started;
     mapping(address => bool) internal _launchers;
     HookGlobals internal _globals;
     /// @inheritdoc IArtCoinsHookV2
     uint24 public referralBps;
 
-    /// @dev Every fee escrow this hook has been wired to, set in the constructor
-    ///      and in `setFeeEscrow`. A bounty recipient can never be one of them,
-    ///      so a rotated-out escrow stays rejected.
+    /// @dev Every fee escrow this hook has used, set in the constructor and in
+    ///      `setFeeEscrow`. None of them is accepted as a bounty recipient.
     mapping(address => bool) internal _knownEscrow;
 
     /// @param manager_   Uniswap v4 PoolManager.
     /// @param owner_     Owner (Ownable2Step).
-    /// @param escrow_    Fee escrow; this hook must be one of its core depositors.
+    /// @param escrow_    Fee escrow. This hook must be a core depositor of it.
     /// @param allowlist_ Pool extension allowlist (0 disables extensions).
     constructor(IPoolManager manager_, address owner_, address escrow_, address allowlist_)
         BaseHook(manager_)
@@ -147,7 +127,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         emit ExtensionAllowlistSet(address(0), allowlist_);
     }
 
-    /// @notice Eth arrives only from the PoolManager (`take`) mid swap.
+    /// @notice Accepts eth from the PoolManager (`take` during a swap).
     receive() external payable {
         if (msg.sender != address(poolManager)) revert NotPoolManager();
     }
@@ -173,8 +153,8 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         });
         PoolId pid = key.toId();
 
-        // the token must name this hook, this pool and this launcher; its
-        // restriction flag is mirrored into the frozen pool record.
+        // The coin must name this hook, this pool id and this launcher. Its
+        // restriction flag is copied into the pool record.
         IArtCoinsTokenV2 t = IArtCoinsTokenV2(token);
         if (
             t.canonicalHook() != address(this) || t.canonicalPoolId() != PoolId.unwrap(pid)
@@ -213,8 +193,8 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         );
         emit SkimConfigInitialized(pid, p.skim);
 
-        // art coin is always currency1, so the starting tick is negated. The
-        // dynamic lp fee stays at its initial 0: the skim is the only fee.
+        // The coin is currency1, so the starting tick is negated. The dynamic
+        // lp fee stays at its initial 0.
         poolManager.initialize(key, TickMath.getSqrtPriceAtTick(-p.tickIfToken0IsCoin));
 
         if (ext != address(0)) {
@@ -223,9 +203,9 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     }
 
     /// @inheritdoc IArtCoinsHookV2
-    /// @dev `mevConfig` is `abi.encode(startingSkimBps, windowSeconds)` (empty
-    ///      = Constants defaults). The hook appends the pool baseline as the
-    ///      module's end value so the decay lands on the baseline.
+    /// @dev `mevConfig` is `abi.encode(startingSkimBps, windowSeconds)`, or empty
+    ///      for the Constants defaults. The hook passes the module the pool
+    ///      baseline, capped at the starting value, as the end value.
     function initializeMevModule(PoolKey calldata poolKey, bytes calldata mevConfig) external {
         PoolId pid = poolKey.toId();
         PoolInfo storage info = _info[pid];
@@ -251,7 +231,9 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
 
     // ── v4 callbacks ──────────────────────────────────────────────────────
 
-    /// @dev No pool on this hook is created except through `initializePool`.
+    /// @dev Reverts for every caller. Pools are initialized by `initializePool`,
+    ///      and the PoolManager skips this callback when the hook is the
+    ///      initializer.
     function _beforeInitialize(address, PoolKey calldata, uint160)
         internal
         pure
@@ -261,11 +243,10 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         revert ForeignInitialize();
     }
 
-    /// @dev Anti sniper add lock: ends at createdAt + MAX_MEV_WINDOW whatever
-    ///      the module reports. On a restricted coin the token transfer rule
-    ///      governs the coin leg of an add: a leg that settles coin to the
-    ///      PoolManager needs an allowlisted side (the locker's placement) or it
-    ///      reverts; an add that settles only eth needs no coin and passes.
+    /// @dev Reverts while the anti sniper window is open, from
+    ///      `initializeMevModule` until the module's `windowEnd` and never past
+    ///      `createdAt + MAX_MEV_WINDOW`. On a restricted coin the coin's
+    ///      transfer rule applies to the coin leg of an add.
     function _beforeAddLiquidity(
         address,
         PoolKey calldata key,
@@ -284,6 +265,10 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         return BaseHook.beforeAddLiquidity.selector;
     }
 
+    /// @dev Quote specified swaps are charged here on the requested amount and
+    ///      trued up in `afterSwap` on the realized fill. The over charge is
+    ///      credited in the fee escrow to the refund address in `hookData`, else to
+    ///      the PoolManager caller.
     function _beforeSwap(
         address,
         PoolKey calldata key,
@@ -305,14 +290,17 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
                     tstore(_SKIM_SLOT, s)
                     tstore(_REQ_SLOT, packed)
                 }
-                // no erc6909 mint: the +s specified delta is booked to the
-                // hook after `afterSwap` returns, where `take(s)` nets it.
+                // The +s specified delta is booked to the hook after
+                // `afterSwap` returns. `take(s)` in `afterSwap` nets it.
                 return (BaseHook.beforeSwap.selector, toBeforeSwapDelta(_i128(s), 0), 0);
             }
         }
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
+    /// @dev On a partial exact out sell the caller's eth delta is negative until
+    ///      it claims the refund, so a router that cannot claim passes a refund
+    ///      address.
     function _afterSwap(
         address sender,
         PoolKey calldata key,
@@ -326,10 +314,10 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         bool exactIn = params.amountSpecified < 0;
 
         uint256 charged; // eth the hook holds for this swap
-        uint256 skim; // fair skim (charged minus refund)
+        uint256 skim; // skim kept after the refund
         uint256 bps;
         if (params.zeroForOne == exactIn) {
-            // quote specified: true up the skim charged in beforeSwap (b3).
+            // Quote specified: true up the skim charged in `beforeSwap`.
             uint256 packed;
             assembly ("memory-safe") {
                 charged := tload(_SKIM_SLOT)
@@ -343,9 +331,9 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
                 skim = r >= requested ? charged : (charged * r) / requested;
             }
         } else {
-            // quote unspecified: skim the realized quote side, returned as the
-            // unspecified delta (exact in sell: from the output; exact out
-            // buy: on top of the input).
+            // Quote unspecified: skim the realized quote amount, returned as
+            // the unspecified delta (exact in sell: from the output, exact
+            // out buy: on top of the input).
             bps = _skimBps(pid, _skim[pid].baselineSkimBps);
             skim = exactIn ? (r * bps) / Constants.BPS : (r * bps) / (Constants.BPS - bps);
             charged = skim;
@@ -354,10 +342,9 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
 
         if (charged != 0) poolManager.take(key.currency0, address(this), charged);
 
-        // restriction: grant the coin side of this swap as a PoolManager
-        // transfer allowance so the trader's settle or take passes the token
-        // transfer rule. The hook moves no coin itself; the only coin move is
-        // the swap's own currency1 delta between the PoolManager and the trader.
+        // Restricted coin: grant the coin leg of the swap as a PoolManager
+        // transfer allowance so the trader's settle or take passes the coin's
+        // transfer rule.
         if (_info[pid].restricted) {
             int256 a = delta.amount1();
             uint256 amt = a < 0 ? uint256(-a) : uint256(a);
@@ -372,9 +359,8 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
             address escrow = _globals.feeEscrow;
             uint256 over = charged - skim;
             if (over != 0) {
-                // the unfilled share goes to the escrow, credited to the
-                // hookData refund address or else the PoolManager caller. A
-                // refund inside the swap would break routers; see the header.
+                // The over charge is credited in the escrow to the hookData
+                // refund address, else to the PoolManager caller.
                 address to = HookCalldata.refundTo(hookData);
                 if (to == address(0)) to = sender;
                 IArtCoinsFeeEscrowV2(escrow).storeFeesNative{value: over}(to);
@@ -384,8 +370,8 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
                 address synced =
                     Currency.unwrap(TransientStateLibrary.getSyncedCurrency(poolManager));
                 _split(pid, sender, escrow, skim, bps, r, referrer);
-                // a 2,300 gas recipient can still reach `sync`; undo it so a
-                // router that settles native without syncing is not broken.
+                // A recipient can call `sync` during the push. Reset it to
+                // native so a router that settles eth without syncing works.
                 if (
                     synced == address(0)
                         && Currency.unwrap(TransientStateLibrary.getSyncedCurrency(poolManager))
@@ -402,7 +388,8 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
 
     // ── internals: swap ───────────────────────────────────────────────────
 
-    /// @dev Splits `skim` into the three legs and delivers each one.
+    /// @dev Splits `skim` into bounty, protocol and referral legs and delivers
+    ///      each. `bps` is the rate `skim` was charged at.
     function _split(
         PoolId pid,
         address sender,
@@ -413,16 +400,15 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         address referrer
     ) private {
         SkimConfig storage cfg = _skim[pid];
-        // bps >= baseline (clamped), so base <= skim.
+        // bps is at least the baseline, so base <= skim.
         uint256 base = (skim * cfg.baselineSkimBps) / bps;
         uint256 bountyShare = (base * cfg.bountyBps) / Constants.BPS;
         uint256 protocol = base - bountyShare;
         uint256 bounty = bountyShare + (skim - base);
 
         uint256 referral;
-        // the PoolManager caller cannot name itself. A router user naming its
-        // own wallet is accepted, bounded by the hook wide rate and the
-        // protocol leg it is carved from.
+        // The PoolManager caller cannot be the referrer. A router user naming
+        // its own wallet is paid up to the hook wide rate, out of the protocol leg.
         if (referrer != address(0) && referrer != sender) {
             referral = (volume * referralBps) / Constants.BPS;
             if (referral > protocol) referral = protocol;
@@ -434,21 +420,21 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
 
         _leg(pid, Constants.LEG_BOUNTY, escrow, cfg.bountyRecipient, bounty);
         _leg(pid, Constants.LEG_PROTOCOL, escrow, cfg.protocolRecipient, protocol);
-        // the referral is pushed to the referrer like the other legs: a zero gas
-        // call, credited in the escrow on failure.
         _leg(pid, Constants.LEG_REFERRAL, escrow, referrer, referral);
     }
 
+    /// @dev Pushes `amount` to `to` and credits `to` in the fee escrow when the
+    ///      push fails.
     function _leg(PoolId pid, uint8 leg, address escrow, address to, uint256 amount) private {
         if (amount == 0) return;
         bool pushed = FeeDelivery.sendNative(escrow, to, amount, _PUSH_GAS);
         emit FeeDelivered(pid, leg, to, amount, !pushed);
     }
 
-    /// @dev Current skim in BPS: the module's value while
-    ///      it reports active, clamped to [baseline, MAX_SKIM_BPS]; the
-    ///      baseline once `createdAt + MAX_MEV_WINDOW` passed (b7) or on any
-    ///      module failure.
+    /// @dev Skim rate in bps: the module's value while it reports active,
+    ///      clamped to [baseline, MAX_SKIM_BPS]. The baseline applies after
+    ///      `createdAt + MAX_MEV_WINDOW`, without a module, and when the module
+    ///      call fails.
     function _skimBps(PoolId pid, uint256 baseline) private view returns (uint256 bps) {
         bps = baseline;
         PoolInfo storage info = _info[pid];
@@ -473,7 +459,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         if (active != 0 && v > bps) bps = v > Constants.MAX_SKIM_BPS ? Constants.MAX_SKIM_BPS : v;
     }
 
-    /// @dev Module `windowEnd`; 0 (no lock) on failure.
+    /// @dev Module `windowEnd`, or 0 (no lock) when the call fails.
     function _windowEnd(address module, PoolId pid) private view returns (uint256 end) {
         bytes4 sel = IArtCoinsMevSkimV2.windowEnd.selector;
         assembly ("memory-safe") {
@@ -487,8 +473,9 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         }
     }
 
-    /// @dev Pool extension `afterSwap` with the trader facing realized delta
-    ///      gas capped, failure and returndata ignored. Runs last.
+    /// @dev Calls the pool extension's `afterSwap` with the trader's realized
+    ///      delta, gas capped, failure and returndata ignored. Skipped before
+    ///      `initializeMevModule` and when the sender is the pool locker.
     function _runExtension(
         PoolKey calldata key,
         PoolId pid,
@@ -548,8 +535,8 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     }
 
     /// @inheritdoc IArtCoinsHookV2
-    /// @dev The new escrow must already list this hook as a core depositor:
-    ///      every failed push lands there, so a wrong pointer would revert
+    /// @dev The new escrow must list this hook as a core depositor. Failed pushes
+    ///      and refunds are credited there, so any other escrow would revert
     ///      swaps.
     function setFeeEscrow(address escrow) external onlyOwner {
         _checkConstants(escrow);
@@ -562,7 +549,8 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     }
 
     /// @inheritdoc IArtCoinsHookV2
-    /// @dev 0 disables extensions for pools created from now on.
+    /// @dev 0 rejects every nonzero extension in `initializePool` and
+    ///      `setPoolExtension`.
     function setExtensionAllowlist(address allowlist) external onlyOwner {
         emit ExtensionAllowlistSet(_globals.extensionAllowlist, allowlist);
         _globals.extensionAllowlist = allowlist;
@@ -597,16 +585,10 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     // ── coin admin ──────────────────────────────────────────────────────────
 
     /// @inheritdoc IArtCoinsHookV2
-    /// @dev The coin is the pool's currency1. The caller must be its current
-    ///      admin (`IArtCoinsTokenV2(coin).admin()`). The call reverts for every
-    ///      caller once the admin is 0, which is how `lockRecipients` and
-    ///      renouncing the admin freeze it. `newRecipient` must be nonzero and
-    ///      must not be one of the stack contracts that cannot hold a fee: the
-    ///      coin, this hook, the PoolManager, this hook's fee escrow, the pool
-    ///      locker's fee escrow, the pool's mev module, the pool's locker, the
-    ///      factory, its token deployer or the PositionManager. The launch
-    ///      extensions are not stored, so the admin must not set an extension
-    ///      here: an extension cannot claim its credit.
+    /// @dev The caller is the coin's current `admin()` and the coin is not
+    ///      `locked()`. `newRecipient` is nonzero and not in the set listed at
+    ///      `RecipientCannotReceive`. A launch extension cannot be the recipient,
+    ///      because an extension cannot call the escrow's `claim`.
     function setBountyRecipient(PoolId poolId, address payable newRecipient) external {
         PoolInfo storage info = _info[poolId];
         address coin = info.token;
@@ -631,7 +613,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         if (t.locked()) revert CoinLocked();
         SkimConfig storage cfg = _skim[poolId];
         uint24 old = cfg.baselineSkimBps;
-        // the skim is the pool's only fee, so it never reaches zero.
+        // The skim is the pool's only fee, so the baseline stays above zero.
         if (bps == 0 || bps >= old) revert SkimNotLower(old, bps);
         cfg.baselineSkimBps = bps;
         emit BaselineSkimLowered(poolId, old, bps);
@@ -648,7 +630,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         IArtCoinsTokenV2 t = IArtCoinsTokenV2(coin);
         if (msg.sender != t.admin()) revert NotCoinAdmin();
         if (t.locked()) revert CoinLocked();
-        // after launch only: the launch runs the extension setups itself.
+        // Before `initializeMevModule` the launch runs the extension setups.
         if (!_started[poolId]) revert PoolNotStarted();
         if (newExtension != address(0)) {
             address al = _globals.extensionAllowlist;
@@ -668,12 +650,10 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         }
     }
 
-    /// @dev Reverts `RecipientCannotReceive` when `r` is a stack contract that
-    ///      cannot hold a fee: the coin, this hook, the PoolManager, any escrow
-    ///      this hook has ever been wired to, the pool's mev module or locker,
-    ///      the factory, its token deployer, and the locker's PositionManager and
-    ///      current escrow. A read that reverts fails closed with
-    ///      `RecipientCheckFailed`: the change is refused for an unverified address.
+    /// @dev Reverts `RecipientCannotReceive` when `r` is the coin, this hook, the
+    ///      PoolManager, an escrow this hook has used, the pool's mev module or
+    ///      locker, the coin's launcher, its token deployer or the locker's
+    ///      PositionManager. A lookup that reverts reverts `RecipientCheckFailed`.
     function _rejectKnownStackContract(address coin, address locker, address mevModule, address r)
         private
         view
@@ -684,7 +664,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         ) revert RecipientCannotReceive(r);
         address factory = IArtCoinsTokenV2(coin).launcher();
         if (r == factory) revert RecipientCannotReceive(r);
-        // fail closed: a lookup that cannot be read refuses the change.
         try IFactoryTokenDeployer(factory).tokenDeployer() returns (address dep) {
             if (r == dep) revert RecipientCannotReceive(r);
         } catch {
@@ -733,10 +712,9 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     }
 
     /// @inheritdoc BaseHook
-    /// @dev The hook address low 14 bits are 0x28CC. Liquidity needs only
-    ///      `beforeAddLiquidity` for the anti sniper window; the restriction
-    ///      allowance is granted in `afterSwap`, so the add and remove liquidity
-    ///      callbacks are not used.
+    /// @dev Address flag bits 0x28CC: beforeInitialize, beforeAddLiquidity,
+    ///      beforeSwap, afterSwap and both swap return deltas. `beforeInitialize`
+    ///      is enabled so that foreign initialization reverts.
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
             beforeInitialize: true,

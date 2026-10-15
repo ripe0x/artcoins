@@ -14,23 +14,19 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
 /// @title  ArtCoinsVaultV2
-/// @notice Locks a launch allocation behind a cliff then releases it linearly
-///         to a beneficiary fixed in the launch tx.
-///
-///         Schedule: nothing before `lockupEnd`; from `lockupEnd`
-///         the allocation vests linearly and is fully vested at
-///         `vestingEnd = lockupEnd + vestingDuration`. Rounds down, monotone,
-///         exactly 100% at the end.
-///
-///         Frozen at launch: beneficiary, cliff, vesting, amount. There is
-///         no owner, no admin, no `editAllocationAdmin` and no early unlock.
-///         Guarantees:
-///         - a zero beneficiary reverts at launch.
-///         - the `AllocationClaimed` remaining amount is
-///           `amountTotal - amountClaimed` after the claim.
-///         - claim is callable by anyone and always pays the beneficiary, so a
-///           beneficiary that is a contract needs no key to trigger it.
-///         - allocations are keyed by `(token, extensionIndex)`.
+/// @notice Holds a launch allocation behind a cliff, then releases it
+///         linearly to a beneficiary.
+/// @dev    Beneficiary, cliff, vesting and amount are fixed at launch. The
+///         contract has no owner and no setter.
+///         The allocation is claimable from `lockupEnd`, vests linearly and is
+///         fully vested at `vestingEnd = lockupEnd + vestingDuration`. The
+///         vested amount rounds down, is monotone and equals the total at
+///         `vestingEnd`.
+///         - `receiveTokens` reverts for a zero beneficiary.
+///         - `claim` is callable by anyone and pays the beneficiary, so a
+///           contract beneficiary needs no key to trigger it. The event reports the
+///           remaining amount, `amountTotal - amountClaimed` after the claim.
+///         - Allocations are keyed by `(token, extensionIndex)`.
 contract ArtCoinsVaultV2 is ReentrancyGuard, IArtCoinsVaultV2 {
     using SafeERC20 for IERC20;
 
@@ -39,7 +35,7 @@ contract ArtCoinsVaultV2 is ReentrancyGuard, IArtCoinsVaultV2 {
 
     /// @notice Minimum cliff (7 days).
     uint256 public constant MIN_LOCKUP_DURATION = 7 days;
-    /// @notice Minimum linear vesting after the cliff (90 days): no instant dump.
+    /// @notice Minimum linear vesting after the cliff (90 days).
     uint256 public constant MIN_VESTING_DURATION = 90 days;
     /// @notice Sanity bound on each configured duration.
     uint256 public constant MAX_DURATION = 3650 days;

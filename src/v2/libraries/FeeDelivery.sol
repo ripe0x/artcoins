@@ -6,8 +6,8 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
 /// @title  FeeDelivery
 /// @notice Pushes a fee to its recipient and credits the recipient in the fee
-///         escrow when the push fails. Used by the hook, locker, fee swapper and
-///         protocol fee controller.
+///         escrow when the push fails. Used by the hook and the protocol fee
+///         controller.
 /// @dev    Invariant: while the calling contract is an escrow depositor (and, for
 ///         erc20, the token lets the escrow pull from the caller), the amount
 ///         reaches `to` or the escrow balance of `to`. An erc20 `transfer` that

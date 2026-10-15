@@ -19,44 +19,30 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
 /// @title  ArtCoinsUniv4EthDevBuyV2
-/// @notice Spends the extension's `msgValue` buying the new art coin from its
-///         own native eth pool inside the launch tx. The swap goes straight to
-///         the PoolManager (`unlock` then `swap`, `settle` eth, `take` coin to
-///         the recipient). v2 pools are always native eth against the coin, so
-///         there is no wrap and no intermediate hop.
-///
-///         Pool key: the factory hands the key of the pool it just created to
-///         `receiveTokens`. It is checked against the launch config (hook) and
-///         the coin (currency0 native, currency1 the coin).
-///
-///         Slippage: `minTokenOut` must be nonzero (`ZeroMinOut`). A floor
-///         derived from the pool starting price would be wrong for any buy that
-///         moves the price, which on a fresh pool is most of them, so the
-///         deployer supplies the floor and the ui computes it from the exact
-///         pool curve. The pool is created in this tx, so no outside party can
-///         trade against it before this swap; the floor guards a miscalculated
-///         config and earlier extensions in the same launch, not a sandwich.
-///
-///         Fees: the dev buy is a normal swap through the hook. It pays the
-///         hook skim in force at that moment like any trader, lp fee
-///         included, with no exemption. The factory runs extensions before
-///         `initializeMevModule`, so the anti sniper schedule has not started
-///         yet and the skim charged is the pool baseline, not the starting
-///         sniper skim. The recipient of the coin pays nothing extra.
-///
-///         Partial fills: the swap has no price limit other than the pool
-///         boundary, so it can fill partially only if the buy exhausts all
-///         liquidity. Unspent eth is refunded to `refundRecipient` fixed in
-///         `extensionData`. The hook credits any unused skim to the fee escrow
-///         under this contract (the PoolManager caller). The contract opts into
-///         `selfClaimOnly` on that escrow before the swap. After the swap it
-///         reads its credit and, when nonzero, claims it to itself; a failed
-///         claim reverts the launch. The refund is the contract's whole eth
-///         balance after the claim. `receive` accepts eth from the escrow
-///         during the claim. After each launch the contract holds zero eth and
-///         its credit in the current escrow is zero. Credit stored under this
-///         contract in a previous escrow stays in that escrow; the hook owner
-///         sets the escrow with `setFeeEscrow` (owner trust).
+/// @notice Buys the new coin with the extension's `msgValue` from its own
+///         native eth pool during the launch tx and sends it to a recipient.
+/// @dev    The swap goes to the PoolManager directly: `unlock`, `swap`, `settle`
+///         eth, `take` coin to the recipient. The factory passes the key of the
+///         pool it just created. `receiveTokens` checks it against the launch
+///         hook and the coin (currency0 native eth, currency1 the coin).
+///         - `minTokenOut` from `extensionData` is nonzero. The deployer computes
+///           it from the exact pool curve. The pool is created in the launch tx,
+///           so the floor covers a miscalculated config and earlier extensions
+///           in the same launch.
+///         - The swap pays the hook skim in force like any trader. Extensions
+///           run before `initializeMevModule`, so the skim is the pool baseline.
+///         - The price limit is the pool boundary, so a partial fill happens
+///           only when the buy exhausts all liquidity. Unspent eth goes to
+///           `refundRecipient` from `extensionData`.
+///         - The hook credits unused skim to this contract in the fee escrow,
+///           because this contract is the PoolManager caller. The contract sets
+///           `selfClaimOnly` on that escrow before the swap. After the swap it
+///           claims its credit to itself, and a failed claim reverts the launch.
+///           `receive` accepts eth from the escrow during the claim only.
+///         - The refund is the whole eth balance after the claim, so the
+///           contract holds zero eth and zero credit in the current escrow after
+///           each launch. Credit left in a previous escrow stays there. The hook
+///           owner chooses the escrow with `setFeeEscrow`.
 contract ArtCoinsUniv4EthDevBuyV2 is ReentrancyGuard, IUnlockCallback, IArtCoinsUniv4EthDevBuyV2 {
     /// @notice The only caller of `receiveTokens`.
     address public immutable factory;
