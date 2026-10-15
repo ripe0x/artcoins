@@ -94,8 +94,11 @@ abstract contract HookV2ForkBase is Test {
     /// @dev Factory launch extension flags read by the hook's bounty recipient reject set.
     mapping(address => bool) public enabledExtensions;
 
+    mapping(address => bool) public everEnabledExtensions;
+
     function setLaunchExtension(address ext, bool on) external {
         enabledExtensions[ext] = on;
+        if (on) everEnabledExtensions[ext] = true;
     }
 
     function setUp() public virtual {

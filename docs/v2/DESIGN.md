@@ -122,7 +122,7 @@ when the quote side is specified, `_beforeSwap` mints the skim S on the full abs
 | item | design |
 |---|---|
 | contract | `ArtCoinsHookV2` |
-| flow | `_beforeSwap` mints S claims and stores `tstore(SKIM_PENDING, S)`, `tstore(SKIM_REQUESTED, abs(amountToSwap))`. `_afterSwap` (quote specified branch) reads realized `R = abs(delta.quote)`; `fair = S * R / requested`; legs are split on `fair`; `over = S - fair` is burned, taken, and credited `feeEscrow.storeFeesNative{value: over}(sender)` where `sender` is the PoolManager caller |
+| flow | `_beforeSwap` mints S claims and stores `tstore(SKIM_PENDING, S)`, `tstore(SKIM_REQUESTED, abs(amountToSwap))`. `_afterSwap` (quote specified branch) reads realized `R = abs(delta.quote)`; `fair = S * R / requested`; legs are split on `fair`; `over = S - fair` is burned, taken, and credited in the escrow to the hookData refund address (the swap reverts when a partial fill carries no refund address, D93) |
 | storage | accruals move from mappings (`accruedBounty`, `accruedProtocol`, `accruedReferral`) to transient slots. public `accruedReferral` getter is removed (always zero in v1) |
 | events | `SkimRefunded(PoolId indexed poolId, address indexed to, uint256 amount)` |
 | invariant | trader quote cost = realized + fair; fair + over = S; hook erc6909 balance is zero after every `_afterSwap` |
@@ -474,7 +474,7 @@ integration order: a0, then t1 h1 l1 m1 p1 k1 r1 in parallel (k1 v1 helper may d
 | 4 | tax rate | token admin within frozen cap | frozen rate |
 | 5 | who adds venues | `venueAdmin` set at launch (default token admin), add only, renounceable | launcher owner via registry read by the token (makes the token depend on mutable state) |
 | 6 | tax sink | DEAD or bountyRecipient only | any address, surfaced in event |
-| 7 | partial fill over skim | refund to the PoolManager caller via escrow | revert partial fills on quote specified swaps (breaks price limited burners) |
+| 7 | partial fill over skim | escrow credit to the hookData refund address; a partial fill with no refund address reverts `RefundAddressRequired` (D93) | credit the PoolManager caller (a router cannot claim); revert every partial fill (breaks price limited burners) |
 | 8 | taker binding | source, tx, direction, cumulative realized amount (true taker binding is impossible in v4) | require a recipient in hookData (breaks aggregators) |
 | 9 | escrow third party claim | permissionless with `selfClaimOnly` opt in | self claim only for contracts (strands treasuries that cannot call out) |
 | 10 | hook size strategy | immutable cold module via fallback | per function delegate stubs, or runs 100 |

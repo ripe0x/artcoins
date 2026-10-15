@@ -33,6 +33,10 @@ contract BurnLooper {
     receive() external payable {}
 }
 
+interface IHookProtocolFee {
+    function protocolFee() external view returns (uint24);
+}
+
 /// @title  BurnRouterV2ForkTest
 /// @notice The LAYER burn router against the live LAYER/WETH pool (legacy
 ///         static fee hook) at the pinned block.
@@ -239,6 +243,23 @@ contract BurnRouterV2ForkTest is ForkBase {
         assertGe(
             burned, router.floorFor(consumed) * 99 / 100, "fill at max impact clears the floor"
         );
+    }
+
+    /// @dev A nonzero hook `protocolFee` is charged on the whole budget of an exact input buy.
+    ///      The floor includes it, so a burn still clears the floor and `floorFor` shrinks.
+    function test_burnV2_hookProtocolFee_floorIncludesIt() public onlyFork {
+        address h = address(key.hooks);
+        uint256 before_ = router.floorFor(0.05 ether);
+        vm.store(h, bytes32(uint256(1)), bytes32(uint256(20_000))); // protocolFee, 2%
+        assertEq(IHookProtocolFee(h).protocolFee(), 20_000, "slot 1 is protocolFee");
+        assertLt(router.floorFor(0.05 ether), before_, "floor lowered by the hook charge");
+
+        _fund(0.05 ether);
+        uint256 supply0 = IERC20(LAYER).totalSupply();
+        (uint256 wethIn, uint256 burned) = router.processBurn(0);
+        assertGt(wethIn, 0);
+        assertGe(burned, router.floorFor(wethIn) * 99 / 100, "clears the floor with the charge");
+        assertEq(IERC20(LAYER).totalSupply(), supply0 - burned);
     }
 
     function test_burnV2_rejectingKeeper_rewardStays() public onlyFork {

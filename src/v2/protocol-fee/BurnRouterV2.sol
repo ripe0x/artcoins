@@ -40,11 +40,11 @@ import {IWETH9} from "@uniswap/v4-periphery/src/interfaces/external/IWETH9.sol";
 ///         `spotFloorBps` within [SPOT_FLOOR_MIN_BPS, SPOT_FLOOR_MAX_BPS] and the
 ///         reward values within Constants bounds. Eth, weth and the coin cannot
 ///         be rescued.
-///         The pool's hook must keep `protocolFeeNumerator` at 0. The legacy hook
-///         charges it in beforeSwap on the full input of an exact input swap,
-///         before the price limit cuts the fill. A nonzero value is paid on the
-///         whole budget of every partial fill and counts against the floor, so a
-///         large balance fails the floor until it is reset to 0.
+///         The legacy hook charges its stored `protocolFee` in beforeSwap on the full
+///         input of an exact input swap, before the price limit cuts the fill. The
+///         floor removes that charge, computed on the whole budget, from the weth
+///         priced at spot. The hook is read through `protocolFee()`, which is 0
+///         when absent.
 contract BurnRouterV2 is
     IBurnRouterV2,
     IConstantsBound,
@@ -164,7 +164,7 @@ contract BurnRouterV2 is
         burned = SafeTransferLib.balanceOf(coin, address(this));
         uint256 got = burned - coinBefore;
         if (got < minOut) revert InsufficientOutput(got, minOut);
-        uint256 floor = _spotFloor(wethIn, spot);
+        uint256 floor = _spotFloor(wethIn, _hookFee(budget), spot);
         if (got < floor) revert InsufficientOutput(got, floor);
 
         IBurnableCoin(coin).burn(burned);
@@ -215,7 +215,7 @@ contract BurnRouterV2 is
     /// @inheritdoc IBurnRouterV2
     function floorFor(uint256 wethIn) external view returns (uint256) {
         (uint160 spot,,,) = poolManager.getSlot0(_poolKey.toId());
-        return _spotFloor(wethIn, spot);
+        return _spotFloor(wethIn, _hookFee(wethIn), spot);
     }
 
     /// @inheritdoc IBurnRouterV2
@@ -369,10 +369,34 @@ contract BurnRouterV2 is
         return lpFee > Constants.MAX_LP_FEE ? Constants.MAX_LP_FEE : lpFee;
     }
 
-    /// @dev Expected coin for `wethIn` at `sqrtPriceX96`, times (1 - buy fee),
+    /// @dev The hook's `protocolFee` in pips, 0 when the hook has no such getter.
+    function _hookProtocolFee() internal view returns (uint256 p) {
+        address h = address(_poolKey.hooks);
+        if (h.code.length == 0) return 0;
+        (bool ok, bytes memory ret) =
+            h.staticcall{gas: _FEE_READ_GAS}(abi.encodeWithSignature("protocolFee()"));
+        if (ok && ret.length == 32) {
+            p = abi.decode(ret, (uint256));
+            if (p > Constants.MAX_LP_FEE) p = 0;
+        }
+    }
+
+    /// @dev Weth the hook takes from an exact input swap of `amount`, as the legacy hook computes it.
+    function _hookFee(uint256 amount) internal view returns (uint256) {
+        uint256 p = _hookProtocolFee();
+        if (p == 0) return 0;
+        return amount * ((p * 1e18) / (Constants.FEE_DENOMINATOR + p)) / 1e18;
+    }
+
+    /// @dev Expected coin for `wethIn` less `hookFee` at `sqrtPriceX96`, times (1 - buy fee),
     ///      times `spotFloorBps`. price = currency1 per currency0.
-    function _spotFloor(uint256 wethIn, uint160 sqrtPriceX96) internal view returns (uint256) {
-        if (wethIn == 0 || sqrtPriceX96 == 0) return 0;
+    function _spotFloor(uint256 wethIn, uint256 hookFee, uint160 sqrtPriceX96)
+        internal
+        view
+        returns (uint256)
+    {
+        if (wethIn <= hookFee || sqrtPriceX96 == 0) return 0;
+        wethIn -= hookFee;
         uint256 expected;
         if (wethIsCurrency0()) {
             uint256 step = FullMath.mulDiv(wethIn, sqrtPriceX96, 1 << 96);

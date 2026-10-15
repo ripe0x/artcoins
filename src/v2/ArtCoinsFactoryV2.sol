@@ -113,6 +113,8 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     mapping(address => bool) public enabledMevModules;
     /// @inheritdoc IArtCoinsFactoryV2
     mapping(address => bool) public enabledExtensions;
+    /// @inheritdoc IArtCoinsFactoryV2
+    mapping(address => bool) public everEnabledExtensions;
 
     // ── launch records ────────────────────────────────────────────────────
 
@@ -343,8 +345,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
 
     /// @dev The bounty recipient and the protocol recipient must receive eth or claim an escrow
     ///      credit. The factory, the coin, the PoolManager, this launch's hook, locker, locker
-    ///      PositionManager, hook fee escrow, token deployer, mev module and pool extension, and
-    ///      every launch extension in the config can do neither, so they are rejected.
+    ///      PositionManager, hook fee escrow, token deployer, mev module and pool extension, every
+    ///      launch extension in the config and every extension ever enabled can do neither, so
+    ///      they are rejected. The bounty recipient also cannot be `protocolRecipient`.
     function _checkRecipients(DeploymentConfigV2 calldata c, address token) internal view {
         address[_REJECT_SET] memory fixedSet = [
             address(this),
@@ -358,6 +361,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
             ILockerPositionManager(c.locker.locker).positionManager(),
             c.pool.extension
         ];
+        if (c.fee.bountyRecipient == protocolRecipient) {
+            revert RecipientCannotReceive(protocolRecipient);
+        }
         _rejectStackRecipient(c.fee.bountyRecipient, fixedSet, c);
         _rejectStackRecipient(protocolRecipient, fixedSet, c);
     }
@@ -367,7 +373,10 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         address r,
         address[_REJECT_SET] memory fixedSet,
         DeploymentConfigV2 calldata c
-    ) private pure {
+    ) private view {
+        if (everEnabledExtensions[r]) {
+            revert RecipientCannotReceive(r);
+        }
         for (uint256 j; j < _REJECT_SET; ++j) {
             if (r == fixedSet[j]) revert RecipientCannotReceive(r);
         }
@@ -376,19 +385,8 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         }
     }
 
-    /// @dev Starting skim and window with 0 replaced by the Constants default.
-    function _mevParams(MevConfigV2 calldata m)
-        internal
-        pure
-        returns (uint24 start, uint32 window)
-    {
-        start = m.startingSkimBps == 0 ? Constants.DEFAULT_START_SKIM_BPS : m.startingSkimBps;
-        window = m.windowSeconds == 0 ? Constants.DEFAULT_MEV_WINDOW : m.windowSeconds;
-    }
-
     function _mevInitData(MevConfigV2 calldata m) internal pure returns (bytes memory) {
-        (uint24 start, uint32 window) = _mevParams(m);
-        return abi.encode(start, window);
+        return abi.encode(m.startingSkimBps, m.windowSeconds);
     }
 
     function _validateMev(MevConfigV2 calldata m, address hook, uint24 baseline) internal view {
@@ -398,10 +396,12 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         }
         if (!enabledMevModules[m.module]) revert MevModuleNotEnabled();
         if (IArtCoinsMevSkimV2(m.module).hook() != hook) revert InvalidMevModule(m.module);
-        (uint24 start, uint32 window) = _mevParams(m);
+        uint24 start = m.startingSkimBps;
+        uint32 window = m.windowSeconds;
         if (
-            window < Constants.MIN_MEV_WINDOW || window > Constants.MAX_MEV_WINDOW
-                || start > Constants.MAX_SKIM_BPS || start < baseline
+            start == 0 || window == 0 || window < Constants.MIN_MEV_WINDOW
+                || window > Constants.MAX_MEV_WINDOW || start > Constants.MAX_SKIM_BPS
+                || start < baseline
         ) revert InvalidMevConfig();
     }
 
@@ -622,6 +622,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
             _checkConstants(extension);
         }
         enabledExtensions[extension] = enabled;
+        if (enabled) everEnabledExtensions[extension] = true;
         emit ExtensionSet(extension, enabled);
     }
 

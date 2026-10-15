@@ -63,6 +63,31 @@ contract P1UnboundRouter is IConstantsBound {
     receive() external payable {}
 }
 
+/// @notice A valid hash router bound to another coin or PoolManager.
+contract P1OtherBindingRouter is IConstantsBound {
+    address internal immutable COIN;
+    address internal immutable PM;
+
+    constructor(address coin_, address pm_) {
+        COIN = coin_;
+        PM = pm_;
+    }
+
+    function constantsHash() external pure returns (bytes32) {
+        return Constants.hash();
+    }
+
+    function coin() external view returns (address) {
+        return COIN;
+    }
+
+    function poolManager() external view returns (address) {
+        return PM;
+    }
+
+    receive() external payable {}
+}
+
 /// @notice A valid hash router that reverts on eth receipt (push fails).
 contract P1RejectingRouter is IConstantsBound {
     function constantsHash() external pure returns (bytes32) {
@@ -345,6 +370,42 @@ contract ProtocolFeeControllerV2Test is Test {
         pfc.setBurnRouter(noPm);
         vm.expectRevert(abi.encodeWithSelector(sel, noCoin));
         _deploy(address(treasury), noCoin, SPLIT);
+    }
+
+    /// @notice A router bound to another coin or PoolManager is rejected.
+    function test_pfcV2_setBurnRouter_rejectsOtherCoinOrPoolManager() public {
+        assertEq(pfc.coin(), address(0xC01));
+        assertEq(pfc.poolManager(), address(0xB01));
+        bytes4 sel = IProtocolFeeControllerV2.InvalidRecipient.selector;
+        address otherCoin = address(new P1OtherBindingRouter(address(0xC02), address(0xB01)));
+        vm.expectRevert(abi.encodeWithSelector(sel, otherCoin));
+        pfc.setBurnRouter(otherCoin);
+        address otherPm = address(new P1OtherBindingRouter(address(0xC01), address(0xB02)));
+        vm.expectRevert(abi.encodeWithSelector(sel, otherPm));
+        pfc.setBurnRouter(otherPm);
+        address same = address(new P1OtherBindingRouter(address(0xC01), address(0xB01)));
+        pfc.setBurnRouter(same);
+        assertEq(pfc.burnRouter(), same);
+    }
+
+    /// @notice A treasury equal to the fee escrow is rejected: a push to the escrow fails, the
+    ///         escrow credits itself, and that credit cannot be claimed.
+    function test_pfcV2_treasuryIsEscrow_reverts() public {
+        bytes4 sel = IProtocolFeeControllerV2.InvalidRecipient.selector;
+        vm.expectRevert(abi.encodeWithSelector(sel, address(escrow)));
+        pfc.setTreasury(address(escrow));
+        vm.expectRevert(abi.encodeWithSelector(sel, address(escrow)));
+        _deploy(address(escrow), address(router), SPLIT);
+
+        // the hazard the setter prevents: the push to the escrow fails, the escrow credits
+        // itself, and the escrow cannot receive the claim payout
+        vm.deal(address(this), 1 ether);
+        (bool ok,) = address(escrow).call{value: 1 ether}("");
+        assertFalse(ok, "escrow refuses a plain push");
+        escrow.storeFeesNative{value: 1 ether}(address(escrow));
+        assertEq(escrow.balances(address(escrow), address(0)), 1 ether);
+        vm.expectRevert();
+        escrow.claim(address(escrow), address(0));
     }
 
     function test_pfcV2_ownable2Step() public {

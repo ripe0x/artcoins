@@ -180,3 +180,14 @@ external audit of `b29ed65b`. fixes on branch `post-audit`, recorded in docs/v2/
 - controller: native rescue removed (every wei of balance is accounted by `pending()`), erc20 rescue stays; recipient validation (self and duplicates rejected, router identity checked). correction to D82: the controller has a payable `receive()`, the escrow credit is the fallback.
 - `Constants.hash()` includes the string caps; `FeeDelivery` erc20 path removed; the deploy postflight asserts the LAYER hook `protocolFeeNumerator` is 0.
 - docs and scripts aligned to the nine contract stack: RUNBOOK part 2, AUDIT-BRIEF, CREDITS-ENGINE-INTERFACE, `deployments/v2.template.json`, `script/v2/README.md`, launch configs, env comments, keeper comments.
+
+## D94 (2026-10-14, second audit of 60f8b269)
+
+second external audit of `60f8b269`. fixes on branch `post-audit-2`, recorded in docs/v2/DECISIONS.md D94.
+
+- factory: MEV `startingSkimBps` and `windowSeconds` are required when a MEV module is configured (zero reverts `InvalidMevConfig`); the zero normalisation is removed. `everEnabledExtensions(address)` view. the launch reject set adds every ever-enabled extension and, for the bounty recipient, the protocol recipient.
+- hook: `setBountyRecipient` rejects ever-enabled extensions; `setPoolExtension` rejects an extension equal to the pool's bounty recipient.
+- dev buy: the hookData refund address is the ETH `refundRecipient`.
+- controller: the treasury may not be the fee escrow; `setBurnRouter` requires the new router to report the same coin and PoolManager as the initial router.
+- burn router: the floor removes the LAYER hook's `protocolFee` charge from the weth priced at spot.
+- docs: DECISIONS D94, AUDIT-BRIEF target and residuals, CREDITS-ENGINE-INTERFACE, RUNBOOK, script/v2/README.md.

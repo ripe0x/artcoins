@@ -78,13 +78,14 @@ interface IProtocolFeeControllerV2 {
 
     /// @notice Sets the treasury.
     /// @dev Owner only. Reverts `ZeroAddress`, and `InvalidRecipient` when `treasury_` is this
-    ///      contract or the burn router.
+    ///      contract, the fee escrow or the burn router.
     /// @param treasury_ New treasury.
     function setTreasury(address treasury_) external;
 
     /// @notice Sets the burn router. The old router is not called.
     /// @dev Owner only. Reverts `ZeroAddress`, `InvalidRecipient` when the router is this contract,
-    ///      the treasury, or reports a zero `coin()` or `poolManager()`, and `ConstantsMismatch`
+    ///      the treasury, or reports a `coin()` or `poolManager()` that differs from the
+    ///      controller's, and `ConstantsMismatch`
     ///      when it does not report this build's constants hash.
     /// @param burnRouter_ New router.
     function setBurnRouter(address burnRouter_) external;
@@ -105,6 +106,12 @@ interface IProtocolFeeControllerV2 {
 
     /// @notice Fee escrow credited when a push fails and claimed by `processFees`. Immutable.
     function feeEscrow() external view returns (address);
+
+    /// @notice The coin (LAYER) of the initial burn router. Every later router reports the same coin.
+    function coin() external view returns (address);
+
+    /// @notice The PoolManager of the initial burn router. Every later router reports the same one.
+    function poolManager() external view returns (address);
 
     /// @notice Gas forwarded on each push to the treasury or burn router.
     function PUSH_GAS() external view returns (uint256);

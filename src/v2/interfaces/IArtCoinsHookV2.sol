@@ -22,7 +22,8 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 ///         baseline skim, until the coin is locked (`locked()`) or the admin is 0.
 ///         Units: bps = 1/10,000 of swap volume, amounts in wei, seconds.
 ///
-///         Swap `hookData` is optional and never reverts the swap:
+///         Swap `hookData` is optional. Malformed data supplies no referrer, and a
+///         charged partial quote fill requires a valid refund address:
 ///           abi.encode(bytes mevModuleSwapData, bytes poolExtensionSwapData)
 ///         mevModuleSwapData is empty or exactly 32 bytes, abi.encode(address
 ///         refundTo), with clean high 12 bytes (`HookCalldata.refundTo`). A quote
@@ -299,9 +300,10 @@ interface IArtCoinsHookV2 is IConstantsBound {
 
     /// @notice A recipient cannot hold a fee: the coin, this hook, the PoolManager,
     ///         a fee escrow this hook has used, the pool's mev module, locker or
-    ///         pool extension, any factory-enabled launch extension, the coin's
-    ///         launcher, its token deployer or the locker's PositionManager. Also reverts when a skim recipient is this hook or
-    ///         the PoolManager at init.
+    ///         pool extension, any launch extension the factory has ever enabled,
+    ///         the coin's launcher, its token deployer or the locker's PositionManager.
+    ///         Also reverts when a skim recipient is this hook or the PoolManager at
+    ///         init, and when `setPoolExtension` names the pool's bounty recipient.
     /// @param recipient The rejected recipient.
     error RecipientCannotReceive(address recipient);
 
@@ -431,7 +433,7 @@ interface IArtCoinsHookV2 is IConstantsBound {
     ///         is locked or the admin is 0.
     /// @dev    `newRecipient` must be nonzero and not in the set listed at
     ///         `RecipientCannotReceive`, which includes the pool extension and
-    ///         every factory-enabled launch extension.
+    ///         every launch extension the factory has ever enabled.
     ///         Reverts with `UnknownPool`, `NotCoinAdmin`, `CoinLocked`,
     ///         `BountyRecipientZero`, `RecipientCannotReceive` or `RecipientCheckFailed`.
     /// @param poolId Pool id.
@@ -454,7 +456,8 @@ interface IArtCoinsHookV2 is IConstantsBound {
     ///         extension receives both locker setup calls in this call. The old
     ///         extension is not called. Callable after `initializeMevModule`.
     ///         Reverts with `UnknownPool`, `NotCoinAdmin`, `CoinLocked`,
-    ///         `PoolNotStarted` or `ExtensionNotAllowed`.
+    ///         `PoolNotStarted`, `ExtensionNotAllowed` or `RecipientCannotReceive`
+    ///         (when `newExtension` is the pool's bounty recipient).
     /// @param key Key of the pool.
     /// @param newExtension New extension, zero for none.
     /// @param initData Opaque bytes passed to the new extension's pre locker setup.

@@ -39,6 +39,7 @@
     ]
   },
   "mev": {
+    "note": "startingSkimBps and windowSeconds are required when a mev module is set",
     "startingSkimBps": 6869,
     "windowSeconds": 4140
   },

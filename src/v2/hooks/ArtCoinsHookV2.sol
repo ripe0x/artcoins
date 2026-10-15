@@ -646,6 +646,9 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
                 revert ExtensionNotAllowed(newExtension);
             }
         }
+        if (newExtension != address(0) && newExtension == _skim[poolId].bountyRecipient) {
+            revert RecipientCannotReceive(newExtension);
+        }
         address old = info.extension;
         info.extension = newExtension;
         emit PoolExtensionSet(poolId, old, newExtension);
@@ -657,7 +660,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
 
     /// @dev Reverts `RecipientCannotReceive` when `r` is the coin, this hook, the
     ///      PoolManager, an escrow this hook has used, the pool's mev module,
-    ///      locker or extension, a factory-enabled launch extension, the coin's
+    ///      locker or extension, a launch extension the factory has ever enabled, the coin's
     ///      launcher, its token deployer or the locker's PositionManager. A lookup that reverts reverts `RecipientCheckFailed`.
     function _rejectKnownStackContract(
         address coin,
@@ -672,7 +675,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         ) revert RecipientCannotReceive(r);
         address factory = IArtCoinsTokenV2(coin).launcher();
         if (r == factory) revert RecipientCannotReceive(r);
-        try IArtCoinsFactoryV2(factory).enabledExtensions(r) returns (bool enabled) {
+        try IArtCoinsFactoryV2(factory).everEnabledExtensions(r) returns (bool enabled) {
             if (enabled) revert RecipientCannotReceive(r);
         } catch {
             revert RecipientCheckFailed();

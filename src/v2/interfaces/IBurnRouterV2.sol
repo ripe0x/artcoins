@@ -123,7 +123,8 @@ interface IBurnRouterV2 {
     function poolBuyFeePips() external view returns (uint24);
 
     /// @notice Minimum coin output a burn enforces for `wethIn` wei consumed at the current spot:
-    ///         spot output, net of `poolBuyFeePips`, times `spotFloorBps`.
+    ///         spot output, net of `poolBuyFeePips` and the hook's `protocolFee()` charge on
+    ///         the input, times `spotFloorBps`.
     /// @dev The effective minimum is `max(minOut, floorFor(consumed))`.
     /// @param wethIn Weth consumed, in wei.
     function floorFor(uint256 wethIn) external view returns (uint256);
