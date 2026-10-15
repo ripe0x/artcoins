@@ -31,8 +31,8 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 ///         reverts `RefundAddressRequired` without a valid refundTo.
 ///         poolExtensionSwapData is empty or abi.encode(address referrer,
 ///         bytes extensionPayload) and goes whole to the pool extension. The
-///         referrer is paid `referralBps` of the swap volume out of the protocol
-///         leg. Malformed input yields a zero referrer and a zero refund address.
+///         referrer is paid the pool's `SkimConfig.referralBps` of the swap volume
+///         out of the protocol leg. A rate of 0 pays no referral. Malformed input yields a zero referrer and a zero refund address.
 interface IArtCoinsHookV2 is IConstantsBound {
     // ── types ─────────────────────────────────────────────────────────────
 
@@ -62,8 +62,8 @@ interface IArtCoinsHookV2 is IConstantsBound {
     }
 
     /// @notice Per pool fee config. Fixed at init except `bountyRecipient`
-    ///         (`setBountyRecipient`) and `baselineSkimBps` (`lowerBaselineSkim`,
-    ///         lower only). The referral rate is hook wide (`referralBps`).
+    ///         (`setBountyRecipient`), `baselineSkimBps` (`lowerBaselineSkim`,
+    ///         lower only) and `referralBps` (`setReferralBps`).
     struct SkimConfig {
         /// @dev Baseline skim, bps of swap volume. At most Constants.MAX_BASELINE_SKIM_BPS.
         uint24 baselineSkimBps;
@@ -74,6 +74,10 @@ interface IArtCoinsHookV2 is IConstantsBound {
         address payable bountyRecipient;
         /// @dev Receives the protocol leg. Nonzero, fixed at init.
         address payable protocolRecipient;
+        /// @dev Referral rate, bps of swap volume, paid out of the protocol leg to
+        ///      the referrer a swap names. 0 pays no referral. At most
+        ///      Constants.MAX_REFERRAL_CAP_OF_VOLUME.
+        uint24 referralBps;
     }
 
     /// @notice Owner controlled hook wide addresses.
@@ -190,10 +194,11 @@ interface IArtCoinsHookV2 is IConstantsBound {
         uint256 referralPaid
     );
 
-    /// @notice The owner changed the hook wide referral rate.
+    /// @notice The coin admin changed a pool's referral rate.
+    /// @param poolId Pool id.
     /// @param oldBps Previous rate, bps of swap volume.
     /// @param newBps New rate, bps of swap volume.
-    event ReferralBpsSet(uint24 oldBps, uint24 newBps);
+    event ReferralBpsSet(PoolId indexed poolId, uint24 oldBps, uint24 newBps);
 
     /// @notice A launcher was enabled or disabled.
     /// @param launcher Launcher address.
@@ -277,8 +282,11 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @notice `bountyBps` exceeds Constants.MAX_BOUNTY_BPS (share of the skim, in bps).
     error BountyBpsTooHigh();
 
-    /// @notice `setReferralBps` above Constants.MAX_REFERRAL_CAP_OF_VOLUME.
-    error ReferralBpsTooHigh();
+    /// @notice A referral rate above Constants.MAX_REFERRAL_CAP_OF_VOLUME, at
+    ///         `initializePool` or `setReferralBps`.
+    /// @param bps The rejected value.
+    /// @param max Constants.MAX_REFERRAL_CAP_OF_VOLUME.
+    error ReferralBpsTooHigh(uint24 bps, uint24 max);
 
     /// @notice The bounty recipient is zero.
     error BountyRecipientZero();
@@ -370,10 +378,6 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @return The fee config.
     function skimConfig(PoolId poolId) external view returns (SkimConfig memory);
 
-    /// @notice Hook wide referral rate, bps of swap volume, paid out of the protocol
-    ///         leg to the referrer a swap names.
-    function referralBps() external view returns (uint24);
-
     /// @notice Whether `escrow` is the current or a former fee escrow of this hook.
     /// @param escrow Address to check.
     function everFeeEscrow(address escrow) external view returns (bool);
@@ -400,13 +404,6 @@ interface IArtCoinsHookV2 is IConstantsBound {
     ///         hook as a core depositor. Reverts with `ConstantsMismatch` or `EscrowNotCoreDepositor`.
     /// @param escrow New fee escrow.
     function setFeeEscrow(address escrow) external;
-
-    /// @notice Sets the hook wide referral rate. Owner only.
-    /// @dev    Reverts with `ReferralBpsTooHigh` above
-    ///         Constants.MAX_REFERRAL_CAP_OF_VOLUME. Applies to every pool from the
-    ///         next swap. A referral is at most the protocol leg of its swap.
-    /// @param bps New rate, bps of swap volume.
-    function setReferralBps(uint24 bps) external;
 
     /// @notice Sets the extension allowlist. Owner only.
     /// @dev    Gates the extension in `initializePool` and `setPoolExtension`.
@@ -440,6 +437,15 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @param poolId Pool id.
     /// @param newRecipient New bounty recipient.
     function setBountyRecipient(PoolId poolId, address payable newRecipient) external;
+
+    /// @notice Sets the pool's referral rate. Coin admin only, until the coin is
+    ///         locked or the admin is 0.
+    /// @dev    Raises or lowers the rate, 0 turns referrals off. Applies from the
+    ///         next swap. A referral is at most the protocol leg of its swap.
+    ///         Reverts with `UnknownPool`, `NotCoinAdmin`, `CoinLocked` or `ReferralBpsTooHigh`.
+    /// @param poolId Pool id.
+    /// @param bps New rate, bps of swap volume. At most Constants.MAX_REFERRAL_CAP_OF_VOLUME.
+    function setReferralBps(PoolId poolId, uint24 bps) external;
 
     /// @notice Lowers the pool's baseline skim. Coin admin only, until the coin
     ///         is locked or the admin is 0.

@@ -22,10 +22,8 @@ library Constants {
     uint24 internal constant MAX_SKIM_BPS = 9000;
     /// @notice Baseline skim ceiling, 10% of volume in BPS.
     uint24 internal constant MAX_BASELINE_SKIM_BPS = 1000;
-    /// @notice Ceiling of the hook wide referral rate, 1% of volume in BPS.
+    /// @notice Ceiling of a pool's referral rate, 1% of volume in BPS.
     uint24 internal constant MAX_REFERRAL_CAP_OF_VOLUME = 100;
-    /// @notice Initial hook wide referral rate, bps of volume (owner tunable, not hashed).
-    uint24 internal constant REFERRAL_BPS_DEFAULT = 25;
     /// @notice Max bounty share of the skim, in BPS.
     uint16 internal constant MAX_BOUNTY_BPS = 9999;
 

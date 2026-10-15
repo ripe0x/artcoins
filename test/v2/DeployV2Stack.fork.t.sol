@@ -87,7 +87,6 @@ contract DeployV2StackForkTest is ForkStack {
         assertEq(s.vault.factory(), address(s.factory), "vault factory");
         assertEq(s.factory.tokenDeployer(), address(s.tokenDeployer), "D38 deployer");
         assertEq(s.factory.deployFee(), 0, "deploy fee: free at launch");
-        assertEq(s.hook.referralBps(), 25, "hook referral rate (D89)");
         assertEq(s.factory.protocolRecipient(), address(s.controller), "protocol recipient");
         assertEq(s.factory.teamFeeRecipient(), LIVE_OWNER, "team fee recipient");
         assertEq(s.controller.treasury(), LIVE_OWNER, "treasury = owner");

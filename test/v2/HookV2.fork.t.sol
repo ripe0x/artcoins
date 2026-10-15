@@ -690,6 +690,7 @@ contract HookV2ForkTest is HookV2ForkBase {
     /// for every shape. exact in buy, full fill: r = a - skim.
     function test_referral_paidAndCapped() public onlyFork {
         PoolKey memory key = _launchSimple(bountyEoa);
+        hook.setReferralBps(key.toId(), REFERRAL_BPS);
         address ref = makeAddr("ref");
         uint256 p0 = protocolR.balance;
         _swap(key, true, -1 ether, 0, _referral(ref)); // asks 1%, cap 0.25%
@@ -718,11 +719,11 @@ contract HookV2ForkTest is HookV2ForkBase {
         Launch memory l = _defaults(bountyEoa);
         l.baseline = 100; // 1% of volume
         l.bountyBps = 9000; // protocol leg: 0.1% of volume
+        l.referralBps = Constants.MAX_REFERRAL_CAP_OF_VOLUME; // asks 1% of volume
         PoolKey memory k = hook.initializePool(_params(l, address(t)));
         _modify(k, FULL_LO, FULL_HI, int256(LIQ), 0);
         hook.initializeMevModule(k, "");
 
-        hook.setReferralBps(Constants.MAX_REFERRAL_CAP_OF_VOLUME); // asks 1% of volume
         address ref = makeAddr("capRef");
         uint256 p0 = protocolR.balance;
         _swap(k, true, -1 ether, 0, _referral(ref));
@@ -732,35 +733,110 @@ contract HookV2ForkTest is HookV2ForkBase {
         assertEq(protocolR.balance - p0, 0, "protocol leg exhausted by the referral");
     }
 
-    /// owner tunable, bounded, applies to every pool from the next swap.
-    function test_setReferralBps_boundsAndEffect() public onlyFork {
-        assertEq(hook.referralBps(), Constants.REFERRAL_BPS_DEFAULT);
+    /// A pool launches with referrals off: the referrer is ignored and the
+    /// protocol leg keeps its full share.
+    function test_referral_defaultOff_paysNothing() public onlyFork {
         PoolKey memory key = _launchSimple(bountyEoa);
-        address ref = makeAddr("rateRef");
-
-        vm.expectRevert(IArtCoinsHookV2.ReferralBpsTooHigh.selector);
-        hook.setReferralBps(Constants.MAX_REFERRAL_CAP_OF_VOLUME + 1);
-        address stranger = makeAddr("stranger");
-        vm.prank(stranger);
-        vm.expectRevert(
-            abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, stranger)
-        );
-        hook.setReferralBps(1);
-
-        vm.expectEmit(false, false, false, true, address(hook));
-        emit IArtCoinsHookV2.ReferralBpsSet(Constants.REFERRAL_BPS_DEFAULT, 0);
-        hook.setReferralBps(0);
+        assertEq(hook.skimConfig(key.toId()).referralBps, 0);
+        address ref = makeAddr("offRef");
+        uint256 p0 = protocolR.balance;
         _swap(key, true, -1 ether, 0, _referral(ref));
-        assertEq(ref.balance, 0, "rate 0 pays no referral");
+        assertEq(ref.balance, 0, "no referral leg");
+        (, uint256 protocol) = _legs((1 ether * uint256(BASELINE)) / D, BASELINE);
+        assertEq(protocolR.balance - p0, protocol, "protocol keeps the full share");
+    }
 
-        hook.setReferralBps(50);
+    /// The coin admin sets the rate in both directions. It applies from the
+    /// next swap and is capped at the protocol leg.
+    function test_setReferralBps_adminSetsAndClears() public onlyFork {
+        PoolKey memory key = _launchSimple(bountyEoa);
+        PoolId pid = key.toId();
+        address ref = makeAddr("rateRef");
+        uint256 skim = (1 ether * uint256(BASELINE)) / D;
+
+        vm.expectEmit(true, false, false, true, address(hook));
+        emit IArtCoinsHookV2.ReferralBpsSet(pid, 0, 25);
+        hook.setReferralBps(pid, 25);
+        assertEq(hook.skimConfig(pid).referralBps, 25);
+        uint256 p0 = protocolR.balance;
+        _swap(key, true, -1 ether, 0, _referral(ref));
+        uint256 referral = ((1 ether - skim) * 25) / D;
+        assertEq(ref.balance, referral, "25 bps of volume");
+        (, uint256 protocol) = _legs(skim, BASELINE);
+        assertEq(protocolR.balance - p0, protocol - referral, "carved from the protocol leg");
+
+        vm.expectEmit(true, false, false, true, address(hook));
+        emit IArtCoinsHookV2.ReferralBpsSet(pid, 25, 0);
+        hook.setReferralBps(pid, 0);
+        _swap(key, true, -1 ether, 0, _referral(ref));
+        assertEq(ref.balance, referral, "rate 0 pays no further referral");
+    }
+
+    function test_setReferralBps_revertsForNonAdmin() public onlyFork {
+        PoolKey memory key = _launchSimple(bountyEoa);
+        vm.prank(makeAddr("stranger"));
+        vm.expectRevert(IArtCoinsHookV2.NotCoinAdmin.selector);
+        hook.setReferralBps(key.toId(), 1);
+        // the hook owner has no authority over a pool's rate
+        vm.prank(hook.owner());
+        if (hook.owner() != address(this)) {
+            vm.expectRevert(IArtCoinsHookV2.NotCoinAdmin.selector);
+            hook.setReferralBps(key.toId(), 1);
+        }
+    }
+
+    function test_setReferralBps_revertsAboveCap() public onlyFork {
+        PoolKey memory key = _launchSimple(bountyEoa);
+        uint24 max = Constants.MAX_REFERRAL_CAP_OF_VOLUME;
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsHookV2.ReferralBpsTooHigh.selector, max + 1, max)
+        );
+        hook.setReferralBps(key.toId(), max + 1);
+        hook.setReferralBps(key.toId(), max);
+        assertEq(hook.skimConfig(key.toId()).referralBps, max);
+    }
+
+    function test_setReferralBps_revertsAfterLock() public onlyFork {
+        (PoolKey memory key, ArtCoinsTokenV2 token) = _launch(_defaults(bountyEoa));
+        hook.setReferralBps(key.toId(), 10);
+        token.lock();
+        vm.expectRevert(IArtCoinsHookV2.CoinLocked.selector);
+        hook.setReferralBps(key.toId(), 20);
+        assertEq(hook.skimConfig(key.toId()).referralBps, 10, "frozen at the locked value");
+    }
+
+    function test_setReferralBps_unknownPool_reverts() public onlyFork {
+        vm.expectRevert(IArtCoinsHookV2.UnknownPool.selector);
+        hook.setReferralBps(PoolId.wrap(bytes32(uint256(1))), 1);
+    }
+
+    /// A rate in the launch config pays from the first swap.
+    function test_referral_launchConfigRate_paysFromFirstSwap() public onlyFork {
+        Launch memory l = _defaults(bountyEoa);
+        l.referralBps = 50;
+        (PoolKey memory key,) = _launch(l);
+        assertEq(hook.skimConfig(key.toId()).referralBps, 50);
+        address ref = makeAddr("cfgRef");
         _swap(key, true, -1 ether, 0, _referral(ref));
         uint256 skim = (1 ether * uint256(BASELINE)) / D;
-        assertEq(ref.balance, ((1 ether - skim) * 50) / D, "new rate on the next swap");
+        assertEq(ref.balance, ((1 ether - skim) * 50) / D, "50 bps from the first swap");
+    }
+
+    function test_initializePool_referralAboveCap_reverts() public onlyFork {
+        Launch memory l = _defaults(bountyEoa);
+        uint24 max = Constants.MAX_REFERRAL_CAP_OF_VOLUME;
+        l.referralBps = max + 1;
+        ArtCoinsTokenV2 t = _newToken(false, bountyEoa, address(hook));
+        IArtCoinsHookV2.PoolInitParams memory p = _params(l, address(t));
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsHookV2.ReferralBpsTooHigh.selector, max + 1, max)
+        );
+        hook.initializePool(p);
     }
 
     function test_referral_selfReferralByCaller_refused() public onlyFork {
         PoolKey memory key = _launchSimple(bountyEoa);
+        hook.setReferralBps(key.toId(), REFERRAL_BPS);
         uint256 p0 = protocolR.balance;
         uint256 r0 = address(swapRouter).balance;
         _swap(key, true, -1 ether, 0, _referral(address(swapRouter)));
@@ -773,6 +849,7 @@ contract HookV2ForkTest is HookV2ForkBase {
     /// in escrow, not folded into protocol.
     function test_referral_rejectingReferrer_escrowed() public onlyFork {
         PoolKey memory key = _launchSimple(bountyEoa);
+        hook.setReferralBps(key.toId(), REFERRAL_BPS);
         HV2Rejecter ref = new HV2Rejecter();
         _swap(key, true, -1 ether, 0, _referral(address(ref)));
         uint256 skim = (1 ether * uint256(BASELINE)) / D;

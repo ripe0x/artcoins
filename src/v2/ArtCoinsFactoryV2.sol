@@ -329,6 +329,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         if (f.bountyBps > Constants.MAX_BOUNTY_BPS) {
             revert BountyBpsTooHigh(f.bountyBps, Constants.MAX_BOUNTY_BPS);
         }
+        if (f.referralBps > Constants.MAX_REFERRAL_CAP_OF_VOLUME) revert FeeConfigOutOfBounds();
     }
 
     function _validateLocker(LockerConfigV2 calldata l) internal view {
@@ -460,7 +461,8 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
             baselineSkimBps: c.fee.baselineSkimBps,
             bountyBps: c.fee.bountyBps,
             bountyRecipient: c.fee.bountyRecipient,
-            protocolRecipient: protocolRecipient
+            protocolRecipient: protocolRecipient,
+            referralBps: c.fee.referralBps
         });
         return IArtCoinsHookV2(c.pool.hook).initializePool(p);
     }

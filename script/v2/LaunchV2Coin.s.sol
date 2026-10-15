@@ -75,6 +75,9 @@ library LaunchV2Lib {
         c.fee.baselineSkimBps = _u24(vm.parseJsonUint(j, ".fee.baselineSkimBps"));
         c.fee.bountyBps = _u16(vm.parseJsonUint(j, ".fee.bountyBps"));
         c.fee.bountyRecipient = payable(vm.parseJsonAddress(j, ".fee.bountyRecipient"));
+        if (vm.keyExistsJson(j, ".fee.referralBps")) {
+            c.fee.referralBps = _u24(vm.parseJsonUint(j, ".fee.referralBps"));
+        }
 
         c.locker.locker = t.locker;
         c.locker.tickLower = _i24s(vm.parseJsonIntArray(j, ".locker.tickLower"));

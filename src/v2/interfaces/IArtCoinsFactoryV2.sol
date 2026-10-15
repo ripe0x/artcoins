@@ -65,13 +65,16 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     /// @param baselineSkimBps Baseline skim in bps of swap volume. Above zero, else `ZeroFeeLaunch`;
     ///        at most `Constants.MAX_BASELINE_SKIM_BPS`, else `FeeConfigOutOfBounds`.
     /// @param bountyBps Bounty share of the skim in bps. At most `Constants.MAX_BOUNTY_BPS`, else
-    ///        `BountyBpsTooHigh`. The referral rate is hook wide (`IArtCoinsHookV2.referralBps`)
-    ///        and is carved from the protocol leg.
+    ///        `BountyBpsTooHigh`.
     /// @param bountyRecipient Receives the bounty leg. Nonzero, else `ZeroAddress`.
+    /// @param referralBps Referral rate in bps of swap volume, carved from the protocol leg.
+    ///        0 pays no referral. At most `Constants.MAX_REFERRAL_CAP_OF_VOLUME`, else
+    ///        `FeeConfigOutOfBounds`. The coin admin changes it with `IArtCoinsHookV2.setReferralBps`.
     struct FeeConfigV2 {
         uint24 baselineSkimBps;
         uint16 bountyBps;
         address payable bountyRecipient;
+        uint24 referralBps;
     }
 
     /// @notice Locker and liquidity layout.

@@ -25,7 +25,6 @@ import {Script, console2} from "forge-std/Script.sol";
 ///     TREASURY                      default OWNER. ProtocolFeeControllerV2 treasury
 ///     TREASURY_BPS                  default 8000 (Constants allow 1000..9000)
 ///     DEPLOY_FEE                    default 0 (wei)
-///     REFERRAL_BPS                  default 25 (0.25% of volume, hook wide, owner tunable)
 ///   when the broadcaster is not OWNER, the escrow, hook, locker and factory
 ///   end with `pendingOwner == OWNER`; OWNER must call `acceptOwnership()` on
 ///   each (script/v2/README.md).
@@ -51,7 +50,6 @@ contract DeployV2Stack is Script {
         p.treasury = vm.envOr("TREASURY", owner);
         p.treasuryBps = uint16(vm.envOr("TREASURY_BPS", uint256(DeployV2Lib.TREASURY_BPS)));
         p.deployFee = vm.envOr("DEPLOY_FEE", DeployV2Lib.DEPLOY_FEE);
-        p.referralBps = uint24(vm.envOr("REFERRAL_BPS", uint256(DeployV2Lib.REFERRAL_BPS)));
     }
 
     function run() external returns (DeployV2Lib.Stack memory s) {
@@ -92,7 +90,6 @@ contract DeployV2Stack is Script {
         console2.log("burn coin   ", p.layer);
         console2.log("treasuryBps ", p.treasuryBps);
         console2.log("deployFee   ", p.deployFee);
-        console2.log("referralBps ", p.referralBps);
     }
 
     // ── json (registry contract format, DeployV2Lib order) ───────────────────

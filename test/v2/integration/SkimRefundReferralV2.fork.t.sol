@@ -520,12 +520,15 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
     // 7. referral
     // ══════════════════════════════════════════════════════════════════════
 
-    /// referral = min(volume * hook.referralBps / BPS, protocol leg), carved from the
+    /// referral = min(volume * pool referralBps / BPS, protocol leg), carved from the
     /// protocol leg only.
-    function _checkReferred(Legs memory l, address referrer, uint256 paidBefore) internal view {
+    function _checkReferred(PoolKey memory key, Legs memory l, address referrer, uint256 paidBefore)
+        internal
+        view
+    {
         uint256 base = l.bounty + l.protocol + l.referral; // past the window: skim == baseline skim
         uint256 protocolBefore = base - (base * BOUNTY_BPS) / 10_000;
-        uint256 asked = (l.volume * v2.hook.referralBps()) / D;
+        uint256 asked = (l.volume * v2.hook.skimConfig(key.toId()).referralBps) / D;
         assertGt(l.referral, 0, "referrer paid");
         assertEq(
             l.referral, asked < protocolBefore ? asked : protocolBefore, "min(rate, protocol leg)"
@@ -539,10 +542,13 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
     }
 
     function test_i1_referral_paysReferrer_cappedAtProtocolLeg() public onlyFork {
-        address coin = _ownerLaunch(_creditsConfig(address(new I1EmptyTreasury())));
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c =
+            _creditsConfig(address(new I1EmptyTreasury()));
+        c.fee.referralBps = 25;
+        address coin = _ownerLaunch(c);
         PoolKey memory key = _key(coin);
         _pastWindow();
-        assertEq(v2.hook.referralBps(), 25, "deploy script rate (D89)");
+        assertEq(v2.hook.skimConfig(key.toId()).referralBps, 25, "launch config rate");
         address referrer = makeAddr("i1.referrer");
         bytes memory hd = _referral(referrer);
 
@@ -551,7 +557,7 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         (, uint256 got) = swapExactIn(key, true, 1 ether, address(this), hd);
         Vm.Log[] memory logs = vm.getRecordedLogs();
         Legs memory l = _legs(logs);
-        _checkReferred(l, referrer, p0);
+        _checkReferred(key, l, referrer, p0);
         (uint256 pushed, uint256 escrowed) = _delivered(logs, referrer);
         assertEq(pushed, l.referral, "eoa referrer: stipend push lands");
         assertEq(escrowed, 0);
@@ -559,16 +565,16 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         p0 = referrer.balance + _escrowed(referrer);
         vm.recordLogs();
         swapExactIn(key, false, got / 2, address(this), hd);
-        _checkReferred(_legs(vm.getRecordedLogs()), referrer, p0);
+        _checkReferred(key, _legs(vm.getRecordedLogs()), referrer, p0);
 
-        // the owner raises the rate to the 1% ceiling: the referral is capped at
+        // the coin admin raises the rate to the 1% ceiling: the referral is capped at
         // the protocol leg, never beyond it
-        vm.prank(LIVE_OWNER);
-        v2.hook.setReferralBps(Constants.MAX_REFERRAL_CAP_OF_VOLUME);
+        vm.prank(admin);
+        v2.hook.setReferralBps(key.toId(), Constants.MAX_REFERRAL_CAP_OF_VOLUME);
         p0 = referrer.balance + _escrowed(referrer);
         vm.recordLogs();
         swapExactIn(key, true, 1 ether, address(this), hd);
-        _checkReferred(_legs(vm.getRecordedLogs()), referrer, p0);
+        _checkReferred(key, _legs(vm.getRecordedLogs()), referrer, p0);
 
         // a referrer that cannot take a stipend push is credited in the escrow
         // (D16) and pulls it
@@ -577,7 +583,7 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         swapExactIn(key, true, 1 ether, address(this), _referral(address(rref)));
         logs = vm.getRecordedLogs();
         l = _legs(logs);
-        _checkReferred(l, address(rref), 0);
+        _checkReferred(key, l, address(rref), 0);
         (pushed, escrowed) = _delivered(logs, address(rref));
         assertEq(escrowed, l.referral, "referral escrowed for the referrer");
         address payable target = payable(makeAddr("i1.refTarget"));

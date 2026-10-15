@@ -31,7 +31,6 @@ export FOUNDRY_PROFILE=ci
 | TREASURY | OWNER | `ProtocolFeeControllerV2` treasury |
 | TREASURY_BPS | 8000 | controller treasury share (Constants allow 1000..9000, the rest buys and burns LAYER); owner tunable with `setSplit` |
 | DEPLOY_FEE | 0 | factory deploy fee (wei); owner tunable later with `setDeployFee` |
-| REFERRAL_BPS | 25 | hook wide referral rate, bps of swap volume, paid to a swap's named referrer out of the protocol leg; owner tunable with `hook.setReferralBps` up to 100 (1%) |
 
 ### the wrapper
 
@@ -163,7 +162,7 @@ each `extensions` entry is `{"extension", "bps", "msgValue", "data"}` and maps t
 
 encode `data` with `cast abi-encode "f(address,address,uint128)" <recipient> <refundRecipient> <minOut>`. `launch-configs/example-devbuy.json` is the dev buy example. extensions run before the mev module starts, so the dev buy pays the pool baseline skim.
 
-pools charge no lp fee: `fee.baselineSkimBps` (above 0, at most 10%) is the only trading fee, and the coin admin may lower it later. the protocol leg is the skim share above `bountyBps`, with the hook wide referral carved from it.
+pools charge no lp fee: `fee.baselineSkimBps` (above 0, at most 10%) is the only trading fee, and the coin admin may lower it later. the protocol leg is the skim share above `bountyBps`, with the referral carved from it. `fee.referralBps` (default 0 = off, at most 100 bps of volume) is the pool referral rate; the coin admin changes it with `hook.setReferralBps` until `lock()`.
 
 anti sniper window split: while the mev module is active (the first `windowSeconds`, capped at 180 minutes), the hook charges `startingSkimBps` decaying to `baselineSkimBps`. The baseline portion of the skim splits bounty / protocol / referral as configured; the skim ABOVE the baseline goes entirely to the bounty recipient. Measured for a 0.1 eth in-window buy on the example config (start 68,690, baseline 6,000, bounty 8,333 bps): total skim 0.06869 eth, baseline portion 0.006 eth, bounty leg 0.0676898 eth, protocol leg 0.0010002 eth. The 0.06269 eth above the baseline is all bounty. The coin admin may repoint the bounty recipient after launch with `hook.setBountyRecipient` until `token.lock()` or admin renounce.
 

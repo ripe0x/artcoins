@@ -54,7 +54,7 @@ abstract contract HookV2ForkBase is Test {
     // default pool fee config (coin 111 live values)
     uint24 internal constant BASELINE = 600;
     uint16 internal constant BOUNTY_BPS = 8333;
-    /// @dev The hook's initial referral rate (Constants.REFERRAL_BPS_DEFAULT), bps of volume.
+    /// @dev Referral rate the referral tests set on their pool, bps of volume.
     uint24 internal constant REFERRAL_BPS = 25;
 
     bool internal onFork;
@@ -81,6 +81,7 @@ abstract contract HookV2ForkBase is Test {
         address module;
         address extension;
         bytes mevConfig;
+        uint24 referralBps;
     }
 
     receive() external payable virtual {}
@@ -200,7 +201,8 @@ abstract contract HookV2ForkBase is Test {
             baselineSkimBps: l.baseline,
             bountyBps: l.bountyBps,
             bountyRecipient: payable(l.bounty),
-            protocolRecipient: protocolR
+            protocolRecipient: protocolR,
+            referralBps: l.referralBps
         });
     }
 

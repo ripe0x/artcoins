@@ -55,10 +55,6 @@ library DeployV2Lib {
     /// @dev Controller split at launch: 80% to the treasury, 20% buys and
     ///      burns LAYER. Owner tunable within [PFC_MIN_TREASURY_BPS, BPS - PFC_MIN_BURN_BPS].
     uint16 internal constant TREASURY_BPS = 8000;
-    /// @dev Hook wide referral rate at launch, bps of swap volume (0.25%),
-    ///      paid to a swap's named referrer out of the protocol leg. Owner
-    ///      tunable up to MAX_REFERRAL_CAP_OF_VOLUME.
-    uint24 internal constant REFERRAL_BPS = Constants.REFERRAL_BPS_DEFAULT;
     uint256 internal constant EIP170 = 24_576;
     /// @dev Required runtime code headroom under EIP-170 for the hook and the locker (RUNBOOK gate 4).
     uint256 internal constant HEADROOM = 1024;
@@ -79,7 +75,6 @@ library DeployV2Lib {
         address treasury;
         uint16 treasuryBps;
         uint256 deployFee;
-        uint24 referralBps;
         /// @dev Enforce EIP-170 in `check`. Always true in the script. The
         ///      token deployer is over the limit at the default profile
         ///      (optimizer_runs 20000), so the stack ships from FOUNDRY_PROFILE=ci;
@@ -121,7 +116,6 @@ library DeployV2Lib {
         p.treasury = owner;
         p.treasuryBps = TREASURY_BPS;
         p.deployFee = DEPLOY_FEE;
-        p.referralBps = REFERRAL_BPS;
         p.checkSizes = true;
     }
 
@@ -224,7 +218,6 @@ library DeployV2Lib {
         s.hook.setFeeEscrow(address(s.escrow));
         s.hook.setExtensionAllowlist(address(s.allowlist));
         s.hook.setLauncher(address(s.factory), true);
-        s.hook.setReferralBps(p.referralBps);
 
         s.locker.setLauncher(address(s.factory), true);
 
@@ -311,7 +304,6 @@ library DeployV2Lib {
         require(g.feeEscrow == address(s.escrow), "v2: hook escrow");
         require(g.extensionAllowlist == address(s.allowlist), "v2: hook allowlist");
         require(s.hook.isLauncher(address(s.factory)), "v2: hook launcher");
-        require(s.hook.referralBps() == p.referralBps, "v2: hook referral rate");
     }
 
     function _checkEscrow(Stack memory s) private view {

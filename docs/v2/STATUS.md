@@ -208,3 +208,7 @@ third external audit of `46cec5be`: no high severity finding. fixes on branch `p
 ## D97 (2026-10-15, vault joins the stack)
 
 - `ArtCoinsVaultV2` is contract 12 of the v2 deploy stack, enabled on the factory in wiring; fresh stack rehearsal launches with a vault allocation and claims it after `vestingEnd`.
+
+## D98 (2026-10-15, per pool referral rate)
+
+- the referral rate is `SkimConfig.referralBps`, set per pool in the launch config (default 0, cap 100 bps) and changed by the coin admin with `hook.setReferralBps(poolId, bps)` until `lock()`. The hook wide rate, its owner setter and the `REFERRAL_BPS` deploy input are removed.

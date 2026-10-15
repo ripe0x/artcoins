@@ -238,7 +238,6 @@ contract IntegrationV2ForkTest is IntegrationV2Base {
         // factory: every setter, extreme values
         v2.factory.setDeprecated(false);
         v2.factory.setDeployFee(Constants.MAX_DEPLOY_FEE);
-        v2.hook.setReferralBps(Constants.MAX_REFERRAL_CAP_OF_VOLUME);
         v2.factory.setProtocolRecipient(payable(other));
         v2.factory.setTeamFeeRecipient(other);
         v2.factory.setTokenDeployer(address(deployer2));

@@ -100,7 +100,10 @@ abstract contract IntegrationV2Base is ForkStack {
             extensionData: ""
         });
         c.fee = IArtCoinsFactoryV2.FeeConfigV2({
-            baselineSkimBps: BASELINE, bountyBps: BOUNTY_BPS, bountyRecipient: payable(treasury)
+            baselineSkimBps: BASELINE,
+            bountyBps: BOUNTY_BPS,
+            bountyRecipient: payable(treasury),
+            referralBps: 0
         });
         int24[] memory lo = new int24[](3);
         lo[0] = -200_000;
