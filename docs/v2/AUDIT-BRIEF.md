@@ -5,13 +5,12 @@
 | item | value |
 |---|---|
 | repo | https://github.com/ripe0x/new-material-coin-launcher (private; request read access from the owner) |
-| branch | `v2` |
-| commit | `f756b1e9d2ba3c349687a5447575f4cd31124d52`, tag `v2-audit-3`. audit the hash, not the branch. earlier targets: `v2-audit-1` = 9fed001, `v2-audit-2` = d8575db |
-| pull request | https://github.com/ripe0x/new-material-coin-launcher/pull/35 (draft) |
+| branch | `master` |
+| commit | `b29ed65b` and later on `master` (the simplified stack, PR #47). audit the hash, not the branch |
 | toolchain | forge 1.7.1, solc 0.8.26, via ir, `FOUNDRY_PROFILE=ci` (optimizer_runs 200) is what ships; `foundry.toml` |
 | chain | ethereum mainnet only, uniswap v4 (PoolManager 0x000000000004444c5dc75cB358380D2e3dE08A90), native eth pairs only |
 | stack | 9 contracts, as deployed by `script/v2/DeployV2Lib.sol`: `ArtCoinsFeeEscrowV2(owner)`, `ArtCoinsPoolExtensionAllowlist(owner)`, `ArtCoinsHookV2` (CREATE2, mined salt), `ArtCoinsLpLockerV2(owner, positionManager, permit2)`, `ArtCoinsMevLinearSkimV2(hook)`, `ArtCoinsFactoryV2(owner, poolManager, deployFee)`, `ArtCoinsDeployerV2(factory)`, `BurnRouterV2(owner, poolManager, weth, layer, layerPoolKey)`, `ProtocolFeeControllerV2(owner, escrow, treasury, burnRouter, treasuryBps)` |
-| status | not deployed. nothing in `src/v2` is on chain. the live stacks under `src/` (v1) are out of scope except as context |
+| status | the v2 stack deployed on 2026-10-09 is superseded in the registry and no coin launched on it. the simplified stack redeploys before the first coin. the live stacks under `src/` (v1) are out of scope except as context |
 
 ## scope (about 7,900 lines)
 

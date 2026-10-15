@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 [ -n "${BASH_VERSION:-}" ] || { echo "run this script with bash: script/v2/deploy.sh <local|mainnet>" >&2; exit 2; }
-# One deploy path for the v2 stack (D66). The environment is a values file, script/v2/env/<env>.env
+# One deploy path for the v2 stack. The environment is a values file, script/v2/env/<env>.env
 # (envs: local, mainnet). Every step below runs for every env.
 #
 # Usage:
@@ -51,7 +51,7 @@ for v in CHAIN_ID RPC_DEFAULT FOUNDRY_PROFILE WALLET_MODE OWNER TREASURY TREASUR
   REFERRAL_BPS VERIFY REQUIRE_CLEAN_GIT BROADCAST_DIR DEPLOY_JSON RECORD; do
   [ -n "${!v:-}" ] || die "$ENV_FILE has no $v. Set it before deploying."
 done
-[ "$FOUNDRY_PROFILE" = ci ] || die "FOUNDRY_PROFILE must be ci (D45)"
+[ "$FOUNDRY_PROFILE" = ci ] || die "FOUNDRY_PROFILE must be ci"
 case "$WALLET_MODE" in
   account) [ -n "${KEYSTORE:-}" ] || die "$ENV_FILE has no KEYSTORE" ;;
   unlocked) ;;
@@ -172,7 +172,7 @@ code_at() { local c; c=$(cast code "$2") || die "cast code failed for $1 $2"; { 
 for k in escrow allowlist hook locker mev factory tokenDeployer burnRouter controller; do
   code_at "$k" "$(addr_of "$k")"
 done
-echo "ok   code at all 10 contracts"
+echo "ok   code at all 9 contracts"
 F=$(addr_of factory)
 [ "$(cast call "$F" 'deprecated()(bool)')" = true ] || die "factory is not deprecated"
 fee=$(cast call "$F" 'deployFee()(uint256)' | awk '{print $1}')

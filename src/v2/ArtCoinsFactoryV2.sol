@@ -26,6 +26,11 @@ interface IHookPoolManager {
     function poolManager() external view returns (address);
 }
 
+/// @dev Locker getter for the PositionManager that holds its positions.
+interface ILockerPositionManager {
+    function positionManager() external view returns (address);
+}
+
 /// @title  ArtCoinsFactoryV2
 /// @notice Launches an art coin, its native eth Uniswap v4 pool and its locked liquidity in one call.
 /// @dev    `deployToken` deploys the coin through `ArtCoinsDeployerV2`, creates the pool on an
@@ -72,18 +77,19 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     /// @notice Ownership cannot be renounced.
     error RenounceDisabled();
 
-    // ── immutables ────────────────────────────────────────────────────────
+    // ── pool manager and token deployer ───────────────────────────────────
 
     /// @inheritdoc IArtCoinsFactoryV2
     uint16 public constant STACK_VERSION = Constants.STACK_VERSION;
 
     /// @dev Size of the fixed reject set in `_checkRecipients`: factory, coin, PoolManager,
-    ///      hook, locker, token deployer, hook fee escrow, mev module.
-    uint256 private constant _REJECT_SET = 8;
+    ///      hook, locker, token deployer, hook fee escrow, mev module, locker PositionManager,
+    ///      pool extension.
+    uint256 private constant _REJECT_SET = 10;
 
     /// @notice The Uniswap v4 PoolManager every enabled hook must answer.
     address public immutable poolManager;
-    /// @notice CREATE2 token deployer bound to this factory at its construction. Set with
+    /// @notice CREATE2 token deployer whose `factory()` is this factory. Set with
     ///         `setTokenDeployer`. It is the CREATE2 origin, so replacing it changes every
     ///         future token address and `predictToken` answers for the current one.
     address public tokenDeployer;
@@ -180,10 +186,7 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         // An empty config is passed when there is no module.
         IArtCoinsHookV2(c.pool.hook)
             .initializeMevModule(
-                poolKey,
-                c.mev.module == address(0)
-                    ? bytes("")
-                    : abi.encode(c.mev.startingSkimBps, c.mev.windowSeconds)
+                poolKey, c.mev.module == address(0) ? bytes("") : _mevInitData(c.mev)
             );
 
         emit TokenCreatedV2(
@@ -339,9 +342,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
     }
 
     /// @dev The bounty recipient and the protocol recipient must receive eth or claim an escrow
-    ///      credit. The factory, the coin, the PoolManager, this launch's hook, locker, hook fee
-    ///      escrow, token deployer and mev module, and every extension in the config can do
-    ///      neither, so they are rejected.
+    ///      credit. The factory, the coin, the PoolManager, this launch's hook, locker, locker
+    ///      PositionManager, hook fee escrow, token deployer, mev module and pool extension, and
+    ///      every launch extension in the config can do neither, so they are rejected.
     function _checkRecipients(DeploymentConfigV2 calldata c, address token) internal view {
         address[_REJECT_SET] memory fixedSet = [
             address(this),
@@ -351,7 +354,9 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
             c.locker.locker,
             tokenDeployer,
             IArtCoinsHookV2(c.pool.hook).globals().feeEscrow,
-            c.mev.module
+            c.mev.module,
+            ILockerPositionManager(c.locker.locker).positionManager(),
+            c.pool.extension
         ];
         _rejectStackRecipient(c.fee.bountyRecipient, fixedSet, c);
         _rejectStackRecipient(protocolRecipient, fixedSet, c);
@@ -371,6 +376,21 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         }
     }
 
+    /// @dev Starting skim and window with 0 replaced by the Constants default.
+    function _mevParams(MevConfigV2 calldata m)
+        internal
+        pure
+        returns (uint24 start, uint32 window)
+    {
+        start = m.startingSkimBps == 0 ? Constants.DEFAULT_START_SKIM_BPS : m.startingSkimBps;
+        window = m.windowSeconds == 0 ? Constants.DEFAULT_MEV_WINDOW : m.windowSeconds;
+    }
+
+    function _mevInitData(MevConfigV2 calldata m) internal pure returns (bytes memory) {
+        (uint24 start, uint32 window) = _mevParams(m);
+        return abi.encode(start, window);
+    }
+
     function _validateMev(MevConfigV2 calldata m, address hook, uint24 baseline) internal view {
         if (m.module == address(0)) {
             if (m.startingSkimBps != 0 || m.windowSeconds != 0) revert InvalidMevConfig();
@@ -378,9 +398,10 @@ contract ArtCoinsFactoryV2 is IArtCoinsFactoryV2, Ownable2Step, ReentrancyGuardT
         }
         if (!enabledMevModules[m.module]) revert MevModuleNotEnabled();
         if (IArtCoinsMevSkimV2(m.module).hook() != hook) revert InvalidMevModule(m.module);
+        (uint24 start, uint32 window) = _mevParams(m);
         if (
-            m.windowSeconds < Constants.MIN_MEV_WINDOW || m.windowSeconds > Constants.MAX_MEV_WINDOW
-                || m.startingSkimBps > Constants.MAX_SKIM_BPS || m.startingSkimBps < baseline
+            window < Constants.MIN_MEV_WINDOW || window > Constants.MAX_MEV_WINDOW
+                || start > Constants.MAX_SKIM_BPS || start < baseline
         ) revert InvalidMevConfig();
     }
 

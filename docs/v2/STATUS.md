@@ -171,3 +171,12 @@ the v2 stack is reduced to 9 contracts and one fee path before the redeploy. doc
 - changed: the factory has one `deployToken` entrypoint (constructor `(owner, poolManager, deployFee)`); the token has one `lock()` (error `CoinLocked`); the locker constructor is `(owner, positionManager, permit2)`; `Constants.hash()` changed.
 - protocol fees: `ProtocolFeeControllerV2.processFees()` and `BurnRouterV2.processBurn(minOut)`, called by the LAYER bot.
 - docs updated: DECISIONS D92, AUDIT-BRIEF, RUNBOOK, CREDITS-ENGINE-INTERFACE and the false statements in DESIGN, HANDOFF, SYSTEM-REVIEW, REPORT and the root README.
+
+## D93 (2026-10-14, post audit fixes)
+
+external audit of `b29ed65b`. fixes on branch `post-audit`, recorded in docs/v2/DECISIONS.md D93.
+
+- hook: `RefundAddressRequired` on a partially filled quote specified swap without a refund address; baseline skim bounds enforced; `PoolStarted` emitted; zero MEV parameters normalise to the defaults; `setBountyRecipient` and the launch recipient checks reject the PositionManager, the pool extension and launch extensions.
+- controller: native rescue removed (every wei of balance is accounted by `pending()`), erc20 rescue stays; recipient validation (self and duplicates rejected, router identity checked). correction to D82: the controller has a payable `receive()`, the escrow credit is the fallback.
+- `Constants.hash()` includes the string caps; `FeeDelivery` erc20 path removed; the deploy postflight asserts the LAYER hook `protocolFeeNumerator` is 0.
+- docs and scripts aligned to the nine contract stack: RUNBOOK part 2, AUDIT-BRIEF, CREDITS-ENGINE-INTERFACE, `deployments/v2.template.json`, `script/v2/README.md`, launch configs, env comments, keeper comments.

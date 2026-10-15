@@ -825,6 +825,19 @@ export const hookV2Abi = [
   },
   {
     "type": "event",
+    "name": "PoolStarted",
+    "inputs": [
+      {
+        "name": "poolId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "PoolId"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "ReferralBpsSet",
     "inputs": [
       {
@@ -1009,8 +1022,14 @@ export const hookV2Abi = [
   },
   {
     "type": "error",
-    "name": "BaselineSkimBpsTooHigh",
-    "inputs": []
+    "name": "BaselineSkimOutOfBounds",
+    "inputs": [
+      {
+        "name": "bps",
+        "type": "uint24",
+        "internalType": "uint24"
+      }
+    ]
   },
   {
     "type": "error",
@@ -1124,6 +1143,11 @@ export const hookV2Abi = [
   {
     "type": "error",
     "name": "ReferralBpsTooHigh",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RefundAddressRequired",
     "inputs": []
   },
   {

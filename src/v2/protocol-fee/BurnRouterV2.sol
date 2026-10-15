@@ -294,7 +294,8 @@ contract BurnRouterV2 is
 
     /// @dev Balance minus the reward reserve, `rewardMaxBps` of the balance.
     ///      The reward is capped at `rewardMaxBps` of the consumed weth, and
-    ///      consumed <= budget < balance, so the reserve covers it after any fill.
+    ///      consumed <= budget <= balance, so the reserve covers it after any fill.
+    ///      The budget equals the balance when `rewardMaxBps` is 0.
     function _budget(uint256 bal) internal view returns (uint256) {
         return bal - (bal * rewardMaxBps) / Constants.BPS;
     }

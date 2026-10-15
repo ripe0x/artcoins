@@ -156,10 +156,6 @@ contract DeliveryHarness {
     function sendNative(address to, uint256 amount, uint256 gasCap) external returns (bool) {
         return FeeDelivery.sendNative(escrow, to, amount, gasCap);
     }
-
-    function sendErc20(address token, address to, uint256 amount) external returns (bool) {
-        return FeeDelivery.sendErc20(escrow, token, to, amount);
-    }
 }
 
 contract FeeDeliveryTest is Test {
@@ -231,7 +227,6 @@ contract FeeDeliveryTest is Test {
     function test_delivery_zeroAmount_noop() public {
         RevertingRecipient r = new RevertingRecipient();
         assertTrue(harness.sendNative(address(r), 0, Constants.PUSH_GAS_MAX));
-        assertTrue(harness.sendErc20(address(0xBEEF), address(r), 0));
         assertEq(escrow.totalOwed(address(0)), 0);
     }
 
@@ -253,71 +248,5 @@ contract FeeDeliveryTest is Test {
         harness.sendNative(to, amount, Constants.PUSH_GAS_MAX);
         assertEq(to.balance + escrow.balances(to, address(0)), amount);
         assertEq(address(harness).balance, 0);
-    }
-
-    // ── erc20 ─────────────────────────────────────────────────────────────
-
-    function test_delivery_erc20_pushed() public {
-        MockToken t = new MockToken();
-        t.mint(address(harness), 10e18);
-        address to = makeAddr("to");
-        assertTrue(harness.sendErc20(address(t), to, 3e18));
-        assertEq(t.balanceOf(to), 3e18);
-        assertEq(t.balanceOf(address(escrow)), 0);
-    }
-
-    function test_delivery_erc20_blocked_escrowed() public {
-        BlockingToken t = new BlockingToken();
-        t.mint(address(harness), 10e18);
-        address to = makeAddr("to");
-        t.setBlocked(to, true);
-        assertFalse(harness.sendErc20(address(t), to, 3e18));
-        assertEq(escrow.balances(to, address(t)), 3e18);
-        assertEq(escrow.totalOwed(address(t)), 3e18);
-        assertEq(t.balanceOf(address(escrow)), 3e18);
-        assertEq(t.allowance(address(harness), address(escrow)), 0);
-    }
-
-    function test_delivery_erc20_falseReturn_reverts_noCredit() public {
-        FalseTransferToken t = new FalseTransferToken();
-        t.mint(address(harness), 10e18);
-        address to = makeAddr("to");
-        vm.expectRevert(FeeDelivery.InvalidTransferReturn.selector);
-        harness.sendErc20(address(t), to, 3e18);
-        assertEq(escrow.balances(to, address(t)), 0);
-        assertEq(escrow.totalOwed(address(t)), 0);
-        assertEq(t.balanceOf(address(harness)), 10e18);
-    }
-
-    function test_delivery_erc20_shortReturn_reverts() public {
-        uint256[2] memory lens = [uint256(1), 31];
-        for (uint256 i; i < 2; ++i) {
-            ShortReturnToken t = new ShortReturnToken(lens[i]);
-            address to = makeAddr("to");
-            vm.expectRevert(FeeDelivery.InvalidTransferReturn.selector);
-            harness.sendErc20(address(t), to, 3e18);
-            assertEq(escrow.balances(to, address(t)), 0);
-        }
-    }
-
-    function test_delivery_erc20_noCodeToken_reverts() public {
-        vm.expectRevert(SafeTransferLib.ApproveFailed.selector);
-        harness.sendErc20(makeAddr("no-code-token"), makeAddr("to"), 3e18);
-    }
-
-    function test_delivery_erc20_noReturn_pushed() public {
-        NoReturnToken t = new NoReturnToken();
-        t.mint(address(harness), 10e18);
-        address to = makeAddr("to");
-        assertTrue(harness.sendErc20(address(t), to, 3e18));
-        assertEq(t.balanceOf(to), 3e18);
-    }
-
-    function test_delivery_erc20_insufficient_reverts() public {
-        // the fallback cannot conjure funds: delivering more than held reverts
-        MockToken t = new MockToken();
-        t.mint(address(harness), 1e18);
-        vm.expectRevert();
-        harness.sendErc20(address(t), makeAddr("to"), 3e18);
     }
 }

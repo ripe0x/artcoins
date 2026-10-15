@@ -1108,6 +1108,43 @@ contract FactoryV2ForkTest is ForkBase {
         }
     }
 
+    /// @dev The locker PositionManager and the pool extension are rejected as recipients.
+    function test_launch_recipientIsPositionManagerOrPoolExtension_reverts() public onlyFork {
+        address posm = address(realLocker.positionManager());
+        address poolExt = makeAddr("fv2.poolExtension");
+        address[2] memory bad = [posm, poolExt];
+        for (uint256 i; i < bad.length; ++i) {
+            IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
+            c.pool.extension = poolExt;
+            c.fee.bountyRecipient = payable(bad[i]);
+            _expectRevertDeploy(
+                c,
+                abi.encodeWithSelector(IArtCoinsFactoryV2.RecipientCannotReceive.selector, bad[i])
+            );
+            c = _cfg();
+            c.pool.extension = poolExt;
+            factory.setProtocolRecipient(payable(bad[i]));
+            _expectRevertDeploy(
+                c,
+                abi.encodeWithSelector(IArtCoinsFactoryV2.RecipientCannotReceive.selector, bad[i])
+            );
+            factory.setProtocolRecipient(protocolR);
+        }
+    }
+
+    /// @dev Zero starting skim and window select the Constants defaults.
+    function test_launch_mevZeroes_selectDefaults() public onlyFork {
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
+        c.mev.startingSkimBps = 0;
+        c.mev.windowSeconds = 0;
+        address token = _deploy(alice, c);
+        PoolId pid = factory.deploymentInfo(token).poolId;
+        ArtCoinsMevLinearSkimV2.SkimSchedule memory sch = mev.schedule(pid);
+        assertEq(sch.startingSkimBps, Constants.DEFAULT_START_SKIM_BPS, "start");
+        assertEq(sch.windowSeconds, Constants.DEFAULT_MEV_WINDOW, "window");
+        assertEq(mev.windowEnd(pid), block.timestamp + Constants.DEFAULT_MEV_WINDOW);
+    }
+
     /// @dev The coin address depends on the config hash, so a recipient cannot
     ///      be set to it ahead of time. The deployer result is mocked to put
     ///      the coin address on the recipient.

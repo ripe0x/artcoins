@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import {Constants} from "../../Constants.sol";
 import {IArtCoinsFeeEscrowV2} from "../interfaces/IArtCoinsFeeEscrowV2.sol";
+import {IBurnRouterV2} from "../interfaces/IBurnRouterV2.sol";
 import {IConstantsBound} from "../interfaces/IConstantsBound.sol";
 import {IProtocolFeeControllerV2} from "../interfaces/IProtocolFeeControllerV2.sol";
 import {FeeDelivery} from "../libraries/FeeDelivery.sol";
@@ -22,12 +23,14 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 ///         share's recipient in the escrow, which requires this contract to be
 ///         an escrow depositor. Until it is, a failed push reverts
 ///         `processFees` and the eth stays here for a retry.
-///         The split covers eth. Erc20 sent here is recoverable with `rescue`.
+///         The split covers eth: every wei of the balance is split by `processFees`.
+///         Erc20 sent here is recoverable with `rescue`.
 ///         Owner powers apply to every coin: `treasury`, `burnRouter`,
 ///         `treasuryBps` within [PFC_MIN_TREASURY_BPS, BPS - PFC_MIN_BURN_BPS]
-///         (1000 to 9000 bps), and `rescue` of any balance, including eth
-///         waiting to be split. `setBurnRouter` does not call the old router,
-///         so a faulty router can be replaced.
+///         (1000 to 9000 bps), and `rescue` of any erc20. `setBurnRouter` does not
+///         call the old router, so a faulty router can be replaced. The treasury
+///         and the router differ from each other and from this contract, and the
+///         router answers `constantsHash()`, `coin()` and `poolManager()`.
 contract ProtocolFeeControllerV2 is
     IProtocolFeeControllerV2,
     IConstantsBound,
@@ -59,7 +62,8 @@ contract ProtocolFeeControllerV2 is
         if (feeEscrow_ == address(0) || treasury_ == address(0) || burnRouter_ == address(0)) {
             revert ZeroAddress();
         }
-        _checkConstants(burnRouter_);
+        _checkRecipients(treasury_, burnRouter_);
+        _checkRouter(burnRouter_);
         feeEscrow = feeEscrow_;
         treasury = treasury_;
         burnRouter = burnRouter_;
@@ -113,6 +117,7 @@ contract ProtocolFeeControllerV2 is
     /// @inheritdoc IProtocolFeeControllerV2
     function setTreasury(address treasury_) external onlyOwner {
         if (treasury_ == address(0)) revert ZeroAddress();
+        _checkRecipients(treasury_, burnRouter);
         emit TreasurySet(treasury, treasury_);
         treasury = treasury_;
     }
@@ -120,7 +125,8 @@ contract ProtocolFeeControllerV2 is
     /// @inheritdoc IProtocolFeeControllerV2
     function setBurnRouter(address burnRouter_) external onlyOwner {
         if (burnRouter_ == address(0)) revert ZeroAddress();
-        _checkConstants(burnRouter_);
+        _checkRecipients(treasury, burnRouter_);
+        _checkRouter(burnRouter_);
         emit BurnRouterSet(burnRouter, burnRouter_);
         burnRouter = burnRouter_;
     }
@@ -133,24 +139,36 @@ contract ProtocolFeeControllerV2 is
     /// @inheritdoc IProtocolFeeControllerV2
     function rescue(address token, address to, uint256 amount) external onlyOwner nonReentrant {
         if (to == address(0)) revert ZeroAddress();
-        if (token == address(0)) {
-            (bool ok,) = payable(to).call{value: amount}("");
-            if (!ok) revert NativeTransferFailed();
-        } else {
-            SafeTransferLib.safeTransfer(token, to, amount);
-        }
+        if (token == address(0)) revert CannotRescue(token);
+        SafeTransferLib.safeTransfer(token, to, amount);
         emit Rescued(token, to, amount);
     }
 
     // ── internals ─────────────────────────────────────────────────────────
 
-    /// @dev `target.constantsHash()` must equal this build's hash.
-    function _checkConstants(address target) private view {
+    /// @dev The recipients differ from each other and from this contract.
+    function _checkRecipients(address treasury_, address router_) private view {
+        if (treasury_ == address(this)) revert InvalidRecipient(treasury_);
+        if (router_ == address(this) || router_ == treasury_) revert InvalidRecipient(router_);
+    }
+
+    /// @dev `router_.constantsHash()` must equal this build's hash, and `coin()` and
+    ///      `poolManager()` must answer nonzero.
+    function _checkRouter(address router_) private view {
         (bool ok, bytes memory ret) =
-            target.staticcall(abi.encodeCall(IConstantsBound.constantsHash, ()));
+            router_.staticcall(abi.encodeCall(IConstantsBound.constantsHash, ()));
         if (!ok || ret.length != 32 || abi.decode(ret, (bytes32)) != Constants.hash()) {
-            revert ConstantsMismatch(target);
+            revert ConstantsMismatch(router_);
         }
+        if (
+            _readAddress(router_, IBurnRouterV2.coin.selector) == address(0)
+                || _readAddress(router_, IBurnRouterV2.poolManager.selector) == address(0)
+        ) revert InvalidRecipient(router_);
+    }
+
+    function _readAddress(address target, bytes4 selector) private view returns (address a) {
+        (bool ok, bytes memory ret) = target.staticcall(abi.encodeWithSelector(selector));
+        if (ok && ret.length == 32) a = abi.decode(ret, (address));
     }
 
     function _setSplit(uint16 treasuryBps_) internal {

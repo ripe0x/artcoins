@@ -13,8 +13,8 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 ///         baseline during the anti sniper window goes to the bounty recipient.
 ///         Each leg is pushed with the 2,300 gas stipend, and a failed push is
 ///         credited to the recipient in the fee escrow. Skim charged on the
-///         unfilled part of a price limited fill is credited there to the refund
-///         address.
+///         unfilled part of a quote specified fill is credited there to the refund
+///         address, which the swap's `hookData` must carry.
 ///
 ///         Authority: allowlisted launchers create pools. The owner sets
 ///         launchers, fee escrow, extension allowlist and referral rate. The coin
@@ -25,8 +25,9 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 ///         Swap `hookData` is optional and never reverts the swap:
 ///           abi.encode(bytes mevModuleSwapData, bytes poolExtensionSwapData)
 ///         mevModuleSwapData is empty or exactly 32 bytes, abi.encode(address
-///         refundTo), with clean high 12 bytes (`HookCalldata.refundTo`). Without
-///         a valid refundTo the refund goes to the PoolManager caller.
+///         refundTo), with clean high 12 bytes (`HookCalldata.refundTo`). A quote
+///         specified swap that fills partially reverts `RefundAddressRequired`
+///         without a valid refundTo.
 ///         poolExtensionSwapData is empty or abi.encode(address referrer,
 ///         bytes extensionPayload) and goes whole to the pool extension. The
 ///         referrer is paid `referralBps` of the swap volume out of the protocol
@@ -133,6 +134,10 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @param config The stored config.
     event SkimConfigInitialized(PoolId indexed poolId, SkimConfig config);
 
+    /// @notice The pool's launch completed in `initializeMevModule`.
+    /// @param poolId Pool id.
+    event PoolStarted(PoolId indexed poolId);
+
     /// @notice The pool's anti sniper module was configured by `initializeMevModule`.
     /// @param poolId Pool id.
     /// @param module The module.
@@ -149,10 +154,10 @@ interface IArtCoinsHookV2 is IConstantsBound {
         PoolId indexed poolId, uint8 indexed leg, address indexed to, uint256 amount, bool escrowed
     );
 
-    /// @notice Skim charged on the unfilled part of a price limited swap was
+    /// @notice Skim charged on the unfilled part of a quote specified swap was
     ///         credited to `to` in the fee escrow.
     /// @param poolId Pool id.
-    /// @param to Refund address from `hookData`, else the PoolManager caller.
+    /// @param to Refund address from `hookData`.
     /// @param amount Over charge, wei.
     event SkimRefunded(PoolId indexed poolId, address indexed to, uint256 amount);
 
@@ -264,8 +269,9 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @notice `setPoolExtension` before the pool's launch completed (`initializeMevModule`).
     error PoolNotStarted();
 
-    /// @notice `baselineSkimBps` exceeds Constants.MAX_BASELINE_SKIM_BPS.
-    error BaselineSkimBpsTooHigh();
+    /// @notice `baselineSkimBps` is zero or exceeds Constants.MAX_BASELINE_SKIM_BPS.
+    /// @param bps The rejected value.
+    error BaselineSkimOutOfBounds(uint24 bps);
 
     /// @notice `bountyBps` exceeds Constants.MAX_BOUNTY_BPS (share of the skim, in bps).
     error BountyBpsTooHigh();
@@ -292,9 +298,9 @@ interface IArtCoinsHookV2 is IConstantsBound {
     error EscrowNotCoreDepositor(address escrow);
 
     /// @notice A recipient cannot hold a fee: the coin, this hook, the PoolManager,
-    ///         a fee escrow this hook has used, the pool's mev module or locker,
-    ///         the coin's launcher, its token deployer or the locker's
-    ///         PositionManager. Also reverts when a skim recipient is this hook or
+    ///         a fee escrow this hook has used, the pool's mev module, locker or
+    ///         pool extension, any factory-enabled launch extension, the coin's
+    ///         launcher, its token deployer or the locker's PositionManager. Also reverts when a skim recipient is this hook or
     ///         the PoolManager at init.
     /// @param recipient The rejected recipient.
     error RecipientCannotReceive(address recipient);
@@ -317,17 +323,20 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @notice `poolId` was not created by this hook.
     error UnknownPool();
 
+    /// @notice A quote specified swap filled partially and `hookData` carries no
+    ///         refund address for the over charge.
+    error RefundAddressRequired();
+
     // ── launcher ──────────────────────────────────────────────────────────
 
     /// @notice Creates and registers the pool, initializes it in the PoolManager
     ///         and writes the pool record and skim config.
-    /// @dev    Callable by allowlisted launchers. The pool key carries the dynamic
-    ///         fee flag and the lp fee stays at 0. The locker and the mev module
-    ///         (when set) must report this build's `constantsHash()`. Reverts with
-    ///         `NotLauncher`, `ZeroAddress`, `ConstantsMismatch`,
-    ///         `BaselineSkimBpsTooHigh`, `BountyBpsTooHigh`, `BountyRecipientZero`,
-    ///         `ProtocolRecipientZero`, `RecipientCannotReceive`,
-    ///         `CanonicalHookMismatch` or `ExtensionNotAllowed`.
+    /// @dev    Callable by allowlisted launchers. The locker and the mev module (when
+    ///         set) must report this build's `constantsHash()`. Reverts with
+    ///         `NotLauncher`, `ZeroAddress`, `ConstantsMismatch`, `BaselineSkimOutOfBounds`,
+    ///         `BountyBpsTooHigh`, `BountyRecipientZero`, `ProtocolRecipientZero`,
+    ///         `RecipientCannotReceive`, `CanonicalHookMismatch`, `ExtensionNotAllowed`
+    ///         or `EscrowNotCoreDepositor`.
     /// @param p Pool parameters.
     /// @return poolKey Key of the created pool.
     function initializePool(PoolInitParams calldata p) external returns (PoolKey memory poolKey);
@@ -421,8 +430,8 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @notice Sets the pool's bounty recipient. Coin admin only, until the coin
     ///         is locked or the admin is 0.
     /// @dev    `newRecipient` must be nonzero and not in the set listed at
-    ///         `RecipientCannotReceive`. A launch extension cannot be the
-    ///         recipient, because an extension cannot call the escrow's `claim`.
+    ///         `RecipientCannotReceive`, which includes the pool extension and
+    ///         every factory-enabled launch extension.
     ///         Reverts with `UnknownPool`, `NotCoinAdmin`, `CoinLocked`,
     ///         `BountyRecipientZero`, `RecipientCannotReceive` or `RecipientCheckFailed`.
     /// @param poolId Pool id.
@@ -442,10 +451,9 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @notice Sets the pool's extension. Coin admin only, until the coin is
     ///         locked or the admin is 0.
     /// @dev    `newExtension` is zero or enabled on the extension allowlist. A new
-    ///         extension receives `initializePreLockerSetup(key, false, initData)`
-    ///         and `initializePostLockerSetup(key, locker, false)` in this call.
-    ///         The old extension is not called. Callable after
-    ///         `initializeMevModule`. Reverts with `UnknownPool`, `NotCoinAdmin`, `CoinLocked`,
+    ///         extension receives both locker setup calls in this call. The old
+    ///         extension is not called. Callable after `initializeMevModule`.
+    ///         Reverts with `UnknownPool`, `NotCoinAdmin`, `CoinLocked`,
     ///         `PoolNotStarted` or `ExtensionNotAllowed`.
     /// @param key Key of the pool.
     /// @param newExtension New extension, zero for none.

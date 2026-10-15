@@ -28,7 +28,7 @@ hosted loop for the 111 and LAYER keeper contracts. the loop ticks every `INTERV
 the weekly timer counts from the last successful run and lives in the state file, so a restart does not re run. a fresh volume has no timers: the first tick runs every keeper once. a simulation that reverts is logged and not sent. a tx still unmined after `RECEIPT_TIMEOUT_SECONDS` (600) stays in flight and later ticks handle it (next section).
 
 
-note: LAYER already has its own hosted keeper (`layer-keeper` in ripe0x/new-material). deploy this runner with `KEEPERS=111` so the two bots do not race (D64).
+note: LAYER already has its own hosted keeper (`layer-keeper` in ripe0x/new-material). deploy this runner with `KEEPERS=111` so the two bots do not race.
 
 the v2 fee path has no keeper contract in this runner: `ProtocolFeeControllerV2.processFees()` and `BurnRouterV2.processBurn(uint256 minOut)` are called by the LAYER bot.
 
@@ -126,7 +126,7 @@ the node refuses a tx unless `balance >= gas limit x maxFeePerGas`, and `maxFeeP
 | rule | meaning | action |
 |---|---|---|
 | `keeper_no_progress{keeper} == 1` (log `no_progress`, `/status` alert) | a successful run did not clear its trigger (weth burn skipped, convert paced or unquoted, flush skipped). the keeper backs off 1 h to 24 h | read the run's `step skipped` reasons and the `quoted` status. LAYER: refresh router floors (RUNBOOK action 5) |
-| `keeper_alerts_total{alert="due_no_burn"}` | a LAYER router is due but the simulation burned nothing (the stale floor case, KR-01b) | router floors (action 5), `SlippageFloorNotSet` |
+| `keeper_alerts_total{alert="due_no_burn"}` | a LAYER router is due but the simulation burned nothing (the stale floor case) | router floors (action 5), `SlippageFloorNotSet` |
 | `keeper_quote_status_total{status=~"floor_above_quote|no_quote|impact_too_high"}` | the convert or burn was dropped: the rpc's quote is below the pool, the pool read failed, or a router balance is too large for one burn | compare the rpc with a second provider. LAYER: a large router burns once its balance or the pool depth allows, or by hand with a floor |
 | `keeper_111_swapper_eth_wei > 0` (log `alert swapper_eth_stranded`) | a third party claimed the swapper's escrow credit (LF-02). that eth is stranded, nothing on chain recovers it | record it. keep the runner going, it shrinks the window |
 | `keeper_consecutive_reverts{keeper} >= 2` (log `ALERT two consecutive reverts`) | two runs in a row reverted (reason replayed in the log) | read the reason. `InsufficientGas` means the gas floors moved, re measure. anything else: run the forge script dry run by hand |

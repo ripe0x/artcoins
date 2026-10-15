@@ -20,25 +20,19 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 
+/// @dev Fee numerator getter on the LAYER pool hook.
+interface ILayerHookFee {
+    function protocolFeeNumerator() external view returns (uint256);
+}
+
 /// @title  DeployV2Lib
 /// @notice The v2 stack deploy routine. `script/v2/DeployV2Stack.s.sol` runs it
 ///         inside `vm.startBroadcast()` and the fork harness runs it inside
 ///         `vm.startPrank(broadcaster)`. All functions are internal, so every
 ///         `new` and call runs in the caller's context.
-/// @dev    Order:
-///          1 escrow                       owner = broadcaster (wired below)
-///          2 extension allowlist          owner = OWNER (no deploy time owner call)
-///          3 hook, CREATE2 via 0x4e59     salt mined for flags 0x28CC, owner = broadcaster
-///          4 locker                       owner = broadcaster, a pure lock (no fee path)
-///          5 linear skim module           ctor takes the hook, ownerless
-///          6 factory                      owner = broadcaster, ships deprecated
-///          7 token deployer               bound to the factory, then `setTokenDeployer`
-///          8 burn router                  owner = OWNER, bound to LAYER and its weth pool at construction
-///          9 protocol fee controller      owner = OWNER, treasury, burn router (ctor needs it, so 8 before 9)
-///         10 wiring                       escrow depositors first, then hook, locker, factory
-///         11 ownership                    pending owner = OWNER on escrow, hook, locker, factory when the
-///                                         broadcaster differs (Ownable2Step, `acceptOwnership` by OWNER)
-///         `check` holds every post deploy assert.
+/// @dev    Deploy order: escrow, extension allowlist, hook (CREATE2, mined salt), locker, mev
+///         module, factory, token deployer, burn router, controller (its constructor takes the
+///         router), wiring, then the pending owner transfer. `check` holds every post deploy assert.
 library DeployV2Lib {
     // ── v2 hook address flags ───────────────────────────────────────────────
     uint160 internal constant HOOK_FLAGS = uint160(
@@ -99,7 +93,7 @@ library DeployV2Lib {
         ProtocolFeeControllerV2 controller;
     }
 
-    /// @notice Mainnet infra plus the d7 defaults. `treasury` defaults to `owner`.
+    /// @notice Mainnet infra plus the launch defaults. `treasury` defaults to `owner`.
     function defaults(
         address owner,
         address broadcaster,
@@ -259,6 +253,7 @@ library DeployV2Lib {
         _checkLocker(s);
         _checkFactory(s, p);
         _checkPeriphery(s, p);
+        _checkLayerHook(s);
         _checkOwners(s, p, accepted);
         if (p.checkSizes) _checkSizes(s);
     }
@@ -341,6 +336,14 @@ library DeployV2Lib {
             keccak256(abi.encode(s.burnRouter.poolKey())) == keccak256(abi.encode(p.layerPoolKey)),
             "v2: router pool key"
         );
+    }
+
+    /// @dev The router assumes the LAYER pool hook takes no protocol fee from the pool.
+    function _checkLayerHook(Stack memory s) private view {
+        address hook = address(s.burnRouter.poolKey().hooks);
+        if (block.chainid == 1 || hook.code.length != 0) {
+            require(ILayerHookFee(hook).protocolFeeNumerator() == 0, "v2: LAYER hook protocol fee");
+        }
     }
 
     function _checkOwners(Stack memory s, Params memory p, bool accepted) private view {

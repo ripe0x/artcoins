@@ -6,6 +6,7 @@ import {IArtCoinsPoolExtension} from "../../hooks/interfaces/IArtCoinsPoolExtens
 import {
     IArtCoinsPoolExtensionAllowlist
 } from "../../hooks/interfaces/IArtCoinsPoolExtensionAllowlist.sol";
+import {IArtCoinsFactoryV2} from "../interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsFeeEscrowV2} from "../interfaces/IArtCoinsFeeEscrowV2.sol";
 import {IArtCoinsHookV2} from "../interfaces/IArtCoinsHookV2.sol";
 import {IArtCoinsMevSkimV2} from "../interfaces/IArtCoinsMevSkimV2.sol";
@@ -143,6 +144,9 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         _checkConstants(p.locker);
         if (p.mevModule != address(0)) _checkConstants(p.mevModule);
         _validateSkim(p.skim);
+        if (!IArtCoinsFeeEscrowV2(_globals.feeEscrow).isCoreDepositor(address(this))) {
+            revert EscrowNotCoreDepositor(_globals.feeEscrow);
+        }
 
         key = PoolKey({
             currency0: Currency.wrap(address(0)),
@@ -212,6 +216,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         if (msg.sender != info.launcher) revert NotLauncher();
         if (_started[pid]) revert MevModuleAlreadyInitialized();
         _started[pid] = true;
+        emit PoolStarted(pid);
 
         address module = info.mevModule;
         if (module != address(0)) {
@@ -267,8 +272,8 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
 
     /// @dev Quote specified swaps are charged here on the requested amount and
     ///      trued up in `afterSwap` on the realized fill. The over charge is
-    ///      credited in the fee escrow to the refund address in `hookData`, else to
-    ///      the PoolManager caller.
+    ///      credited in the fee escrow to the refund address in `hookData`. A
+    ///      partial fill without one reverts in `afterSwap`.
     function _beforeSwap(
         address,
         PoolKey calldata key,
@@ -298,9 +303,9 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
-    /// @dev On a partial exact out sell the caller's eth delta is negative until
-    ///      it claims the refund, so a router that cannot claim passes a refund
-    ///      address.
+    /// @dev A quote specified swap that fills partially reverts
+    ///      `RefundAddressRequired` unless `hookData` carries a refund address,
+    ///      which is credited the over charge in the fee escrow.
     function _afterSwap(
         address sender,
         PoolKey calldata key,
@@ -359,10 +364,8 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
             address escrow = _globals.feeEscrow;
             uint256 over = charged - skim;
             if (over != 0) {
-                // The over charge is credited in the escrow to the hookData
-                // refund address, else to the PoolManager caller.
                 address to = HookCalldata.refundTo(hookData);
-                if (to == address(0)) to = sender;
+                if (to == address(0)) revert RefundAddressRequired();
                 IArtCoinsFeeEscrowV2(escrow).storeFeesNative{value: over}(to);
                 emit SkimRefunded(pid, to, over);
             }
@@ -503,7 +506,9 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     // ── internals: config ─────────────────────────────────────────────────
 
     function _validateSkim(SkimConfig calldata s) private view {
-        if (s.baselineSkimBps > Constants.MAX_BASELINE_SKIM_BPS) revert BaselineSkimBpsTooHigh();
+        if (s.baselineSkimBps == 0 || s.baselineSkimBps > Constants.MAX_BASELINE_SKIM_BPS) {
+            revert BaselineSkimOutOfBounds(s.baselineSkimBps);
+        }
         if (s.bountyBps > Constants.MAX_BOUNTY_BPS) revert BountyBpsTooHigh();
         if (s.bountyRecipient == address(0)) revert BountyRecipientZero();
         if (s.protocolRecipient == address(0)) revert ProtocolRecipientZero();
@@ -587,8 +592,8 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     /// @inheritdoc IArtCoinsHookV2
     /// @dev The caller is the coin's current `admin()` and the coin is not
     ///      `locked()`. `newRecipient` is nonzero and not in the set listed at
-    ///      `RecipientCannotReceive`. A launch extension cannot be the recipient,
-    ///      because an extension cannot call the escrow's `claim`.
+    ///      `RecipientCannotReceive`, which includes the pool extension and every
+    ///      factory-enabled launch extension.
     function setBountyRecipient(PoolId poolId, address payable newRecipient) external {
         PoolInfo storage info = _info[poolId];
         address coin = info.token;
@@ -597,7 +602,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         if (msg.sender != t.admin()) revert NotCoinAdmin();
         if (t.locked()) revert CoinLocked();
         if (newRecipient == address(0)) revert BountyRecipientZero();
-        _rejectKnownStackContract(coin, info.locker, info.mevModule, newRecipient);
+        _rejectKnownStackContract(coin, info.locker, info.mevModule, info.extension, newRecipient);
         address old = _skim[poolId].bountyRecipient;
         _skim[poolId].bountyRecipient = newRecipient;
         emit BountyRecipientSet(poolId, old, newRecipient);
@@ -651,19 +656,27 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     }
 
     /// @dev Reverts `RecipientCannotReceive` when `r` is the coin, this hook, the
-    ///      PoolManager, an escrow this hook has used, the pool's mev module or
-    ///      locker, the coin's launcher, its token deployer or the locker's
-    ///      PositionManager. A lookup that reverts reverts `RecipientCheckFailed`.
-    function _rejectKnownStackContract(address coin, address locker, address mevModule, address r)
-        private
-        view
-    {
+    ///      PoolManager, an escrow this hook has used, the pool's mev module,
+    ///      locker or extension, a factory-enabled launch extension, the coin's
+    ///      launcher, its token deployer or the locker's PositionManager. A lookup that reverts reverts `RecipientCheckFailed`.
+    function _rejectKnownStackContract(
+        address coin,
+        address locker,
+        address mevModule,
+        address poolExt,
+        address r
+    ) private view {
         if (
             r == coin || r == address(this) || r == address(poolManager) || _knownEscrow[r]
-                || r == mevModule || r == locker
+                || r == mevModule || r == locker || r == poolExt
         ) revert RecipientCannotReceive(r);
         address factory = IArtCoinsTokenV2(coin).launcher();
         if (r == factory) revert RecipientCannotReceive(r);
+        try IArtCoinsFactoryV2(factory).enabledExtensions(r) returns (bool enabled) {
+            if (enabled) revert RecipientCannotReceive(r);
+        } catch {
+            revert RecipientCheckFailed();
+        }
         try IFactoryTokenDeployer(factory).tokenDeployer() returns (address dep) {
             if (r == dep) revert RecipientCannotReceive(r);
         } catch {

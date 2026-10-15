@@ -33,7 +33,7 @@
       "status": "planned",
       "provenance": "planned",
       "chainVerified": false,
-      "notes": "core depositors: hook, locker. non core: controller and every per coin fee swapper (D33, D36)"
+      "notes": "escrow of the hook fee credits. depositors set by wiring: the hook (core) and the controller (non core)"
     },
     {
       "name": "ArtCoinsPoolExtensionAllowlist",
@@ -55,7 +55,7 @@
       "status": "planned",
       "provenance": "planned",
       "chainVerified": false,
-      "notes": "new instance bound to the v2 hook (do not reuse 0xd6D5, it serves the v1 hook)"
+      "notes": "new instance, wired into the hook with setExtensionAllowlist"
     },
     {
       "name": "ArtCoinsHookV2",
@@ -77,7 +77,7 @@
       "status": "planned",
       "provenance": "planned",
       "chainVerified": false,
-      "notes": "CREATE2 via 0x4e59b44847b379578588920cA78FbF26c0B4956C, low 14 bits 0x2DCC, salt in the deploy json"
+      "notes": "CREATE2 via 0x4e59b44847b379578588920cA78FbF26c0B4956C, low 14 bits 0x28CC, salt in the deploy json"
     },
     {
       "name": "ArtCoinsLpLockerV2",
@@ -99,7 +99,7 @@
       "status": "planned",
       "provenance": "planned",
       "chainVerified": false,
-      "notes": "pure lock: launch positions, no fee path (D92)"
+      "notes": "pure lock: holds the launch positions, no fee path. wired with setLauncher(factory)"
     },
     {
       "name": "ArtCoinsMevLinearSkimV2",
@@ -143,7 +143,7 @@
       "status": "planned",
       "provenance": "planned",
       "chainVerified": false,
-      "notes": "ships deprecated (owner only), deploy fee 0.069 eth, default protocol bps 2000"
+      "notes": "ships deprecated (owner only), deploy fee 0, protocol recipient the controller, team fee recipient the owner"
     },
     {
       "name": "ArtCoinsDeployerV2",
@@ -165,7 +165,7 @@
       "status": "planned",
       "provenance": "planned",
       "chainVerified": false,
-      "notes": "token deployer bound to the factory (D38), ownerless"
+      "notes": "token deployer bound to the factory (setTokenDeployer), ownerless"
     },
     {
       "name": "BurnRouterV2",
@@ -187,7 +187,7 @@
       "status": "planned",
       "provenance": "planned",
       "chainVerified": false,
-      "notes": "initialize(coin, key) after the first launch"
+      "notes": "bound to LAYER and its weth pool key at construction"
     },
     {
       "name": "ProtocolFeeControllerV2",
@@ -209,7 +209,7 @@
       "status": "planned",
       "provenance": "planned",
       "chainVerified": false,
-      "notes": "factory protocolRecipient, treasury 0x41c3, 8000/2000 treasury/LAYER burn"
+      "notes": "factory protocolRecipient, treasury 0x41c3, 8000/2000 treasury/LAYER burn, escrow depositor (non core)"
     }
   ],
   "coins": []
