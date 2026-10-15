@@ -29,6 +29,25 @@ export const hookV2Abi = [
   },
   {
     "type": "function",
+    "name": "everFeeEscrow",
+    "inputs": [
+      {
+        "name": "escrow",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "globals",
     "inputs": [],
     "outputs": [

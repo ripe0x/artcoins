@@ -1202,8 +1202,23 @@ contract HookV2ForkTest is HookV2ForkBase {
         emit IArtCoinsHookV2.FeeEscrowSet(address(escrow), address(e3));
         hook.setFeeEscrow(address(e3));
         assertEq(hook.globals().feeEscrow, address(e3));
+        assertTrue(hook.everFeeEscrow(address(escrow)), "constructor escrow recorded");
+        assertTrue(hook.everFeeEscrow(address(e3)), "current escrow recorded");
+        assertFalse(hook.everFeeEscrow(address(e2)), "rejected escrow not recorded");
         vm.expectRevert(IArtCoinsHookV2.ZeroAddress.selector);
         hook.setLauncher(address(0), true);
+    }
+
+    /// @dev A former fee escrow stays rejected as a bounty recipient after rotation.
+    function test_setBountyRecipient_rejectsFormerEscrow() public onlyFork {
+        (PoolKey memory key,) = _launch(_defaults(bountyEoa));
+        ArtCoinsFeeEscrowV2 e2 = new ArtCoinsFeeEscrowV2(address(this));
+        e2.addDepositor(address(hook), true);
+        hook.setFeeEscrow(address(e2));
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsHookV2.RecipientCannotReceive.selector, address(escrow))
+        );
+        hook.setBountyRecipient(key.toId(), payable(address(escrow)));
     }
 
     function test_owner_twoStepTransfer() public {

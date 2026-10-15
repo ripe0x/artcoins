@@ -37,6 +37,12 @@ interface IHookProtocolFee {
     function protocolFee() external view returns (uint24);
 }
 
+interface IHookFactory {
+    function factory() external view returns (address);
+    function protocolFeeNumerator() external view returns (uint256);
+    function setProtocolFeeNumerator(uint256 newNumerator) external;
+}
+
 /// @title  BurnRouterV2ForkTest
 /// @notice The LAYER burn router against the live LAYER/WETH pool (legacy
 ///         static fee hook) at the pinned block.
@@ -245,21 +251,56 @@ contract BurnRouterV2ForkTest is ForkBase {
         );
     }
 
-    /// @dev A nonzero hook `protocolFee` is charged on the whole budget of an exact input buy.
-    ///      The floor includes it, so a burn still clears the floor and `floorFor` shrinks.
+    /// @dev The legacy hook recomputes `protocolFee` from `protocolFeeNumerator` in every beforeSwap,
+    ///      so the numerator is set through the hook owner's setter. The fee is charged on the full
+    ///      budget of an exact input buy while the price limit fills only part of it.
     function test_burnV2_hookProtocolFee_floorIncludesIt() public onlyFork {
         address h = address(key.hooks);
-        uint256 before_ = router.floorFor(0.05 ether);
-        vm.store(h, bytes32(uint256(1)), bytes32(uint256(20_000))); // protocolFee, 2%
-        assertEq(IHookProtocolFee(h).protocolFee(), 20_000, "slot 1 is protocolFee");
-        assertLt(router.floorFor(0.05 ether), before_, "floor lowered by the hook charge");
+        address hookOwner = Ownable(IHookFactory(h).factory()).owner();
+        vm.prank(hookOwner);
+        IHookFactory(h).setProtocolFeeNumerator(500_000);
+        assertEq(IHookFactory(h).protocolFeeNumerator(), 500_000);
 
-        _fund(0.05 ether);
-        uint256 supply0 = IERC20(LAYER).totalSupply();
+        // `protocolFee` refreshes in beforeSwap: one small charged burn makes the views read it.
+        _fund(0.01 ether);
+        router.processBurn(0);
+        assertGt(IHookProtocolFee(h).protocolFee(), 0, "hook recomputed a nonzero fee");
+        vm.roll(block.number + 1);
+
+        _fund(500 ether);
+        uint256 budget = router.swapBudget();
+        uint256 snap = vm.snapshotState();
+
+        // Uncharged reference run: numerator 0.
+        vm.prank(hookOwner);
+        IHookFactory(h).setProtocolFeeNumerator(0);
+        (uint256 wethInFree, uint256 burnedFree) = router.processBurn(0);
+        assertLt(wethInFree, budget, "partial fill without the charge");
+        vm.revertToState(snap);
+
+        // Charged run. First pass reads the consumed amount, the second asserts at the pre swap spot.
+        uint256 hookClaims0 = pm.balanceOf(h, uint256(uint160(WETH)));
+        uint256 snap2 = vm.snapshotState();
+        (uint256 consumed,) = router.processBurn(0);
+        vm.revertToState(snap2);
+        assertLt(consumed, budget, "partial fill");
+        uint256 full = router.floorFor(consumed);
+        uint256 part = router.floorForPartial(budget, consumed);
+        assertLt(part, full, "the fee on the full budget lowers the execution floor");
+        assertEq(router.floorForPartial(consumed, consumed), full, "agree when consumed == budget");
+
         (uint256 wethIn, uint256 burned) = router.processBurn(0);
-        assertGt(wethIn, 0);
-        assertGe(burned, router.floorFor(wethIn) * 99 / 100, "clears the floor with the charge");
-        assertEq(IERC20(LAYER).totalSupply(), supply0 - burned);
+        assertEq(wethIn, consumed);
+        uint256 p = IHookProtocolFee(h).protocolFee();
+        assertApproxEqRel(
+            pm.balanceOf(h, uint256(uint160(WETH))) - hookClaims0,
+            budget * (p * 1e18 / (1e6 + p)) / 1e18,
+            1e15,
+            "hook took its fee on the full budget"
+        );
+        assertGt(wethIn, wethInFree, "the fee counts as consumed weth");
+        assertLe(burned, burnedFree, "price limit bounds the coin out");
+        assertGe(burned, part, "clears the budget based floor");
     }
 
     function test_burnV2_rejectingKeeper_rewardStays() public onlyFork {

@@ -71,6 +71,7 @@ contract ProtocolFeeControllerV2 is
         feeEscrow = feeEscrow_;
         coin = _readAddress(burnRouter_, IBurnRouterV2.coin.selector);
         poolManager = _readAddress(burnRouter_, IBurnRouterV2.poolManager.selector);
+        if (coin == address(0) || poolManager == address(0)) revert InvalidRecipient(burnRouter_);
         _checkRecipients(treasury_, burnRouter_);
         _checkRouter(burnRouter_);
         treasury = treasury_;
@@ -171,7 +172,7 @@ contract ProtocolFeeControllerV2 is
             revert ConstantsMismatch(router_);
         }
         if (
-            coin == address(0) || _readAddress(router_, IBurnRouterV2.coin.selector) != coin
+            _readAddress(router_, IBurnRouterV2.coin.selector) != coin
                 || _readAddress(router_, IBurnRouterV2.poolManager.selector) != poolManager
         ) revert InvalidRecipient(router_);
     }

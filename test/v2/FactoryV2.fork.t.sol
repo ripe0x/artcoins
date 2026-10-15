@@ -1108,6 +1108,23 @@ contract FactoryV2ForkTest is ForkBase {
         }
     }
 
+    /// @dev A former hook fee escrow is rejected as a bounty or protocol recipient after rotation.
+    function test_launch_formerFeeEscrowRecipient_reverts() public onlyFork {
+        ArtCoinsFeeEscrowV2 e2 = new ArtCoinsFeeEscrowV2(address(this));
+        e2.addDepositor(address(hook), true);
+        hook.setFeeEscrow(address(e2));
+        bytes memory err = abi.encodeWithSelector(
+            IArtCoinsFactoryV2.RecipientCannotReceive.selector, address(escrow)
+        );
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
+        c.fee.bountyRecipient = payable(address(escrow));
+        _expectRevertDeploy(c, err);
+        c = _cfg();
+        factory.setProtocolRecipient(payable(address(escrow)));
+        _expectRevertDeploy(c, err);
+        factory.setProtocolRecipient(protocolR);
+    }
+
     /// @dev The locker PositionManager and the pool extension are rejected as recipients.
     function test_launch_recipientIsPositionManagerOrPoolExtension_reverts() public onlyFork {
         address posm = address(realLocker.positionManager());

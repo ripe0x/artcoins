@@ -191,3 +191,16 @@ second external audit of `60f8b269`. fixes on branch `post-audit-2`, recorded in
 - controller: the treasury may not be the fee escrow; `setBurnRouter` requires the new router to report the same coin and PoolManager as the initial router.
 - burn router: the floor removes the LAYER hook's `protocolFee` charge from the weth priced at spot.
 - docs: DECISIONS D94, AUDIT-BRIEF target and residuals, CREDITS-ENGINE-INTERFACE, RUNBOOK, script/v2/README.md.
+
+## D95 (2026-10-15, third audit of 46cec5be)
+
+third external audit of `46cec5be`: no high severity finding. fixes on branch `post-audit-3`, recorded in docs/v2/DECISIONS.md D95.
+
+- controller: a router reporting a zero coin or PoolManager is rejected at construction.
+- burn router: `floorForPartial(budget, consumed)` added; the fee test is a charged partial burn.
+- hook and factory: `everFeeEscrow` records every escrow the hook has had; the factory (launch) and `setBountyRecipient` reject a former escrow as recipient.
+- deploy postflight: controller coin and PoolManager, locker PositionManager and Permit2, router parameters against `Constants`, 1,024 byte headroom on hook and locker, LAYER hook stored `protocolFee` 0.
+- first coin rehearsal extended to the RUNBOOK gate 7 list.
+- launch configs: the advice to allowlist Permit2 or the Universal Router is removed; forwarders are never allowlisted.
+- docs: registry sequence, protocol leg delivery, RUNBOOK gates 4 to 7 and monitoring, DESIGN deployer signature, AUDIT-BRIEF stipend claim.
+- deploy sequence from the audit: deploy with the factory deprecated, merge the registry record and regenerate addresses, pass the real first coin rehearsal, then launch the credits coin.

@@ -132,7 +132,7 @@ when the quote side is specified, `_beforeSwap` mints the skim S on the full abs
 | item | design |
 |---|---|
 | contracts | `ArtCoinsFactoryV2`, `ArtCoinsDeployerV2` |
-| functions | `function configHash(DeploymentConfigV2 calldata c) public pure returns (bytes32)` = `keccak256(abi.encode(c))`. `function predictToken(address sender, DeploymentConfigV2 calldata c) external view returns (address)`. deployer `deploy(TokenConfigV2 memory t, uint256 supply, TaxConfigV2 memory tax, bytes32 salt)` with `salt = keccak256(abi.encode(msg.sender, configHash(c)))` computed by the factory |
+| functions | `function configHash(DeploymentConfigV2 calldata c) public pure returns (bytes32)` = `keccak256(abi.encode(c))`. `function predictToken(address sender, DeploymentConfigV2 calldata c) external view returns (address)`. deployer `deploy(TokenConfigV2 memory t, uint256 supply, RestrictionConfigV2 memory restriction, ArtCoinsTokenV2.CanonicalPool memory canon, address launcher, bytes32 salt)` with `salt = keccak256(abi.encode(msg.sender, configHash(c)))` computed by the factory |
 | also | `initializePoolOpen` removed (d3), so a predicted pool key cannot be pre initialized on the hook |
 | invariant | token address is a function of (factory, sender, full config). a front runner with a different sender, or any different field, gets a different address and cannot block or capture the victim's launch |
 | tests | `test_launch_frontrunCopiedConfig_differentAddress`, `test_launch_changedLockerConfig_differentAddress`, `test_launch_predictTokenMatches` |

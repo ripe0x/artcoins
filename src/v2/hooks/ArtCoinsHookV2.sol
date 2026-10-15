@@ -107,9 +107,8 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     /// @inheritdoc IArtCoinsHookV2
     uint24 public referralBps;
 
-    /// @dev Every fee escrow this hook has used, set in the constructor and in
-    ///      `setFeeEscrow`. None of them is accepted as a bounty recipient.
-    mapping(address => bool) internal _knownEscrow;
+    /// @inheritdoc IArtCoinsHookV2
+    mapping(address => bool) public everFeeEscrow;
 
     /// @param manager_   Uniswap v4 PoolManager.
     /// @param owner_     Owner (Ownable2Step).
@@ -121,7 +120,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     {
         _checkConstants(escrow_);
         _globals = HookGlobals({feeEscrow: escrow_, extensionAllowlist: allowlist_});
-        _knownEscrow[escrow_] = true;
+        everFeeEscrow[escrow_] = true;
         referralBps = Constants.REFERRAL_BPS_DEFAULT;
         emit ReferralBpsSet(0, Constants.REFERRAL_BPS_DEFAULT);
         emit FeeEscrowSet(address(0), escrow_);
@@ -550,7 +549,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         }
         emit FeeEscrowSet(_globals.feeEscrow, escrow);
         _globals.feeEscrow = escrow;
-        _knownEscrow[escrow] = true;
+        everFeeEscrow[escrow] = true;
     }
 
     /// @inheritdoc IArtCoinsHookV2
@@ -670,7 +669,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         address r
     ) private view {
         if (
-            r == coin || r == address(this) || r == address(poolManager) || _knownEscrow[r]
+            r == coin || r == address(this) || r == address(poolManager) || everFeeEscrow[r]
                 || r == mevModule || r == locker || r == poolExt
         ) revert RecipientCannotReceive(r);
         address factory = IArtCoinsTokenV2(coin).launcher();

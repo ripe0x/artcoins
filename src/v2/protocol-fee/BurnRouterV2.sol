@@ -214,8 +214,17 @@ contract BurnRouterV2 is
 
     /// @inheritdoc IBurnRouterV2
     function floorFor(uint256 wethIn) external view returns (uint256) {
+        return _floor(wethIn, wethIn);
+    }
+
+    /// @inheritdoc IBurnRouterV2
+    function floorForPartial(uint256 budget, uint256 consumed) external view returns (uint256) {
+        return _floor(budget, consumed);
+    }
+
+    function _floor(uint256 budget, uint256 consumed) private view returns (uint256) {
         (uint160 spot,,,) = poolManager.getSlot0(_poolKey.toId());
-        return _spotFloor(wethIn, _hookFee(wethIn), spot);
+        return _spotFloor(consumed, _hookFee(budget), spot);
     }
 
     /// @inheritdoc IBurnRouterV2

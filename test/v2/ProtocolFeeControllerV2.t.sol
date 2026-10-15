@@ -370,6 +370,8 @@ contract ProtocolFeeControllerV2Test is Test {
         pfc.setBurnRouter(noPm);
         vm.expectRevert(abi.encodeWithSelector(sel, noCoin));
         _deploy(address(treasury), noCoin, SPLIT);
+        vm.expectRevert(abi.encodeWithSelector(sel, noPm));
+        _deploy(address(treasury), noPm, SPLIT);
     }
 
     /// @notice A router bound to another coin or PoolManager is rejected.

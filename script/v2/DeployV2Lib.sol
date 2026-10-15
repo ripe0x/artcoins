@@ -20,9 +20,10 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 
-/// @dev Fee numerator getter on the LAYER pool hook.
+/// @dev Fee getters on the LAYER pool hook.
 interface ILayerHookFee {
     function protocolFeeNumerator() external view returns (uint256);
+    function protocolFee() external view returns (uint256);
 }
 
 /// @title  DeployV2Lib
@@ -55,6 +56,8 @@ library DeployV2Lib {
     ///      tunable up to MAX_REFERRAL_CAP_OF_VOLUME.
     uint24 internal constant REFERRAL_BPS = Constants.REFERRAL_BPS_DEFAULT;
     uint256 internal constant EIP170 = 24_576;
+    /// @dev Required runtime code headroom under EIP-170 for the hook and the locker (RUNBOOK gate 4).
+    uint256 internal constant HEADROOM = 1024;
 
     /// @dev Deploy inputs.
     struct Params {
@@ -336,13 +339,39 @@ library DeployV2Lib {
             keccak256(abi.encode(s.burnRouter.poolKey())) == keccak256(abi.encode(p.layerPoolKey)),
             "v2: router pool key"
         );
+        // the controller binds the same coin and PoolManager as the router
+        require(s.controller.coin() == p.layer, "v2: controller coin");
+        require(s.controller.poolManager() == p.poolManager, "v2: controller PoolManager");
+        // locker position and permit2 bindings
+        require(
+            address(s.locker.positionManager()) == p.positionManager, "v2: locker PositionManager"
+        );
+        require(address(s.locker.permit2()) == p.permit2, "v2: locker permit2");
+        // router tunables at the approved deployment values
+        BurnRouterV2 r = s.burnRouter;
+        require(r.maxImpactBps() == Constants.PRICE_IMPACT_DEFAULT, "v2: router maxImpactBps");
+        require(r.spotFloorBps() == Constants.BURN_SPOT_FLOOR_BPS, "v2: router spotFloorBps");
+        require(r.keeperTip() == Constants.BURN_TIP_DEFAULT, "v2: router keeperTip");
+        require(
+            r.keeperGasOverhead() == Constants.BURN_GAS_OVERHEAD_DEFAULT,
+            "v2: router keeperGasOverhead"
+        );
+        require(
+            r.rewardMaxBaseFee() == Constants.BURN_BASEFEE_GATE_DEFAULT,
+            "v2: router rewardMaxBaseFee"
+        );
+        require(r.rewardMaxBps() == Constants.BURN_REWARD_BPS_DEFAULT, "v2: router rewardMaxBps");
     }
 
-    /// @dev The router assumes the LAYER pool hook takes no protocol fee from the pool.
+    /// @dev Deployment policy: the LAYER pool hook charges no protocol fee. The router reads the
+    ///      hook's stored `protocolFee()` at burn time and accounts for it in the floor, so a
+    ///      nonzero value would not break the burn, but the deployment is approved at zero.
+    ///      The numerator is the fee policy, the stored quote is the value the swap path charges.
     function _checkLayerHook(Stack memory s) private view {
         address hook = address(s.burnRouter.poolKey().hooks);
         if (block.chainid == 1 || hook.code.length != 0) {
             require(ILayerHookFee(hook).protocolFeeNumerator() == 0, "v2: LAYER hook protocol fee");
+            require(ILayerHookFee(hook).protocolFee() == 0, "v2: LAYER hook stored protocolFee");
         }
     }
 
@@ -370,6 +399,8 @@ library DeployV2Lib {
             uint256 n = a[i].code.length;
             require(n != 0 && n <= EIP170, "v2: runtime size over EIP-170 (use FOUNDRY_PROFILE=ci)");
         }
+        require(address(s.hook).code.length <= EIP170 - HEADROOM, "v2: hook size headroom");
+        require(address(s.locker).code.length <= EIP170 - HEADROOM, "v2: locker size headroom");
     }
 
     // ══════════════════════════════════════════════════════════════════════
