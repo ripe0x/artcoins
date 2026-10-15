@@ -76,7 +76,6 @@ contract ConstantsV2Test is Test {
         assertEq(Constants.MAX_SKIM_BPS, 9000);
         assertEq(Constants.MAX_BASELINE_SKIM_BPS, 1000);
         assertEq(Constants.MAX_REFERRAL_CAP_OF_VOLUME, 100);
-        assertEq(Constants.REFERRAL_BPS_DEFAULT, 25);
         assertEq(Constants.MAX_BOUNTY_BPS, 9999);
         assertEq(Constants.PUSH_GAS_MAX, 150_000);
         assertEq(Constants.MIN_MEV_WINDOW, 1 minutes);
@@ -125,7 +124,6 @@ contract ConstantsV2Test is Test {
         assertLe(Constants.DEFAULT_START_SKIM_BPS, Constants.MAX_SKIM_BPS);
         assertLt(Constants.MAX_SKIM_BPS, Constants.BPS);
         assertLe(Constants.MAX_REFERRAL_CAP_OF_VOLUME, Constants.MAX_BASELINE_SKIM_BPS);
-        assertLe(Constants.REFERRAL_BPS_DEFAULT, Constants.MAX_REFERRAL_CAP_OF_VOLUME);
         assertLt(Constants.MAX_BOUNTY_BPS, Constants.BPS);
         assertLt(Constants.MAX_LP_FEE, Constants.FEE_DENOMINATOR);
         // shares and caps within 100%

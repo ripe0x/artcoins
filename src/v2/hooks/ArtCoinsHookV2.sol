@@ -55,15 +55,15 @@ interface ILockerReads {
 ///           bountyShare   = baselineSkim * bountyBps / BPS
 ///           bounty        = bountyShare + (totalSkim - baselineSkim)
 ///           protocolShare = baselineSkim - bountyShare
-///           referral      = min(volume * referralBps / BPS, protocolShare)
+///           referral      = min(volume * pool referralBps / BPS, protocolShare)
 ///           protocol      = protocolShare - referral
-///         The referral is paid only when `hookData` names a referrer other than
-///         the PoolManager caller. Each leg is an eth push with the 2,300 gas
+///         The referral is paid only when the pool's `referralBps` is nonzero and
+///         `hookData` names a referrer other than the PoolManager caller. Each leg is an eth push with the 2,300 gas
 ///         stipend, and a failed push credits the recipient in the fee escrow.
 ///
 ///         Authority: allowlisted launchers create pools. The owner sets
-///         launchers, fee escrow, extension allowlist and `referralBps`. The coin
-///         admin sets the pool's bounty recipient and extension and lowers its
+///         launchers, fee escrow and extension allowlist. The coin admin sets the
+///         pool's bounty recipient, extension and referral rate and lowers its
 ///         baseline skim, until the coin is locked or the admin is 0. Swaps are
 ///         permissionless.
 contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
@@ -104,8 +104,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     mapping(PoolId => bool) internal _started;
     mapping(address => bool) internal _launchers;
     HookGlobals internal _globals;
-    /// @inheritdoc IArtCoinsHookV2
-    uint24 public referralBps;
 
     /// @inheritdoc IArtCoinsHookV2
     mapping(address => bool) public everFeeEscrow;
@@ -121,8 +119,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         _checkConstants(escrow_);
         _globals = HookGlobals({feeEscrow: escrow_, extensionAllowlist: allowlist_});
         everFeeEscrow[escrow_] = true;
-        referralBps = Constants.REFERRAL_BPS_DEFAULT;
-        emit ReferralBpsSet(0, Constants.REFERRAL_BPS_DEFAULT);
         emit FeeEscrowSet(address(0), escrow_);
         emit ExtensionAllowlistSet(address(0), allowlist_);
     }
@@ -410,9 +406,9 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
 
         uint256 referral;
         // The PoolManager caller cannot be the referrer. A router user naming
-        // its own wallet is paid up to the hook wide rate, out of the protocol leg.
+        // its own wallet is paid up to the pool's rate, out of the protocol leg.
         if (referrer != address(0) && referrer != sender) {
-            referral = (volume * referralBps) / Constants.BPS;
+            referral = (volume * cfg.referralBps) / Constants.BPS;
             if (referral > protocol) referral = protocol;
             protocol -= referral;
         }
@@ -509,6 +505,9 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
             revert BaselineSkimOutOfBounds(s.baselineSkimBps);
         }
         if (s.bountyBps > Constants.MAX_BOUNTY_BPS) revert BountyBpsTooHigh();
+        if (s.referralBps > Constants.MAX_REFERRAL_CAP_OF_VOLUME) {
+            revert ReferralBpsTooHigh(s.referralBps, Constants.MAX_REFERRAL_CAP_OF_VOLUME);
+        }
         if (s.bountyRecipient == address(0)) revert BountyRecipientZero();
         if (s.protocolRecipient == address(0)) revert ProtocolRecipientZero();
         _checkReceiver(s.bountyRecipient);
@@ -561,13 +560,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     }
 
     /// @inheritdoc IArtCoinsHookV2
-    function setReferralBps(uint24 bps) external onlyOwner {
-        if (bps > Constants.MAX_REFERRAL_CAP_OF_VOLUME) revert ReferralBpsTooHigh();
-        emit ReferralBpsSet(referralBps, bps);
-        referralBps = bps;
-    }
-
-    /// @inheritdoc IArtCoinsHookV2
     function rescue(address token, address to, uint256 amount) external onlyOwner {
         if (to == address(0)) revert ZeroAddress();
         if (token == address(0)) {
@@ -605,6 +597,22 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         address old = _skim[poolId].bountyRecipient;
         _skim[poolId].bountyRecipient = newRecipient;
         emit BountyRecipientSet(poolId, old, newRecipient);
+    }
+
+    /// @inheritdoc IArtCoinsHookV2
+    function setReferralBps(PoolId poolId, uint24 bps) external {
+        address coin = _info[poolId].token;
+        if (coin == address(0)) revert UnknownPool();
+        IArtCoinsTokenV2 t = IArtCoinsTokenV2(coin);
+        if (msg.sender != t.admin()) revert NotCoinAdmin();
+        if (t.locked()) revert CoinLocked();
+        if (bps > Constants.MAX_REFERRAL_CAP_OF_VOLUME) {
+            revert ReferralBpsTooHigh(bps, Constants.MAX_REFERRAL_CAP_OF_VOLUME);
+        }
+        SkimConfig storage cfg = _skim[poolId];
+        uint24 old = cfg.referralBps;
+        cfg.referralBps = bps;
+        emit ReferralBpsSet(poolId, old, bps);
     }
 
     /// @inheritdoc IArtCoinsHookV2

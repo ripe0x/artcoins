@@ -19,7 +19,9 @@
   "fee": {
     "baselineSkimBps": 600,
     "bountyBps": 8333,
-    "bountyRecipient": "0x000000000000000000000000000000000000bEEF"
+    "bountyRecipient": "0x000000000000000000000000000000000000bEEF",
+    "referralBps": 0,
+    "referralBpsNote": "0 turns referrals off. The coin admin can set it later, up to 100."
   },
   "locker": {
     "tickLower": [

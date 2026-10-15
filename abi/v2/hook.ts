@@ -184,6 +184,11 @@ export const hookV2Abi = [
                 "name": "protocolRecipient",
                 "type": "address",
                 "internalType": "address payable"
+              },
+              {
+                "name": "referralBps",
+                "type": "uint24",
+                "internalType": "uint24"
               }
             ]
           }
@@ -339,19 +344,6 @@ export const hookV2Abi = [
             "internalType": "address"
           }
         ]
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "referralBps",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint24",
-        "internalType": "uint24"
       }
     ],
     "stateMutability": "view"
@@ -519,6 +511,11 @@ export const hookV2Abi = [
     "name": "setReferralBps",
     "inputs": [
       {
+        "name": "poolId",
+        "type": "bytes32",
+        "internalType": "PoolId"
+      },
+      {
         "name": "bps",
         "type": "uint24",
         "internalType": "uint24"
@@ -562,6 +559,11 @@ export const hookV2Abi = [
             "name": "protocolRecipient",
             "type": "address",
             "internalType": "address payable"
+          },
+          {
+            "name": "referralBps",
+            "type": "uint24",
+            "internalType": "uint24"
           }
         ]
       }
@@ -860,6 +862,12 @@ export const hookV2Abi = [
     "name": "ReferralBpsSet",
     "inputs": [
       {
+        "name": "poolId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "PoolId"
+      },
+      {
         "name": "oldBps",
         "type": "uint24",
         "indexed": false,
@@ -934,6 +942,11 @@ export const hookV2Abi = [
             "name": "protocolRecipient",
             "type": "address",
             "internalType": "address payable"
+          },
+          {
+            "name": "referralBps",
+            "type": "uint24",
+            "internalType": "uint24"
           }
         ]
       }
@@ -1162,7 +1175,18 @@ export const hookV2Abi = [
   {
     "type": "error",
     "name": "ReferralBpsTooHigh",
-    "inputs": []
+    "inputs": [
+      {
+        "name": "bps",
+        "type": "uint24",
+        "internalType": "uint24"
+      },
+      {
+        "name": "max",
+        "type": "uint24",
+        "internalType": "uint24"
+      }
+    ]
   },
   {
     "type": "error",

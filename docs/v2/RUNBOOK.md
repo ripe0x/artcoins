@@ -222,11 +222,10 @@ values in `script/v2/env/mainnet.env` (read by `deploy.sh`, passed to `DeployV2S
 | OWNER | 0xCB43078C32423F5348Cab5885911C3B5faE217F9 | owner of every owned contract and the factory team fee recipient |
 | TREASURY, TREASURY_BPS | 0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4, 8000 | controller treasury and its share (Constants allow 1000 to 9000, the rest buys and burns LAYER); owner tunable with `setSplit` |
 | DEPLOY_FEE | 0 | factory deploy fee in wei; owner tunable with `setDeployFee` |
-| REFERRAL_BPS | 25 | hook wide referral rate, bps of swap volume; owner tunable with `hook.setReferralBps` |
 | VERIFY, REQUIRE_CLEAN_GIT | full, true | explorer plus chain verification; HEAD must be `origin/master` or a tag on origin, tree clean |
 | BROADCAST_DIR, DEPLOY_JSON, RECORD | `broadcast`, `tmp/v2-deploy-1.json`, `deployments/1.v2.json` | forge broadcast files, the script's address json, the registry fragment |
 
-`deploy.sh` refuses while any of CHAIN_ID, RPC_DEFAULT, FOUNDRY_PROFILE, WALLET_MODE, OWNER, TREASURY, TREASURY_BPS, DEPLOY_FEE, REFERRAL_BPS, VERIFY, REQUIRE_CLEAN_GIT, BROADCAST_DIR, DEPLOY_JSON or RECORD is empty. `DeployV2Stack.s.sol` run directly reads OWNER, TREASURY, TREASURY_BPS, DEPLOY_FEE and REFERRAL_BPS from the environment and defaults them to `Addresses.OWNER`, OWNER, 8000, 0 and 25.
+`deploy.sh` refuses while any of CHAIN_ID, RPC_DEFAULT, FOUNDRY_PROFILE, WALLET_MODE, OWNER, TREASURY, TREASURY_BPS, DEPLOY_FEE, VERIFY, REQUIRE_CLEAN_GIT, BROADCAST_DIR, DEPLOY_JSON or RECORD is empty. `DeployV2Stack.s.sol` run directly reads OWNER, TREASURY, TREASURY_BPS and DEPLOY_FEE from the environment and defaults them to `Addresses.OWNER`, OWNER, 8000 and 0.
 
 `script/v2/deploy.sh mainnet` runs the guards (rpc chain id, wallet, git), the warm ci build, the dry run, a per transaction gas estimate with the OWNER balance check, the keystore signer check and typed confirmation, the `--slow` broadcast with `--account ripe0x`, the readback, the record `deployments/1.v2.json` and `verify-v2.sh`. the transaction count and gas are printed by the wrapper before the keystore prompt. the hook address depends on the broadcaster, so a dry run with `--sender $OWNER` shows the real one.
 
@@ -260,7 +259,7 @@ wiring, in the order `_wire` sends it:
 | # | contract | call | why |
 |---|---|---|---|
 | 1, 2 | escrow | `addDepositor(hook, true)`, `addDepositor(controller, false)` | the hook is a core depositor and `setFeeEscrow` reverts without it. the controller needs depositor rights for its push fallback |
-| 3 to 6 | hook | `setFeeEscrow(escrow)`, `setExtensionAllowlist(allowlist)`, `setLauncher(factory, true)`, `setReferralBps(REFERRAL_BPS)` | |
+| 3 to 6 | hook | `setFeeEscrow(escrow)`, `setExtensionAllowlist(allowlist)`, `setLauncher(factory, true)` | |
 | 7 | locker | `setLauncher(factory, true)` | the factory is the only caller of `placeLiquidity` |
 | 8 to 10 | factory | `setHook(hook, true)`, `setLocker(locker, true)`, `setMevModule(mev, true)` | enable the stack |
 | 11, 12 | factory | `setProtocolRecipient(controller)`, `setTeamFeeRecipient(OWNER)` | |
@@ -272,7 +271,7 @@ wiring, in the order `_wire` sends it:
 |---|---|---|
 | 13 | wiring | the table above, 16 calls after contract 12 |
 | 14 | ownership, Ownable2Step | broadcaster == OWNER: nothing to do. otherwise escrow, hook, locker and factory end with `pendingOwner() == OWNER` (0xe30c3978) and the broadcaster still owns them. the allowlist, router and controller are constructed with OWNER, nothing to accept |
-| 15 | post deploy asserts, in the script | `constantsHash()` of escrow, hook, locker, mev, factory, deployer, router, controller, dev buy, airdrop, vault. `enabledExtensions` true for the dev buy, the airdrop and the vault, each with `factory()` equal to the factory, the dev buy `poolManager()` equal to the PoolManager. hook low bits 0x28CC, permissions equal the address flags, hook PoolManager, globals escrow and allowlist, factory is a hook launcher, `referralBps`. escrow depositors and core flags. locker has the factory as launcher. every factory getter above, deployer binding, `deprecated`, `STACK_VERSION`. mev hook, controller and router links, router `coin()` and pool key. the LAYER hook `protocolFeeNumerator` is 0. owners or pending owners. runtime size of all 12 under 24,576. prints `post deploy asserts: ok`, the registry json, writes `tmp/v2-deploy-1.json` |
+| 15 | post deploy asserts, in the script | `constantsHash()` of escrow, hook, locker, mev, factory, deployer, router, controller, dev buy, airdrop, vault. `enabledExtensions` true for the dev buy, the airdrop and the vault, each with `factory()` equal to the factory, the dev buy `poolManager()` equal to the PoolManager. hook low bits 0x28CC, permissions equal the address flags, hook PoolManager, globals escrow and allowlist, factory is a hook launcher. escrow depositors and core flags. locker has the factory as launcher. every factory getter above, deployer binding, `deprecated`, `STACK_VERSION`. mev hook, controller and router links, router `coin()` and pool key. the LAYER hook `protocolFeeNumerator` is 0. owners or pending owners. runtime size of all 12 under 24,576. prints `post deploy asserts: ok`, the registry json, writes `tmp/v2-deploy-1.json` |
 
 step 14 for a broadcaster that is not OWNER, one tx at a time, before anything else (until all four are accepted the broadcaster holds the owner powers). `acceptOwnership()` is 0x79ba5097:
 
@@ -300,7 +299,7 @@ the first coin is launched with `factory.deployToken`, which the owner can call 
 
 | step | what | detail and check |
 |---|---|---|
-| 1 | owner calls before launch | none. the referral rate is the hook wide `referralBps`, the protocol recipient is the controller, and a plain treasury bounty recipient needs no depositor rights |
+| 1 | owner calls before launch | none. the referral rate is per pool (`fee.referralBps` in the launch config, default 0, cap 100 bps, changed by the coin admin with `hook.setReferralBps` until `lock()`), the protocol recipient is the controller, and a plain treasury bounty recipient needs no depositor rights |
 | 2 | config | `cp script/v2/launch-configs/example.json my-coin.json`, set treasury, names, ticks, `"example": false`. limits: `bountyBps` at most 9,999, `baselineSkimBps` from 1 to 1,000, `positionBps` sum to 10,000, native eth only. the json carries the keys of `script/v2/launch-configs/example.json` |
 | 3 | dry run | `forge script script/v2/LaunchV2Coin.s.sol --sig "run(string)" "$(cat my-coin.json)" --rpc-url $ETH_RPC_URL --sender $OWNER`. preflight on the wiring, `predictToken`, a snapshot dry run, then it stops before the tx. record the predicted token, `configHash`, value (the deploy fee) and pool id |
 | 4 | broadcast | the same command plus `--account ripe0x --broadcast --slow`. excess value above `deployFee()` plus extension msgValues is refunded |
@@ -339,6 +338,6 @@ before the call: every gate below is true, the first coin ran at least one full 
 | 9b | LAYER keeper cron running | `CollectFlushKeeperLayer` (part 1 action 2b, 3.5M gas limit, `ALLOW_SUPERSEDED=1` for the scripts), daily `preview()` check, weekly run regardless. alert when a router stays at or above 0.01 weth for more than a day, or a run logs `StepSkipped` step 5 |
 | 10 | old factories deprecated | `deprecated()` true on `$F_OPEN`, `$F_CUR`, `$F_LEGACY`. `setHook(0x636c…, false)` on `$F_CUR` after the first v2 coin trades (part 1 action 7) |
 | 11 | part 1 actions 1, 2, 4 and 5 done, router floors fresh | collect timestamps, `minLayerOutPerWeth()` within 5% of 95% of spot |
-| 12 | stack defaults read back | hook `referralBps` 25, controller split 8000/2000, `deprecated` true until the last tx |
+| 12 | stack defaults read back | controller split 8000/2000, `deprecated` true until the last tx |
 | 13 | public repo decision D26 reviewed | `origin` is the public ripe0x/artcoins (H3), branch `v2` and the review docs with findings on live contracts are already public (D26): keep or delete the remote branch on purpose. curated merge of `docs/v2` and `test/v2/review` (H2), mirror tag filter fixed (H1). part 1 of this file stays off the mirror until actions 1, 2, 4 and 5 are done |
 | 14 | owner key custody | hardware or keystore. `acceptOwnership` was exercised on a fork (step 0b) before the real accepts |

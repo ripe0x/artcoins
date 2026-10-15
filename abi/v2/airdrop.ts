@@ -246,6 +246,11 @@ export const airdropV2Abi = [
                 "name": "bountyRecipient",
                 "type": "address",
                 "internalType": "address payable"
+              },
+              {
+                "name": "referralBps",
+                "type": "uint24",
+                "internalType": "uint24"
               }
             ]
           },

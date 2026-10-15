@@ -137,7 +137,7 @@ contract FactoryV2ForkTest is ForkBase {
         c.pool.tickSpacing = TS;
 
         c.fee = IArtCoinsFactoryV2.FeeConfigV2({
-            baselineSkimBps: 600, bountyBps: 8333, bountyRecipient: bounty
+            baselineSkimBps: 600, bountyBps: 8333, bountyRecipient: bounty, referralBps: 0
         });
 
         c.locker.locker = locker;
@@ -605,6 +605,19 @@ contract FactoryV2ForkTest is ForkBase {
         c.fee.baselineSkimBps = Constants.MAX_BASELINE_SKIM_BPS + 1;
         _expectRevertDeploy(
             c, abi.encodeWithSelector(ArtCoinsFactoryV2.FeeConfigOutOfBounds.selector)
+        );
+
+        // referral rate cap, and a launch config rate reaching the pool
+        c = _cfg();
+        c.fee.referralBps = Constants.MAX_REFERRAL_CAP_OF_VOLUME + 1;
+        _expectRevertDeploy(
+            c, abi.encodeWithSelector(ArtCoinsFactoryV2.FeeConfigOutOfBounds.selector)
+        );
+        c.fee.referralBps = Constants.MAX_REFERRAL_CAP_OF_VOLUME;
+        t = _deploy(alice, c);
+        assertEq(
+            hook.skimConfig(factory.deploymentInfo(t).poolId).referralBps,
+            Constants.MAX_REFERRAL_CAP_OF_VOLUME
         );
 
         // supply floor

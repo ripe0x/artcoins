@@ -128,7 +128,7 @@ contract V2FFactoryReviewTest is ForkBase {
         c.pool.tickSpacing = TS;
 
         c.fee = IArtCoinsFactoryV2.FeeConfigV2({
-            baselineSkimBps: 600, bountyBps: 8333, bountyRecipient: bounty
+            baselineSkimBps: 600, bountyBps: 8333, bountyRecipient: bounty, referralBps: 0
         });
 
         c.locker.locker = address(locker);
