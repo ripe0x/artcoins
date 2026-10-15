@@ -6,7 +6,7 @@ sign on the command line with `--ledger`, `--account <keystore>` or `--private-k
 |---|---|
 | `DeployV2Lib.sol` | the deploy routine, the post deploy asserts, constructor args. used by the script and by the fork harness (`test/v2/harness/ForkStack.sol` `deployV2Stack`), so tests run the exact broadcast |
 | `DeployV2Stack.s.sol` | one broadcast: deploy, wire, hand over, assert, print the registry json, write `tmp/v2-deploy-<chainid>.json` |
-| `LaunchV2Coin.s.sol` | `deployTokenAsOwner` from a json config: preflight (wiring, `predictToken`), snapshot dry run, then the tx |
+| `LaunchV2Coin.s.sol` | `factory.deployToken` from a json config (the owner may call it while the factory is deprecated): preflight (wiring, `predictToken`), snapshot dry run, then the tx |
 | `launch-configs/example.json` | credits engine style coin: treasury as bounty recipient and project slot, not restricted (plain erc20), native eth, 69 minute linear skim |
 | `deploy.sh` | the deploy wrapper, `deploy.sh <local\|mainnet>`: guards, warm ci build, dry run, broadcast, readback, record, verify. values in `env/<env>.env` |
 | `env/local.env`, `env/mainnet.env` | values only: chain id, rpc default, profile, wallet mode, owner, treasury, fee parameters, verify mode. secrets come from the shell |
@@ -42,12 +42,12 @@ DRY_RUN=0 script/v2/deploy.sh <local|mainnet>
 
 | step | what |
 |---|---|
-| values | every required value of `env/<env>.env` is set. `env/mainnet.env` ships with `TREASURY`, `TREASURY_BPS` and `DEPLOY_FEE` empty and the wrapper refuses until they are set. `DEPLOY_FEE` is in wei. |
+| values | every required value of `env/<env>.env` is set. the wrapper refuses while any required value of the env file is empty. `DEPLOY_FEE` is in wei. |
 | guards | the rpc chain id equals `CHAIN_ID`. `WALLET_MODE=unlocked` needs a loopback rpc host that answers `anvil_nodeInfo` and an owner without code (on an anvil fork `cast rpc anvil_setCode <owner> 0x`). `REQUIRE_CLEAN_GIT=true` fetches `origin master` and needs HEAD equal to `origin/master`, or a tag that `git ls-remote` shows on origin at HEAD, and a clean tree. the git guards warn on a simulation and refuse on a broadcast |
 | build and simulation | `forge build` at profile ci, then `DeployV2Stack.s.sol` with `--sender $OWNER`. it must reach `post deploy asserts: ok` |
 | signer | `WALLET_MODE=account`: `cast wallet address --account $KEYSTORE` equals `OWNER`, then the operator types the last 6 hex digits of `OWNER` at the terminal |
 | broadcast | `--slow` plus `--account <KEYSTORE>` (mainnet) or `--unlocked` (local). the broadcast files go to `BROADCAST_DIR` |
-| readback | `post deploy asserts: ok` in the broadcast output, code at all 10 contracts, factory `deprecated()` true, `deployFee()` equals `DEPLOY_FEE`, escrow, hook, locker and factory owned by or pending to `OWNER` |
+| readback | `post deploy asserts: ok` in the broadcast output, code at all 9 contracts, factory `deprecated()` true, `deployFee()` equals `DEPLOY_FEE`, escrow, hook, locker and factory owned by or pending to `OWNER` |
 | record | `RECORD` (`deployments/1.v2.json` on mainnet, `tmp/v2-local-1.json` on local): `{chainId, repoCommit, owner, ownershipPending, stacks, contracts}` in the shape of `deployments/mainnet.json`, with `deployBlock`, `deployTxHash`, `deployedAt` and `source` filled from the broadcast file. the file must belong to the run: same chain and commit, one receipt per transaction, every status 0x1, created within 10 minutes of `tmp/v2-deploy-1.json` |
 | verify | `VERIFY=full` runs `verify-v2.sh` (explorer sources and chain check), `chain` the chain check only, `none` neither. after a passing check the record is rewritten with `bytecodeMatch` verified and `ownershipPending` false |
 
@@ -70,7 +70,7 @@ the owner `0xCB43…17F9` carries an EIP-7702 delegation (code `0xef0100…`): a
 
 then rerun the wrapper steps from the readback on: `node script-js/v2-record.mjs tmp/v2-deploy-1.json broadcast/DeployV2Stack.s.sol/1/run-latest.json deployments/1.v2.json`.
 
-about 29.5m gas over 30 txs (0.011 eth at 0.38 gwei, measured on a fork at block 26131304). the hook goes through the CREATE2 deployer 0x4e59…956C with a salt mined in the script; the salt depends on the broadcaster and the constructor args, so a dry run with `--sender $OWNER` gives the real hook address.
+the wrapper prints the gas limit of each transaction and the total before any keystore prompt. the hook goes through the CREATE2 deployer 0x4e59…956C with a salt mined in the script; the salt depends on the broadcaster and the constructor args, so a dry run with `--sender $OWNER` gives the real hook address. the low 14 bits of the hook address equal `0x28CC`: the address ends in `28cc`, `68cc`, `a8cc` or `e8cc`.
 
 order and args: docs/v2/RUNBOOK.md part 2a. the factory ships `deprecated = true`.
 

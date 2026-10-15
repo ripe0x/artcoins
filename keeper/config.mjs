@@ -12,15 +12,15 @@ export const DEFAULT_REGISTRY = fileURLToPath(new URL('../deployments/mainnet.js
 // `InsufficientGas` on a shortfall, and an estimateGas search would only find the cheapest passing path
 export const GAS_LIMIT = Object.freeze({ '111': 1_200_000n, layer: 3_500_000n });
 export const SLIPPAGE_DEFAULT = Object.freeze({ '111': 100, layer: 200 });
-// KR-01: minimum spacing between successful runs, enforced from the state file (the weekly timer never shortens it)
+// minimum spacing between successful runs, enforced from the state file (the weekly timer never shortens it)
 export const MIN_RUN_INTERVAL_DEFAULT = Object.freeze({ '111': 6 * 3600, layer: 24 * 3600 });
-// KR-14: how often each keeper's preview is read and decided, RUNBOOK cadence rows (111 hourly, LAYER daily cron).
+// how often each keeper's preview is read and decided, RUNBOOK cadence rows (111 hourly, LAYER daily cron).
 // the loop itself ticks every INTERVAL_SECONDS to settle and replace a tx in flight
 export const CHECK_INTERVAL_DEFAULT = Object.freeze({ '111': 3600, layer: 24 * 3600 });
-// KR-14 value vs gas rule (runbook: skip when pending is worth less than the gas unless the timer is due). typical
+// value vs gas rule (runbook: skip when pending is worth less than the gas unless the timer is due). typical
 // gas of one run, not the limit: 111 measured 870k
 export const EXPECTED_GAS = Object.freeze({ '111': 900_000n, layer: 900_000n });
-// KR-09: privileged eoas the hot key must never be, whatever the registry says (owner of nearly everything and the
+// privileged eoas the hot key must never be, whatever the registry says (owner of nearly everything and the
 // ui protocol payout). OWNER_ADDRESS env adds one more
 export const DEFAULT_OWNER = '0xCB43078C32423F5348Cab5885911C3B5faE217F9';
 export const REFUSED_KEYS = Object.freeze([DEFAULT_OWNER, '0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4']);
@@ -84,7 +84,7 @@ function perKeeper(env, id, name, global, def, bounds) {
 }
 const slippage = (env, id) => perKeeper(env, id, 'SLIPPAGE_BPS', 'KEEPER_SLIPPAGE_BPS', SLIPPAGE_DEFAULT[id], { max: MAX_SLIPPAGE_BPS });
 
-/// KR-07: dry run unless DRY_RUN is unset, empty, "0" or "false". any other value (TRUE, yes, on, typos) is dry
+/// dry run unless DRY_RUN is unset, empty, "0" or "false". any other value (TRUE, yes, on, typos) is dry
 export function parseDryRun(v) {
   if (v === undefined || v === null) return false;
   const t = String(v).trim().toLowerCase();
@@ -94,7 +94,7 @@ export function parseDryRun(v) {
 const csv = (v) => String(v).split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
 
 /// Every address the hot key must not be: each owner field in the registry, the built in privileged eoas
-/// (REFUSED_KEYS) and `OWNER_ADDRESS` from the env (KR-09).
+/// (REFUSED_KEYS) and `OWNER_ADDRESS` from the env.
 export function ownerAddresses(reg, env = {}) {
   const s = new Set(REFUSED_KEYS.map((a) => getAddress(a)));
   if (env.OWNER_ADDRESS) {
@@ -118,7 +118,7 @@ export function loadConfig(env = process.env, reg = readRegistry(env.REGISTRY_PA
   try {
     account = privateKeyToAccount(key);
   } catch {
-    // KR-13: viem's message prints the scalar; never echo any part of the key
+    // viem's message prints the scalar; never echo any part of the key
     fail('KEEPER_PRIVATE_KEY is not a valid secp256k1 private key');
   }
   if (!reg.owner) fail('registry has no owner field: refusing to start without the owner refusal list');
@@ -145,7 +145,7 @@ export function loadConfig(env = process.env, reg = readRegistry(env.REGISTRY_PA
   if (enabled.has('111')) keepers.push({ id: '111', kind: '111', address: k111, ...common('111') });
   if (enabled.has('layer')) keepers.push({ id: 'layer', kind: 'layer', address: kLayer, ...common('layer') });
 
-  // KR-08: every keeper goes through the relay when one is set (LAYER burns are sandwichable too).
+  // every keeper goes through the relay when one is set (LAYER burns are sandwichable too).
   // unknown entries are an error, not ignored
   const privateKeepers = new Set(csv(env.PRIVATE_RPC_KEEPERS ?? KEEPER_IDS.join(',')));
   for (const k of privateKeepers) if (!KEEPER_IDS.includes(k)) fail(`PRIVATE_RPC_KEEPERS: unknown keeper ${k} (111, layer)`);
@@ -161,7 +161,7 @@ export function loadConfig(env = process.env, reg = readRegistry(env.REGISTRY_PA
   if (statusToken && statusToken.length < 16) fail('STATUS_TOKEN must be at least 16 characters');
 
   const maxGasWei = BigInt(envInt(env, 'MAX_GAS_GWEI', 14, { min: 1, max: 10_000 })) * 1_000_000_000n;
-  // KR-06: the node refuses a tx unless balance >= gas limit * maxFeePerGas. the worst case is the largest enabled
+  // the node refuses a tx unless balance >= gas limit * maxFeePerGas. the worst case is the largest enabled
   // gas limit at the fee cap; LOW_BALANCE_ETH defaults to that
   const maxLimit = keepers.reduce((m, k) => (k.gas > m ? k.gas : m), 0n) || GAS_LIMIT['111'];
   const requiredBalanceWei = maxLimit * maxGasWei;
@@ -179,15 +179,15 @@ export function loadConfig(env = process.env, reg = readRegistry(env.REGISTRY_PA
     maxPriorityWei: parseUnits(String(env.MAX_PRIORITY_GWEI ?? '2'), 9),
     requiredBalanceWei,
     receiptTimeoutSeconds: envInt(env, 'RECEIPT_TIMEOUT_SECONDS', 600, { min: 30 }),
-    // KR-04: an unmined tx is replaced at the same nonce after this long, MAX_REPLACEMENTS times, then cancelled
+    // an unmined tx is replaced at the same nonce after this long, MAX_REPLACEMENTS times, then cancelled
     pendingTimeoutSeconds: envInt(env, 'PENDING_TIMEOUT_SECONDS', 1800, { min: 60 }),
     maxReplacements: envInt(env, 'MAX_REPLACEMENTS', 3, { max: 10 }),
     revertCooldownSeconds: envInt(env, 'REVERT_COOLDOWN_SECONDS', 3600),
-    // KR-01: a successful run must drop each threshold metric that triggered it by this share, else backoff
+    // a successful run must drop each threshold metric that triggered it by this share, else backoff
     progressMinBps: envInt(env, 'PROGRESS_MIN_BPS', 5000, { max: 10_000 }),
     backoffMinSeconds: envInt(env, 'BACKOFF_MIN_SECONDS', 3600, { min: 60 }),
     backoffMaxSeconds: envInt(env, 'BACKOFF_MAX_SECONDS', 24 * 3600, { min: 60 }),
-    // KR-02: spot floor allowance for price impact, on top of slippage
+    // spot floor allowance for price impact, on top of slippage
     maxImpactBps: envInt(env, 'MAX_IMPACT_BPS', 100, { max: 2000 }),
     lowBalanceWei: env.LOW_BALANCE_ETH ? envAmount(env, 'LOW_BALANCE_ETH', '0') : requiredBalanceWei,
     highBalanceWei: envAmount(env, 'HIGH_BALANCE_ETH', '0.05'),

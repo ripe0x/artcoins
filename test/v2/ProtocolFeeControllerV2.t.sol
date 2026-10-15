@@ -20,6 +20,14 @@ contract P1MockRouter is IConstantsBound {
         return Constants.hash();
     }
 
+    function coin() external pure returns (address) {
+        return address(0xC01);
+    }
+
+    function poolManager() external pure returns (address) {
+        return address(0xB01);
+    }
+
     receive() external payable {}
 }
 
@@ -32,10 +40,41 @@ contract P1WrongHashRouter is IConstantsBound {
     receive() external payable {}
 }
 
+/// @notice A valid hash router with a zero `coin()` or `poolManager()`.
+contract P1UnboundRouter is IConstantsBound {
+    bool internal immutable ZERO_COIN;
+
+    constructor(bool zeroCoin) {
+        ZERO_COIN = zeroCoin;
+    }
+
+    function constantsHash() external pure returns (bytes32) {
+        return Constants.hash();
+    }
+
+    function coin() external view returns (address) {
+        return ZERO_COIN ? address(0) : address(0xC01);
+    }
+
+    function poolManager() external view returns (address) {
+        return ZERO_COIN ? address(0xB01) : address(0);
+    }
+
+    receive() external payable {}
+}
+
 /// @notice A valid hash router that reverts on eth receipt (push fails).
 contract P1RejectingRouter is IConstantsBound {
     function constantsHash() external pure returns (bytes32) {
         return Constants.hash();
+    }
+
+    function coin() external pure returns (address) {
+        return address(0xC01);
+    }
+
+    function poolManager() external pure returns (address) {
+        return address(0xB01);
     }
 
     receive() external payable {
@@ -250,10 +289,8 @@ contract ProtocolFeeControllerV2Test is Test {
         P1Stray stray = new P1Stray();
         stray.transfer(address(pfc), 3e18);
         address to = makeAddr("to");
-        pfc.rescue(address(0), to, 1 ether);
         pfc.rescue(address(coin), to, 5e18);
         pfc.rescue(address(stray), to, 3e18);
-        assertEq(to.balance, 1 ether);
         assertEq(coin.balanceOf(to), 5e18);
         assertEq(stray.balanceOf(to), 3e18);
 
@@ -264,6 +301,50 @@ contract ProtocolFeeControllerV2Test is Test {
             abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker)
         );
         pfc.rescue(address(0), attacker, 0);
+    }
+
+    /// @notice Eth is never rescued: pending eth stays split by `processFees`.
+    function test_pfcV2_rescue_nativeRefused() public {
+        vm.deal(address(pfc), 1 ether);
+        vm.expectRevert(
+            abi.encodeWithSelector(IProtocolFeeControllerV2.CannotRescue.selector, address(0))
+        );
+        pfc.rescue(address(0), makeAddr("to"), 1 ether);
+        assertEq(address(pfc).balance, 1 ether);
+        assertEq(pfc.pending(), 1 ether);
+        pfc.processFees();
+        assertEq(address(treasury).balance, 0.6 ether);
+        assertEq(address(router).balance, 0.4 ether);
+    }
+
+    function test_pfcV2_recipients_rejectSelfAndEqual() public {
+        bytes4 sel = IProtocolFeeControllerV2.InvalidRecipient.selector;
+        address self = address(pfc);
+
+        vm.expectRevert(abi.encodeWithSelector(sel, self));
+        pfc.setTreasury(self);
+        vm.expectRevert(abi.encodeWithSelector(sel, address(router)));
+        pfc.setTreasury(address(router));
+        vm.expectRevert(abi.encodeWithSelector(sel, self));
+        pfc.setBurnRouter(self);
+        vm.expectRevert(abi.encodeWithSelector(sel, address(treasury)));
+        pfc.setBurnRouter(address(treasury));
+
+        // constructor: treasury equal to router
+        vm.expectRevert(abi.encodeWithSelector(sel, address(router)));
+        _deploy(address(router), address(router), SPLIT);
+    }
+
+    function test_pfcV2_setBurnRouter_requiresIdentity() public {
+        bytes4 sel = IProtocolFeeControllerV2.InvalidRecipient.selector;
+        address noCoin = address(new P1UnboundRouter(true));
+        vm.expectRevert(abi.encodeWithSelector(sel, noCoin));
+        pfc.setBurnRouter(noCoin);
+        address noPm = address(new P1UnboundRouter(false));
+        vm.expectRevert(abi.encodeWithSelector(sel, noPm));
+        pfc.setBurnRouter(noPm);
+        vm.expectRevert(abi.encodeWithSelector(sel, noCoin));
+        _deploy(address(treasury), noCoin, SPLIT);
     }
 
     function test_pfcV2_ownable2Step() public {

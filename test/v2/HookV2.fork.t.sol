@@ -269,7 +269,7 @@ contract HookV2ForkTest is HookV2ForkBase {
         uint256 b0 = _paid(bountyEoa);
         uint256 p0 = _paid(protocolR);
 
-        (int256 net0,) = _swapNet(key, true, -int256(a), lim, "");
+        (int256 net0,) = _swapNet(key, true, -int256(a), lim, _refundData(address(seq)));
         assertEq(seq.lastReturned0(), net0, "returned delta == transient delta");
 
         uint256 fair = (_paid(bountyEoa) - b0) + (_paid(protocolR) - p0);
@@ -280,7 +280,13 @@ contract HookV2ForkTest is HookV2ForkBase {
         assertApproxEqRel(fair * D, (r + fair) * BASELINE, 1e12);
 
         // a router that settles the returned delta works too
-        _swap(key, true, -int256(a), TickMath.getSqrtPriceAtTick(-200), "");
+        _swap(
+            key,
+            true,
+            -int256(a),
+            TickMath.getSqrtPriceAtTick(-200),
+            _refundData(address(swapRouter))
+        );
         assertGt(_escrowed(address(swapRouter)), 0);
     }
 
@@ -292,7 +298,9 @@ contract HookV2ForkTest is HookV2ForkBase {
         uint256 b0 = _paid(bountyEoa);
         uint256 p0 = _paid(protocolR);
 
-        (int256 net0,) = _swapNet(key, false, int256(a), TickMath.getSqrtPriceAtTick(100), "");
+        (int256 net0,) = _swapNet(
+            key, false, int256(a), TickMath.getSqrtPriceAtTick(100), _refundData(address(seq))
+        );
         assertEq(seq.lastReturned0(), net0, "returned delta == transient delta");
 
         int256 r = net0 + int256(charged); // realized pool output
@@ -306,7 +314,13 @@ contract HookV2ForkTest is HookV2ForkBase {
         assertGt(net0 + int256(refund), 0, "seller nets eth after the refund");
 
         // a router that settles the returned delta works too
-        _swap(key, false, int256(a), TickMath.getSqrtPriceAtTick(200), "");
+        _swap(
+            key,
+            false,
+            int256(a),
+            TickMath.getSqrtPriceAtTick(200),
+            _refundData(address(swapRouter))
+        );
     }
 
     /// V2H-03: the swapper names a refund address in hookData; the unfilled
@@ -317,6 +331,21 @@ contract HookV2ForkTest is HookV2ForkBase {
         _swapNet(key, true, -100 ether, TickMath.getSqrtPriceAtTick(-100), _refundData(me));
         assertGt(_escrowed(me), 0, "credited to the named address");
         assertEq(_escrowed(address(seq)), 0);
+    }
+
+    /// A partial quote specified fill without a refund address reverts.
+    function test_skim_partialFill_withoutRefundAddress_reverts() public onlyFork {
+        PoolKey memory key = _launchSimple(bountyEoa);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                CustomRevert.WrappedError.selector,
+                address(hook),
+                IHooks.afterSwap.selector,
+                abi.encodeWithSelector(IArtCoinsHookV2.RefundAddressRequired.selector),
+                abi.encodeWithSelector(Hooks.HookCallFailed.selector)
+            )
+        );
+        _swapNet(key, true, -100 ether, TickMath.getSqrtPriceAtTick(-100), "");
     }
 
     function _refundData(address to) internal pure returns (bytes memory) {
@@ -612,7 +641,19 @@ contract HookV2ForkTest is HookV2ForkBase {
     function test_skimConfig_bounds() public {
         IArtCoinsHookV2.PoolInitParams memory p = _params(_defaults(bountyEoa), address(1));
         p.skim.baselineSkimBps = Constants.MAX_BASELINE_SKIM_BPS + 1;
-        vm.expectRevert(IArtCoinsHookV2.BaselineSkimBpsTooHigh.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IArtCoinsHookV2.BaselineSkimOutOfBounds.selector,
+                Constants.MAX_BASELINE_SKIM_BPS + 1
+            )
+        );
+        hook.initializePool(p);
+
+        p = _params(_defaults(bountyEoa), address(1));
+        p.skim.baselineSkimBps = 0;
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsHookV2.BaselineSkimOutOfBounds.selector, uint24(0))
+        );
         hook.initializePool(p);
 
         p = _params(_defaults(bountyEoa), address(1));
@@ -760,6 +801,13 @@ contract HookV2ForkTest is HookV2ForkBase {
         l.extension = address(ext);
         (PoolKey memory key,) = _launch(l);
         bytes memory hd = _referral(makeAddr("ref"));
+        hd = abi.encode(
+            IArtCoinsHook.PoolSwapData({
+                mevModuleSwapData: abi.encode(address(seq)),
+                poolExtensionSwapData: abi.decode(hd, (IArtCoinsHook.PoolSwapData))
+                .poolExtensionSwapData
+            })
+        );
         (int256 net0,) = _swapNet(key, true, -100 ether, TickMath.getSqrtPriceAtTick(-100), hd);
         assertEq(ext.swaps(), 1);
         // trader facing: fill plus fair skim (the refund comes back via escrow)
@@ -810,8 +858,8 @@ contract HookV2ForkTest is HookV2ForkBase {
         _swap(key, true, 1 ether, 0, "");
         _swap(key, false, -1 ether, 0, "");
         _swap(key, false, 1 ether, 0, "");
-        _swapNet(key, true, -50 ether, TickMath.getSqrtPriceAtTick(-60), "");
-        _swapNet(key, false, 50 ether, TickMath.getSqrtPriceAtTick(60), "");
+        _swapNet(key, true, -50 ether, TickMath.getSqrtPriceAtTick(-60), _refundData(address(seq)));
+        _swapNet(key, false, 50 ether, TickMath.getSqrtPriceAtTick(60), _refundData(address(seq)));
         _swap(key, true, -1, 0, ""); // dust: zero skim
     }
 
@@ -896,6 +944,55 @@ contract HookV2ForkTest is HookV2ForkBase {
         }
         vm.expectRevert(IArtCoinsHookV2.BountyRecipientZero.selector);
         hook.setBountyRecipient(pid, payable(address(0)));
+    }
+
+    function test_setBountyRecipient_extensionsRevert() public onlyFork {
+        HV2Extension poolExt = new HV2Extension(address(hook));
+        allowlist.setPoolExtension(address(poolExt), true);
+        Launch memory l = _defaults(bountyEoa);
+        l.extension = address(poolExt);
+        (PoolKey memory key,) = _launch(l);
+        PoolId pid = key.toId();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IArtCoinsHookV2.RecipientCannotReceive.selector, address(poolExt)
+            )
+        );
+        hook.setBountyRecipient(pid, payable(address(poolExt)));
+
+        address enabled = makeAddr("enabledLaunchExtension");
+        this.setLaunchExtension(enabled, true);
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsHookV2.RecipientCannotReceive.selector, enabled)
+        );
+        hook.setBountyRecipient(pid, payable(enabled));
+
+        this.setLaunchExtension(enabled, false);
+        hook.setBountyRecipient(pid, payable(enabled));
+        assertEq(hook.skimConfig(pid).bountyRecipient, enabled);
+    }
+
+    function test_initializePool_escrowMustListHookAsCoreDepositor() public {
+        vm.mockCall(
+            address(escrow),
+            abi.encodeCall(escrow.isCoreDepositor, (address(hook))),
+            abi.encode(false)
+        );
+        IArtCoinsHookV2.PoolInitParams memory p = _params(_defaults(bountyEoa), address(1));
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsHookV2.EscrowNotCoreDepositor.selector, address(escrow))
+        );
+        hook.initializePool(p);
+    }
+
+    function test_initializeMevModule_noModule_emitsPoolStarted() public onlyFork {
+        ArtCoinsTokenV2 token = _newToken(false, bountyEoa, address(hook));
+        PoolKey memory key = hook.initializePool(_params(_defaults(bountyEoa), address(token)));
+        _modify(key, FULL_LO, FULL_HI, int256(LIQ), 0);
+        vm.expectEmit(true, false, false, false, address(hook));
+        emit IArtCoinsHookV2.PoolStarted(key.toId());
+        hook.initializeMevModule(key, "");
     }
 
     function test_setBountyRecipient_unknownPoolReverts() public {

@@ -1,4 +1,4 @@
-// KR-05: the public route is `/healthz` and answers only {ok, lastTickAgeSeconds} (200, or 503 when no tick finished
+// the public route is `/healthz` and answers only {ok, lastTickAgeSeconds} (200, or 503 when no tick finished
 // within 3 intervals plus 2 minutes, so the fly check goes red when the loop is stuck). Everything else (previews,
 // results, balance, alerts, the tx in flight without its hash) is on `/status`, and the counters on `/metrics`, both
 // behind `authorization: Bearer <STATUS_TOKEN>`. Without STATUS_TOKEN both answer 404. A tx hash appears only once

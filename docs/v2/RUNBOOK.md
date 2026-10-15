@@ -207,57 +207,68 @@ verify each freeze: `cast call $SCRIPTY "contents(string)(bool,address,uint256,b
 
 ## part 2: v2 rollout order
 
-sources of truth, in this order: `script/v2/DeployV2Lib.sol` (the routine), `script/v2/DeployV2Stack.s.sol`, `script/v2/README.md`, `docs/v2/DECISIONS.md` D28 to D57, `docs/v2/CREDITS-ENGINE-INTERFACE.md`. the same routine runs in the script and in the fork harness (`ForkStack.deployV2Stack`), so the tests exercise the exact broadcast. if this file and the lib differ, the lib wins and this file is wrong. always `FOUNDRY_PROFILE=ci` (D45): at the default profile `ArtCoinsDeployerV2` is 24,806 bytes, over EIP-170, and the post deploy asserts refuse it.
+sources of truth, in this order: `script/v2/DeployV2Lib.sol` (the routine), `script/v2/DeployV2Stack.s.sol`, `script/v2/deploy.sh` with `script/v2/env/*.env`, `script/v2/README.md`, `docs/v2/CREDITS-ENGINE-INTERFACE.md`. the same routine runs in the script and in the fork harness (`ForkStack.deployV2Stack`), so the tests exercise the exact broadcast. if this file and the lib differ, the lib wins and this file is wrong. always `FOUNDRY_PROFILE=ci`: at the default profile `ArtCoinsDeployerV2` is 24,806 bytes, over EIP-170, and the post deploy asserts refuse it.
+
+the v2 stack deployed on 2026-10-09 is superseded in the registry and no coin launched on it. the simplified stack below is redeployed before the first coin.
 
 ### 2a. deploy, one broadcast
 
-| value in `script/v2/env/mainnet.env` | default of the script | note |
-|---|---|---|
-| OWNER | `Addresses.OWNER` (0xCB43…) | owner of every owned contract and team fee recipient |
-| TREASURY, TREASURY_BPS | OWNER, 8000 | controller treasury and its share (Constants allow 1000 to 9000, the rest buys and burns LAYER) |
-| REFERRAL_PAYOUT | 0 = the new escrow | D57. must have code. the live 0xB03C… answers `Unauthorized()` to everyone but the v1 hook and the owner eoa has no code, so neither is used |
-| DEPLOY_FEE, PROTOCOL_BPS | 0, 2000 | factory deploy fee (free at launch, owner tunable) and default protocol slot |
-| REFERRAL_BPS | 25 | hook wide referral rate (D89) |
+values in `script/v2/env/mainnet.env` (read by `deploy.sh`, passed to `DeployV2Stack.s.sol` as env vars):
 
-about 29.5m gas over 29 txs (0.011 eth at 0.38 gwei, measured on a fork at block 26131304). the hook address depends on the broadcaster, so a dry run with `--sender $OWNER` shows the real one. `script/v2/deploy.sh mainnet` runs steps 0a, 0c, 13 and the record of step 15 in one path (guards, warm ci build, dry run, `--slow` broadcast with `--account ripe0x`, readback, `deployments/1.v2.json`, `verify-v2.sh`). it refuses while `TREASURY`, `TREASURY_BPS`, `DEPLOY_FEE` or `PROTOCOL_BPS` is empty in the env file.
+| env var | mainnet value | meaning |
+|---|---|---|
+| CHAIN_ID, RPC_DEFAULT, FOUNDRY_PROFILE | 1, `https://mainnet.gateway.tenderly.co`, ci | `RPC_URL` in the shell overrides the rpc |
+| WALLET_MODE, KEYSTORE | account, ripe0x | the keystore address must equal OWNER |
+| OWNER | 0xCB43078C32423F5348Cab5885911C3B5faE217F9 | owner of every owned contract and the factory team fee recipient |
+| TREASURY, TREASURY_BPS | 0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4, 8000 | controller treasury and its share (Constants allow 1000 to 9000, the rest buys and burns LAYER); owner tunable with `setSplit` |
+| DEPLOY_FEE | 0 | factory deploy fee in wei; owner tunable with `setDeployFee` |
+| REFERRAL_BPS | 25 | hook wide referral rate, bps of swap volume; owner tunable with `hook.setReferralBps` |
+| VERIFY, REQUIRE_CLEAN_GIT | full, true | explorer plus chain verification; HEAD must be `origin/master` or a tag on origin, tree clean |
+| BROADCAST_DIR, DEPLOY_JSON, RECORD | `broadcast`, `tmp/v2-deploy-1.json`, `deployments/1.v2.json` | forge broadcast files, the script's address json, the registry fragment |
+
+`deploy.sh` refuses while any of CHAIN_ID, RPC_DEFAULT, FOUNDRY_PROFILE, WALLET_MODE, OWNER, TREASURY, TREASURY_BPS, DEPLOY_FEE, REFERRAL_BPS, VERIFY, REQUIRE_CLEAN_GIT, BROADCAST_DIR, DEPLOY_JSON or RECORD is empty. `DeployV2Stack.s.sol` run directly reads OWNER, TREASURY, TREASURY_BPS, DEPLOY_FEE and REFERRAL_BPS from the environment and defaults them to `Addresses.OWNER`, OWNER, 8000, 0 and 25.
+
+`script/v2/deploy.sh mainnet` runs the guards (rpc chain id, wallet, git), the warm ci build, the dry run, a per transaction gas estimate with the OWNER balance check, the keystore signer check and typed confirmation, the `--slow` broadcast with `--account ripe0x`, the readback, the record `deployments/1.v2.json` and `verify-v2.sh`. the transaction count and gas are printed by the wrapper before the keystore prompt. the hook address depends on the broadcaster, so a dry run with `--sender $OWNER` shows the real one.
 
 | step | rehearsal, no key | command |
 |---|---|---|
 | 0a | dry run on a fork | `RPC_URL=$ETH_RPC_URL script/v2/deploy.sh mainnet` (`DRY_RUN` defaults to 1: guards, warm ci build, simulation only) |
 | 0b | harness rehearsal, broadcaster differs from OWNER, then accept | `FOUNDRY_PROFILE=ci forge test --match-path "test/v2/DeployV2Stack.fork.t.sol" --fork-url $ETH_RPC_URL -vv`. record the block |
-| 0c | broadcast | `RPC_URL=$ETH_RPC_URL DRY_RUN=0 script/v2/deploy.sh mainnet` (keystore address must equal OWNER, typed confirmation, `--account ripe0x --slow`, forge prompts for the keystore password) |
+| 0c | broadcast | `RPC_URL=$ETH_RPC_URL DRY_RUN=0 script/v2/deploy.sh mainnet` (typed confirmation of the last 6 hex digits of OWNER, `--account ripe0x --slow`, forge prompts for the keystore password) |
 
-the v2 stack is 9 contracts, in the order `DeployV2Lib.deploy` creates them (D38, D36):
+hook address flags: `HOOK_FLAGS` is beforeInitialize, beforeAddLiquidity, beforeSwap, afterSwap, beforeSwapReturnDelta and afterSwapReturnDelta. the low 14 bits of the hook address equal `0x28CC` (binary `10 1000 1100 1100`), so the address ends in `28cc`, `68cc`, `a8cc` or `e8cc` (the two bits above bit 13 are free). `post deploy asserts` checks `uint160(hook) & Hooks.ALL_HOOK_MASK == 0x28CC` and that the declared permissions equal the address flags.
+
+the v2 stack is 9 contracts, in the order `DeployV2Lib.deploy` creates them:
 
 | # | contract | constructor args as deployed | note |
 |---|---|---|---|
-| 1 | `ArtCoinsFeeEscrowV2` | `(broadcaster)` | owner is the broadcaster until step 12 |
-| 2 | `ArtCoinsPoolExtensionAllowlist` (v1 source, new instance) | `(OWNER)` | do not reuse 0xd6D5, it serves the v1 hook |
-| 3 | `ArtCoinsHookV2`, CREATE2 via 0x4e59b44847b379578588920cA78FbF26c0B4956C | `(PoolManager $PM, broadcaster, escrow, allowlist)` | salt mined in the script for low 14 bits 0x2DCC, max 400,000 tries, in the output json |
-| 4 | `ArtCoinsLpLockerV2` | `(broadcaster, PositionManager 0xbD21…ee9e, Permit2 0x0000…8BA3)` | pure lock: no escrow, no fee collection |
+| 1 | `ArtCoinsFeeEscrowV2` | `(broadcaster)` | owner is the broadcaster until the ownership hand over |
+| 2 | `ArtCoinsPoolExtensionAllowlist` (v1 source, new instance) | `(OWNER)` | a new instance serves the v2 hook |
+| 3 | `ArtCoinsHookV2`, CREATE2 via 0x4e59b44847b379578588920cA78FbF26c0B4956C | `(PoolManager, broadcaster, escrow, allowlist)` | salt mined in the script for low 14 bits 0x28CC, max 400,000 tries, printed as `hookSalt` in the output json |
+| 4 | `ArtCoinsLpLockerV2` | `(broadcaster, PositionManager, Permit2)` | pure lock: holds the launch positions, no fee path |
 | 5 | `ArtCoinsMevLinearSkimV2` | `(hook)` | ownerless |
-| 6 | `ArtCoinsFactoryV2` | `(broadcaster, $PM, deployFee 0.069 eth)` | ships `deprecated = true` |
-| 7 | `ArtCoinsDeployerV2` | `(factory)` | then `factory.setTokenDeployer(deployer)` (0x880183e9, owner only). D55: the deployer is an owner trust surface, the registry records its runtime code |
-| 8 | `BurnRouterV2` | `(OWNER, $PM, WETH, LAYER, LAYER pool key)` | bound to the live LAYER/WETH pool at construction; the key is read from the live LAYER/WETH pool config |
-| 9 | `ProtocolFeeControllerV2` | `(OWNER, escrow, treasury, burnRouter, treasuryBps 8000)` | after the router, its constructor needs it |
+| 6 | `ArtCoinsFactoryV2` | `(broadcaster, PoolManager, deployFee)` | ships `deprecated = true` |
+| 7 | `ArtCoinsDeployerV2` | `(factory)` | then `factory.setTokenDeployer(deployer)` (owner only); the registry records its runtime code |
+| 8 | `BurnRouterV2` | `(OWNER, PoolManager, WETH, LAYER, LAYER pool key)` | bound to the live LAYER/WETH pool at construction; the key is read from the legacy locker's `tokenRewards(LAYER)` |
+| 9 | `ProtocolFeeControllerV2` | `(OWNER, escrow, treasury, burnRouter, treasuryBps)` | after the router, its constructor needs it |
 
 wiring, in the order `_wire` sends it:
 
 | # | contract | call | why |
 |---|---|---|---|
-| 1, 2 | escrow | `addDepositor(hook, true)`, `addDepositor(controller, false)` (`addDepositor(address,bool)` 0x26a760ad) | the hook is a core depositor and cannot be removed (D23). the controller needs depositor rights for its push fallback (D33) |
-| 3 to 6 | hook | `setFeeEscrow(escrow)`, `setExtensionAllowlist(allowlist)`, `setLauncher(factory, true)`, `setReferralBps(25)` | D89 |
+| 1, 2 | escrow | `addDepositor(hook, true)`, `addDepositor(controller, false)` | the hook is a core depositor and `setFeeEscrow` reverts without it. the controller needs depositor rights for its push fallback |
+| 3 to 6 | hook | `setFeeEscrow(escrow)`, `setExtensionAllowlist(allowlist)`, `setLauncher(factory, true)`, `setReferralBps(REFERRAL_BPS)` | |
 | 7 | locker | `setLauncher(factory, true)` | the factory is the only caller of `placeLiquidity` |
 | 8 to 10 | factory | `setHook(hook, true)`, `setLocker(locker, true)`, `setMevModule(mev, true)` | enable the stack |
-| 11, 12 | factory | `setProtocolRecipient(controller)`, `setTeamFeeRecipient(OWNER)` | D57 |
-| 13 | factory | `setDeployFee(0.069 eth)` | |
+| 11, 12 | factory | `setProtocolRecipient(controller)`, `setTeamFeeRecipient(OWNER)` | |
+| 13 | factory | `setDeployFee(DEPLOY_FEE)` | |
 | none | factory | `deprecated` stays true | opening is the last owner tx, 2c |
 
 | step | what | detail |
 |---|---|---|
 | 11 | wiring | the table above, 13 calls after step 9 |
-| 12 | ownership, Ownable2Step (D20) | broadcaster == OWNER: nothing to do. otherwise escrow, hook, locker and factory end with `pendingOwner() == OWNER` (0xe30c3978) and the broadcaster still owns them. the allowlist, router and controller are constructed with OWNER, nothing to accept |
-| 13 | post deploy asserts, in the script | `constantsHash()` of escrow, hook, locker, mev, factory, deployer, router, controller. hook low bits 0x2DCC, permissions equal the address flags, hook PoolManager, globals escrow and allowlist, factory is a launcher, `referralBps`. escrow depositors and core flags. locker is a launcher. every factory getter above, deployer binding, `deprecated`, `STACK_VERSION`. mev hook, controller and router links, router `coin()` and pool key. owners or pending owners. runtime size of all 9 under 24,576. prints `post deploy asserts: ok`, the registry json, writes `tmp/v2-deploy-1.json` |
+| 12 | ownership, Ownable2Step | broadcaster == OWNER: nothing to do. otherwise escrow, hook, locker and factory end with `pendingOwner() == OWNER` (0xe30c3978) and the broadcaster still owns them. the allowlist, router and controller are constructed with OWNER, nothing to accept |
+| 13 | post deploy asserts, in the script | `constantsHash()` of escrow, hook, locker, mev, factory, deployer, router, controller. hook low bits 0x28CC, permissions equal the address flags, hook PoolManager, globals escrow and allowlist, factory is a hook launcher, `referralBps`. escrow depositors and core flags. locker has the factory as launcher. every factory getter above, deployer binding, `deprecated`, `STACK_VERSION`. mev hook, controller and router links, router `coin()` and pool key. the LAYER hook `protocolFeeNumerator` is 0. owners or pending owners. runtime size of all 9 under 24,576. prints `post deploy asserts: ok`, the registry json, writes `tmp/v2-deploy-1.json` |
 
 step 12 for a broadcaster that is not OWNER, one tx at a time, before anything else (until all four are accepted the broadcaster holds the owner powers). `acceptOwnership()` is 0x79ba5097:
 
@@ -277,7 +288,7 @@ per contract: the first line simulates, the second sends, `owner()` must return 
 | step | what | command and check |
 |---|---|---|
 | 14 | verify | `script/v2/verify-v2.sh` (profile ci, run it after the accepts): `forge verify-contract` per contract with the json's constructor args (etherscan with `ETHERSCAN_API_KEY`, else blockscout), then the chain check through `script-js/verify-registry.mjs` on a one stack registry: runtime vs the local ci build with immutables masked, owners equal OWNER, escrow depositors, factory still deprecated. `--dry-run` prints the verify commands, `--skip-source` is chain only. the hook is verified as `src/v2/hooks/ArtCoinsHookV2.sol:ArtCoinsHookV2` (v1 has the same contract name). exit 0 |
-| 15 | registry | `deploy.sh` wrote the record `deployments/1.v2.json`. after the `acceptOwnership` calls run `script/v2/verify-v2.sh` and `node script-js/v2-record.mjs tmp/v2-deploy-1.json broadcast/DeployV2Stack.s.sol/1/run-latest.json deployments/1.v2.json --verified`. merge: `node script-js/merge-v2.mjs deployments/1.v2.json --build` replaces the planned `v2` entries of `deployments/mainnet.json` (template `deployments/v2.template.json`), sets status `deployed` (the `0x4959` stack stays `current`) and runs `verify-registry.mjs` on a temporary file first. then `node script-js/verify-registry.mjs --fill --update-blocks`, `node script-js/verify-registry.mjs --require-artifacts` (exit 0) and `cd script-js && npm run gen:addresses` (`V2_*` constants and the ts `V2` export). cutover: `node script-js/merge-v2.mjs deployments/1.v2.json --cutover --build` (D67) makes v2 `current` and the `0x4959` stack `superseded`, `node script-js/merge-v2.mjs --rollback` reverses it. commit the broadcast record (H4) |
+| 15 | registry | `deploy.sh` wrote the record `deployments/1.v2.json`. after the `acceptOwnership` calls run `script/v2/verify-v2.sh` and `node script-js/v2-record.mjs tmp/v2-deploy-1.json broadcast/DeployV2Stack.s.sol/1/run-latest.json deployments/1.v2.json --verified`. merge: `node script-js/merge-v2.mjs deployments/1.v2.json --build` replaces the planned `v2` entries of `deployments/mainnet.json` (template `deployments/v2.template.json`), sets status `deployed` (the `0x4959` stack stays `current`) and runs `verify-registry.mjs` on a temporary file first. then `node script-js/verify-registry.mjs --fill --update-blocks`, `node script-js/verify-registry.mjs --require-artifacts` (exit 0) and `cd script-js && npm run gen:addresses` (`V2_*` constants and the ts `V2` export). cutover: `node script-js/merge-v2.mjs deployments/1.v2.json --cutover --build` makes v2 `current` and the `0x4959` stack `superseded`, `node script-js/merge-v2.mjs --rollback` reverses it. commit the broadcast record (H4) |
 
 ### 2b. launch the first coin (credits engine coin), factory still owner only
 
@@ -285,13 +296,13 @@ the first coin is launched with `factory.deployToken`, which the owner can call 
 
 | step | what | detail and check |
 |---|---|---|
-| 1 | owner calls before launch | none. the referral rate is the hook wide `referralBps` (D89), the protocol recipient is the controller, and a plain treasury bounty recipient needs no depositor rights |
+| 1 | owner calls before launch | none. the referral rate is the hook wide `referralBps`, the protocol recipient is the controller, and a plain treasury bounty recipient needs no depositor rights |
 | 2 | config | `cp script/v2/launch-configs/example.json my-coin.json`, set treasury, names, ticks, `"example": false`. limits: `bountyBps` at most 9,999, `baselineSkimBps` from 1 to 1,000, `positionBps` sum to 10,000, native eth only. the json carries the keys of `script/v2/launch-configs/example.json` |
 | 3 | dry run | `forge script script/v2/LaunchV2Coin.s.sol --sig "run(string)" "$(cat my-coin.json)" --rpc-url $ETH_RPC_URL --sender $OWNER`. preflight on the wiring, `predictToken`, a snapshot dry run, then it stops before the tx. record the predicted token, `configHash`, value (the deploy fee) and pool id |
 | 4 | broadcast | the same command plus `--account ripe0x --broadcast --slow`. excess value above `deployFee()` plus extension msgValues is refunded |
 | 5 | checks | `factory.isCoin(token)`, token equals the predicted address, `hook.poolInfo(poolId).version == 2`, `token.launcherVersion() == 2`, the `TokenCreatedV2` event echoes the config and its `configHash` equals the dry run |
 | 6 | post launch owner calls | none. the burn router burns LAYER for every coin |
-| 7 | check the fee legs | a small buy and sell and check the fee legs: the bounty is pushed with the 2,300 gas stipend (D41), anything that fails sits in the escrow under the recipient, claim it |
+| 7 | check the fee legs | a small buy and sell and check the fee legs: the bounty is pushed with the 2,300 gas stipend, anything that fails sits in the escrow under the recipient, claim it |
 | 8 | registry | add the coin to the registry `coins` list (`verify-registry` passes) |
 
 fee processing for the stack: the LAYER bot calls `ProtocolFeeControllerV2.processFees()` to split the protocol leg held in the escrow between the treasury and the burn router, and `BurnRouterV2.processBurn(minOut)` to buy and burn LAYER with the router's weth.
@@ -314,8 +325,8 @@ before the call: every gate below is true, the first coin ran at least one full 
 | 1 | ci green on the release commit, fork tests that actually ran | jobs `Foundry project (no network)` (fmt, build sizes, hook size gate, tests), `Foundry fork tests (pinned mainnet block)`, `Registry schema`, `Registry vs chain and bytecode`. read the skip count: a fork job that skipped is not green (H5). the four known red v1 `BurnRouter` floor fork tests in `hygiene-fixes.md` are fixed or accepted in writing. `review-proofs` stays informational |
 | 2 | `script/v2/verify-v2.sh` clean | exit 0 after the `acceptOwnership` calls, source verified on the explorer, runtime equals the ci build, wiring and owners match |
 | 3 | registry verifies against chain and build | `node script-js/verify-registry.mjs --require-artifacts` exit 0, weekly workflow green, v2 stack present with deploy blocks |
-| 4 | sizes under the ci profile | `FOUNDRY_PROFILE=ci forge build --sizes`: all 9 contracts under 24,576, hook and locker at least 1,024 bytes of headroom (D14, D45) |
-| 5 | external review of the hook swap path | written report covering beforeSwap, afterSwap return delta, the skim refund (D42, D51), stipend fee pushes (D41), `FeeDelivery`, the factory and locker interplay. every high fixed or accepted in writing. internal reviews did not verify: V2H-01 end to end (no hostile recipient built), a nested swap from a recipient, partial fill refunds through a live universal router, the HARD `donate` path, sizes at ci, the locker with the real hook and a taxed coin end to end |
+| 4 | sizes under the ci profile | `FOUNDRY_PROFILE=ci forge build --sizes`: all 9 contracts under 24,576, hook and locker at least 1,024 bytes of headroom |
+| 5 | external review of the hook swap path | written report covering beforeSwap, afterSwap return delta, the skim refund, stipend fee pushes, `FeeDelivery`, the factory and locker interplay. every high fixed or accepted in writing. internal reviews did not verify: V2H-01 end to end (no hostile recipient built), a nested swap from a recipient, partial fill refunds through a live universal router, the HARD `donate` path, sizes at ci, the locker with the real hook and a taxed coin end to end |
 | 6 | external review of the HARD mode token | D24, D34 netting, D43, D46. not verified internally: D34 netting with several canonical flows in one tx, routers that settle a gross amount after an opposite flow netted the grant down, erc6909 claims on side pools (accepted residual, D24), V2B-05 burn router sandwich profit (estimate only) |
 | 7 | fork rehearsal of the first coin | the 2b steps 3 to 7 against a fork of the deployed stack: launch, buy, sell, `processFees()`, `processBurn(minOut)`, claim, with the real config. covers what reviews left open: gas at the ci profile, airdrop as a launch extension, dev buy partial fill refund, the mainnet gas limit and the 16.7m tx cap (D54: a config with every cap at its limit costs about 19.6m gas, accepted, the ui keeps configs far below) |
 | 8 | site points at the v2 factory | the site (ripe0x/new-material) mirrors `abi/deployments.generated.ts` and `abi/{v1,v2}` from this repo's submodule pin; bump the pin after the registry holds the v2 stack. it reads `deprecated()` and `deployFee()`, shows the fee, blocks on an unknown chain, simulates before send (UI-01 to UI-09). check the coin renders in a real marketplace (not verified) |

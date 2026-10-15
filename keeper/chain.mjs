@@ -188,7 +188,7 @@ export function createIo(cfg, { onRetry } = {}) {
       }
     },
 
-    /// pool state for the independent floor (KR-02, KR-03, KR-12): spot from `PoolManager.extsload` of the pool's
+    /// pool state for the independent floor: spot from `PoolManager.extsload` of the pool's
     /// slot0, lp fee (slot0, the hook's config, whichever is larger) and the hook's baseline skim. Per kind:
     /// 111 adds the swapper's `maxStepIn` and its locker reward share, LAYER the liquidity, sort order and which
     /// routers have an owner floor. Throws on rpc failure (the runner
@@ -228,9 +228,9 @@ export function createIo(cfg, { onRetry } = {}) {
     },
 
     /// signs locally and sends the raw tx (private relay for the keepers in PRIVATE_RPC_KEEPERS). `nonce` set means
-    /// a same nonce replacement (KR-04); unset signs at the `latest` nonce (the runner refuses to send while the
+    /// a same nonce replacement; unset signs at the `latest` nonce (the runner refuses to send while the
     /// node's pending nonce is ahead of it). `onSigned({hash, nonce})` runs before the broadcast so the tx is on disk
-    /// before it can reach a pool (KR-11). Resending the same signed bytes is idempotent, so transient send errors
+    /// before it can reach a pool. Resending the same signed bytes is idempotent, so transient send errors
     /// are retried safely. A failed broadcast throws with `ambiguous` true when the tx may still have reached a pool.
     async send(k, functionName, args, fees, { nonce, onSigned } = {}) {
       const data = encodeFunctionData({ abi: abiFor(k.kind), functionName, args });
@@ -239,7 +239,7 @@ export function createIo(cfg, { onRetry } = {}) {
       return broadcast({ to: k.address, data, gas: k.gas, nonce: n, fees }, via, onSigned);
     },
 
-    /// KR-04: cancels a stuck nonce with a 0 value transfer to self (21,000 gas), same route as the stuck tx
+    /// cancels a stuck nonce with a 0 value transfer to self (21,000 gas), same route as the stuck tx
     async cancel(nonce, fees, { private: viaPrivate, onSigned } = {}) {
       const via = viaPrivate && privateClient ? privateClient : client;
       return broadcast({ to: account.address, data: '0x', gas: CANCEL_GAS, nonce, fees }, via, onSigned);

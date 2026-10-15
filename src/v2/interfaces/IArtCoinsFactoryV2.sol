@@ -11,10 +11,10 @@ import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 ///
 ///         Frozen at launch: the pool, hook, locker, mev module, tick spacing,
 ///         the bounty share, supply and the positions. Mutable by the coin admin
-///         afterwards, until the coin's `lock` or admin renounce: the bounty
-///         recipient, the pool extension, the baseline skim (lower only), the
-///         allowlist entries and turning restriction off once. Always mutable
-///         by the admin: description, image and metadata renderer.
+///         until the coin's `lock` or admin renounce: the bounty recipient, the
+///         pool extension, the baseline skim (lower only), the allowlist entries
+///         and turning restriction off once. Mutable by the coin admin until
+///         admin renounce: description, image and metadata renderer.
 /// @dev    Units: bps = 1/10,000 (Constants.BPS). Amounts are in wei or coin base units.
 ///         Durations are in seconds. Functions marked owner only require the factory owner.
 interface IArtCoinsFactoryV2 is IConstantsBound {
@@ -50,7 +50,8 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     /// @param tickIfToken0IsCoin Initial tick passed to the hook's `initializePool`.
     /// @param tickSpacing Pool tick spacing. Passed to the hook and bound into the coin's canonical
     ///        pool.
-    /// @param extension Pool extension, frozen per pool. 0 for none.
+    /// @param extension Initial pool extension. 0 for none. The coin admin can replace it until
+    ///        `lock` or admin renounce.
     /// @param extensionData Opaque payload passed to the pool extension.
     struct PoolConfigV2 {
         address hook;
@@ -91,11 +92,13 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     /// @param module IArtCoinsMevSkimV2 module whose `hook()` equals `PoolConfigV2.hook` and whose
     ///        `constantsHash()` matches. 0 for none, in which case the other two fields must be 0,
     ///        else `InvalidMevConfig`.
-    /// @param startingSkimBps Skim at launch in bps of swap volume. At least
+    /// @param startingSkimBps Skim at launch in bps of swap volume. 0 selects
+    ///        `Constants.DEFAULT_START_SKIM_BPS`. The resulting value is at least
     ///        `FeeConfigV2.baselineSkimBps` and at most `Constants.MAX_SKIM_BPS`, else
     ///        `InvalidMevConfig`.
-    /// @param windowSeconds Skim window in seconds, within [`Constants.MIN_MEV_WINDOW`,
-    ///        `Constants.MAX_MEV_WINDOW`], else `InvalidMevConfig`.
+    /// @param windowSeconds Skim window in seconds. 0 selects `Constants.DEFAULT_MEV_WINDOW`. The
+    ///        resulting value is within [`Constants.MIN_MEV_WINDOW`, `Constants.MAX_MEV_WINDOW`],
+    ///        else `InvalidMevConfig`.
     struct MevConfigV2 {
         address module;
         uint24 startingSkimBps;
@@ -291,8 +294,9 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     error NativeTransferFailed();
     /// @notice A fee recipient is a contract with no way to receive eth or claim
     ///         an escrow credit: the factory, the coin, the PoolManager, the
-    ///         launch's hook, locker, hook fee escrow, token deployer, mev
-    ///         module, or an extension in the config.
+    ///         launch's hook, locker, locker PositionManager, hook fee escrow,
+    ///         token deployer, mev module, pool extension, or a launch extension
+    ///         in the config.
     error RecipientCannotReceive(address recipient);
 
     // ── launch ────────────────────────────────────────────────────────────

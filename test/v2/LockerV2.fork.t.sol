@@ -176,10 +176,11 @@ contract LockerV2ForkTest is ForkBase {
     }
 
     function test_lockerV2_constructor_zeroAddress_reverts() public {
+        StubPosm posm = new StubPosm();
         vm.expectRevert(IArtCoinsLpLockerV2.ZeroAddress.selector);
         new ArtCoinsLpLockerV2(owner, address(0), PERMIT2);
         vm.expectRevert(IArtCoinsLpLockerV2.ZeroAddress.selector);
-        new ArtCoinsLpLockerV2(owner, address(new StubPosm()), address(0));
+        new ArtCoinsLpLockerV2(owner, address(posm), address(0));
     }
 
     function test_lockerV2_place_tooManyPositions_reverts() public {

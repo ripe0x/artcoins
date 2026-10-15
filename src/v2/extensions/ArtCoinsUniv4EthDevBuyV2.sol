@@ -34,16 +34,25 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 ///         - The price limit is the pool boundary, so a partial fill happens
 ///           only when the buy exhausts all liquidity. Unspent eth goes to
 ///           `refundRecipient` from `extensionData`.
-///         - The hook credits unused skim to this contract in the fee escrow,
-///           because this contract is the PoolManager caller. The contract sets
-///           `selfClaimOnly` on that escrow before the swap. After the swap it
-///           claims its credit to itself, and a failed claim reverts the launch.
+///         - The swap passes the recipient as the refund address in `hookData`,
+///           so the hook credits the unused skim of a partial fill to the
+///           recipient in the fee escrow. The hook reverts a partial fill that
+///           carries no refund address.
+///         - The contract sets `selfClaimOnly` on the escrow before the swap.
+///           After the swap it claims any credit it holds to itself, and a
+///           failed claim reverts the launch.
 ///           `receive` accepts eth from the escrow during the claim only.
 ///         - The refund is the whole eth balance after the claim, so the
 ///           contract holds zero eth and zero credit in the current escrow after
 ///           each launch. Credit left in a previous escrow stays there. The hook
 ///           owner chooses the escrow with `setFeeEscrow`.
 contract ArtCoinsUniv4EthDevBuyV2 is ReentrancyGuard, IUnlockCallback, IArtCoinsUniv4EthDevBuyV2 {
+    /// @dev Hook `hookData` layout: `mevModuleSwapData` is `abi.encode(refundTo)`.
+    struct SwapData {
+        bytes mevModuleSwapData;
+        bytes poolExtensionSwapData;
+    }
+
     /// @notice The only caller of `receiveTokens`.
     address public immutable factory;
     /// @notice The Uniswap v4 PoolManager the pools live on.
@@ -147,7 +156,9 @@ contract ArtCoinsUniv4EthDevBuyV2 is ReentrancyGuard, IUnlockCallback, IArtCoins
                 amountSpecified: -int256(amountIn),
                 sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
             }),
-            ""
+            abi.encode(
+                SwapData({mevModuleSwapData: abi.encode(recipient), poolExtensionSwapData: ""})
+            )
         );
 
         uint256 spent = uint256(uint128(-delta.amount0()));

@@ -10,9 +10,9 @@ import * as L from './log.mjs';
 export async function createRuntime(env = process.env, { io: ioOverride, registry } = {}) {
   const reg = registry ?? readRegistry(env.REGISTRY_PATH || DEFAULT_REGISTRY);
   const cfg = loadConfig(env, reg);
-  // KR-13: the key lives in the viem account from here on, not in the process environment
+  // the key lives in the viem account from here on, not in the process environment
   if (env === process.env) delete process.env.KEEPER_PRIVATE_KEY;
-  // KR-10: refuse a missing volume instead of starting from empty state
+  // refuse a missing volume instead of starting from empty state
   checkStateDir(cfg.statePath, cfg.ephemeralState);
   const metrics = new Metrics();
   const io = ioOverride ?? createIo(cfg, {

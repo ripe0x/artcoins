@@ -19,7 +19,7 @@ export function loadState(file) {
   return { ...emptyState(), ...s, keepers: s.keepers || {} };
 }
 
-/// KR-10: the state directory must exist (the fly volume mount point). a missing mount would otherwise start from
+/// the state directory must exist (the fly volume mount point). a missing mount would otherwise start from
 /// empty state on the root fs, re run every keeper and forget the tx in flight. EPHEMERAL_STATE=1 allows it.
 export function checkStateDir(file, ephemeral) {
   const dir = path.dirname(path.resolve(file));
@@ -44,8 +44,8 @@ export function saveState(file, state) {
   fs.renameSync(tmp, file);
 }
 
-/// per keeper record. `lastTx` is only ever a mined tx. `outcomes` counts every send and receipt outcome (KR-11),
-/// `nextCheckAt` is the cadence (KR-14), `backoffUntil` / `noProgress` the no progress backoff (KR-01)
+/// per keeper record. `lastTx` is only ever a mined tx. `outcomes` counts every send and receipt outcome,
+/// `nextCheckAt` is the cadence, `backoffUntil` / `noProgress` the no progress backoff
 export function keeperState(state, id) {
   const s = (state.keepers[id] ??= {});
   s.lastRunAt ??= null;

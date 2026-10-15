@@ -30,7 +30,7 @@ interface IProtocolFeeControllerV2 {
     event FeesProcessed(uint256 totalAmount, uint256 treasuryAmount, uint256 burnAmount);
 
     /// @notice The owner withdrew funds.
-    /// @param token Withdrawn token, `address(0)` for eth.
+    /// @param token Withdrawn erc20.
     /// @param to Receiver.
     /// @param amount Amount in base units.
     event Rescued(address indexed token, address indexed to, uint256 amount);
@@ -47,8 +47,13 @@ interface IProtocolFeeControllerV2 {
     error BurnShareTooLow(uint16 burnBps, uint16 minBps);
     /// @notice No eth is held and none is credited in the escrow.
     error NothingToProcess();
-    /// @notice The native eth transfer in `rescue` failed.
-    error NativeTransferFailed();
+    /// @notice A recipient is this contract, or the treasury and the burn router are the same
+    ///         address, or the router reports a zero `coin()` or `poolManager()`.
+    /// @param recipient Offending address.
+    error InvalidRecipient(address recipient);
+    /// @notice `rescue` was called for eth. Held eth is split by `processFees`.
+    /// @param token The refused token, `address(0)`.
+    error CannotRescue(address token);
 
     /// @notice Claims the controller's eth credit from the fee escrow, then splits the whole eth
     ///         balance and delivers both shares.
@@ -72,13 +77,15 @@ interface IProtocolFeeControllerV2 {
     function pending() external view returns (uint256);
 
     /// @notice Sets the treasury.
-    /// @dev Owner only. Reverts `ZeroAddress`.
+    /// @dev Owner only. Reverts `ZeroAddress`, and `InvalidRecipient` when `treasury_` is this
+    ///      contract or the burn router.
     /// @param treasury_ New treasury.
     function setTreasury(address treasury_) external;
 
     /// @notice Sets the burn router. The old router is not called.
-    /// @dev Owner only. Reverts `ZeroAddress`, and `ConstantsMismatch` when the router does not
-    ///      report this build's constants hash.
+    /// @dev Owner only. Reverts `ZeroAddress`, `InvalidRecipient` when the router is this contract,
+    ///      the treasury, or reports a zero `coin()` or `poolManager()`, and `ConstantsMismatch`
+    ///      when it does not report this build's constants hash.
     /// @param burnRouter_ New router.
     function setBurnRouter(address burnRouter_) external;
 
@@ -88,9 +95,10 @@ interface IProtocolFeeControllerV2 {
     /// @param treasuryBps_ New treasury share in bps.
     function setSplit(uint16 treasuryBps_) external;
 
-    /// @notice Sends any held balance, including eth, to `to`.
-    /// @dev Owner only. Reverts `ZeroAddress` when `to` is zero and `NativeTransferFailed`.
-    /// @param token Token to send, `address(0)` for eth.
+    /// @notice Sends a held erc20 balance to `to`.
+    /// @dev Owner only. Reverts `ZeroAddress` when `to` is zero and `CannotRescue` for eth, which
+    ///      `processFees` splits.
+    /// @param token Erc20 to send.
     /// @param to Receiver.
     /// @param amount Amount in base units.
     function rescue(address token, address to, uint256 amount) external;

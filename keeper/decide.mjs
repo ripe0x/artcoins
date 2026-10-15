@@ -64,7 +64,7 @@ export function rateFromSim(wethBurned, layerBought, slippageBps) {
   return (((layerBought * E18) / wethBurned) * (BPS - BigInt(slippageBps))) / BPS;
 }
 
-// ── independent floor from pool state (KR-02, KR-03, KR-12) ─────────────────────────────────────────────
+// ── independent floor from pool state ─────────────────────────────────────────────
 
 export const PPM = 1_000_000n;
 const Q96 = 1n << 96n;
@@ -156,7 +156,7 @@ export function layerBurnAmounts(p, controllerWeth) {
 }
 
 /// LAYER call args from `run(true, 0, false)` simulated as (lCol, wCol, lBurn, wBurn, lBought) plus the market
-/// read. The keeper applies one rate to each router's whole balance (KR-12), so the rate is quoted for the router
+/// read. The keeper applies one rate to each router's whole balance, so the rate is quoted for the router
 /// with the largest balance (the worst impact): the simulated average rate is cut to that router's constant
 /// liquidity estimate, and the spot floor nets out fees, slippage and the impact allowance. A burn the estimate
 /// says moves the price more than the allowance, a missing or zero floor, or a simulated rate under the floor all
@@ -182,7 +182,7 @@ export function argsLayer(sim, slippageBps, m, preview, impactBps = 100) {
   return { ...detail, ...q, rate: q.minOut, args: q.status === 'ok' ? [true, q.minOut, true] : [false, 0n, true] };
 }
 
-// ── progress, backoff and value rules (KR-01, KR-14) ────────────────────────────────────────────────────
+// ── progress, backoff and value rules ────────────────────────────────────────────────────
 
 /// the preview metric behind each threshold reason. `weekly` has none (it never counts for progress)
 export function triggerMetrics(kind, reasons, p) {

@@ -64,9 +64,9 @@ library Constants {
     /// @notice Burn sink.
     address internal constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
-    // ── token strings (not hashed) ────────────────────────────────────────
+    // ── token strings ─────────────────────────────────────────────────────
     /// @notice String caps in bytes, enforced by the token at construction and
-    ///         in every setter, and by the factory before deploying.
+    ///         in every setter, and by the factory before deploying. Hashed.
     uint256 internal constant MAX_NAME_BYTES = 64;
     uint256 internal constant MAX_SYMBOL_BYTES = 16;
     uint256 internal constant MAX_IMAGE_BYTES = 2048;
@@ -152,7 +152,11 @@ library Constants {
                 MAX_EXTENSIONS,
                 MAX_EXTENSION_BPS,
                 MAX_ALLOWED,
-                DEAD
+                DEAD,
+                MAX_NAME_BYTES,
+                MAX_SYMBOL_BYTES,
+                MAX_IMAGE_BYTES,
+                MAX_DESCRIPTION_BYTES
             )
         );
     }

@@ -27,7 +27,10 @@ import {IArtCoinsHookV2} from "../../../src/v2/interfaces/IArtCoinsHookV2.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IPermit2} from "@uniswap/permit2/src/interfaces/IPermit2.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {CustomRevert} from "@uniswap/v4-core/src/libraries/CustomRevert.sol";
+import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
@@ -374,41 +377,38 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         assertLt(IERC20(coin).balanceOf(address(this)), bal, "sold");
     }
 
-    /// V2H-03, documented: the universal router passes its own address as
-    /// the PoolManager caller, so without a refund address in hookData the
-    /// over charge is credited to the router in the escrow and nobody can use
-    /// it. the user paid realized + full charge. the mitigation is the refund
-    /// address (next test).
-    function test_i1_partialFill_universalRouter_noRefundAddress_creditedToRouter_V2H03()
-        public
-        onlyFork
-    {
+    /// Expected revert of a partial quote specified fill without a refund
+    /// address, as surfaced by the PoolManager's hook call wrapper.
+    function _refundRequired() internal view returns (bytes memory) {
+        return abi.encodeWithSelector(
+            CustomRevert.WrappedError.selector,
+            address(v2.hook),
+            IHooks.afterSwap.selector,
+            abi.encodeWithSelector(IArtCoinsHookV2.RefundAddressRequired.selector),
+            abi.encodeWithSelector(Hooks.HookCallFailed.selector)
+        );
+    }
+
+    /// The universal router is the PoolManager caller and cannot claim an
+    /// escrow credit, so a partial fill without a refund address reverts.
+    function test_i1_partialFill_universalRouter_noRefundAddress_reverts() public onlyFork {
         (, PoolKey memory key) = _narrowLaunch();
         uint256 a = 10 ether; // the narrow range sells out near 2.2 eth
-        (uint256 spent, Legs memory l) = _urBuy(key, a, "");
-        uint256 fair = l.bounty + l.protocol + l.referral;
-        assertLt(l.volume, a - _chargedBuy(a), "partial fill");
-        assertEq(spent, l.volume + _chargedBuy(a), "user paid the full charge");
-        assertEq(
-            _escrowed(UNIVERSAL_ROUTER),
-            _chargedBuy(a) - fair,
-            "refund credited to the router (stranded)"
-        );
-        assertEq(_escrowed(address(this)), 0, "nothing for the user");
-        _assertHookHoldsNothing(key);
+        vm.deal(address(this), address(this).balance + a);
+        vm.expectRevert(_refundRequired());
+        this.urBuyExternal(key, a, "");
 
-        uint256 stranded = _escrowed(UNIVERSAL_ROUTER);
-        uint256 a2 = 5 ether;
-        uint256 received;
-        (received, l) = _urSellExactOut(key, a2, "");
-        fair = l.bounty + l.protocol + l.referral;
-        assertEq(received, l.volume - _chargedSell(a2), "seller received realized - full charge");
-        assertEq(
-            _escrowed(UNIVERSAL_ROUTER) - stranded,
-            _chargedSell(a2) - fair,
-            "sell refund also under the router"
-        );
-        _assertHookHoldsNothing(key);
+        deal(Currency.unwrap(key.currency1), address(this), 1e24);
+        vm.expectRevert(_refundRequired());
+        this.urSellExactOutExternal(key, 5 ether, "");
+    }
+
+    function urBuyExternal(PoolKey memory key, uint256 a, bytes memory hd) external {
+        _urBuy(key, a, hd);
+    }
+
+    function urSellExactOutExternal(PoolKey memory key, uint256 a, bytes memory hd) external {
+        _urSellExactOut(key, a, hd);
     }
 
     function test_i1_partialFill_universalRouter_withRefundAddress_nothingStranded()
@@ -438,9 +438,9 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         }
     }
 
-    /// D58 default refund recipients: with no refund address the PoolManager
-    /// caller is credited (a currencyDelta router is made whole by a
-    /// permissionless claim); net of the claimable refund every shape and
+    /// D58 refund recipients: the credit goes to the refund address in hookData
+    /// (a currencyDelta router naming itself is made whole by a permissionless
+    /// claim); net of the claimable refund every shape and
     /// router paid realized +/- fair skim.
     function test_i1_partialFill_netOfClaimableRefund_isFair_bothShapesBothRouters()
         public
@@ -453,7 +453,13 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         // 1. delta router, exact in buy, price limited
         uint256 e0 = address(deltaRouter).balance;
         vm.recordLogs();
-        deltaRouter.swap(key, true, -10 ether, TickMath.getSqrtPriceAtTick(199_400), "");
+        deltaRouter.swap(
+            key,
+            true,
+            -10 ether,
+            TickMath.getSqrtPriceAtTick(199_400),
+            _refundData(address(deltaRouter))
+        );
         Legs memory l = _legs(vm.getRecordedLogs());
         uint256 refund = _claimRefund(address(deltaRouter));
         assertEq(refund, l.refunded, "refund credited to the PoolManager caller");
@@ -469,7 +475,13 @@ contract SkimRefundReferralV2ForkTest is IntegrationV2Base {
         (, int24 tick,,) = readSlot0(key);
         e0 = address(deltaRouter).balance;
         vm.recordLogs();
-        deltaRouter.swap(key, false, 1 ether, TickMath.getSqrtPriceAtTick(tick + 200), "");
+        deltaRouter.swap(
+            key,
+            false,
+            1 ether,
+            TickMath.getSqrtPriceAtTick(tick + 200),
+            _refundData(address(deltaRouter))
+        );
         l = _legs(vm.getRecordedLogs());
         refund = _claimRefund(address(deltaRouter));
         assertEq(refund, l.refunded);

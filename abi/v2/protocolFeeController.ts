@@ -299,8 +299,25 @@ export const protocolFeeControllerV2Abi = [
   },
   {
     "type": "error",
-    "name": "NativeTransferFailed",
-    "inputs": []
+    "name": "CannotRescue",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidRecipient",
+    "inputs": [
+      {
+        "name": "recipient",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   },
   {
     "type": "error",

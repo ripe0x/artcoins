@@ -30,7 +30,7 @@ export function argsFor(k, sim, market, preview, cfg) {
   return argsLayer(sim, k.slippageBps, market, preview, impact);
 }
 
-/// KR-11: every send and receipt outcome lands in the state file and in `keeper_tx_outcomes_total`
+/// every send and receipt outcome lands in the state file and in `keeper_tx_outcomes_total`
 function outcome(ctx, keeperId, what, extra = {}) {
   const st = keeperState(ctx.state, keeperId);
   st.outcomes[what] = (st.outcomes[what] || 0) + 1;
@@ -83,7 +83,7 @@ export async function tick(ctx) {
       log.warn('keeper has no address (registry entry or env override missing)', { keeper: k.id });
       continue;
     }
-    // KR-14: runbook cadence, each keeper is read and decided once per check interval
+    // runbook cadence, each keeper is read and decided once per check interval
     if (st.nextCheckAt && now < st.nextCheckAt) {
       r.result = 'wait';
       r.nextCheckAt = st.nextCheckAt;
@@ -110,14 +110,14 @@ export async function tick(ctx) {
     log.info('preview', { keeper: k.id, preview, run: d.run, reasons: d.reasons });
     if (!d.run) { result('idle'); continue; }
 
-    // KR-01: a backoff after a run that made no progress holds even when the weekly timer is due
+    // a backoff after a run that made no progress holds even when the weekly timer is due
     if (st.backoffUntil && now < st.backoffUntil) {
       result('backoff', { backoffUntil: st.backoffUntil });
       st.nextCheckAt = Math.max(st.nextCheckAt, st.backoffUntil);
       log.warn('due but backing off after a run without progress', { keeper: k.id, backoffUntil: st.backoffUntil, reasons: d.reasons });
       continue;
     }
-    // KR-01: minimum spacing between successful runs
+    // minimum spacing between successful runs
     if (st.lastRunAt && now - st.lastRunAt < k.minRunIntervalSeconds) {
       result('min_interval', { nextRunAt: st.lastRunAt + k.minRunIntervalSeconds });
       st.nextCheckAt = Math.max(st.nextCheckAt, st.lastRunAt + k.minRunIntervalSeconds);
@@ -137,7 +137,7 @@ export async function tick(ctx) {
       continue;
     }
 
-    // KR-02: pool state for the independent floor. a failed read means no convert and no burn this run
+    // pool state for the independent floor. a failed read means no convert and no burn this run
     let market = null;
     if (io.market) {
       try {
@@ -148,7 +148,7 @@ export async function tick(ctx) {
       }
     }
 
-    // KR-14: skip when what the run moves is worth less than its gas, unless the weekly timer is due. pricing the
+    // skip when what the run moves is worth less than its gas, unless the weekly timer is due. pricing the
     // coin needs the pool read: without it the thresholds alone decide
     const value = market ? pendingValueWei(k.kind, preview, market) : null;
     if (value !== null && !d.reasons.includes('weekly')) {
@@ -186,10 +186,10 @@ export async function tick(ctx) {
     r.quoteDetail = q;
     metrics.inc('keeper_quote_status_total', { keeper: k.id, status: q.status });
     if (!QUIET_QUOTES.has(q.status)) {
-      // KR-02 `no_quote`, KR-03 `floor_above_quote` with the blocking swapper, KR-12 `impact_too_high`
+      // results `no_quote`, `floor_above_quote` (with the blocking swapper) and `impact_too_high`
       log.warn(q.status, { keeper: k.id, simulated: sim, quote: q, note: 'sent without convert or burn, a later run converts the rest' });
     }
-    // KR-01b: a LAYER router is due but the simulation burned nothing: its own result and alert
+    // a LAYER router is due but the simulation burned nothing: its own result and alert
     if (k.kind === 'layer' && q.status !== 'ok' && d.reasons.some((x) => x !== 'weekly')) {
       metrics.inc('keeper_alerts_total', { keeper: k.id, alert: 'due_no_burn' });
       log.warn('alert', { keeper: k.id, alert: 'due_no_burn', reasons: d.reasons, quote: q.status });
@@ -198,7 +198,7 @@ export async function tick(ctx) {
     log.info('quoted', { keeper: k.id, simulated: sim, fn, args, quote: q });
     if (cfg.dryRun) { result('dry_run'); save(); continue; }
 
-    // KR-06: the node refuses a tx the key cannot cover at its fee cap: skip with a clear result, not a send error
+    // the node refuses a tx the key cannot cover at its fee cap: skip with a clear result, not a send error
     const need = k.gas * fees.maxFeePerGas;
     if (balance < need) {
       result('insufficient_funds', { balance, needWei: need });
@@ -206,7 +206,7 @@ export async function tick(ctx) {
       log.error('key balance under gas limit times max fee, not sending. fund the key', { keeper: k.id, balance, needWei: need, gas: k.gas, maxFeePerGas: fees.maxFeePerGas });
       continue;
     }
-    // KR-04: never stack a tx behind one the node already holds for this key (lost state, a manual send)
+    // never stack a tx behind one the node already holds for this key (lost state, a manual send)
     const [latest, pendingNonce] = await Promise.all([io.getNonce('latest'), io.getNonce('pending')]);
     if (pendingNonce > latest) {
       result('foreign_pending', { latest, pending: pendingNonce });
@@ -215,7 +215,7 @@ export async function tick(ctx) {
       break;
     }
 
-    // send and wait. never resend in this tick. the record is on disk before the broadcast (KR-11)
+    // send and wait. never resend in this tick. the record is on disk before the broadcast
     const trigger = triggerMetrics(k.kind, d.reasons, preview);
     let sent;
     try {
@@ -260,7 +260,7 @@ export async function tick(ctx) {
     save();
     const receipt = await io.waitReceipt(sent.hash, cfg.receiptTimeoutSeconds * 1000);
     if (!receipt) {
-      result('pending'); // no hash here: /status never shows an unmined tx (KR-05)
+      result('pending'); // no hash here: /status never shows an unmined tx
       log.warn('receipt timeout, tx stays in flight', { keeper: k.id, hash: sent.hash });
       summary.skipped = 'in_flight';
       break; // one tx in flight at a time: the rest waits for the next tick
@@ -304,7 +304,7 @@ async function resolveInFlight(ctx, now) {
     return true;
   }
 
-  // KR-11: nonce used but none of our hashes has a receipt (lagging rpc, or a tx from elsewhere): look again a few
+  // nonce used but none of our hashes has a receipt (lagging rpc, or a tx from elsewhere): look again a few
   // ticks before giving up on it
   if ((await io.getNonce('latest')) > f.nonce) {
     f.nonceUsedChecks = (f.nonceUsedChecks || 0) + 1;
@@ -331,7 +331,7 @@ async function resolveInFlight(ctx, now) {
   return false;
 }
 
-/// KR-04: same nonce, fees +12.5% (at least today's fee caps). the run is replaced with the same calldata while the
+/// same nonce, fees +12.5% (at least today's fee caps). the run is replaced with the same calldata while the
 /// bumped fee stays under MAX_GAS_GWEI and fewer than MAX_REPLACEMENTS were sent, else a 0 value self transfer
 /// cancels the nonce (fee cap 2 x MAX_GAS_GWEI, 21,000 gas)
 async function replaceOrCancel(ctx, k, f, now) {
@@ -439,7 +439,7 @@ async function settle(ctx, k, f, receipt) {
   return { ...out, result: 'reverted', reason };
 }
 
-/// KR-01: after a successful run every threshold metric that triggered it must have dropped by PROGRESS_MIN_BPS of
+/// after a successful run every threshold metric that triggered it must have dropped by PROGRESS_MIN_BPS of
 /// its value at send time. otherwise `no_progress`: a backoff doubling from BACKOFF_MIN_SECONDS to
 /// BACKOFF_MAX_SECONDS and the `/status` alert flag. a run with progress clears both. weekly only runs are not judged
 async function checkProgress(ctx, k, f) {
