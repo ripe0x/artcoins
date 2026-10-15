@@ -102,8 +102,8 @@ interface IArtCoinsTokenV2 {
     /// @notice Turn restriction off permanently. Reverts once locked.
     function unrestrict() external;
     /// @notice Lock the coin permanently: `setAllowed`, `unrestrict` and the coin
-    ///         admin's hook setters (`setBountyRecipient`, `setPoolExtension`,
-    ///         `lowerBaselineSkim`) revert from now on.
+    ///         admin's hook setters (`setReferralBps`, `setBountyRecipient`,
+    ///         `lowerBaselineSkim`, `setPoolExtension`) revert from now on.
     function lock() external;
 
     // ── canonical hook only ───────────────────────────────────────────────

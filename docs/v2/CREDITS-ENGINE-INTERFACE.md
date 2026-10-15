@@ -75,8 +75,10 @@ c.pool = IArtCoinsFactoryV2.PoolConfigV2({
 });
 c.fee = IArtCoinsFactoryV2.FeeConfigV2({
     baselineSkimBps: 600, bountyBps: 8333,
-    bountyRecipient: payable(TREASURY)
+    bountyRecipient: payable(TREASURY),
+    referralBps: 0
 });
+// referralBps 0 turns referrals off; the coin admin can raise it later, up to 100 (hook.setReferralBps)
 int24[] memory lo = new int24[](3); lo[0] = -200000; lo[1] = -160000; lo[2] = -120000;
 int24[] memory hi = new int24[](3); hi[0] = -120000; hi[1] = -100000; hi[2] = -60000;
 uint16[] memory pos = new uint16[](3); pos[0] = 5000; pos[1] = 3000; pos[2] = 2000;

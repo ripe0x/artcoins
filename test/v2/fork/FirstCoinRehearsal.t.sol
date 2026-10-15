@@ -46,16 +46,43 @@ contract FirstCoinRehearsal is RehearsalFlow {
         if (!onFork) vm.skip(true);
     }
 
-    function _target() internal pure returns (LaunchV2Lib.Target memory t) {
+    /// @dev Extension instances of the deployed stack. The generated Addresses.sol has no V2 entries for
+    ///      them until the registry holds the stack with the extensions, so they come from the env
+    ///      (V2_DEV_BUY, V2_AIRDROP, V2_VAULT) and default to zero. A config that names an extension
+    ///      key whose address is zero fails in `LaunchV2Lib.parse` with "json: extension address unset".
+    function _target() internal view returns (LaunchV2Lib.Target memory t) {
         t = LaunchV2Lib.Target(
             Addresses.V2_FACTORY,
             Addresses.V2_HOOK,
             Addresses.V2_LOCKER,
             Addresses.V2_MEV_MODULE,
-            address(0),
-            address(0),
-            address(0)
+            vm.envOr("V2_DEV_BUY", address(0)),
+            vm.envOr("V2_AIRDROP", address(0)),
+            vm.envOr("V2_VAULT", address(0))
         );
+    }
+
+    /// @dev Launch json of gate 7: env LAUNCH_CONFIG, default the example config.
+    function _configPath() internal view returns (string memory) {
+        return vm.envOr("LAUNCH_CONFIG", string(LaunchV2Lib.EXAMPLE_PATH));
+    }
+
+    function _rig() internal view returns (Rig memory r) {
+        LaunchV2Lib.Target memory t = _target();
+        r = Rig({
+            factory: factory,
+            hook: t.hook,
+            locker: t.locker,
+            mev: t.mev,
+            escrow: escrow,
+            controller: ProtocolFeeControllerV2(payable(Addresses.V2_PROTOCOL_FEE_CONTROLLER)),
+            router: BurnRouterV2(payable(Addresses.V2_BURN_ROUTER)),
+            layer: Addresses.COIN_LAYER,
+            launcher: OWNER,
+            devBuy: t.devBuy,
+            airdrop: t.airdrop,
+            vault: t.vault
+        });
     }
 
     // ── step 3 to 5: launch ───────────────────────────────────────────────
@@ -140,27 +167,21 @@ contract FirstCoinRehearsal is RehearsalFlow {
         assertEq(escrow.balances(address(rej), address(0)), 0, "credit cleared");
     }
 
-    /// @notice RUNBOOK gate 7 in full against the deployed stack: launch config hash and event,
-    ///         gas, extensions, Universal Router legs with a refund address, escrow claim,
-    ///         `processFees()` split, `processBurn(minOut)`.
+    /// @notice RUNBOOK gate 7 in full against the deployed stack with the launch json at
+    ///         `LAUNCH_CONFIG` (parsed by LaunchV2Lib, the parser LaunchV2Coin runs) and its own
+    ///         bounty recipient: predicted token, config hash and event, extension effects, gas
+    ///         under the 16.7M cap, Universal Router legs with a refund address, `processFees()`
+    ///         split, `processBurn(minOut)`.
     function test_gate7_fullSequence() public {
-        Rig memory r = Rig({
-            factory: factory,
-            hook: Addresses.V2_HOOK,
-            locker: Addresses.V2_LOCKER,
-            mev: Addresses.V2_MEV_MODULE,
-            escrow: escrow,
-            controller: ProtocolFeeControllerV2(payable(Addresses.V2_PROTOCOL_FEE_CONTROLLER)),
-            router: BurnRouterV2(payable(Addresses.V2_BURN_ROUTER)),
-            layer: Addresses.COIN_LAYER,
-            launcher: OWNER,
-            devBuy: address(0),
-            airdrop: address(0),
-            vault: address(0)
-        });
-        LaunchV2Lib.Launch memory l =
-            LaunchV2Lib.parse(vm.readFile("script/v2/launch-configs/example.json"), _target());
-        _rehearse(r, l);
+        LaunchV2Lib.Launch memory l = LaunchV2Lib.parse(vm.readFile(_configPath()), _target());
+        _rehearse(_rig(), l);
+    }
+
+    /// @notice The escrow path of gate 7: a bounty recipient that rejects eth is credited in the
+    ///         escrow and claims from it.
+    function test_gate7_rejectingBountyRecipient() public {
+        LaunchV2Lib.Launch memory l = LaunchV2Lib.parse(vm.readFile(_configPath()), _target());
+        _rehearseRejecting(_rig(), l);
     }
 
     function test_restricted() public {

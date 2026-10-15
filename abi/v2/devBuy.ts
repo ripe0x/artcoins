@@ -370,6 +370,11 @@ export const devBuyV2Abi = [
   },
   {
     "type": "error",
+    "name": "InvalidRefundRecipient",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NativeTransferFailed",
     "inputs": []
   },

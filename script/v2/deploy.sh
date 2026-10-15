@@ -17,6 +17,7 @@
 # Shell:
 #   RPC_URL            rpc endpoint, overrides RPC_DEFAULT. Cast and forge read it from the environment, messages show scheme and host
 #   DRY_RUN            exactly 1 (default) or 0. 1 runs every guard (git guards warn) and the simulation
+#   FORGE_VERSION_OVERRIDE  1 allows a forge version other than the FOUNDRY_VERSION pinned in .github/workflows/test.yml (loud warning)
 #   ETHERSCAN_API_KEY  read by forge for VERIFY=full
 # The record is a registry fragment ({stacks, contracts}). Merge it with
 #   node script-js/merge-v2.mjs <record>
@@ -73,6 +74,20 @@ echo "  profile  $FOUNDRY_PROFILE"
 echo "  owner    $OWNER"
 echo "  wallet   $WALLET_MODE${KEYSTORE:+ ($KEYSTORE)}"
 echo "  dry run  $DRY_RUN"
+
+# --- forge version: must equal the FOUNDRY_VERSION pinned in .github/workflows/test.yml
+PIN=$(sed -n 's/^ *FOUNDRY_VERSION: *v\{0,1\}\([0-9][0-9.]*\).*/\1/p' .github/workflows/test.yml | head -n 1)
+[ -n "$PIN" ] || die "cannot read FOUNDRY_VERSION from .github/workflows/test.yml"
+HAVE=$(forge --version | sed -n 's/^forge Version: *v\{0,1\}\([0-9][0-9.]*\).*/\1/p' | head -n 1)
+if [ "$HAVE" != "$PIN" ]; then
+  if [ "${FORGE_VERSION_OVERRIDE:-0}" = 1 ]; then
+    echo "WARNING: forge $HAVE differs from the pinned $PIN (FORGE_VERSION_OVERRIDE=1). The deployed bytecode may not match CI builds." >&2
+  else
+    soft "forge $HAVE, workflows pin $PIN. Install the pinned version or set FORGE_VERSION_OVERRIDE=1"
+  fi
+else
+  echo "ok   forge $HAVE matches the workflow pin"
+fi
 
 # --- guards
 got=$(cast chain-id) || die "rpc $RPC_SHOWN unreachable"

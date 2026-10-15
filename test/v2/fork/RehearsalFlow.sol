@@ -17,6 +17,7 @@ import {IArtCoinsFactoryV2} from "../../../src/v2/interfaces/IArtCoinsFactoryV2.
 import {IArtCoinsFeeEscrowV2} from "../../../src/v2/interfaces/IArtCoinsFeeEscrowV2.sol";
 import {IArtCoinsHookV2} from "../../../src/v2/interfaces/IArtCoinsHookV2.sol";
 import {IArtCoinsLpLockerV2} from "../../../src/v2/interfaces/IArtCoinsLpLockerV2.sol";
+import {IBurnRouterV2} from "../../../src/v2/interfaces/IBurnRouterV2.sol";
 import {BurnRouterV2} from "../../../src/v2/protocol-fee/BurnRouterV2.sol";
 import {ProtocolFeeControllerV2} from "../../../src/v2/protocol-fee/ProtocolFeeControllerV2.sol";
 
@@ -95,6 +96,7 @@ abstract contract RehearsalFlow is Test {
         uint256 amountB;
         bytes32 hashA;
         bytes32 hashB;
+        bytes32 root;
     }
 
     uint256 internal constant FC_DEV_BUY_ETH = 0.01 ether;
@@ -126,9 +128,9 @@ abstract contract RehearsalFlow is Test {
         fx.leafB = makeAddr("rehearsal.airdropB");
         fx.amountA = 1000 ether;
         fx.amountB = 2000 ether;
-        fx.hashA = keccak256(bytes.concat(keccak256(abi.encode(fx.leafA, fx.amountA))));
-        fx.hashB = keccak256(bytes.concat(keccak256(abi.encode(fx.leafB, fx.amountB))));
-        bytes32 root = fx.hashA < fx.hashB
+        fx.hashA = keccak256(bytes.concat(keccak256(abi.encode(uint256(0), fx.leafA, fx.amountA))));
+        fx.hashB = keccak256(bytes.concat(keccak256(abi.encode(uint256(1), fx.leafB, fx.amountB))));
+        bytes32 root = fx.root = fx.hashA < fx.hashB
             ? keccak256(abi.encodePacked(fx.hashA, fx.hashB))
             : keccak256(abi.encodePacked(fx.hashB, fx.hashA));
 
@@ -164,41 +166,54 @@ abstract contract RehearsalFlow is Test {
     ) internal {
         for (uint256 k; k < l.cfg.extensions.length; ++k) {
             address ext = l.cfg.extensions[k].extension;
-            if (ext == r.devBuy && ext != address(0)) _checkDevBuy(r, logs, token);
-            if (ext == r.airdrop && ext != address(0)) _checkAirdrop(r, logs, token, k);
-            if (ext == r.vault && ext != address(0)) _checkVault(r, logs, token, k);
+            if (ext == address(0)) continue;
+            IArtCoinsFactoryV2.ExtensionConfigV2 memory e = l.cfg.extensions[k];
+            if (ext == r.devBuy) _checkDevBuy(r, logs, token, e);
+            if (ext == r.airdrop) _checkAirdrop(r, logs, token, k, e);
+            if (ext == r.vault) _checkVault(r, logs, token, k, e);
         }
     }
 
-    function _checkDevBuy(Rig memory r, Vm.Log[] memory logs, address token) internal view {
+    function _checkDevBuy(
+        Rig memory r,
+        Vm.Log[] memory logs,
+        address token,
+        IArtCoinsFactoryV2.ExtensionConfigV2 memory e
+    ) internal view {
+        (address recipient, address refundRecipient,) =
+            abi.decode(e.extensionData, (address, address, uint128));
         uint256 n;
         for (uint256 i; i < logs.length; ++i) {
             if (logs[i].emitter != r.devBuy) continue;
             if (logs[i].topics[0] != IArtCoinsUniv4EthDevBuyV2.EthDevBuy.selector) continue;
             ++n;
             assertEq(address(uint160(uint256(logs[i].topics[1]))), token, "dev buy token");
-            assertEq(
-                address(uint160(uint256(logs[i].topics[2]))), fx.recipient, "dev buy recipient"
-            );
+            assertEq(address(uint160(uint256(logs[i].topics[2]))), recipient, "dev buy recipient");
             (uint256 spent, uint256 out, uint256 refunded, address refundTo) =
                 abi.decode(logs[i].data, (uint256, uint256, uint256, address));
-            assertEq(refundTo, fx.refundRecipient, "dev buy refund recipient");
-            assertEq(spent + refunded, FC_DEV_BUY_ETH, "dev buy eth accounted");
+            assertEq(refundTo, refundRecipient, "dev buy refund recipient");
+            assertEq(spent + refunded, e.msgValue, "dev buy eth accounted");
             assertGt(out, 0, "dev buy out");
-            assertEq(IERC20(token).balanceOf(fx.recipient), out, "dev buy recipient coin balance");
-            assertEq(fx.refundRecipient.balance, refunded, "refund recipient eth");
+            assertEq(IERC20(token).balanceOf(recipient), out, "dev buy recipient coin balance");
+            assertEq(refundRecipient.balance, refunded, "refund recipient eth");
             // a full fill refunds nothing and credits no skim
             assertEq(refunded, 0, "full fill: no refund");
-            assertEq(r.escrow.balances(fx.refundRecipient, address(0)), 0, "refund escrow credit");
+            assertEq(r.escrow.balances(refundRecipient, address(0)), 0, "refund escrow credit");
         }
         assertEq(n, 1, "one EthDevBuy");
         assertEq(r.devBuy.balance, 0, "dev buy holds no eth");
         assertEq(r.escrow.balances(r.devBuy, address(0)), 0, "dev buy holds no escrow credit");
     }
 
-    function _checkAirdrop(Rig memory r, Vm.Log[] memory logs, address token, uint256 index)
-        internal
-    {
+    function _checkAirdrop(
+        Rig memory r,
+        Vm.Log[] memory logs,
+        address token,
+        uint256 index,
+        IArtCoinsFactoryV2.ExtensionConfigV2 memory e
+    ) internal {
+        (address sweepRecipient, bytes32 root,,) =
+            abi.decode(e.extensionData, (address, bytes32, uint256, uint256));
         uint256 n;
         for (uint256 i; i < logs.length; ++i) {
             if (logs[i].emitter != r.airdrop) continue;
@@ -207,29 +222,39 @@ abstract contract RehearsalFlow is Test {
             assertEq(address(uint160(uint256(logs[i].topics[1]))), token, "airdrop token");
             assertEq(uint256(logs[i].topics[2]), index, "airdrop index");
             assertEq(
-                address(uint160(uint256(logs[i].topics[3]))), r.launcher, "airdrop sweep recipient"
+                address(uint160(uint256(logs[i].topics[3]))),
+                sweepRecipient,
+                "airdrop sweep recipient"
             );
         }
         assertEq(n, 1, "one AirdropCreated");
         IArtCoinsAirdropV2 air = IArtCoinsAirdropV2(r.airdrop);
-        uint256 supply = IERC20(token).totalSupply() * FC_AIRDROP_BPS / Constants.BPS;
+        uint256 supply = IERC20(token).totalSupply() * e.extensionBps / Constants.BPS;
         assertEq(air.tranche(token, index).supply, supply, "tranche supply");
         assertEq(IERC20(token).balanceOf(r.airdrop), supply, "airdrop holds its share");
 
-        // leaf A claims with leaf B as proof, then claiming again reverts
+        // the claim round trip needs the fixture tree
+        if (root != fx.root) return;
+        // leaf A (index 0) claims with leaf B (index 1) as proof, then claiming again reverts
         bytes32[] memory proof = new bytes32[](1);
         proof[0] = fx.hashB;
-        assertEq(air.amountAvailableToClaim(token, index, fx.leafA, fx.amountA), fx.amountA);
-        air.claim(token, index, fx.leafA, fx.amountA, proof);
+        assertEq(air.amountAvailableToClaim(token, index, 0, fx.amountA), fx.amountA);
+        air.claim(token, index, 0, fx.leafA, fx.amountA, proof);
         assertEq(IERC20(token).balanceOf(fx.leafA), fx.amountA, "leaf A paid");
-        assertEq(air.leafClaimed(token, index, fx.leafA, fx.amountA), fx.amountA, "leaf A claimed");
+        assertEq(air.leafClaimed(token, index, 0), fx.amountA, "leaf A claimed");
         vm.expectRevert(IArtCoinsAirdropV2.UserMaxClaimed.selector);
-        air.claim(token, index, fx.leafA, fx.amountA, proof);
+        air.claim(token, index, 0, fx.leafA, fx.amountA, proof);
     }
 
-    function _checkVault(Rig memory r, Vm.Log[] memory logs, address token, uint256 index)
-        internal
-    {
+    function _checkVault(
+        Rig memory r,
+        Vm.Log[] memory logs,
+        address token,
+        uint256 index,
+        IArtCoinsFactoryV2.ExtensionConfigV2 memory e
+    ) internal {
+        (address beneficiary, uint256 lockup, uint256 vesting) =
+            abi.decode(e.extensionData, (address, uint256, uint256));
         uint256 n;
         for (uint256 i; i < logs.length; ++i) {
             if (logs[i].emitter != r.vault) continue;
@@ -239,13 +264,13 @@ abstract contract RehearsalFlow is Test {
         }
         assertEq(n, 1, "one AllocationCreated");
         IArtCoinsVaultV2 vault = IArtCoinsVaultV2(r.vault);
-        uint256 amount = IERC20(token).totalSupply() * FC_VAULT_BPS / Constants.BPS;
+        uint256 amount = IERC20(token).totalSupply() * e.extensionBps / Constants.BPS;
         assertEq(IERC20(token).balanceOf(r.vault), amount, "vault holds its share");
         IArtCoinsVaultV2.Allocation memory a = vault.allocation(token, index);
-        assertEq(a.beneficiary, fx.vaultBeneficiary, "vault beneficiary");
+        assertEq(a.beneficiary, beneficiary, "vault beneficiary");
         assertEq(a.amountTotal, amount, "vault amount");
-        assertEq(a.lockupEndTime, block.timestamp + FC_VAULT_LOCKUP, "vault lockup end");
-        assertEq(a.vestingEndTime, a.lockupEndTime + FC_VAULT_VESTING, "vault vesting end");
+        assertEq(a.lockupEndTime, block.timestamp + lockup, "vault lockup end");
+        assertEq(a.vestingEndTime, a.lockupEndTime + vesting, "vault vesting end");
 
         // time travel is reverted so the later trading steps run at launch time
         uint256 snap = vm.snapshotState();
@@ -254,9 +279,9 @@ abstract contract RehearsalFlow is Test {
         vm.warp(a.vestingEndTime);
         assertEq(vault.amountAvailableToClaim(token, index), amount, "fully vested");
         vm.expectEmit(true, true, true, true, r.vault);
-        emit IArtCoinsVaultV2.AllocationClaimed(token, index, fx.vaultBeneficiary, amount, 0);
+        emit IArtCoinsVaultV2.AllocationClaimed(token, index, beneficiary, amount, 0);
         vault.claim(token, index);
-        assertEq(IERC20(token).balanceOf(fx.vaultBeneficiary), amount, "beneficiary paid");
+        assertEq(IERC20(token).balanceOf(beneficiary), amount, "beneficiary paid");
         assertEq(IERC20(token).balanceOf(r.vault), 0, "vault emptied");
         vm.revertToState(snap);
     }
@@ -427,28 +452,46 @@ abstract contract RehearsalFlow is Test {
 
     // ── the sequence ──────────────────────────────────────────────────────
 
-    /// @notice RUNBOOK 2b steps 3 to 7 in order. `l.cfg.fee.bountyRecipient` is replaced by a
-    ///         contract that rejects eth, so its bounty is credited in the escrow and claimable.
+    /// @notice RUNBOOK 2b steps 3 to 7 in order with the bounty recipient of `l`: launch config
+    ///         hash, TokenCreatedV2 fields, gas, extension effects, Universal Router legs, the
+    ///         bounty paid or credited to the recipient, `processFees()`, `processBurn(minOut)`.
     function _rehearse(Rig memory r, LaunchV2Lib.Launch memory l) internal {
-        FcRejecter rej = new FcRejecter();
-        l.cfg.fee.bountyRecipient = payable(address(rej));
         address refundTo = makeAddr("rehearsal.refund");
-
-        // launch config hash, TokenCreatedV2 fields, gas, extensions
+        address bounty = l.cfg.fee.bountyRecipient;
         (address token, PoolKey memory key) = _launchChecked(r, l);
-        // the dev buy swap pays the baseline skim, whose bounty leg is credited at launch
-        uint256 launchCredit = r.escrow.balances(address(rej), address(0));
-        if (l.cfg.extensions.length == 0) assertEq(launchCredit, 0, "no credit before swaps");
-        else assertGt(launchCredit, 0, "dev buy skim bounty credited at launch");
         assertEq(r.escrow.balances(refundTo, address(0)), 0, "refund address credit at launch");
 
-        // Universal Router buy and sell with a refund address in hookData
+        uint256 owed0 = bounty.balance + r.escrow.balances(bounty, address(0));
         uint256 held = _flow(key, token, _refundData(refundTo));
         assertGt(held, 0, "coin held");
         assertEq(r.escrow.balances(refundTo, address(0)), 0, "full fills credit no refund");
         assertEq(refundTo.balance, 0, "full fills pay no refund");
+        // the bounty leg reaches the recipient by push or by escrow credit
+        assertGt(
+            bounty.balance + r.escrow.balances(bounty, address(0)), owed0, "bounty paid or credited"
+        );
 
-        // escrow claim by the credited recipient
+        _processFees(r);
+        _processBurn(r);
+    }
+
+    /// @notice The escrow path: `l.cfg.fee.bountyRecipient` is replaced by a contract that
+    ///         rejects eth, so its bounty is credited in the escrow and claimable.
+    function _rehearseRejecting(Rig memory r, LaunchV2Lib.Launch memory l) internal {
+        FcRejecter rej = new FcRejecter();
+        l.cfg.fee.bountyRecipient = payable(address(rej));
+        address refundTo = makeAddr("rehearsal.refund");
+
+        (address token, PoolKey memory key) = _launchChecked(r, l);
+        // the dev buy swap pays the baseline skim, whose bounty leg is credited at launch
+        uint256 launchCredit = r.escrow.balances(address(rej), address(0));
+        if (r.devBuy != address(0) && _hasExtension(l, r.devBuy)) {
+            assertGt(launchCredit, 0, "dev buy skim bounty credited at launch");
+        } else {
+            assertEq(launchCredit, 0, "no credit before swaps");
+        }
+
+        _flow(key, token, _refundData(refundTo));
         uint256 credit = r.escrow.balances(address(rej), address(0));
         console2.log("escrow credit of the rejecting bounty recipient", credit);
         assertGt(credit, 0, "bounty credited to escrow");
@@ -456,9 +499,13 @@ abstract contract RehearsalFlow is Test {
         rej.claimTo(r.escrow, payee);
         assertEq(payee.balance, credit, "claimTo paid");
         assertEq(r.escrow.balances(address(rej), address(0)), 0, "credit cleared");
+    }
 
-        _processFees(r);
-        _processBurn(r);
+    function _hasExtension(LaunchV2Lib.Launch memory l, address ext) internal pure returns (bool) {
+        for (uint256 i; i < l.cfg.extensions.length; ++i) {
+            if (l.cfg.extensions[i].extension == ext) return true;
+        }
+        return false;
     }
 
     /// @dev Exact split of everything the controller holds or is owed. The burn leg is the
@@ -490,7 +537,9 @@ abstract contract RehearsalFlow is Test {
         assertEq(c.pending(), 0, "nothing pending");
     }
 
-    /// @dev `processBurn(minOut)` with the router's own floor for the current budget.
+    /// @dev `processBurn(minOut)` with the router's own floor for the current budget. The router wraps its
+    ///      ETH, swaps `wethIn` WETH, burns the LAYER and pays the keeper `reward` from its WETH (reported
+    ///      in `Burned`), so final WETH = initial ETH + initial WETH - wethIn - reward.
     function _processBurn(Rig memory r) internal {
         BurnRouterV2 router = r.router;
         vm.roll(block.number + 1);
@@ -499,20 +548,44 @@ abstract contract RehearsalFlow is Test {
         uint256 minOut = router.floorFor(budget);
         assertGt(minOut, 0, "burn floor");
         uint256 supply0 = IERC20(r.layer).totalSupply();
-        uint256 inventory = address(router).balance + IERC20(FC_WETH).balanceOf(address(router));
+        uint256 eth0 = address(router).balance;
+        uint256 weth0 = IERC20(FC_WETH).balanceOf(address(router));
+        address keeper = makeAddr("rehearsal.keeper");
+        uint256 keeper0 = keeper.balance;
 
-        vm.prank(makeAddr("rehearsal.keeper"));
+        vm.recordLogs();
+        vm.prank(keeper);
         (uint256 wethIn, uint256 burned) = router.processBurn(minOut);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        uint256 reward;
+        uint256 n;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter != address(router)) continue;
+            if (logs[i].topics[0] != IBurnRouterV2.Burned.selector) continue;
+            ++n;
+            uint256 eventWethIn;
+            uint256 eventBurned;
+            (eventWethIn, eventBurned, reward) =
+                abi.decode(logs[i].data, (uint256, uint256, uint256));
+            assertEq(eventWethIn, wethIn, "Burned wethIn");
+            assertEq(eventBurned, burned, "Burned burned");
+        }
+        assertEq(n, 1, "one Burned");
 
         console2.log("burn wethIn", wethIn);
         console2.log("burn LAYER burned", burned);
-        console2.log("router eth after", address(router).balance);
-        console2.log("router weth after", IERC20(FC_WETH).balanceOf(address(router)));
+        console2.log("keeper reward", reward);
         assertGe(burned, minOut, "floor enforced");
         assertLe(wethIn, budget, "spent within budget");
+        assertEq(keeper.balance - keeper0, reward, "keeper paid the reward in eth");
         assertEq(IERC20(r.layer).totalSupply(), supply0 - burned, "LAYER supply reduced by burned");
         assertEq(IERC20(r.layer).balanceOf(address(router)), 0, "no LAYER left in router");
         assertEq(address(router).balance, 0, "router eth wrapped");
-        assertLe(IERC20(FC_WETH).balanceOf(address(router)), inventory - wethIn, "weth accounted");
+        assertEq(
+            IERC20(FC_WETH).balanceOf(address(router)),
+            eth0 + weth0 - wethIn - reward,
+            "weth accounted exactly"
+        );
     }
 }

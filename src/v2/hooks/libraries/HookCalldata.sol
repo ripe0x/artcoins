@@ -13,8 +13,9 @@ pragma solidity ^0.8.26;
 ///         overflow. Malformed input yields an empty extension payload, a zero
 ///         referrer and a zero refund address. The hook decides what a zero
 ///         value means for the swap. A referrer word with dirty
-///         high bits, or an inner layout other than (address, bytes), yields a
-///         zero referrer.
+///         high bits, or an inner slice that is not `abi.encode(address, bytes)`
+///         (at least 96 bytes, offset word 0x40, payload length within the
+///         slice), yields a zero referrer.
 library HookCalldata {
     /// @notice Parses the extension slice and the referrer out of `hookData`.
     /// @param d The swap `hookData`.
@@ -37,10 +38,12 @@ library HookCalldata {
         ext = d[p + 0x20:p + 0x20 + len];
 
         // Inner tuple `abi.encode(address, bytes)`: head word 0 is the
-        // referrer, head word 1 the payload offset, always 0x40. Any other
-        // layout yields no referrer.
-        if (len < 0x40) return (ext, referrer);
+        // referrer, head word 1 the payload offset (0x40), word 2 the payload
+        // length. The slice is at least 0x60 bytes and the payload length fits
+        // inside it. Any other layout yields no referrer.
+        if (len < 0x60) return (ext, referrer);
         if (_word(ext, 0x20) != 0x40) return (ext, referrer);
+        if (_word(ext, 0x40) > len - 0x60) return (ext, referrer);
         uint256 ref = _word(ext, 0);
         if (ref >> 160 != 0) return (ext, referrer);
         referrer = address(uint160(ref));

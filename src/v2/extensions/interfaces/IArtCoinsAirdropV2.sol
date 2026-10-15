@@ -4,14 +4,14 @@ pragma solidity ^0.8.26;
 import {IArtCoinsExtensionV2} from "../../interfaces/IArtCoinsExtensionV2.sol";
 
 /// @title  IArtCoinsAirdropV2
-/// @notice Merkle airdrop launch extension. Every field of a tranche is fixed
-///         in the launch tx. Unclaimed tokens go to a sweep recipient fixed at launch.
-/// @dev    Tranches are keyed by `(token, extensionIndex)`, so two airdrop
+/// @notice Merkle airdrop launch extension with vesting and a sweep of the unclaimed remainder.
+/// @dev    Every field of a tranche is fixed in the launch tx, including the
+///         sweep recipient. Tranches are keyed by `(token, extensionIndex)`, so two airdrop
 ///         entries in one launch are independent.
 interface IArtCoinsAirdropV2 is IArtCoinsExtensionV2 {
     /// @notice `extensionData` layout: `abi.encode(sweepRecipient, merkleRoot, lockupDuration, vestingDuration)`.
-    /// @param sweepRecipient Receives the unclaimed remainder once the claim window closes. Nonzero.
-    /// @param merkleRoot Root of an OpenZeppelin StandardMerkleTree over `["address","uint256"]`. Nonzero.
+    /// @param sweepRecipient Receives the unclaimed remainder once the claim window closes. Nonzero and not the airdrop contract, factory, coin, hook, PoolManager or an extension the factory has enabled.
+    /// @param merkleRoot Root of an OpenZeppelin StandardMerkleTree over `["uint256","address","uint256"]` (leaf index, recipient, amount). Nonzero.
     /// @param lockupDuration Seconds before claims open.
     /// @param vestingDuration Seconds over which each allocation vests linearly after the lockup.
     struct AirdropDataV2 {
@@ -49,8 +49,8 @@ interface IArtCoinsAirdropV2 is IArtCoinsExtensionV2 {
     error ZeroExtensionSupply();
     /// @notice `merkleRoot` is zero.
     error InvalidMerkleRoot();
-    /// @notice `sweepRecipient` is zero, the coin or the airdrop contract.
-    error ZeroSweepRecipient();
+    /// @notice `sweepRecipient` is zero or a stack contract that cannot release coins (see `sweepRecipient` in `AirdropDataV2`).
+    error InvalidSweepRecipient();
     /// @notice `lockupDuration` or `vestingDuration` exceeds `MAX_DURATION`.
     error DurationTooLong();
     /// @notice The config entry at `extensionIndex` is not this contract.
@@ -104,6 +104,7 @@ interface IArtCoinsAirdropV2 is IArtCoinsExtensionV2 {
     /// @notice A leaf claimed vested coin.
     /// @param token Launched coin.
     /// @param index Extension index in the launch config.
+    /// @param leafIndex Index of the leaf in the tree.
     /// @param recipient Leaf address that was paid.
     /// @param amount Coin amount paid by this claim, in coin base units.
     /// @param leafClaimed Cumulative amount claimed against the leaf, in coin base units.
@@ -111,6 +112,7 @@ interface IArtCoinsAirdropV2 is IArtCoinsExtensionV2 {
     event AirdropClaimed(
         address indexed token,
         uint256 indexed index,
+        uint256 leafIndex,
         address indexed recipient,
         uint256 amount,
         uint256 leafClaimed,
@@ -125,19 +127,21 @@ interface IArtCoinsAirdropV2 is IArtCoinsExtensionV2 {
         address indexed token, uint256 indexed index, address indexed recipient, uint256 amount
     );
 
-    /// @notice Claims the vested portion of the leaf `(recipient, allocatedAmount)` to `recipient`.
+    /// @notice Claims the vested portion of the leaf `(leafIndex, recipient, allocatedAmount)` to `recipient`.
     ///         Callable by anyone; funds can only go to the leaf's own address.
     /// @dev    Reverts `AirdropNotCreated`, `AirdropNotUnlocked`, `ClaimWindowClosed`, `ZeroClaim`,
     ///         `TotalMaxClaimed`, `InvalidProof`, `UserMaxClaimed` or `ZeroToClaim`.
     ///         The payout is capped at the tranche supply not yet claimed.
     /// @param token Launched coin.
     /// @param index Extension index in the launch config.
+    /// @param leafIndex Index of the leaf in the tree. Claims are tracked per leaf index.
     /// @param recipient Leaf address.
     /// @param allocatedAmount Leaf allocation in coin base units.
     /// @param proof Merkle proof for the leaf.
     function claim(
         address token,
         uint256 index,
+        uint256 leafIndex,
         address recipient,
         uint256 allocatedAmount,
         bytes32[] calldata proof
@@ -154,32 +158,35 @@ interface IArtCoinsAirdropV2 is IArtCoinsExtensionV2 {
     /// @dev    Returns 0 before `lockupEnd` and from `sweepTime`. Reverts `AirdropNotCreated`.
     /// @param token Launched coin.
     /// @param index Extension index in the launch config.
-    /// @param recipient Leaf address.
+    /// @param leafIndex Index of the leaf in the tree.
     /// @param allocatedAmount Leaf allocation in coin base units.
     /// @return Claimable amount in coin base units.
     function amountAvailableToClaim(
         address token,
         uint256 index,
-        address recipient,
+        uint256 leafIndex,
         uint256 allocatedAmount
     ) external view returns (uint256);
 
-    /// @notice Amount already claimed against the leaf `(recipient, allocatedAmount)`.
+    /// @notice Amount already claimed against the leaf with index `leafIndex`.
     /// @param token Launched coin.
     /// @param index Extension index in the launch config.
-    /// @param recipient Leaf address.
-    /// @param allocatedAmount Leaf allocation in coin base units.
+    /// @param leafIndex Index of the leaf in the tree.
     /// @return Claimed amount in coin base units.
-    function leafClaimed(address token, uint256 index, address recipient, uint256 allocatedAmount)
+    function leafClaimed(address token, uint256 index, uint256 leafIndex)
         external
         view
         returns (uint256);
 
-    /// @notice OpenZeppelin StandardMerkleTree leaf: `keccak256(bytes.concat(keccak256(abi.encode(account, amount))))`.
+    /// @notice OpenZeppelin StandardMerkleTree leaf: `keccak256(bytes.concat(keccak256(abi.encode(leafIndex, account, amount))))`.
+    /// @param leafIndex Index of the leaf in the tree.
     /// @param account Leaf address.
     /// @param amount Leaf allocation in coin base units.
     /// @return The leaf hash.
-    function leafHash(address account, uint256 amount) external pure returns (bytes32);
+    function leafHash(uint256 leafIndex, address account, uint256 amount)
+        external
+        pure
+        returns (bytes32);
 
     /// @notice Stored tranche record. All fields are zero when no tranche exists.
     /// @param token Launched coin.

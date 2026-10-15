@@ -97,6 +97,26 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
         assertGt(token.balanceOf(buyer), 0);
     }
 
+    /// the refund recipient cannot be a contract of the stack: the dev buy,
+    /// the factory, the coin, the hook, the PoolManager or an extension.
+    function test_devBuy_refundRecipientRejectsStackContracts() public onlyFork {
+        ArtCoinsTokenV2 token = _newToken(false, bountyEoa, address(hook));
+        PoolKey memory key = hook.initializePool(_params(_defaults(bountyEoa), address(token)));
+        _modify(key, FULL_LO, FULL_HI, int256(LIQ), 0);
+        ArtCoinsUniv4EthDevBuyV2 d = new ArtCoinsUniv4EthDevBuyV2(address(this), POOL_MANAGER);
+        address ext = makeAddr("v2b-ext");
+        address oldExt = makeAddr("v2b-old-ext");
+        enabledExtensions[ext] = true;
+        everEnabledExtensions[ext] = true;
+        everEnabledExtensions[oldExt] = true;
+        address[7] memory bad =
+            [address(d), address(this), address(token), address(hook), POOL_MANAGER, ext, oldExt];
+        for (uint256 i; i < bad.length; ++i) {
+            vm.expectRevert(IArtCoinsUniv4EthDevBuyV2.InvalidRefundRecipient.selector);
+            _devBuyCall(d, key, address(token), 1 ether, makeAddr("v2b-b"), bad[i]);
+        }
+    }
+
     /// partial fill through the real hook: the over charged skim is credited in
     /// the escrow to the refund recipient, the launch succeeds, and the refund
     /// recipient claims the credit and gets the unspent eth.

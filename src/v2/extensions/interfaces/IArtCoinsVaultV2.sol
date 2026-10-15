@@ -4,12 +4,12 @@ pragma solidity ^0.8.26;
 import {IArtCoinsExtensionV2} from "../../interfaces/IArtCoinsExtensionV2.sol";
 
 /// @title  IArtCoinsVaultV2
-/// @notice Cliff plus linear vesting vault launch extension. The beneficiary,
-///         the cliff and the vesting period are fixed in the launch tx.
-/// @dev    Allocations are keyed by `(token, extensionIndex)`.
+/// @notice Cliff plus linear vesting vault launch extension.
+/// @dev    The beneficiary, the cliff and the vesting period are fixed in the
+///         launch tx. Allocations are keyed by `(token, extensionIndex)`.
 interface IArtCoinsVaultV2 is IArtCoinsExtensionV2 {
     /// @notice `extensionData` layout: `abi.encode(beneficiary, lockupDuration, vestingDuration)`.
-    /// @param beneficiary Receives every claim. Nonzero.
+    /// @param beneficiary Receives every claim. Nonzero and not the vault, factory, coin, hook, PoolManager or an extension the factory has enabled.
     /// @param lockupDuration Cliff in seconds, nothing is claimable before it ends. >= MIN_LOCKUP_DURATION.
     /// @param vestingDuration Seconds of linear release after the cliff. >= MIN_VESTING_DURATION.
     struct VaultDataV2 {
@@ -38,7 +38,7 @@ interface IArtCoinsVaultV2 is IArtCoinsExtensionV2 {
     error InvalidVaultBps();
     /// @notice The launcher passed a zero supply share to the extension.
     error ZeroExtensionSupply();
-    /// @notice `beneficiary` is zero, the coin or the vault contract.
+    /// @notice `beneficiary` is zero or a stack contract that cannot release coins (see `beneficiary` in `VaultDataV2`).
     error InvalidBeneficiary();
     /// @notice `lockupDuration` is below `MIN_LOCKUP_DURATION`.
     error VaultLockupDurationTooShort();

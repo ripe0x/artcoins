@@ -63,13 +63,14 @@ function shape(r) {
     need(!('supersededBy' in (s || {})) || (s.status === 'superseded' && r.stacks[s.supersededBy] && s.supersededBy !== id && date(s.supersededAt) && id === `${s.supersededBy}-${s.deployedAt}`), `stack ${id} supersededBy names an existing other stack, status superseded, id <supersededBy>-<deployedAt>`);
     need(['current', 'deployed', 'superseded', 'legacy', 'planned'].includes(s.status) && addr(s.factory, planned(id)) && date(s.deployedAt), `stack ${id} values`);
   }
-  const seen = new Set();
+  const seen = new Set(); const seenName = new Set();
   for (const c of r.contracts || []) {
     const w = `contract ${c.name}@${String(c.address).slice(0, 8)}`;
     keys(c, ['name', 'address', 'stack', 'role', 'deployBlock', 'deployTxHash', 'deployedAt', 'deployer', 'source', 'etherscanVerified', 'owner', 'state', 'status', 'provenance', 'chainVerified', 'notes'], w);
     keys(c.source, ['repoPath', 'commit', 'bytecodeMatch', 'profile', 'metadata'].filter((k) => !(planned(c.stack) && ['profile', 'metadata'].includes(k) && !(k in (c.source || {})))), w + ' source');
     const pl = planned(c.stack); need(pl ? c.status === 'planned' : c.status !== 'planned', w + ' planned only in a planned stack');
     need(addr(c.address, pl) && (c.address === null || !seen.has(String(c.address).toLowerCase())), w + ' address unique'); if (c.address !== null) seen.add(String(c.address).toLowerCase());
+    if (/^v2(-|$)/.test(c.stack)) { need(!seenName.has(c.stack + '/' + c.name), w + ' name unique within its v2 stack'); seenName.add(c.stack + '/' + c.name); } // legacy and open hold repeated names (chunks, test routers)
     need(r.stacks?.[c.stack] && ROLES.includes(c.role), w + ' stack/role');
     need(int(c.deployBlock) && hash(c.deployTxHash) && date(c.deployedAt) && addr(c.deployer, true) && addr(c.owner, true), w + ' deploy fields');
     need(['yes', 'no', 'unknown'].includes(c.etherscanVerified) && ['enabled', 'deprecated', 'unknown'].includes(c.state), w + ' enums');
