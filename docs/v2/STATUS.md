@@ -204,3 +204,7 @@ third external audit of `46cec5be`: no high severity finding. fixes on branch `p
 - launch configs: the advice to allowlist Permit2 or the Universal Router is removed; forwarders are never allowlisted.
 - docs: registry sequence, protocol leg delivery, RUNBOOK gates 4 to 7 and monitoring, DESIGN deployer signature, AUDIT-BRIEF stipend claim.
 - deploy sequence from the audit: deploy with the factory deprecated, merge the registry record and regenerate addresses, pass the real first coin rehearsal, then launch the credits coin.
+
+## D97 (2026-10-15, vault joins the stack)
+
+- `ArtCoinsVaultV2` is contract 12 of the v2 deploy stack, enabled on the factory in wiring; fresh stack rehearsal launches with a vault allocation and claims it after `vestingEnd`.

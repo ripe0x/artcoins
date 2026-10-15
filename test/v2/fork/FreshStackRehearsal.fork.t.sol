@@ -32,11 +32,12 @@ contract FreshStackRehearsalForkTest is ForkStack, RehearsalFlow {
             layer: Addresses.COIN_LAYER,
             launcher: LIVE_OWNER,
             devBuy: address(s.devBuy),
-            airdrop: address(s.airdrop)
+            airdrop: address(s.airdrop),
+            vault: address(s.vault)
         });
         LaunchV2Lib.Launch memory l =
             LaunchV2Lib.parse(vm.readFile(LaunchV2Lib.EXAMPLE_PATH), _target(r));
-        // dev buy and airdrop on the fresh stack, asserted inside the launch
+        // dev buy, airdrop and vault on the fresh stack, asserted inside the launch
         _addExtensions(r, l);
         _rehearse(r, l);
     }

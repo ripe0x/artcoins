@@ -26,7 +26,7 @@ interface IOwnedFactoryV2 {
 ///         optional `extensions` array of launch extensions (example-devbuy.json). A pool
 ///         extension is outside this script.
 ///         Each `extensions` entry is `{extension, bps, msgValue, data}`: `extension` is an
-///         address or the key `devBuy` or `airdrop` (the stack's own instances), `bps` the
+///         address or the key `devBuy`, `airdrop` or `vault` (the stack's own instances), `bps` the
 ///         share of supply, `msgValue` wei forwarded to the extension and `data` the hex
 ///         abi encoded `extensionData`. `deployToken` takes `msg.value` of the deploy fee plus
 ///         the sum of the `msgValue` entries; `preflight` returns that sum.
@@ -40,9 +40,10 @@ library LaunchV2Lib {
         address hook;
         address locker;
         address mev;
-        /// @dev Launch extensions of the stack, resolved from the `devBuy` and `airdrop` keys.
+        /// @dev Launch extensions of the stack, resolved from the `devBuy`, `airdrop` and `vault` keys.
         address devBuy;
         address airdrop;
+        address vault;
     }
 
     struct Launch {
@@ -118,6 +119,7 @@ library LaunchV2Lib {
         bytes32 h = keccak256(bytes(v));
         if (h == keccak256("devBuy")) a = t.devBuy;
         else if (h == keccak256("airdrop")) a = t.airdrop;
+        else if (h == keccak256("vault")) a = t.vault;
         else a = vm.parseAddress(v);
         require(a != address(0), "json: extension address unset");
     }
@@ -283,8 +285,8 @@ library LaunchV2Lib {
 ///         under a snapshot, then the real tx inside `vm.startBroadcast()`.
 ///         Transactions are sent only with `--broadcast`. The signer must be the factory owner.
 ///
-///   stack addresses: env FACTORY_V2, HOOK_V2, LOCKER_V2, MEV_V2 (and DEV_BUY_V2, AIRDROP_V2
-///   for configs that use the `devBuy` and `airdrop` extension keys), else `.addresses` of
+///   stack addresses: env FACTORY_V2, HOOK_V2, LOCKER_V2, MEV_V2 (and DEV_BUY_V2, AIRDROP_V2,
+///   VAULT_V2 for configs that use the `devBuy`, `airdrop` and `vault` extension keys), else `.addresses` of
 ///   tmp/v2-deploy-<chainid>.json (written by DeployV2Stack).
 ///
 ///   config: env LAUNCH_CONFIG_JSON (the json text), else the file at
@@ -320,6 +322,7 @@ contract LaunchV2Coin is Script {
         t.mev = _addr("MEV_V2", deployed, ".addresses.mev");
         t.devBuy = _optAddr("DEV_BUY_V2", deployed, ".addresses.devBuy");
         t.airdrop = _optAddr("AIRDROP_V2", deployed, ".addresses.airdrop");
+        t.vault = _optAddr("VAULT_V2", deployed, ".addresses.vault");
     }
 
     /// @dev Zero when neither the env var nor the deploy record names the extension.

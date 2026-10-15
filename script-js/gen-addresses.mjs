@@ -85,6 +85,7 @@ const STACK_CONSTS = [
     ['PROTOCOL_FEE_CONTROLLER', C('v2', 'ProtocolFeeControllerV2')],
     ['DEV_BUY', Copt('v2', 'ArtCoinsUniv4EthDevBuyV2')],
     ['AIRDROP', Copt('v2', 'ArtCoinsAirdropV2')],
+    ['VAULT', Copt('v2', 'ArtCoinsVaultV2')],
   ]]] : []),
   ['LEGACY', [
     ['FACTORY', C('legacy', 'ArtCoinsFactory')],

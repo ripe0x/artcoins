@@ -9,6 +9,7 @@ sign on the command line with `--ledger`, `--account <keystore>` or `--private-k
 | `LaunchV2Coin.s.sol` | `factory.deployToken` from a json config (the owner may call it while the factory is deprecated): preflight (wiring, `predictToken`), snapshot dry run, then the tx |
 | `launch-configs/example.json` | credits style coin with the treasury as bounty recipient, not restricted (plain erc20), native eth, 69 minute linear skim |
 | `launch-configs/example-devbuy.json` | the same coin with a 0.01 eth dev buy in the `extensions` array |
+| `launch-configs/example-vault.json` | the same coin with a 10% vault allocation (7 day cliff, 90 day vesting) in the `extensions` array |
 | `deploy.sh` | the deploy wrapper, `deploy.sh <local\|mainnet>`: guards, warm ci build, dry run, broadcast, readback, record, verify. values in `env/<env>.env` |
 | `env/local.env`, `env/mainnet.env` | values only: chain id, rpc default, profile, wallet mode, owner, treasury, fee parameters, verify mode. secrets come from the shell |
 | `verify-v2.sh` | `forge verify-contract` for every contract, then the chain check (runtime vs local ci build, owners, wiring) |
@@ -48,7 +49,7 @@ DRY_RUN=0 script/v2/deploy.sh <local|mainnet>
 | build and simulation | `forge build` at profile ci, then `DeployV2Stack.s.sol` with `--sender $OWNER`. it must reach `post deploy asserts: ok` |
 | signer | `WALLET_MODE=account`: `cast wallet address --account $KEYSTORE` equals `OWNER`, then the operator types the last 6 hex digits of `OWNER` at the terminal |
 | broadcast | `--slow` plus `--account <KEYSTORE>` (mainnet) or `--unlocked` (local). the broadcast files go to `BROADCAST_DIR` |
-| readback | `post deploy asserts: ok` in the broadcast output, code at all 11 contracts, factory `deprecated()` true, `deployFee()` equals `DEPLOY_FEE`, escrow, hook, locker and factory owned by or pending to `OWNER` |
+| readback | `post deploy asserts: ok` in the broadcast output, code at all 12 contracts, factory `deprecated()` true, `deployFee()` equals `DEPLOY_FEE`, escrow, hook, locker and factory owned by or pending to `OWNER` |
 | record | `RECORD` (`deployments/1.v2.json` on mainnet, `tmp/v2-local-1.json` on local): `{chainId, repoCommit, owner, ownershipPending, stacks, contracts}` in the shape of `deployments/mainnet.json`, with `deployBlock`, `deployTxHash`, `deployedAt` and `source` filled from the broadcast file. the file must belong to the run: same chain and commit, one receipt per transaction, every status 0x1, created within 10 minutes of `tmp/v2-deploy-1.json` |
 | verify | `VERIFY=full` runs `verify-v2.sh` (explorer sources and chain check), `chain` the chain check only, `none` neither. after a passing check the record is rewritten with `bytecodeMatch` verified and `ownershipPending` false |
 
@@ -123,7 +124,7 @@ the generator writes constants per stack id: `CURRENT_*` (the `0x4959` stack, v1
 
 ## 4. launch the first coin (owner only while deprecated)
 
-stack addresses: env `FACTORY_V2 HOOK_V2 LOCKER_V2 MEV_V2` (plus `DEV_BUY_V2 AIRDROP_V2` for configs that use the `devBuy` and `airdrop` keys), else `.addresses` of `tmp/v2-deploy-1.json`.
+stack addresses: env `FACTORY_V2 HOOK_V2 LOCKER_V2 MEV_V2` (plus `DEV_BUY_V2 AIRDROP_V2 VAULT_V2` for configs that use the `devBuy`, `airdrop` and `vault` keys), else `.addresses` of `tmp/v2-deploy-1.json`.
 
 ```
 cp script/v2/launch-configs/example.json my-coin.json   # edit: treasury placeholder, names, ticks, "example": false
@@ -143,13 +144,13 @@ config fields map 1:1 to `IArtCoinsFactoryV2.DeploymentConfigV2`; hook, locker a
 
 ### launch extensions
 
-the stack deploys and enables `ArtCoinsUniv4EthDevBuyV2` and `ArtCoinsAirdropV2` (contracts 10 and 11, `factory.setExtension(addr, true)`). `ArtCoinsVaultV2` is an optional extension outside the stack: the owner deploys it with `(factory)` and enables it with `setExtension` when a launch needs it.
+the stack deploys and enables `ArtCoinsUniv4EthDevBuyV2`, `ArtCoinsAirdropV2` and `ArtCoinsVaultV2` (contracts 10, 11 and 12, `factory.setExtension(addr, true)`).
 
 each `extensions` entry is `{"extension", "bps", "msgValue", "data"}` and maps to `ExtensionConfigV2{extension, msgValue, extensionBps, extensionData}`:
 
 | field | meaning |
 |---|---|
-| `extension` | an address, or the key `devBuy` or `airdrop` (the stack's instances, from `DEV_BUY_V2` / `AIRDROP_V2` or the deploy record). it must be enabled on the factory |
+| `extension` | an address, or the key `devBuy`, `airdrop` or `vault` (the stack's instances, from `DEV_BUY_V2` / `AIRDROP_V2` / `VAULT_V2` or the deploy record). it must be enabled on the factory |
 | `bps` | share of total supply, uint16. the sum over all entries is at most 9,000 and at most 10 entries |
 | `msgValue` | wei forwarded to the extension. `deployToken` needs `msg.value` of at least `deployFee + sum(msgValue)`, the script sends exactly that and the factory refunds any excess |
 | `data` | hex of the abi encoded `extensionData` |
@@ -158,6 +159,7 @@ each `extensions` entry is `{"extension", "bps", "msgValue", "data"}` and maps t
 |---|---|---|---|
 | dev buy | 0 | nonzero, the eth spent on the buy | `abi.encode(address recipient, address refundRecipient, uint128 minOut)`, 96 bytes. `recipient` receives the coin, `refundRecipient` receives unspent eth and the hook's refund credit of a partial fill, `minOut` is the nonzero minimum coin out computed from the pool curve (the buy pays the baseline skim) |
 | airdrop | nonzero | 0 | `abi.encode(address sweepRecipient, bytes32 merkleRoot, uint256 lockup, uint256 vesting)`, 128 bytes. lockup and vesting in seconds, each at most 3650 days. leaves are `keccak256(bytes.concat(keccak256(abi.encode(address, uint256))))` (OpenZeppelin StandardMerkleTree, types `["address","uint256"]`); the sum of leaf amounts stays at or below `totalSupply * bps / 10000`. claims open at lockup end and the tranche is swept 14 days after vesting ends |
+| vault | nonzero | 0 | `abi.encode(address beneficiary, uint256 lockup, uint256 vesting)`, 96 bytes. lockup is the cliff and vesting the linear period after it, in seconds: lockup at least 7 days, vesting at least 90 days, each at most 3650 days. the beneficiary is nonzero and is not the coin or the vault. `claim(token, index)` is callable by anyone, reverts before lockup end and pays the beneficiary. `launch-configs/example-vault.json` is the vault example |
 
 encode `data` with `cast abi-encode "f(address,address,uint128)" <recipient> <refundRecipient> <minOut>`. `launch-configs/example-devbuy.json` is the dev buy example. extensions run before the mev module starts, so the dev buy pays the pool baseline skim.
 

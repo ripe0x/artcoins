@@ -12,6 +12,7 @@ import {IArtCoinsAirdropV2} from "../../../src/v2/extensions/interfaces/IArtCoin
 import {
     IArtCoinsUniv4EthDevBuyV2
 } from "../../../src/v2/extensions/interfaces/IArtCoinsUniv4EthDevBuyV2.sol";
+import {IArtCoinsVaultV2} from "../../../src/v2/extensions/interfaces/IArtCoinsVaultV2.sol";
 import {IArtCoinsFactoryV2} from "../../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsFeeEscrowV2} from "../../../src/v2/interfaces/IArtCoinsFeeEscrowV2.sol";
 import {IArtCoinsHookV2} from "../../../src/v2/interfaces/IArtCoinsHookV2.sol";
@@ -80,10 +81,12 @@ abstract contract RehearsalFlow is Test {
         /// @dev Launch extension instances of the stack. Zero when the stack has none.
         address devBuy;
         address airdrop;
+        address vault;
     }
 
-    /// @dev Two leaf airdrop tree and the dev buy parties built by `_addExtensions`.
+    /// @dev Two leaf airdrop tree, the dev buy parties and the vault beneficiary built by `_addExtensions`.
     struct ExtensionFixture {
+        address vaultBeneficiary;
         address recipient;
         address refundRecipient;
         address leafA;
@@ -96,22 +99,29 @@ abstract contract RehearsalFlow is Test {
 
     uint256 internal constant FC_DEV_BUY_ETH = 0.01 ether;
     uint16 internal constant FC_AIRDROP_BPS = 100;
+    uint16 internal constant FC_VAULT_BPS = 50;
+    uint256 internal constant FC_VAULT_LOCKUP = 7 days;
+    uint256 internal constant FC_VAULT_VESTING = 90 days;
 
     ExtensionFixture internal fx;
 
     receive() external payable virtual {}
 
     function _target(Rig memory r) internal pure returns (LaunchV2Lib.Target memory t) {
-        t = LaunchV2Lib.Target(address(r.factory), r.hook, r.locker, r.mev, r.devBuy, r.airdrop);
+        t = LaunchV2Lib.Target(
+            address(r.factory), r.hook, r.locker, r.mev, r.devBuy, r.airdrop, r.vault
+        );
     }
 
     // ── launch extensions ─────────────────────────────────────────────────
 
-    /// @dev Replaces `l.cfg.extensions` with a dev buy of `FC_DEV_BUY_ETH` and a 1% airdrop
-    ///      (no lockup, no vesting) over a two leaf tree. Sweep recipient is the launcher.
+    /// @dev Replaces `l.cfg.extensions` with a dev buy of `FC_DEV_BUY_ETH` a 1% airdrop
+    ///      (no lockup, no vesting) over a two leaf tree, and a 0.5% vault (7 day cliff, 90 day
+    ///      vesting). Sweep recipient is the launcher.
     function _addExtensions(Rig memory r, LaunchV2Lib.Launch memory l) internal {
         fx.recipient = makeAddr("rehearsal.devBuyRecipient");
         fx.refundRecipient = makeAddr("rehearsal.devBuyRefund");
+        fx.vaultBeneficiary = makeAddr("rehearsal.vaultBeneficiary");
         fx.leafA = makeAddr("rehearsal.airdropA");
         fx.leafB = makeAddr("rehearsal.airdropB");
         fx.amountA = 1000 ether;
@@ -123,7 +133,7 @@ abstract contract RehearsalFlow is Test {
             : keccak256(abi.encodePacked(fx.hashB, fx.hashA));
 
         IArtCoinsFactoryV2.ExtensionConfigV2[] memory e =
-            new IArtCoinsFactoryV2.ExtensionConfigV2[](2);
+            new IArtCoinsFactoryV2.ExtensionConfigV2[](3);
         e[0] = IArtCoinsFactoryV2.ExtensionConfigV2({
             extension: r.devBuy,
             msgValue: FC_DEV_BUY_ETH,
@@ -135,6 +145,12 @@ abstract contract RehearsalFlow is Test {
             msgValue: 0,
             extensionBps: FC_AIRDROP_BPS,
             extensionData: abi.encode(r.launcher, root, uint256(0), uint256(0))
+        });
+        e[2] = IArtCoinsFactoryV2.ExtensionConfigV2({
+            extension: r.vault,
+            msgValue: 0,
+            extensionBps: FC_VAULT_BPS,
+            extensionData: abi.encode(fx.vaultBeneficiary, FC_VAULT_LOCKUP, FC_VAULT_VESTING)
         });
         l.cfg.extensions = e;
     }
@@ -150,6 +166,7 @@ abstract contract RehearsalFlow is Test {
             address ext = l.cfg.extensions[k].extension;
             if (ext == r.devBuy && ext != address(0)) _checkDevBuy(r, logs, token);
             if (ext == r.airdrop && ext != address(0)) _checkAirdrop(r, logs, token, k);
+            if (ext == r.vault && ext != address(0)) _checkVault(r, logs, token, k);
         }
     }
 
@@ -208,6 +225,40 @@ abstract contract RehearsalFlow is Test {
         assertEq(air.leafClaimed(token, index, fx.leafA, fx.amountA), fx.amountA, "leaf A claimed");
         vm.expectRevert(IArtCoinsAirdropV2.UserMaxClaimed.selector);
         air.claim(token, index, fx.leafA, fx.amountA, proof);
+    }
+
+    function _checkVault(Rig memory r, Vm.Log[] memory logs, address token, uint256 index)
+        internal
+    {
+        uint256 n;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter != r.vault) continue;
+            if (logs[i].topics[0] != IArtCoinsVaultV2.AllocationCreated.selector) continue;
+            ++n;
+            assertEq(address(uint160(uint256(logs[i].topics[1]))), token, "vault token");
+        }
+        assertEq(n, 1, "one AllocationCreated");
+        IArtCoinsVaultV2 vault = IArtCoinsVaultV2(r.vault);
+        uint256 amount = IERC20(token).totalSupply() * FC_VAULT_BPS / Constants.BPS;
+        assertEq(IERC20(token).balanceOf(r.vault), amount, "vault holds its share");
+        IArtCoinsVaultV2.Allocation memory a = vault.allocation(token, index);
+        assertEq(a.beneficiary, fx.vaultBeneficiary, "vault beneficiary");
+        assertEq(a.amountTotal, amount, "vault amount");
+        assertEq(a.lockupEndTime, block.timestamp + FC_VAULT_LOCKUP, "vault lockup end");
+        assertEq(a.vestingEndTime, a.lockupEndTime + FC_VAULT_VESTING, "vault vesting end");
+
+        // time travel is reverted so the later trading steps run at launch time
+        uint256 snap = vm.snapshotState();
+        vm.expectRevert(IArtCoinsVaultV2.AllocationNotUnlocked.selector);
+        vault.claim(token, index);
+        vm.warp(a.vestingEndTime);
+        assertEq(vault.amountAvailableToClaim(token, index), amount, "fully vested");
+        vm.expectEmit(true, true, true, true, r.vault);
+        emit IArtCoinsVaultV2.AllocationClaimed(token, index, fx.vaultBeneficiary, amount, 0);
+        vault.claim(token, index);
+        assertEq(IERC20(token).balanceOf(fx.vaultBeneficiary), amount, "beneficiary paid");
+        assertEq(IERC20(token).balanceOf(r.vault), 0, "vault emptied");
+        vm.revertToState(snap);
     }
 
     // ── launch ────────────────────────────────────────────────────────────

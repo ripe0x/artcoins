@@ -7,6 +7,7 @@ import {ArtCoinsFactoryV2} from "../../src/v2/ArtCoinsFactoryV2.sol";
 import {ArtCoinsFeeEscrowV2} from "../../src/v2/ArtCoinsFeeEscrowV2.sol";
 import {ArtCoinsAirdropV2} from "../../src/v2/extensions/ArtCoinsAirdropV2.sol";
 import {ArtCoinsUniv4EthDevBuyV2} from "../../src/v2/extensions/ArtCoinsUniv4EthDevBuyV2.sol";
+import {ArtCoinsVaultV2} from "../../src/v2/extensions/ArtCoinsVaultV2.sol";
 import {ArtCoinsHookV2} from "../../src/v2/hooks/ArtCoinsHookV2.sol";
 import {IArtCoinsHookV2} from "../../src/v2/interfaces/IArtCoinsHookV2.sol";
 import {ArtCoinsLpLockerV2} from "../../src/v2/lp-lockers/ArtCoinsLpLockerV2.sol";
@@ -35,10 +36,8 @@ interface ILayerHookFee {
 ///         `new` and call runs in the caller's context.
 /// @dev    Deploy order: escrow, extension allowlist, hook (CREATE2, mined salt), locker, mev
 ///         module, factory, token deployer, burn router, controller (its constructor takes the
-///         router), dev buy extension, airdrop extension, wiring, then the pending owner
-///         transfer. `check` holds every post deploy assert. `ArtCoinsVaultV2` is an optional
-///         launch extension and is not part of the stack; the owner deploys it and enables it
-///         with `factory.setExtension` when a launch needs it.
+///         router), dev buy extension, airdrop extension, vault extension, wiring, then the
+///         pending owner transfer. `check` holds every post deploy assert.
 library DeployV2Lib {
     // ── v2 hook address flags ───────────────────────────────────────────────
     uint160 internal constant HOOK_FLAGS = uint160(
@@ -101,6 +100,7 @@ library DeployV2Lib {
         ProtocolFeeControllerV2 controller;
         ArtCoinsUniv4EthDevBuyV2 devBuy;
         ArtCoinsAirdropV2 airdrop;
+        ArtCoinsVaultV2 vault;
     }
 
     /// @notice Mainnet infra plus the launch defaults. `treasury` defaults to `owner`.
@@ -154,9 +154,10 @@ library DeployV2Lib {
         s.controller = new ProtocolFeeControllerV2(
             p.owner, address(s.escrow), p.treasury, address(s.burnRouter), p.treasuryBps
         );
-        // 10, 11
+        // 10, 11, 12
         s.devBuy = new ArtCoinsUniv4EthDevBuyV2(address(s.factory), p.poolManager);
         s.airdrop = new ArtCoinsAirdropV2(address(s.factory));
+        s.vault = new ArtCoinsVaultV2(address(s.factory));
         _wire(s, p);
         _handOver(s, p);
     }
@@ -212,9 +213,9 @@ library DeployV2Lib {
         revert("v2: no hook salt");
     }
 
-    /// @dev Step 12. The hook is a core escrow depositor before `setFeeEscrow`,
+    /// @dev Step 13. The hook is a core escrow depositor before `setFeeEscrow`,
     ///      whose setter reverts otherwise. The controller is a non core depositor.
-    ///      The dev buy and airdrop extensions are enabled on the factory.
+    ///      The dev buy, airdrop and vault extensions are enabled on the factory.
     ///      The factory stays deprecated.
     function _wire(Stack memory s, Params memory p) private {
         s.escrow.addDepositor(address(s.hook), true);
@@ -236,10 +237,11 @@ library DeployV2Lib {
         f.setDeployFee(p.deployFee);
         f.setExtension(address(s.devBuy), true);
         f.setExtension(address(s.airdrop), true);
+        f.setExtension(address(s.vault), true);
         // deprecated stays true (constructor). opening is a separate owner tx.
     }
 
-    /// @dev Step 13. Two step: OWNER must `acceptOwnership` on each.
+    /// @dev Step 14. Two step: OWNER must `acceptOwnership` on each.
     function _handOver(Stack memory s, Params memory p) private {
         if (p.owner == p.broadcaster) return;
         s.escrow.transferOwnership(p.owner);
@@ -286,6 +288,7 @@ library DeployV2Lib {
         require(s.controller.constantsHash() == h, "v2: controller constantsHash");
         require(s.devBuy.constantsHash() == h, "v2: dev buy constantsHash");
         require(s.airdrop.constantsHash() == h, "v2: airdrop constantsHash");
+        require(s.vault.constantsHash() == h, "v2: vault constantsHash");
     }
 
     function _checkHook(Stack memory s, Params memory p) private view {
@@ -336,9 +339,11 @@ library DeployV2Lib {
         require(f.enabledMevModules(address(s.mev)), "v2: factory mev");
         require(f.enabledExtensions(address(s.devBuy)), "v2: factory dev buy");
         require(f.enabledExtensions(address(s.airdrop)), "v2: factory airdrop");
+        require(f.enabledExtensions(address(s.vault)), "v2: factory vault");
         require(s.devBuy.factory() == address(f), "v2: dev buy factory");
         require(address(s.devBuy.poolManager()) == p.poolManager, "v2: dev buy PoolManager");
         require(s.airdrop.factory() == address(f), "v2: airdrop factory");
+        require(s.vault.factory() == address(f), "v2: vault factory");
         require(f.protocolRecipient() == address(s.controller), "v2: protocol recipient");
         require(f.teamFeeRecipient() == p.owner, "v2: team fee recipient");
         require(f.deployFee() == p.deployFee, "v2: deploy fee");
@@ -414,7 +419,7 @@ library DeployV2Lib {
     }
 
     function _checkSizes(Stack memory s) private view {
-        address[11] memory a = addresses(s);
+        address[12] memory a = addresses(s);
         for (uint256 i; i < a.length; ++i) {
             uint256 n = a[i].code.length;
             require(n != 0 && n <= EIP170, "v2: runtime size over EIP-170 (use FOUNDRY_PROFILE=ci)");
@@ -428,7 +433,7 @@ library DeployV2Lib {
     // ══════════════════════════════════════════════════════════════════════
 
     /// @notice Registry order. Names, source paths and roles in `names`, `paths`, `roles`.
-    function addresses(Stack memory s) internal pure returns (address[11] memory a) {
+    function addresses(Stack memory s) internal pure returns (address[12] memory a) {
         a[0] = address(s.escrow);
         a[1] = address(s.allowlist);
         a[2] = address(s.hook);
@@ -440,9 +445,10 @@ library DeployV2Lib {
         a[8] = address(s.controller);
         a[9] = address(s.devBuy);
         a[10] = address(s.airdrop);
+        a[11] = address(s.vault);
     }
 
-    function names() internal pure returns (string[11] memory n) {
+    function names() internal pure returns (string[12] memory n) {
         n[0] = "ArtCoinsFeeEscrowV2";
         n[1] = "ArtCoinsPoolExtensionAllowlist";
         n[2] = "ArtCoinsHookV2";
@@ -454,10 +460,11 @@ library DeployV2Lib {
         n[8] = "ProtocolFeeControllerV2";
         n[9] = "ArtCoinsUniv4EthDevBuyV2";
         n[10] = "ArtCoinsAirdropV2";
+        n[11] = "ArtCoinsVaultV2";
     }
 
     /// @dev Path qualified: `src/hooks/legacy/ArtCoinsHookV2.sol` has the same contract name.
-    function paths() internal pure returns (string[11] memory n) {
+    function paths() internal pure returns (string[12] memory n) {
         n[0] = "src/v2/ArtCoinsFeeEscrowV2.sol";
         n[1] = "src/hooks/ArtCoinsPoolExtensionAllowlist.sol";
         n[2] = "src/v2/hooks/ArtCoinsHookV2.sol";
@@ -469,10 +476,11 @@ library DeployV2Lib {
         n[8] = "src/v2/protocol-fee/ProtocolFeeControllerV2.sol";
         n[9] = "src/v2/extensions/ArtCoinsUniv4EthDevBuyV2.sol";
         n[10] = "src/v2/extensions/ArtCoinsAirdropV2.sol";
+        n[11] = "src/v2/extensions/ArtCoinsVaultV2.sol";
     }
 
     /// @dev Registry roles (script-js/verify-registry.mjs ROLES).
-    function roles() internal pure returns (string[11] memory n) {
+    function roles() internal pure returns (string[12] memory n) {
         n[0] = "escrow";
         n[1] = "allowlist";
         n[2] = "hook";
@@ -484,10 +492,11 @@ library DeployV2Lib {
         n[8] = "controller";
         n[9] = "extension";
         n[10] = "extension";
+        n[11] = "extension";
     }
 
     /// @notice abi encoded constructor args, for `forge verify-contract`.
-    function ctorArgs(Stack memory s, Params memory p) internal pure returns (bytes[11] memory a) {
+    function ctorArgs(Stack memory s, Params memory p) internal pure returns (bytes[12] memory a) {
         a[0] = abi.encode(p.broadcaster);
         a[1] = abi.encode(p.owner);
         a[2] = hookArgs(p, address(s.escrow), address(s.allowlist));
@@ -501,5 +510,6 @@ library DeployV2Lib {
         );
         a[9] = abi.encode(address(s.factory), p.poolManager);
         a[10] = abi.encode(address(s.factory));
+        a[11] = abi.encode(address(s.factory));
     }
 }

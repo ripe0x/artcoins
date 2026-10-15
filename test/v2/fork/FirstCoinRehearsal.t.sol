@@ -53,6 +53,7 @@ contract FirstCoinRehearsal is RehearsalFlow {
             Addresses.V2_LOCKER,
             Addresses.V2_MEV_MODULE,
             address(0),
+            address(0),
             address(0)
         );
     }
@@ -154,7 +155,8 @@ contract FirstCoinRehearsal is RehearsalFlow {
             layer: Addresses.COIN_LAYER,
             launcher: OWNER,
             devBuy: address(0),
-            airdrop: address(0)
+            airdrop: address(0),
+            vault: address(0)
         });
         LaunchV2Lib.Launch memory l =
             LaunchV2Lib.parse(vm.readFile("script/v2/launch-configs/example.json"), _target());

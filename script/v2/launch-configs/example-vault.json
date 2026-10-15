@@ -1,0 +1,58 @@
+{
+  "example": true,
+  "about": "credits engine style coin with a 10% team allocation held by the stack's ArtCoinsVaultV2: 7 day cliff, then 90 day linear vesting to the beneficiary. extensions[0].data is abi.encode(beneficiary, lockup, vesting) with the beneficiary the launcher placeholder (0x7ea5...0001), lockup 604800 and vesting 7776000 seconds (the contract minimums are 7 days and 90 days, the maximum 3650 days each). bps is the share of supply and must be nonzero; msgValue must be 0. Replace every placeholder (0x7ea5...0001) and set example to false before a broadcast.",
+  "expectedToken": "0x0000000000000000000000000000000000000000",
+  "token": {
+    "tokenAdmin": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+    "name": "Credits Dev Buy Example",
+    "symbol": "CREDB",
+    "salt": "0x0000000000000000000000000000000000000000000000000000000000000001",
+    "image": "ipfs://example",
+    "description": "{\"description\":\"credits engine example coin\"}",
+    "totalSupply": 0,
+    "renderer": "0x0000000000000000000000000000000000000000"
+  },
+  "pool": {
+    "tickIfToken0IsCoin": -200000,
+    "tickSpacing": 200
+  },
+  "fee": {
+    "baselineSkimBps": 600,
+    "bountyBps": 8333,
+    "bountyRecipient": "0x7ea5000000000000000000000000000000000001"
+  },
+  "locker": {
+    "tickLower": [
+      -200000,
+      -160000,
+      -120000
+    ],
+    "tickUpper": [
+      -120000,
+      -100000,
+      -60000
+    ],
+    "positionBps": [
+      5000,
+      3000,
+      2000
+    ]
+  },
+  "mev": {
+    "note": "startingSkimBps and windowSeconds are required when a mev module is set",
+    "startingSkimBps": 6869,
+    "windowSeconds": 4140
+  },
+  "restriction": {
+    "restricted": false,
+    "allowed": []
+  },
+  "extensions": [
+    {
+      "extension": "vault",
+      "bps": 1000,
+      "msgValue": "0",
+      "data": "0x0000000000000000000000007ea50000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000093a80000000000000000000000000000000000000000000000000000000000076a700"
+    }
+  ]
+}
