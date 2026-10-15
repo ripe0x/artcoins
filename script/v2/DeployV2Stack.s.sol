@@ -25,7 +25,6 @@ import {Script, console2} from "forge-std/Script.sol";
 ///     TREASURY                      default OWNER. ProtocolFeeControllerV2 treasury
 ///     TREASURY_BPS                  default 8000 (Constants allow 1000..9000)
 ///     DEPLOY_FEE                    default 0 (wei)
-///     PROTOCOL_BPS                  default 2000
 ///     REFERRAL_BPS                  default 25 (0.25% of volume, hook wide, owner tunable)
 ///   when the broadcaster is not OWNER, the escrow, hook, locker and factory
 ///   end with `pendingOwner == OWNER`; OWNER must call `acceptOwnership()` on
@@ -52,7 +51,6 @@ contract DeployV2Stack is Script {
         p.treasury = vm.envOr("TREASURY", owner);
         p.treasuryBps = uint16(vm.envOr("TREASURY_BPS", uint256(DeployV2Lib.TREASURY_BPS)));
         p.deployFee = vm.envOr("DEPLOY_FEE", DeployV2Lib.DEPLOY_FEE);
-        p.protocolBps = uint16(vm.envOr("PROTOCOL_BPS", uint256(DeployV2Lib.PROTOCOL_BPS)));
         p.referralBps = uint24(vm.envOr("REFERRAL_BPS", uint256(DeployV2Lib.REFERRAL_BPS)));
     }
 
@@ -94,7 +92,6 @@ contract DeployV2Stack is Script {
         console2.log("burn coin   ", p.layer);
         console2.log("treasuryBps ", p.treasuryBps);
         console2.log("deployFee   ", p.deployFee);
-        console2.log("protocolBps ", p.protocolBps);
         console2.log("referralBps ", p.referralBps);
     }
 
@@ -105,13 +102,13 @@ contract DeployV2Stack is Script {
         view
         returns (string memory)
     {
-        address[10] memory a = DeployV2Lib.addresses(s);
-        string[10] memory n = DeployV2Lib.names();
-        string[10] memory src = DeployV2Lib.paths();
-        string[10] memory role = DeployV2Lib.roles();
-        bytes[10] memory args = DeployV2Lib.ctorArgs(s, p);
+        address[9] memory a = DeployV2Lib.addresses(s);
+        string[9] memory n = DeployV2Lib.names();
+        string[9] memory src = DeployV2Lib.paths();
+        string[9] memory role = DeployV2Lib.roles();
+        bytes[9] memory args = DeployV2Lib.ctorArgs(s, p);
 
-        string[10] memory key = [
+        string[9] memory key = [
             "escrow",
             "allowlist",
             "hook",
@@ -120,13 +117,12 @@ contract DeployV2Stack is Script {
             "factory",
             "tokenDeployer",
             "burnRouter",
-            "controller",
-            "keeper"
+            "controller"
         ];
         string memory contracts = "";
         string memory verify = "";
         string memory flat = "";
-        for (uint256 i; i < 10; ++i) {
+        for (uint256 i; i < 9; ++i) {
             string memory sep = i == 0 ? "" : ",";
             contracts = string.concat(contracts, sep, _entry(s, p, i, a[i], n[i], src[i], role[i]));
             flat = string.concat(flat, sep, '"', key[i], '":"', vm.toString(a[i]), '"');

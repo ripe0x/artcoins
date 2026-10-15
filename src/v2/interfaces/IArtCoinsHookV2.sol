@@ -10,11 +10,11 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 /// @notice Skim fee hook for v2 art coin pools (native eth paired). Pools are
 ///         created only by allowlisted launchers. Per pool values are written
 ///         once at init; the coin admin may later change the bounty recipient
-///         until the coin locks its recipients or renounces its admin.
+///         until the coin locks (`lock`) or renounces its admin.
 ///         Fee legs are pushed with a zero gas call and fall back to the fee
 ///         escrow.
 ///
-///         Units: bps = 1/10,000; `lpFeePips` = 1/1,000,000; amounts in wei;
+///         Units: bps = 1/10,000; amounts in wei;
 ///         durations in seconds.
 ///
 ///         Anti sniper skim above the pool baseline goes to the bounty
@@ -38,7 +38,7 @@ interface IArtCoinsHookV2 is IConstantsBound {
 
     /// @notice Per pool record, written at `initializePool`. Every field is fixed
     ///         except `extension`, which the coin admin may change with
-    ///         `setPoolExtension` until the coin locks its recipients. A nonzero
+    ///         `setPoolExtension` until the coin locks. A nonzero
     ///         `launcher` marks an official pool. When `restricted` is set the
     ///         hook grants a PoolManager transfer allowance on each swap.
     struct PoolInfo {
@@ -64,15 +64,13 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @notice Per pool fee config. Fixed at init except `bountyRecipient`
     ///         (`setBountyRecipient`) and `baselineSkimBps`, which the coin admin
     ///         may only lower (`lowerBaselineSkim`), both until the coin locks its
-    ///         recipients or renounces its admin. The referral rate is hook wide
+    ///         its coin (`lock`) or renounces its admin. The referral rate is hook wide
     ///         (`referralBps`).
     struct SkimConfig {
         /// @dev Baseline skim, bps of swap volume. At most Constants.MAX_BASELINE_SKIM_BPS.
         uint24 baselineSkimBps;
         /// @dev Bounty share of the baseline skim, bps. At most Constants.MAX_BOUNTY_BPS.
         uint16 bountyBps;
-        /// @dev Uniswap v4 LP fee, pips (1/1,000,000). At most Constants.MAX_LP_FEE.
-        uint24 lpFeePips;
         /// @dev Receives the bounty leg, which is the bounty share of the
         ///      baseline skim plus all skim above the baseline. Nonzero.
         address payable bountyRecipient;
@@ -270,9 +268,6 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @notice `setPoolExtension` before the pool's launch completed (`initializeMevModule`).
     error PoolNotStarted();
 
-    /// @notice `lpFeePips` exceeds Constants.MAX_LP_FEE.
-    error LpFeeTooHigh();
-
     /// @notice `baselineSkimBps` exceeds Constants.MAX_BASELINE_SKIM_BPS.
     error BaselineSkimBpsTooHigh();
 
@@ -312,12 +307,10 @@ interface IArtCoinsHookV2 is IConstantsBound {
     error RecipientCheckFailed();
     /// @notice The caller of `setBountyRecipient` is not the coin's current admin.
     error NotCoinAdmin();
-    /// @notice The coin's recipients are frozen (the coin called `lockRecipients`
-    ///         or renounced its admin).
-    error RecipientsLocked();
+    /// @notice The coin is locked (`lock`), so its hook side settings are frozen.
+    error CoinLocked();
 
-    /// @notice `lowerBaselineSkim` with a value at or above the current baseline, or a
-    ///         zero skim on a pool with no lp fee.
+    /// @notice `lowerBaselineSkim` with zero or a value at or above the current baseline.
     /// @param current Current baseline skim, bps of swap volume.
     /// @param requested Requested value.
     error SkimNotLower(uint24 current, uint24 requested);
@@ -329,10 +322,10 @@ interface IArtCoinsHookV2 is IConstantsBound {
     /// @notice Creates and registers the pool, initializes it in the PoolManager
     ///         and freezes its fee config.
     /// @dev    Callable by allowlisted launchers only. The pool is eth (currency0)
-    ///         against `p.token` (currency1) with a dynamic LP fee set once to
-    ///         `p.skim.lpFeePips`. The locker and the mev module (when set) must
+    ///         against `p.token` (currency1) with its dynamic LP fee left at 0; the
+    ///         skim is the only fee. The locker and the mev module (when set) must
     ///         report this build's `constantsHash()`. Reverts with `NotLauncher`,
-    ///         `ZeroAddress`, `ConstantsMismatch`, `LpFeeTooHigh`,
+    ///         `ZeroAddress`, `ConstantsMismatch`,
     ///         `BaselineSkimBpsTooHigh`, `BountyBpsTooHigh`, `BountyRecipientZero`,
     ///         `ProtocolRecipientZero`, `CanonicalHookMismatch` or
     ///         `ExtensionNotAllowed`.
@@ -428,38 +421,38 @@ interface IArtCoinsHookV2 is IConstantsBound {
     // ── coin admin ─────────────────────────────────────────────────────────
 
     /// @notice Sets the pool's bounty recipient. Coin admin only, until the coin
-    ///         locks its recipients or renounces its admin.
+    ///         locks (`lock`) or renounces its admin.
     /// @dev    `newRecipient` must be nonzero and not the coin, this hook, the
     ///         PoolManager, the hook or locker fee escrow, the pool's mev module,
     ///         the pool's locker, the factory, its token deployer or the
     ///         PositionManager. The factory, token deployer, PositionManager and
     ///         locker fee escrow lookups fail closed: a lookup that reverts
     ///         refuses the change. Reverts with `UnknownPool`, `NotCoinAdmin`,
-    ///         `RecipientsLocked`, `BountyRecipientZero`, `RecipientCannotReceive`
+    ///         `CoinLocked`, `BountyRecipientZero`, `RecipientCannotReceive`
     ///         or `RecipientCheckFailed`.
     /// @param poolId Pool id.
     /// @param newRecipient New bounty recipient.
     function setBountyRecipient(PoolId poolId, address payable newRecipient) external;
 
     /// @notice Lowers the pool's baseline skim. Coin admin only, until the coin
-    ///         locks its recipients or renounces its admin. The rate never rises.
-    /// @dev    `bps` must be below the current baseline, and above zero when the
-    ///         pool has no lp fee. Applies from the next swap; an anti sniper
+    ///         locks (`lock`) or renounces its admin. The rate never rises.
+    /// @dev    `bps` must be above zero and below the current baseline. Applies
+    ///         from the next swap; an anti sniper
     ///         window in progress keeps its schedule and the skim stays at or
     ///         above the new baseline. Reverts with `UnknownPool`, `NotCoinAdmin`,
-    ///         `RecipientsLocked` or `SkimNotLower`.
+    ///         `CoinLocked` or `SkimNotLower`.
     /// @param poolId Pool id.
     /// @param bps New baseline skim, bps of swap volume.
     function lowerBaselineSkim(PoolId poolId, uint24 bps) external;
 
     /// @notice Sets the pool's extension. Coin admin only, until the coin locks
-    ///         its recipients or renounces its admin.
+    ///         its its coin (`lock`) or renounces its admin.
     /// @dev    `newExtension` is zero (no extension) or enabled on the hook's
     ///         extension allowlist. A new extension receives
     ///         `initializePreLockerSetup(key, false, initData)` and
     ///         `initializePostLockerSetup(key, locker, false)` in this call; the
     ///         old one is not called. Callable once the launch completed. Reverts
-    ///         with `UnknownPool`, `NotCoinAdmin`, `RecipientsLocked`,
+    ///         with `UnknownPool`, `NotCoinAdmin`, `CoinLocked`,
     ///         `PoolNotStarted` or `ExtensionNotAllowed`.
     /// @param key Key of the pool.
     /// @param newExtension New extension, zero for none.

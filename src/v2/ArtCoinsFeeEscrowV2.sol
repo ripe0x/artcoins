@@ -15,7 +15,7 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 ///         (feeOwner, token), `token == address(0)` is native eth. Credited
 ///         balances are owed: the owner can rescue at most `balance - totalOwed`.
 /// @dev    `claim` pays the fee owner and is callable by anyone unless the fee
-///         owner set `selfClaimOnly` (`FeeAutoSwapperV2` sets it).
+///         owner set `selfClaimOnly`.
 ///         `claimTo` is callable by the fee owner only.
 ///         Core depositors (hook, locker) are permanent, so the push fallback
 ///         of those contracts stays available.

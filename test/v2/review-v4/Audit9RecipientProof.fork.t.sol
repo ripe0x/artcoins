@@ -3,7 +3,7 @@ pragma solidity ^0.8.26;
 
 // v2-audit-9 A9-01 regression: the factory launch rejects an unpayable stack
 // contract as the pool bounty recipient or the injected protocol recipient,
-// using the same fixed reject set it applies to project reward recipients.
+// using one fixed reject set for both.
 // setProtocolRecipient rejects the globally knowable members directly. The
 // auditor's proof is flipped here to assert the launch reverts.
 
@@ -16,7 +16,6 @@ import {ArtCoinsFeeEscrowV2} from "../../../src/v2/ArtCoinsFeeEscrowV2.sol";
 import {ArtCoinsHookV2} from "../../../src/v2/hooks/ArtCoinsHookV2.sol";
 import {IArtCoinsFactoryV2} from "../../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsHookV2} from "../../../src/v2/interfaces/IArtCoinsHookV2.sol";
-import {IArtCoinsLpLockerV2} from "../../../src/v2/interfaces/IArtCoinsLpLockerV2.sol";
 import {ArtCoinsLpLockerV2} from "../../../src/v2/lp-lockers/ArtCoinsLpLockerV2.sol";
 import {ArtCoinsMevLinearSkimV2} from "../../../src/v2/mev-modules/ArtCoinsMevLinearSkimV2.sol";
 import {ArtCoinsDeployerV2} from "../../../src/v2/utils/ArtCoinsDeployerV2.sol";
@@ -35,7 +34,6 @@ contract Audit9RecipientProofForkTest is ForkBase {
     );
     int24 internal constant START = -200_000;
     int24 internal constant TS = 200;
-    uint16 internal constant PROTOCOL_BPS = 2000;
     uint256 internal constant FEE = 0.01 ether;
 
     ArtCoinsFactoryV2 internal factory;
@@ -49,7 +47,6 @@ contract Audit9RecipientProofForkTest is ForkBase {
     address internal team = makeAddr("a9.team");
     address internal alice = makeAddr("a9.alice");
     address internal admin = makeAddr("a9.tokenAdmin");
-    address internal project = makeAddr("a9.project");
     address payable internal bounty = payable(makeAddr("a9.bounty"));
 
     function setUp() public {
@@ -57,7 +54,7 @@ contract Audit9RecipientProofForkTest is ForkBase {
         if (!onFork) return;
         vm.deal(alice, 100 ether);
 
-        factory = new ArtCoinsFactoryV2(address(this), POOL_MANAGER, PROTOCOL_BPS, FEE);
+        factory = new ArtCoinsFactoryV2(address(this), POOL_MANAGER, FEE);
         deployer = new ArtCoinsDeployerV2(address(factory));
         factory.setTokenDeployer(address(deployer));
 
@@ -71,9 +68,8 @@ contract Audit9RecipientProofForkTest is ForkBase {
             IPoolManager(POOL_MANAGER), address(this), address(escrow), address(allowlist)
         );
         require(address(hook) == at, "miner mismatch");
-        locker = new ArtCoinsLpLockerV2(address(this), POSITION_MANAGER, PERMIT2, address(escrow));
+        locker = new ArtCoinsLpLockerV2(address(this), POSITION_MANAGER, PERMIT2);
         escrow.addDepositor(address(hook), true);
-        escrow.addDepositor(address(locker), true);
         locker.setLauncher(address(factory), true);
         mev = new ArtCoinsMevLinearSkimV2(address(hook));
 
@@ -98,14 +94,10 @@ contract Audit9RecipientProofForkTest is ForkBase {
         c.pool.tickSpacing = TS;
 
         c.fee = IArtCoinsFactoryV2.FeeConfigV2({
-            lpFeePips: 5000, baselineSkimBps: 600, bountyBps: 8000, bountyRecipient: bounty
+            baselineSkimBps: 600, bountyBps: 8000, bountyRecipient: bounty
         });
 
         c.locker.locker = address(locker);
-        c.locker.rewardRecipients = new address[](1);
-        c.locker.rewardRecipients[0] = project;
-        c.locker.rewardBps = new uint16[](1);
-        c.locker.rewardBps[0] = 10_000 - PROTOCOL_BPS;
         c.locker.tickLower = new int24[](1);
         c.locker.tickUpper = new int24[](1);
         c.locker.positionBps = new uint16[](1);
@@ -180,32 +172,24 @@ contract Audit9RecipientProofForkTest is ForkBase {
         factory.setProtocolRecipient(payable(address(deployer)));
     }
 
-    /// A9-02: an escrow rotated out of the hook and locker is still rejected by
-    /// both recipient setters, because each keeps every escrow it was wired to.
-    function test_A9_02_rotatedOutEscrowRejectedByBothSetters() public onlyFork {
+    /// A9-02: an escrow rotated out of the hook is still rejected by the
+    /// bounty recipient setter, because the hook keeps every escrow it was wired to.
+    function test_A9_02_rotatedOutEscrowRejectedBySetter() public onlyFork {
         vm.prank(alice);
         address coin = factory.deployToken{value: FEE}(_cfg());
         PoolId pid = factory.deploymentInfo(coin).poolId;
         address oldEscrow = address(escrow);
 
-        // rotate both the hook and the locker to a fresh escrow
+        // rotate the hook to a fresh escrow
         ArtCoinsFeeEscrowV2 escrow2 = new ArtCoinsFeeEscrowV2(address(this));
         escrow2.addDepositor(address(hook), true);
-        escrow2.addDepositor(address(locker), true);
         hook.setFeeEscrow(address(escrow2));
-        locker.setFeeEscrow(address(escrow2));
 
-        // the coin admin cannot point either recipient at the rotated-out escrow
+        // the coin admin cannot point the recipient at the rotated-out escrow
         vm.prank(admin);
         vm.expectRevert(
             abi.encodeWithSelector(IArtCoinsHookV2.RecipientCannotReceive.selector, oldEscrow)
         );
         hook.setBountyRecipient(pid, payable(oldEscrow));
-
-        vm.prank(admin);
-        vm.expectRevert(
-            abi.encodeWithSelector(IArtCoinsLpLockerV2.RecipientCannotReceive.selector, oldEscrow)
-        );
-        locker.setRewardRecipient(coin, 0, oldEscrow);
     }
 }

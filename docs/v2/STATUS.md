@@ -162,3 +162,12 @@ the burn router is bound to LAYER and its live weth pool at construction; the co
 | sizes (ci) | router 7,062 bytes (was 9,342), controller 3,409 (was 3,971) |
 
 open: the hosted keeper runner has no step for the new controller (`processFees()`) and router (`processBurn(minOut)`); add it before the redeploy goes live. worktree note: `remappings.txt` pins `permit2/=lib/permit2/` so a fresh checkout resolves the bare prefix the same way the main checkout does.
+
+## D92 (2026-10-14, simplification pass)
+
+the v2 stack is reduced to 9 contracts and one fee path before the redeploy. docs/v2/DECISIONS.md D92.
+
+- removed: `FeeAutoSwapperV2`, `ArtCoinsKeeperV2` and their interfaces and tests; the locker fee collection, reward recipients and keeper reward; the pool lp fee (`lpFeePips`, fixed at 0, skim only); `deployTokenAsOwner`, `defaultProtocolFeeBps`, `defaultAllowed`, `protocolBps`; token `pinned`, `lockAllowlist` and `lockRecipients`.
+- changed: the factory has one `deployToken` entrypoint (constructor `(owner, poolManager, deployFee)`); the token has one `lock()` (error `CoinLocked`); the locker constructor is `(owner, positionManager, permit2)`; `Constants.hash()` changed.
+- protocol fees: `ProtocolFeeControllerV2.processFees()` and `BurnRouterV2.processBurn(minOut)`, called by the LAYER bot.
+- docs updated: DECISIONS D92, AUDIT-BRIEF, RUNBOOK, CREDITS-ENGINE-INTERFACE and the false statements in DESIGN, HANDOFF, SYSTEM-REVIEW, REPORT and the root README.

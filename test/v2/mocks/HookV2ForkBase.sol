@@ -56,7 +56,6 @@ abstract contract HookV2ForkBase is Test {
     uint16 internal constant BOUNTY_BPS = 8333;
     /// @dev The hook's initial referral rate (Constants.REFERRAL_BPS_DEFAULT), bps of volume.
     uint24 internal constant REFERRAL_BPS = 25;
-    uint24 internal constant LP_FEE = 5000;
 
     bool internal onFork;
     IPoolManager internal pm = IPoolManager(POOL_MANAGER);
@@ -167,7 +166,6 @@ abstract contract HookV2ForkBase is Test {
             t,
             1_000_000_000e18,
             r,
-            new address[](0),
             ArtCoinsTokenV2.CanonicalPool({
                 hook: hook_, poolManager: POOL_MANAGER, tickSpacing: TS
             }),
@@ -191,7 +189,6 @@ abstract contract HookV2ForkBase is Test {
         p.skim = IArtCoinsHookV2.SkimConfig({
             baselineSkimBps: l.baseline,
             bountyBps: l.bountyBps,
-            lpFeePips: LP_FEE,
             bountyRecipient: payable(l.bounty),
             protocolRecipient: protocolR
         });
@@ -281,9 +278,5 @@ abstract contract HookV2ForkBase is Test {
 
     function _escrowed(address who) internal view returns (uint256) {
         return escrow.balances(who, address(0));
-    }
-
-    function _lpFee(PoolKey memory key) internal view returns (uint24 fee) {
-        (,,, fee) = pm.getSlot0(key.toId());
     }
 }

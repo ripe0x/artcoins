@@ -13,13 +13,11 @@ import {I1DeltaRouter} from "./mocks/I1Mocks.sol";
 import {Constants} from "../../../src/Constants.sol";
 import {IArtCoinsHook} from "../../../src/interfaces/IArtCoinsHook.sol";
 import {ArtCoinsTokenV2} from "../../../src/v2/ArtCoinsTokenV2.sol";
-import {FeeAutoSwapperV2} from "../../../src/v2/FeeAutoSwapperV2.sol";
 import {IArtCoinsFactoryV2} from "../../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsHookV2} from "../../../src/v2/interfaces/IArtCoinsHookV2.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
-import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
@@ -33,12 +31,10 @@ abstract contract IntegrationV2Base is ForkStack {
     uint256 internal constant D = Constants.BPS;
 
     // credits engine coin (CREDITS-ENGINE-INTERFACE.md section 4, example.json)
-    uint24 internal constant LP_FEE = 5000;
     uint24 internal constant BASELINE = 600;
     uint16 internal constant BOUNTY_BPS = 8333;
     uint24 internal constant START_SKIM = 6869;
     uint32 internal constant WINDOW = 4140;
-    uint16 internal constant PROTOCOL_BPS = 2000;
 
     // uniswap v3 mainnet (test/v2/TokenV2.fork.t.sol)
     address internal constant V3_FACTORY = 0x1F98431c8aD98523631AE4a59f267346ea31F984;
@@ -55,7 +51,6 @@ abstract contract IntegrationV2Base is ForkStack {
 
     address internal admin = makeAddr("i1.admin");
     address internal stranger = makeAddr("i1.stranger");
-    address internal keeperCaller = makeAddr("i1.keeperCaller");
     IPoolManager internal pm = IPoolManager(POOL_MANAGER);
     I1DeltaRouter internal deltaRouter;
 
@@ -81,8 +76,7 @@ abstract contract IntegrationV2Base is ForkStack {
     // ── configs ───────────────────────────────────────────────────────────
 
     /// The credits engine coin of CREDITS-ENGINE-INTERFACE.md section 4: VENUE
-    /// at 0 bps (cap 10%), treasury as bounty recipient, tax sink and the only
-    /// project slot (80%), 69 minute skim from 68.69% to the 6% baseline.
+    /// at 0 bps (cap 10%), treasury as bounty recipient, 69 minute skim from 68.69% to the 6% baseline.
     function _creditsConfig(address treasury)
         internal
         view
@@ -106,15 +100,8 @@ abstract contract IntegrationV2Base is ForkStack {
             extensionData: ""
         });
         c.fee = IArtCoinsFactoryV2.FeeConfigV2({
-            lpFeePips: LP_FEE,
-            baselineSkimBps: BASELINE,
-            bountyBps: BOUNTY_BPS,
-            bountyRecipient: payable(treasury)
+            baselineSkimBps: BASELINE, bountyBps: BOUNTY_BPS, bountyRecipient: payable(treasury)
         });
-        address[] memory rr = new address[](1);
-        rr[0] = treasury;
-        uint16[] memory bps = new uint16[](1);
-        bps[0] = 8000;
         int24[] memory lo = new int24[](3);
         lo[0] = -200_000;
         lo[1] = -160_000;
@@ -128,12 +115,7 @@ abstract contract IntegrationV2Base is ForkStack {
         pos[1] = 3000;
         pos[2] = 2000;
         c.locker = IArtCoinsFactoryV2.LockerConfigV2({
-            locker: address(v2.locker),
-            rewardRecipients: rr,
-            rewardBps: bps,
-            tickLower: lo,
-            tickUpper: hi,
-            positionBps: pos
+            locker: address(v2.locker), tickLower: lo, tickUpper: hi, positionBps: pos
         });
         c.mev = IArtCoinsFactoryV2.MevConfigV2({
             module: address(v2.mev), startingSkimBps: START_SKIM, windowSeconds: WINDOW
@@ -178,28 +160,6 @@ abstract contract IntegrationV2Base is ForkStack {
         c.locker.positionBps = pos;
     }
 
-    /// A fee swapper for a launch slot (D33: escrow depositor, endRecipient = treasury).
-    function _newSwapper(address endRecipient) internal returns (FeeAutoSwapperV2 sw) {
-        sw = new FeeAutoSwapperV2(
-            FeeAutoSwapperV2.Config({
-                owner: LIVE_OWNER,
-                poolManager: POOL_MANAGER,
-                feeEscrow: address(v2.escrow),
-                hook: address(v2.hook),
-                poolFee: LPFeeLibrary.DYNAMIC_FEE_FLAG,
-                tickSpacing: 200,
-                endRecipient: endRecipient,
-                coin: address(0),
-                maxSlippageBps: 500,
-                minBlocksBetweenConverts: 1,
-                maxStepIn: 1_000_000_000e18
-            })
-        );
-        vm.prank(LIVE_OWNER);
-        v2.escrow.addDepositor(address(sw), false);
-        vm.label(address(sw), "i1.swapper");
-    }
-
     // ── launch ────────────────────────────────────────────────────────────
 
     function _ownerLaunch(IArtCoinsFactoryV2.DeploymentConfigV2 memory c)
@@ -209,12 +169,12 @@ abstract contract IntegrationV2Base is ForkStack {
         uint256 fee = v2.factory.deployFee();
         vm.deal(LIVE_OWNER, LIVE_OWNER.balance + fee);
         vm.prank(LIVE_OWNER);
-        token = v2.factory.deployTokenAsOwner{value: fee}(c, PROTOCOL_BPS);
+        token = v2.factory.deployToken{value: fee}(c);
         vm.label(token, c.token.symbol);
     }
 
     function _key(address token) internal view returns (PoolKey memory) {
-        return v2.locker.tokenRewards(token).poolKey;
+        return v2.locker.lockedLiquidity(token).poolKey;
     }
 
     function _pid(address token) internal view returns (PoolId) {

@@ -18,7 +18,7 @@ contract AnvilTrade is Script {
         address token = vm.envAddress("TOKEN");
         bool buy = keccak256(bytes(vm.envString("MODE"))) == keccak256("buy");
         uint256 amt = vm.envUint("AMOUNT");
-        PoolKey memory key = IArtCoinsLpLockerV2(Addresses.V2_LOCKER).tokenRewards(token).poolKey;
+        PoolKey memory key = IArtCoinsLpLockerV2(Addresses.V2_LOCKER).lockedLiquidity(token).poolKey;
         bytes memory actions = abi.encodePacked(uint8(0x06), uint8(0x0c), uint8(0x0f));
         bytes[] memory params = new bytes[](3);
         vm.startBroadcast();

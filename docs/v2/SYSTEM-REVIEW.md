@@ -1,6 +1,6 @@
 # artcoins system review (final state of branch v2)
 
-status: final state of the `v2` branch per STATUS.md and DECISIONS.md D6 to D59. section 8 numbers are filled by the director. this is NOT a formal audit.
+status: final state of the `v2` branch per STATUS.md and DECISIONS.md D6 to D59. section 8 numbers are filled by the director. this is NOT a formal audit. D92 (2026-10-14) removed the v2 fee swapper, the v2 keeper, locker rewards and the pool lp fee, `deployTokenAsOwner`, `pinned`, `lockAllowlist` and `lockRecipients`; rows that cite them describe the reviewed state, and the current source is `src/v2`.
 
 ## 1. scope and method
 

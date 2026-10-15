@@ -11,9 +11,7 @@ pragma solidity ^0.8.26;
 
 import {HookV2ForkBase} from "../../mocks/HookV2ForkBase.sol";
 
-import {Constants} from "../../../../src/Constants.sol";
 import {ArtCoinsTokenV2} from "../../../../src/v2/ArtCoinsTokenV2.sol";
-import {FeeAutoSwapperV2} from "../../../../src/v2/FeeAutoSwapperV2.sol";
 import {ArtCoinsUniv4EthDevBuyV2} from "../../../../src/v2/extensions/ArtCoinsUniv4EthDevBuyV2.sol";
 import {
     IArtCoinsUniv4EthDevBuyV2
@@ -24,10 +22,6 @@ import {IArtCoinsHookV2} from "../../../../src/v2/interfaces/IArtCoinsHookV2.sol
 import {IArtCoinsFeeEscrowV2} from "../../../../src/v2/interfaces/IArtCoinsFeeEscrowV2.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {Vm} from "forge-std/Vm.sol";
-
-contract V2BSink {
-    receive() external payable {}
-}
 
 /// @dev Escrow stand in: reports a credit and, on `claimTo`, forwards the
 ///      payout through `poker`, so the eth arrives from `poker` and not from
@@ -64,111 +58,9 @@ contract V2BPoker {
 }
 
 contract V2BPeripheryForkTest is HookV2ForkBase {
-    address internal keeper = makeAddr("v2b-keeper");
     address internal griefer = makeAddr("v2b-griefer");
 
     // ── helpers ───────────────────────────────────────────────────────────
-
-    function _launchWith(bool restricted, uint24 baseline)
-        internal
-        returns (PoolKey memory key, ArtCoinsTokenV2 token)
-    {
-        Launch memory l = _defaults(bountyEoa);
-        l.restricted = restricted;
-        l.baseline = baseline;
-        (key, token) = _launch(l);
-    }
-
-    function _fund(address to, uint256 amount) internal {
-        (bool ok,) = to.call{value: amount}("");
-        require(ok, "fund");
-    }
-
-    function _swapper(PoolKey memory key, address coin, address end, uint256 step)
-        internal
-        returns (FeeAutoSwapperV2 s)
-    {
-        s = new FeeAutoSwapperV2(
-            FeeAutoSwapperV2.Config({
-                owner: address(this),
-                poolManager: POOL_MANAGER,
-                feeEscrow: address(escrow),
-                hook: address(hook),
-                poolFee: key.fee,
-                tickSpacing: key.tickSpacing,
-                endRecipient: end,
-                coin: coin,
-                maxSlippageBps: 500,
-                minBlocksBetweenConverts: 1,
-                maxStepIn: step
-            })
-        );
-        escrow.addDepositor(address(s), false);
-    }
-
-    // ── V2B-02: swapper sandwich on a low fee v2 pool ─────────────────────
-
-    /// REGRESSION (fixed by D39, was V2B-02).
-    ///
-    /// original attack: v2 pool with baseline skim 0 and lp fee 0.5% (both
-    /// allowed by the hook). the keeper sold coin, called convert(0), bought the
-    /// coin back, all in one tx. the swapper's price limit and spot floor were
-    /// both relative to the manipulated spot, so they passed and the attacker
-    /// kept the difference (the recipient lost over 25% of the step).
-    ///
-    /// now: `convert` has an impact cap (`maxImpactBps`, default 100) so it only
-    /// sells the coin that fits within the cap of the moved spot. the attacker's
-    /// gain is bounded by the cap plus fees and is negative at the default cap.
-    function test_V2B02_swapper_sandwich_profitable_lowFeePool() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(false, 0);
-        V2BSink end = new V2BSink();
-        FeeAutoSwapperV2 s = _swapper(key, address(token), address(end), 20e18);
-        token.transfer(address(s), 20e18);
-        vm.roll(block.number + 1);
-
-        uint256 snap = vm.snapshotState();
-        vm.prank(keeper);
-        s.convert(0);
-        uint256 fairOut = address(end).balance + keeper.balance;
-        uint256 fairIn = 20e18 - token.balanceOf(address(s));
-        vm.revertToState(snap);
-
-        uint256 eth0 = address(this).balance;
-        uint256 coin0 = token.balanceOf(address(this));
-        _swap(key, false, -200e18, 0, ""); // push the coin price down
-        s.convert(0); // this contract is the keeper
-        _swap(key, true, 200e18, 0, ""); // buy exactly the 200 coin back
-        assertEq(token.balanceOf(address(this)), coin0, "attacker coin flat");
-
-        uint256 coinIn = 20e18 - token.balanceOf(address(s));
-        uint256 value = coinIn * fairOut / fairIn; // fair eth value of the coin sold
-        int256 profit = int256(address(this).balance) - int256(eth0);
-        uint256 bound = value
-            * (s.maxImpactBps() + 2 * uint256(LP_FEE) / 100 + Constants.KEEPER_REWARD_BPS)
-            / Constants.BPS;
-        emit log_named_uint("recipient eth, honest convert", fairOut);
-        emit log_named_uint("recipient eth, sandwiched", address(end).balance);
-        emit log_named_int("attacker eth profit", profit);
-        assertLe(profit, int256(bound), "attacker gain bounded by impact cap plus fees");
-        assertLe(profit, 0, "not profitable at the default cap");
-    }
-
-    // ── claims that hold: restricted coin flows through the real hook ─────
-
-    function test_holds_restricted_swapperConvert() public onlyFork {
-        (PoolKey memory key, ArtCoinsTokenV2 token) = _launchWith(true, BASELINE);
-        V2BSink end = new V2BSink();
-        FeeAutoSwapperV2 s = _swapper(key, address(token), address(end), 1e18);
-        // the launcher (allowlisted) funds the swapper; its canonical sell is
-        // covered by the swap's granted allowance.
-        token.transfer(address(s), 1e18);
-        vm.prank(keeper);
-        uint256 out = s.convert(0);
-        assertGt(out, 0);
-        assertEq(token.balanceOf(address(s)), 0);
-        assertEq(address(s).balance, 0);
-        assertEq(token.transferAllowance(), 0, "allowance fully consumed");
-    }
 
     function _devBuyCall(
         ArtCoinsUniv4EthDevBuyV2 d,

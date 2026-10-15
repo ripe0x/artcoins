@@ -35,12 +35,10 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {BaseHook} from "@uniswap/v4-periphery/src/utils/BaseHook.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
-/// @dev Minimal reads of the pool locker for the bounty recipient reject set.
+/// @dev Minimal read of the pool locker for the bounty recipient reject set.
 interface ILockerReads {
     /// @notice The locker's PositionManager.
     function positionManager() external view returns (address);
-    /// @notice The locker's fee escrow.
-    function feeEscrow() external view returns (address);
 }
 
 /// @title  ArtCoinsHookV2
@@ -48,8 +46,8 @@ interface ILockerReads {
 ///         (currency0) against the coin (currency1), created only by an
 ///         allowlisted launcher. The fee rates and caps are set once at init.
 ///         The coin admin may change the pool's bounty recipient and its
-///         extension, and lower its baseline skim, until the coin calls
-///         `lockRecipients` or renounces its admin. Anti sniper skim above
+///         extension, and lower its baseline skim, until the coin calls `lock`
+///         or renounces its admin. Pools charge no lp fee: the skim is the only fee. Anti sniper skim above
 ///         the baseline goes to the bounty recipient.
 ///
 ///         Per swap, on the quote (eth) side, with `r` the realized pool side
@@ -215,10 +213,9 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         );
         emit SkimConfigInitialized(pid, p.skim);
 
-        // art coin is always currency1, so the starting tick is negated.
+        // art coin is always currency1, so the starting tick is negated. The
+        // dynamic lp fee stays at its initial 0: the skim is the only fee.
         poolManager.initialize(key, TickMath.getSqrtPriceAtTick(-p.tickIfToken0IsCoin));
-        // the lp fee is frozen: set once here, never touched per swap.
-        poolManager.updateDynamicLPFee(key, p.skim.lpFeePips);
 
         if (ext != address(0)) {
             IArtCoinsPoolExtension(ext).initializePreLockerSetup(key, false, p.extensionData);
@@ -519,7 +516,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
     // ── internals: config ─────────────────────────────────────────────────
 
     function _validateSkim(SkimConfig calldata s) private view {
-        if (s.lpFeePips > Constants.MAX_LP_FEE) revert LpFeeTooHigh();
         if (s.baselineSkimBps > Constants.MAX_BASELINE_SKIM_BPS) revert BaselineSkimBpsTooHigh();
         if (s.bountyBps > Constants.MAX_BOUNTY_BPS) revert BountyBpsTooHigh();
         if (s.bountyRecipient == address(0)) revert BountyRecipientZero();
@@ -617,7 +613,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         if (coin == address(0)) revert UnknownPool();
         IArtCoinsTokenV2 t = IArtCoinsTokenV2(coin);
         if (msg.sender != t.admin()) revert NotCoinAdmin();
-        if (t.recipientsLocked()) revert RecipientsLocked();
+        if (t.locked()) revert CoinLocked();
         if (newRecipient == address(0)) revert BountyRecipientZero();
         _rejectKnownStackContract(coin, info.locker, info.mevModule, newRecipient);
         address old = _skim[poolId].bountyRecipient;
@@ -632,12 +628,11 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         if (coin == address(0)) revert UnknownPool();
         IArtCoinsTokenV2 t = IArtCoinsTokenV2(coin);
         if (msg.sender != t.admin()) revert NotCoinAdmin();
-        if (t.recipientsLocked()) revert RecipientsLocked();
+        if (t.locked()) revert CoinLocked();
         SkimConfig storage cfg = _skim[poolId];
         uint24 old = cfg.baselineSkimBps;
-        if (bps >= old) revert SkimNotLower(old, bps);
-        // a pool keeps one fee: the skim or the lp fee (ZeroFeeLaunch at launch).
-        if (bps == 0 && cfg.lpFeePips == 0) revert SkimNotLower(old, bps);
+        // the skim is the pool's only fee, so it never reaches zero.
+        if (bps == 0 || bps >= old) revert SkimNotLower(old, bps);
         cfg.baselineSkimBps = bps;
         emit BaselineSkimLowered(poolId, old, bps);
     }
@@ -652,7 +647,7 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         if (coin == address(0)) revert UnknownPool();
         IArtCoinsTokenV2 t = IArtCoinsTokenV2(coin);
         if (msg.sender != t.admin()) revert NotCoinAdmin();
-        if (t.recipientsLocked()) revert RecipientsLocked();
+        if (t.locked()) revert CoinLocked();
         // after launch only: the launch runs the extension setups itself.
         if (!_started[poolId]) revert PoolNotStarted();
         if (newExtension != address(0)) {
@@ -697,12 +692,6 @@ contract ArtCoinsHookV2 is BaseHook, Ownable2Step, IArtCoinsHookV2 {
         }
         try ILockerReads(locker).positionManager() returns (address posm) {
             if (r == posm) revert RecipientCannotReceive(r);
-        } catch {
-            revert RecipientCheckFailed();
-        }
-        // the locker's escrow may differ from this hook's; reject it too.
-        try ILockerReads(locker).feeEscrow() returns (address esc) {
-            if (r == esc) revert RecipientCannotReceive(r);
         } catch {
             revert RecipientCheckFailed();
         }

@@ -157,11 +157,6 @@ export const hookV2Abi = [
                 "internalType": "uint16"
               },
               {
-                "name": "lpFeePips",
-                "type": "uint24",
-                "internalType": "uint24"
-              },
-              {
                 "name": "bountyRecipient",
                 "type": "address",
                 "internalType": "address payable"
@@ -540,11 +535,6 @@ export const hookV2Abi = [
             "internalType": "uint16"
           },
           {
-            "name": "lpFeePips",
-            "type": "uint24",
-            "internalType": "uint24"
-          },
-          {
             "name": "bountyRecipient",
             "type": "address",
             "internalType": "address payable"
@@ -904,11 +894,6 @@ export const hookV2Abi = [
             "internalType": "uint16"
           },
           {
-            "name": "lpFeePips",
-            "type": "uint24",
-            "internalType": "uint24"
-          },
-          {
             "name": "bountyRecipient",
             "type": "address",
             "internalType": "address payable"
@@ -1044,6 +1029,11 @@ export const hookV2Abi = [
   },
   {
     "type": "error",
+    "name": "CoinLocked",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ConstantsMismatch",
     "inputs": [
       {
@@ -1078,11 +1068,6 @@ export const hookV2Abi = [
   {
     "type": "error",
     "name": "ForeignInitialize",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "LpFeeTooHigh",
     "inputs": []
   },
   {
@@ -1134,11 +1119,6 @@ export const hookV2Abi = [
   {
     "type": "error",
     "name": "RecipientCheckFailed",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "RecipientsLocked",
     "inputs": []
   },
   {

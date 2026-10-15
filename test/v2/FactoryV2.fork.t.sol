@@ -54,7 +54,6 @@ contract FactoryV2ForkTest is ForkBase {
     );
     int24 internal constant START = -200_000;
     int24 internal constant TS = 200;
-    uint16 internal constant PROTOCOL_BPS = 2000;
     uint256 internal constant FEE = 0.01 ether;
 
     bytes32 internal immutable TOKEN_CREATED_SIG = IArtCoinsFactoryV2.TokenCreatedV2.selector;
@@ -73,12 +72,11 @@ contract FactoryV2ForkTest is ForkBase {
     address internal alice = makeAddr("fv2.alice");
     address internal mallory = makeAddr("fv2.mallory");
     address internal admin = makeAddr("fv2.tokenAdmin");
-    address internal project = makeAddr("fv2.project");
     address payable internal bounty = payable(makeAddr("fv2.bounty"));
 
     function setUp() public {
         forkMainnet();
-        factory = new ArtCoinsFactoryV2(address(this), POOL_MANAGER, PROTOCOL_BPS, FEE);
+        factory = new ArtCoinsFactoryV2(address(this), POOL_MANAGER, FEE);
         // D38: deployer is its own contract, bound to the factory at construction
         deployer = new ArtCoinsDeployerV2(address(factory));
         factory.setTokenDeployer(address(deployer));
@@ -102,10 +100,8 @@ contract FactoryV2ForkTest is ForkBase {
             IPoolManager(POOL_MANAGER), address(this), address(escrow), address(allowlist)
         );
         require(address(hook) == at, "miner mismatch");
-        realLocker =
-            new ArtCoinsLpLockerV2(address(this), POSITION_MANAGER, PERMIT2, address(escrow));
+        realLocker = new ArtCoinsLpLockerV2(address(this), POSITION_MANAGER, PERMIT2);
         escrow.addDepositor(address(hook), true);
-        escrow.addDepositor(address(realLocker), true);
         realLocker.setLauncher(address(factory), true);
         factory.setLocker(address(realLocker), true);
         // real locker (D37 skips the erc20 approve to permit2 for solady tokens)
@@ -141,14 +137,10 @@ contract FactoryV2ForkTest is ForkBase {
         c.pool.tickSpacing = TS;
 
         c.fee = IArtCoinsFactoryV2.FeeConfigV2({
-            lpFeePips: 5000, baselineSkimBps: 600, bountyBps: 8333, bountyRecipient: bounty
+            baselineSkimBps: 600, bountyBps: 8333, bountyRecipient: bounty
         });
 
         c.locker.locker = locker;
-        c.locker.rewardRecipients = new address[](1);
-        c.locker.rewardRecipients[0] = project;
-        c.locker.rewardBps = new uint16[](1);
-        c.locker.rewardBps[0] = 10_000 - PROTOCOL_BPS;
         c.locker.tickLower = new int24[](2);
         c.locker.tickUpper = new int24[](2);
         c.locker.positionBps = new uint16[](2);
@@ -241,9 +233,9 @@ contract FactoryV2ForkTest is ForkBase {
         assertTrue(m != victimPredicted, "copied config, other sender: other address");
         assertEq(m, factory.predictToken(mallory, c));
 
-        // mallory also tries the hijack shape: same token config, her own split
+        // mallory also tries the hijack shape: same token config, her own bounty recipient
         IArtCoinsFactoryV2.DeploymentConfigV2 memory h = _cfg();
-        h.locker.rewardRecipients[0] = mallory;
+        h.fee.bountyRecipient = payable(mallory);
         h.token.salt = bytes32(uint256(2));
         address m2 = _deploy(mallory, h);
         assertTrue(m2 != victimPredicted);
@@ -251,15 +243,15 @@ contract FactoryV2ForkTest is ForkBase {
         // the victim's launch is neither blocked nor captured
         address v = _deploy(alice, c);
         assertEq(v, victimPredicted, "victim lands at its predicted address");
-        assertEq(IArtCoinsLpLockerV2(locker).rewardRecipients(v)[0], project);
+        assertEq(hook.skimConfig(factory.deploymentInfo(v).poolId).bountyRecipient, bounty);
         assertEq(ArtCoinsTokenV2(v).admin(), admin);
     }
 
     function test_launch_changedLockerConfig_differentAddress() public onlyFork {
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
         IArtCoinsFactoryV2.DeploymentConfigV2 memory d = _cfg();
-        d.locker.rewardRecipients[0] = mallory;
-        assertTrue(factory.configHash(c) != factory.configHash(d), "hash binds the split");
+        d.fee.bountyRecipient = payable(mallory);
+        assertTrue(factory.configHash(c) != factory.configHash(d), "hash binds the recipient");
         assertTrue(factory.predictToken(alice, c) != factory.predictToken(alice, d));
 
         // every other non token section also moves the address
@@ -311,7 +303,7 @@ contract FactoryV2ForkTest is ForkBase {
             c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidRestrictionConfig.selector)
         );
 
-        // a restricted coin seeds the escrow, locker, extensions, defaultAllowed
+        // a restricted coin seeds the locker, extensions
         // and the extra entries, and mirrors `restricted` onto the hook record.
         c.restriction.allowed = new address[](1);
         address extra = makeAddr("fv2.extra");
@@ -320,9 +312,6 @@ contract FactoryV2ForkTest is ForkBase {
         assertTrue(ArtCoinsTokenV2(t1).restricted());
         assertTrue(ArtCoinsTokenV2(t1).isAllowed(extra), "extra seeded");
         assertTrue(ArtCoinsTokenV2(t1).isAllowed(locker), "locker seeded");
-        assertTrue(ArtCoinsTokenV2(t1).isAllowed(address(escrow)), "escrow seeded");
-        // the owner defaultAllowed set (permit2, universal router) is seeded by
-        // DeployV2Lib; this test builds the factory bespoke, so it is empty here.
         assertTrue(
             hook.poolInfo(factory.deploymentInfo(t1).poolId).restricted, "hook record restricted"
         );
@@ -404,7 +393,7 @@ contract FactoryV2ForkTest is ForkBase {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // deploy fee, deprecated gate, protocol bps
+    // deploy fee, deprecated gate
     // ══════════════════════════════════════════════════════════════════════
 
     function test_deployFee_exact_paysTeam() public onlyFork {
@@ -471,13 +460,9 @@ contract FactoryV2ForkTest is ForkBase {
     function test_deprecated_gate_ownerBypasses() public onlyFork {
         factory.setDeprecated(true);
         _expectRevertDeploy(_cfg(), abi.encodeWithSelector(IArtCoinsFactoryV2.Deprecated.selector));
-        // owner bypasses, both entries
+        // owner bypasses
         address t = factory.deployToken{value: FEE}(_cfg());
         assertTrue(factory.isCoin(t));
-        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        c.token.salt = bytes32(uint256(7));
-        address t2 = factory.deployTokenAsOwner{value: FEE}(c, PROTOCOL_BPS);
-        assertTrue(factory.isCoin(t2));
         factory.setDeprecated(false);
         IArtCoinsFactoryV2.DeploymentConfigV2 memory d = _cfg();
         d.token.salt = bytes32(uint256(8));
@@ -486,53 +471,6 @@ contract FactoryV2ForkTest is ForkBase {
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
         factory.setDeprecated(true);
-    }
-
-    function test_protocolBps_ownerOnlyOverride() public onlyFork {
-        // public path always appends the default protocol slot
-        address t = _deploy(alice, _cfg());
-        address[] memory r = IArtCoinsLpLockerV2(locker).rewardRecipients(t);
-        uint16[] memory b = IArtCoinsLpLockerV2(locker).rewardBps(t);
-        assertEq(r.length, 2);
-        assertEq(r[0], project);
-        assertEq(b[0], 10_000 - PROTOCOL_BPS);
-        assertEq(r[1], protocolR, "protocol slot appended last");
-        assertEq(b[1], PROTOCOL_BPS);
-
-        // FT-03: a public caller cannot pick the protocol bps
-        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        c.locker.rewardBps[0] = 10_000;
-        vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
-        factory.deployTokenAsOwner{value: FEE}(c, 0);
-        // and a public caller cannot dodge the slot by claiming the whole split
-        _expectRevertDeploy(
-            c, abi.encodeWithSelector(IArtCoinsFactoryV2.ProjectSideBpsMismatch.selector)
-        );
-
-        // owner with 0: no protocol slot
-        address t0 = factory.deployTokenAsOwner{value: FEE}(c, 0);
-        r = IArtCoinsLpLockerV2(locker).rewardRecipients(t0);
-        assertEq(r.length, 1);
-        assertEq(r[0], project);
-
-        // owner above the cap
-        vm.expectRevert(IArtCoinsFactoryV2.ProtocolFeeBpsTooHigh.selector);
-        factory.deployTokenAsOwner{value: FEE}(c, Constants.MAX_PROTOCOL_FEE_BPS + 1);
-
-        // owner at the cap
-        c.locker.rewardBps[0] = 10_000 - Constants.MAX_PROTOCOL_FEE_BPS;
-        address t3 = factory.deployTokenAsOwner{value: FEE}(c, Constants.MAX_PROTOCOL_FEE_BPS);
-        b = IArtCoinsLpLockerV2(locker).rewardBps(t3);
-        assertEq(b[1], Constants.MAX_PROTOCOL_FEE_BPS);
-
-        // the event carries the bps used
-        vm.recordLogs();
-        c.token.salt = bytes32(uint256(77));
-        c.locker.rewardBps[0] = 10_000 - 1234;
-        factory.deployTokenAsOwner{value: FEE}(c, 1234);
-        (,,,, uint16 usedBps,,,) = _decodeCreated(vm.getRecordedLogs());
-        assertEq(usedBps, 1234);
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -632,57 +570,12 @@ contract FactoryV2ForkTest is ForkBase {
     // ══════════════════════════════════════════════════════════════════════
 
     function test_bpsSumRules() public onlyFork {
-        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        // project side must be exactly BPS minus the protocol slot
-        c.locker.rewardBps[0] = 10_000 - PROTOCOL_BPS + 1;
-        _expectRevertDeploy(
-            c, abi.encodeWithSelector(IArtCoinsFactoryV2.ProjectSideBpsMismatch.selector)
-        );
-        c.locker.rewardBps[0] = 10_000 - PROTOCOL_BPS - 1;
-        _expectRevertDeploy(
-            c, abi.encodeWithSelector(IArtCoinsFactoryV2.ProjectSideBpsMismatch.selector)
-        );
-
         // FT-10: mismatched arrays revert, nothing is truncated
-        c = _cfg();
-        c.locker.rewardRecipients = new address[](2);
-        c.locker.rewardRecipients[0] = project;
-        c.locker.rewardRecipients[1] = mallory;
-        _expectRevertDeploy(
-            c, abi.encodeWithSelector(ArtCoinsFactoryV2.ArrayLengthMismatch.selector)
-        );
-        c = _cfg();
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
         c.locker.tickUpper = new int24[](1);
         c.locker.tickUpper[0] = -120_000;
         _expectRevertDeploy(
             c, abi.encodeWithSelector(ArtCoinsFactoryV2.ArrayLengthMismatch.selector)
-        );
-
-        // a zero bps project slot
-        c = _cfg();
-        c.locker.rewardRecipients = new address[](2);
-        c.locker.rewardRecipients[0] = project;
-        c.locker.rewardRecipients[1] = mallory;
-        c.locker.rewardBps = new uint16[](2);
-        c.locker.rewardBps[0] = 10_000 - PROTOCOL_BPS;
-        _expectRevertDeploy(
-            c, abi.encodeWithSelector(ArtCoinsFactoryV2.InvalidRewardSlots.selector)
-        );
-
-        // too many slots once the protocol slot is appended
-        c = _cfg();
-        uint256 n = Constants.MAX_REWARD_PARTICIPANTS; // + protocol = MAX + 1
-        c.locker.rewardRecipients = new address[](n);
-        c.locker.rewardBps = new uint16[](n);
-        uint256 left = 10_000 - PROTOCOL_BPS;
-        for (uint256 i; i < n; ++i) {
-            c.locker.rewardRecipients[i] = address(uint160(0x5000 + i));
-            uint16 bb = i == n - 1 ? uint16(left) : uint16((10_000 - PROTOCOL_BPS) / n);
-            c.locker.rewardBps[i] = bb;
-            left -= bb;
-        }
-        _expectRevertDeploy(
-            c, abi.encodeWithSelector(ArtCoinsFactoryV2.InvalidRewardSlots.selector)
         );
 
         // positions must sum to BPS
@@ -708,11 +601,6 @@ contract FactoryV2ForkTest is ForkBase {
         );
 
         // fee caps
-        c = _cfg();
-        c.fee.lpFeePips = Constants.MAX_LP_FEE + 1;
-        _expectRevertDeploy(
-            c, abi.encodeWithSelector(ArtCoinsFactoryV2.FeeConfigOutOfBounds.selector)
-        );
         c = _cfg();
         c.fee.baselineSkimBps = Constants.MAX_BASELINE_SKIM_BPS + 1;
         _expectRevertDeploy(
@@ -787,17 +675,16 @@ contract FactoryV2ForkTest is ForkBase {
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
         assertEq(c.locker.locker, address(realLocker));
         address t = _deploy(alice, c);
-        IArtCoinsLpLockerV2.TokenRewardInfoV2 memory info = realLocker.tokenRewards(t);
+        IArtCoinsLpLockerV2.LockedLiquidity memory info = realLocker.lockedLiquidity(t);
         assertEq(info.numPositions, 2);
         assertEq(info.token, t);
-        assertEq(realLocker.rewardRecipients(t)[1], protocolR);
         assertEq(IERC20(t).balanceOf(address(factory)), 0);
         assertEq(IERC20(t).balanceOf(address(realLocker)), 0);
     }
 
     /// D38: the deployer is an owner set pointer, bound to this factory.
     function test_tokenDeployer_setAndRequired() public {
-        ArtCoinsFactoryV2 f = new ArtCoinsFactoryV2(address(this), POOL_MANAGER, 0, 0);
+        ArtCoinsFactoryV2 f = new ArtCoinsFactoryV2(address(this), POOL_MANAGER, 0);
         assertEq(f.tokenDeployer(), address(0));
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c;
         c.token.tokenAdmin = admin;
@@ -841,26 +728,6 @@ contract FactoryV2ForkTest is ForkBase {
         assertEq(_deploy(alice, c), afterSwap);
     }
 
-    /// The owner `defaultAllowed` set seeds every restricted coin's allowlist.
-    function test_defaultAllowed_ownerOnly_andSeeded() public onlyFork {
-        address[] memory want = new address[](2);
-        want[0] = makeAddr("fv2.default0");
-        want[1] = makeAddr("fv2.default1");
-        vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
-        factory.setDefaultAllowed(want);
-        vm.expectEmit(false, false, false, true, address(factory));
-        emit IArtCoinsFactoryV2.DefaultAllowedSet(want);
-        factory.setDefaultAllowed(want);
-        assertEq(factory.defaultAllowed().length, 2);
-
-        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        c.restriction.restricted = true;
-        address t = _deploy(alice, c);
-        assertTrue(ArtCoinsTokenV2(t).isAllowed(want[0]), "default0 seeded");
-        assertTrue(ArtCoinsTokenV2(t).isAllowed(want[1]), "default1 seeded");
-    }
-
     /// A restricted launch places its liquidity (the locker is allowlisted) and
     /// the pool trades both ways; an unrestricted launch is a plain erc20.
     function test_restrictedLaunch_placesAndTrades() public onlyFork {
@@ -876,7 +743,7 @@ contract FactoryV2ForkTest is ForkBase {
     function _launchAndTrade(IArtCoinsFactoryV2.DeploymentConfigV2 memory c) internal {
         assertTrue(hook.isLauncher(locker), "D46: locker is a hook launcher");
         address t = _deploy(alice, c);
-        assertEq(realLocker.tokenRewards(t).numPositions, 2, "liquidity placed");
+        assertEq(realLocker.lockedLiquidity(t).numPositions, 2, "liquidity placed");
         assertEq(IERC20(t).balanceOf(address(factory)), 0);
         PoolKey memory key = _key(t);
 
@@ -912,25 +779,9 @@ contract FactoryV2ForkTest is ForkBase {
         assertGt(address(this).balance, ethBefore, "eth back");
     }
 
-    /// D76: the min lp fee rule is removed; a launch accepts lp fee 0 (pure skim).
-    function test_lpFeeZero_launches() public onlyFork {
-        // lp fee 0 with a nonzero skim passes (pure skim pool).
-        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        c.fee.lpFeePips = 0;
-        c.fee.baselineSkimBps = 600;
-        address t = _deploy(alice, c);
-        assertEq(
-            hook.skimConfig(factory.deploymentInfo(t).poolId).lpFeePips, 0, "lp fee 0 launched"
-        );
-        c = _cfg();
-        c.fee.lpFeePips = Constants.MAX_LP_FEE;
-        _deploy(alice, c);
-    }
-
-    /// a launch must earn some fee: both lp fee and baseline skim zero reverts.
+    /// a launch must earn some fee: a zero baseline skim reverts.
     function test_zeroFeeLaunch_reverts() public onlyFork {
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        c.fee.lpFeePips = 0;
         c.fee.baselineSkimBps = 0;
         c.fee.bountyBps = 0;
         c.mev = IArtCoinsFactoryV2.MevConfigV2(address(0), 0, 0); // no window (startingSkimBps >= baseline)
@@ -1012,7 +863,6 @@ contract FactoryV2ForkTest is ForkBase {
             address token,
             bytes32 pid,
             uint16 ver,
-            uint16 usedBps,
             uint256 poolSupply,
             uint256 extSupply,
             IArtCoinsFactoryV2.DeploymentConfigV2 memory got
@@ -1021,7 +871,6 @@ contract FactoryV2ForkTest is ForkBase {
         assertEq(token, t);
         assertEq(pid, PoolId.unwrap(factory.deploymentInfo(t).poolId));
         assertEq(ver, Constants.STACK_VERSION);
-        assertEq(usedBps, PROTOCOL_BPS);
         uint256 share = Constants.DEFAULT_TOKEN_SUPPLY * 700 / 10_000;
         assertEq(extSupply, share);
         assertEq(poolSupply, Constants.DEFAULT_TOKEN_SUPPLY - share);
@@ -1030,20 +879,12 @@ contract FactoryV2ForkTest is ForkBase {
         assertTrue(got.restriction.restricted);
         assertEq(got.restriction.allowed[0], makeAddr("fv2.eventExtra"));
         assertEq(got.extensions[0].msgValue, 0.5 ether);
-        assertEq(got.locker.rewardRecipients[0], project);
+        assertEq(got.fee.bountyRecipient, bounty);
 
         // the remaining non indexed fields
-        (, bytes32 h, address pr,,,,) = abi.decode(
+        (, bytes32 h, address pr,,,) = abi.decode(
             _createdData(logs),
-            (
-                uint16,
-                bytes32,
-                address,
-                uint16,
-                uint256,
-                uint256,
-                IArtCoinsFactoryV2.DeploymentConfigV2
-            )
+            (uint16, bytes32, address, uint256, uint256, IArtCoinsFactoryV2.DeploymentConfigV2)
         );
         assertEq(h, factory.configHash(c));
         assertEq(pr, protocolR);
@@ -1062,7 +903,7 @@ contract FactoryV2ForkTest is ForkBase {
 
         vm.recordLogs();
         address t = _deploy(alice, c);
-        (,,,,, uint256 poolSupply, uint256 extSupply,) = _decodeCreated(vm.getRecordedLogs());
+        (,,,, uint256 poolSupply, uint256 extSupply,) = _decodeCreated(vm.getRecordedLogs());
 
         uint256 s1 = supply * 3333 / 10_000;
         assertTrue(s1 * 10_000 != supply * 3333, "the split really floors");
@@ -1133,8 +974,7 @@ contract FactoryV2ForkTest is ForkBase {
 
     function test_owner_setterBounds() public {
         assertTrue(
-            new ArtCoinsFactoryV2(address(this), POOL_MANAGER, 0, 0).deprecated(),
-            "ships deprecated"
+            new ArtCoinsFactoryV2(address(this), POOL_MANAGER, 0).deprecated(), "ships deprecated"
         );
         assertEq(factory.owner(), address(this));
 
@@ -1142,11 +982,6 @@ contract FactoryV2ForkTest is ForkBase {
         factory.setDeployFee(Constants.MAX_DEPLOY_FEE + 1);
         factory.setDeployFee(Constants.MAX_DEPLOY_FEE);
         assertEq(factory.deployFee(), Constants.MAX_DEPLOY_FEE);
-
-        vm.expectRevert(IArtCoinsFactoryV2.ProtocolFeeBpsTooHigh.selector);
-        factory.setDefaultProtocolFeeBps(Constants.MAX_PROTOCOL_FEE_BPS + 1);
-        factory.setDefaultProtocolFeeBps(Constants.MAX_PROTOCOL_FEE_BPS);
-        assertEq(factory.defaultProtocolFeeBps(), Constants.MAX_PROTOCOL_FEE_BPS);
 
         vm.expectRevert(IArtCoinsFactoryV2.ZeroAddress.selector);
         factory.setProtocolRecipient(payable(address(0)));
@@ -1157,10 +992,8 @@ contract FactoryV2ForkTest is ForkBase {
         factory.renounceOwnership();
 
         // constructor bounds
-        vm.expectRevert(IArtCoinsFactoryV2.ProtocolFeeBpsTooHigh.selector);
-        new ArtCoinsFactoryV2(address(this), POOL_MANAGER, Constants.MAX_PROTOCOL_FEE_BPS + 1, 0);
         vm.expectRevert(IArtCoinsFactoryV2.DeployFeeTooHigh.selector);
-        new ArtCoinsFactoryV2(address(this), POOL_MANAGER, 0, Constants.MAX_DEPLOY_FEE + 1);
+        new ArtCoinsFactoryV2(address(this), POOL_MANAGER, Constants.MAX_DEPLOY_FEE + 1);
 
         // every owner entry is gated
         vm.startPrank(alice);
@@ -1168,8 +1001,6 @@ contract FactoryV2ForkTest is ForkBase {
             abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice);
         vm.expectRevert(err);
         factory.setDeployFee(0);
-        vm.expectRevert(err);
-        factory.setDefaultProtocolFeeBps(0);
         vm.expectRevert(err);
         factory.setProtocolRecipient(payable(alice));
         vm.expectRevert(err);
@@ -1232,7 +1063,6 @@ contract FactoryV2ForkTest is ForkBase {
             address token,
             bytes32 poolId,
             uint16 version,
-            uint16 protocolBps,
             uint256 poolSupply,
             uint256 extensionsSupply,
             IArtCoinsFactoryV2.DeploymentConfigV2 memory config
@@ -1244,26 +1074,17 @@ contract FactoryV2ForkTest is ForkBase {
             sender = address(uint160(uint256(l.topics[1])));
             token = address(uint160(uint256(l.topics[2])));
             poolId = l.topics[3];
-            (version,,, protocolBps, poolSupply, extensionsSupply, config) = abi.decode(
+            (version,,, poolSupply, extensionsSupply, config) = abi.decode(
                 l.data,
-                (
-                    uint16,
-                    bytes32,
-                    address,
-                    uint16,
-                    uint256,
-                    uint256,
-                    IArtCoinsFactoryV2.DeploymentConfigV2
-                )
+                (uint16, bytes32, address, uint256, uint256, IArtCoinsFactoryV2.DeploymentConfigV2)
             );
-            return
-                (sender, token, poolId, version, protocolBps, poolSupply, extensionsSupply, config);
+            return (sender, token, poolId, version, poolSupply, extensionsSupply, config);
         }
         revert("TokenCreatedV2 not found");
     }
 
-    /// @dev Contracts with no claim path are rejected as reward recipients.
-    function test_launch_rewardRecipientCannotReceive_reverts() public onlyFork {
+    /// @dev Contracts with no claim path are rejected as bounty recipients.
+    function test_launch_bountyRecipientCannotReceive_reverts() public onlyFork {
         FV2Extension ext = _newExt();
         address[8] memory bad = [
             address(factory),
@@ -1272,12 +1093,12 @@ contract FactoryV2ForkTest is ForkBase {
             locker,
             factory.tokenDeployer(),
             address(ext),
-            IArtCoinsLpLockerV2(locker).feeEscrow(),
+            address(mev),
             IArtCoinsHookV2(address(hook)).globals().feeEscrow
         ];
         for (uint256 i; i < bad.length; ++i) {
             IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-            c.locker.rewardRecipients[0] = bad[i];
+            c.fee.bountyRecipient = payable(bad[i]);
             c.extensions = new IArtCoinsFactoryV2.ExtensionConfigV2[](1);
             c.extensions[0] = _ext(address(ext), 0, 0);
             _expectRevertDeploy(
@@ -1290,10 +1111,10 @@ contract FactoryV2ForkTest is ForkBase {
     /// @dev The coin address depends on the config hash, so a recipient cannot
     ///      be set to it ahead of time. The deployer result is mocked to put
     ///      the coin address on the recipient.
-    function test_launch_rewardRecipientIsCoin_reverts() public onlyFork {
+    function test_launch_bountyRecipientIsCoin_reverts() public onlyFork {
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
         address coin = makeAddr("fv2-coin");
-        c.locker.rewardRecipients[0] = coin;
+        c.fee.bountyRecipient = payable(coin);
         vm.mockCall(
             factory.tokenDeployer(),
             abi.encodeWithSelector(ArtCoinsDeployerV2.deploy.selector),
@@ -1302,25 +1123,5 @@ contract FactoryV2ForkTest is ForkBase {
         _expectRevertDeploy(
             c, abi.encodeWithSelector(IArtCoinsFactoryV2.RecipientCannotReceive.selector, coin)
         );
-    }
-
-    /// A restricted launch whose hook has no fee escrow fails with a clear error
-    /// (the seeded allowlist cannot be assembled).
-    function test_restriction_hookEscrowZero_reverts() public onlyFork {
-        FV2ZeroEscrowHook zeroHook = new FV2ZeroEscrowHook();
-        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
-        c.pool.hook = address(zeroHook);
-        c.restriction.restricted = true;
-        vm.expectRevert(
-            abi.encodeWithSelector(ArtCoinsFactoryV2.HookEscrowNotSet.selector, address(zeroHook))
-        );
-        factory.predictToken(alice, c);
-    }
-}
-
-/// @dev A hook whose `globals().feeEscrow` is the zero address.
-contract FV2ZeroEscrowHook {
-    function globals() external pure returns (IArtCoinsHookV2.HookGlobals memory g) {
-        return g;
     }
 }

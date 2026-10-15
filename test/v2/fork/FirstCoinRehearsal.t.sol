@@ -9,7 +9,6 @@ import {LaunchV2Lib} from "../../../script/v2/LaunchV2Coin.s.sol";
 import {IArtCoinsFactoryV2} from "../../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsFeeEscrowV2} from "../../../src/v2/interfaces/IArtCoinsFeeEscrowV2.sol";
 import {IArtCoinsHookV2} from "../../../src/v2/interfaces/IArtCoinsHookV2.sol";
-import {IArtCoinsKeeperV2} from "../../../src/v2/interfaces/IArtCoinsKeeperV2.sol";
 import {IArtCoinsLpLockerV2} from "../../../src/v2/interfaces/IArtCoinsLpLockerV2.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -40,14 +39,14 @@ contract FcTreasury {
     receive() external payable {}
 }
 
-/// Recipient that reverts on eth, so the hook and locker fall back to the escrow.
+/// Recipient that reverts on eth, so the hook falls back to the escrow.
 contract FcRejecter {
     function claimTo(IArtCoinsFeeEscrowV2 e, address to) external {
         e.claimTo(address(this), address(0), payable(to));
     }
 }
 
-/// @notice Rehearsal of RUNBOOK 2b steps 3 to 7 against the deployed v2 stack.
+/// @notice Rehearsal of RUNBOOK 2b steps 3 to 6 against the deployed v2 stack.
 ///         Env: MAINNET_RPC_URL (default tenderly public), FORK_BLOCK (default
 ///         latest at or after the deploy block; must be >= 26_157_260).
 contract FirstCoinRehearsal is Test {
@@ -61,7 +60,6 @@ contract FirstCoinRehearsal is Test {
     bool internal onFork;
     IArtCoinsFactoryV2 internal factory = IArtCoinsFactoryV2(Addresses.V2_FACTORY);
     IArtCoinsFeeEscrowV2 internal escrow = IArtCoinsFeeEscrowV2(Addresses.V2_ESCROW);
-    address internal keeperCaller = makeAddr("keeperCaller");
     address internal alice = makeAddr("alice");
     address internal bob = makeAddr("bob");
 
@@ -95,7 +93,6 @@ contract FirstCoinRehearsal is Test {
         LaunchV2Lib.Target memory t = _target();
         l = LaunchV2Lib.parse(vm.readFile(path), t);
         l.cfg.fee.bountyRecipient = payable(recipient);
-        l.cfg.locker.rewardRecipients[0] = recipient;
 
         (address predicted, uint256 value) = LaunchV2Lib.preflight(t, l, OWNER);
         bytes32 cfgHash = factory.configHash(l.cfg);
@@ -104,7 +101,7 @@ contract FirstCoinRehearsal is Test {
         vm.recordLogs();
         vm.prank(OWNER);
         uint256 g = gasleft();
-        token = factory.deployTokenAsOwner{value: value}(l.cfg, l.protocolBps);
+        token = factory.deployToken{value: value}(l.cfg);
         g -= gasleft();
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
@@ -116,7 +113,7 @@ contract FirstCoinRehearsal is Test {
         assertTrue(factory.isCoin(token), "isCoin");
         assertEq(IArtCoinsHookV2(Addresses.V2_HOOK).poolInfo(pid).version, 2, "hook version");
         assertTrue(_logHas(logs, cfgHash), "configHash not echoed in TokenCreatedV2");
-        key = IArtCoinsLpLockerV2(Addresses.V2_LOCKER).tokenRewards(token).poolKey;
+        key = IArtCoinsLpLockerV2(Addresses.V2_LOCKER).lockedLiquidity(token).poolKey;
         assertEq(PoolId.unwrap(key.toId()), PoolId.unwrap(pid), "pool id");
     }
 
@@ -182,18 +179,6 @@ contract FirstCoinRehearsal is Test {
         assertGt(got, 0, "sell got nothing");
     }
 
-    // ── step 7: keeper ────────────────────────────────────────────────────
-
-    function _keeper(address token) internal {
-        uint256 b0 = keeperCaller.balance;
-        vm.prank(keeperCaller);
-        uint256 g = gasleft();
-        IArtCoinsKeeperV2(Addresses.V2_KEEPER).collectAndForward{gas: 2_000_000}(token, false, 0);
-        g -= gasleft();
-        console2.log("keeper gas", g);
-        console2.log("keeper caller eth forwarded", keeperCaller.balance - b0);
-    }
-
     function _flow(PoolKey memory key, address token) internal returns (uint256 coinHeld) {
         // inside the anti sniper window
         _buy(key, 0.5 ether);
@@ -217,8 +202,6 @@ contract FirstCoinRehearsal is Test {
         uint256 t1 = treasury.balance;
         console2.log("treasury eth after swaps (bounty pushes)", t1 - t0);
         assertGt(t1, t0, "bounty pushed");
-        _keeper(token);
-        console2.log("treasury eth after keeper (locker share)", treasury.balance - t1);
         console2.log("escrow credit treasury", escrow.balances(treasury, address(0)));
         // plain erc20 transfer works
         IERC20(token).transfer(alice, 1e18);
@@ -234,13 +217,9 @@ contract FirstCoinRehearsal is Test {
         uint256 credit1 = escrow.balances(address(rej), address(0));
         console2.log("escrow credit after swaps", credit1);
         assertGt(credit1, 0, "bounty credited to escrow");
-        _keeper(token);
-        uint256 credit2 = escrow.balances(address(rej), address(0));
-        console2.log("escrow credit after keeper", credit2);
-        assertGe(credit2, credit1);
         address payee = makeAddr("payee");
         rej.claimTo(escrow, payee);
-        assertEq(payee.balance, credit2, "claimTo paid");
+        assertEq(payee.balance, credit1, "claimTo paid");
         assertEq(escrow.balances(address(rej), address(0)), 0, "credit cleared");
     }
 
@@ -255,7 +234,6 @@ contract FirstCoinRehearsal is Test {
         vm.prank(address(this));
         vm.expectRevert();
         IERC20(token).transfer(alice, 1e18);
-        _keeper(token);
     }
 
     function _restricted(address token) internal view returns (bool) {

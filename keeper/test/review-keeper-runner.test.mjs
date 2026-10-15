@@ -9,18 +9,16 @@ import { loadState } from '../state.mjs';
 import { Metrics } from '../metrics.mjs';
 import { tick } from '../runner.mjs';
 import { health, status } from '../server.mjs';
-import { argsV2 } from '../decide.mjs';
-import { realRegistry, registryWithV2, baseEnv, tmpDir, silentLog, COIN_V2, Q96, sqrtFor } from './helpers.mjs';
+import { realRegistry, baseEnv, tmpDir, silentLog, Q96, sqrtFor } from './helpers.mjs';
 
 const E = (x) => parseEther(String(x));
 const GWEI = 1_000_000_000n;
 const T0 = 1_800_000_000;
 const HOUR = 3600;
 const SELF = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
-const SWAPPER = '0x' + '5'.repeat(40);
 const idle111 = { uncollectedEth: 0n, uncollectedCoin: 0n, escrowedEth: 0n, swapperEth: 0n, swapperCoin: 0n };
 const idleLayer = { uncollectedLayer: 0n, uncollectedWeth: 0n, claimable: [0n, 0n, 0n, 0n], routerWeth: [0n, 0n, 0n], routerThreshold: [E('0.01'), E('0.01'), E('0.01')], controllerWeth: 0n };
-// pool state for the independent floor: 111 and v2 at 1e-4 eth per coin, LAYER at 1.51e25 LAYER per weth
+// pool state for the independent floor: 111 at 1e-4 eth per coin, LAYER at 1.51e25 LAYER per weth
 const COIN_PRICE = sqrtFor(10_000n * 10n ** 18n); // 10,000 coin per eth: token1 per token0
 const MARKET = {
   '111': { sqrtPriceX96: COIN_PRICE, lpFeePpm: 0, skimPpm: 0, maxStepIn: E(1_000_000), swapperShareBps: 10_000, coinIsToken0: false },
@@ -34,7 +32,7 @@ function chain({ previews = {}, sim, mineTxs = true, onMined, market = MARKET } 
   const io = {
     address: SELF,
     t: T0, mined: 0, pool: new Map(), sends: [], receipts: {},
-    previews: { '111': idle111, layer: idleLayer, v2: null, ...previews },
+    previews: { '111': idle111, layer: idleLayer, ...previews },
     now: () => io.t,
     getBlock: async () => ({ baseFeePerGas: GWEI }),
     priorityEstimate: async () => GWEI / 10n,
@@ -98,53 +96,24 @@ test('KR-01 LAYER: router due but the burn is skipped in simulation: one tx per 
   assert.equal(io.sends.length, 5);
 });
 
-test('KR-01 v2: rpc without eth_simulateV1 never converts: one tx per 6 h, not one per tick', async () => {
-  const v2 = { swappers: 1n, accruedPaired: 0n, accruedCoin: E(50_000), nextConvertibleBlock: 0n };
-  const sw = { address: SWAPPER, accruedCoin: E(50_000), maxStepIn: E(1000), sqrtPriceX96: COIN_PRICE, lpFeePpm: 0, skimPpm: 0 };
-  const io = chain({ previews: { v2 }, sim: () => null, market: { v2: { swappers: [sw] } } });
-  const ctx = ctxFor(io, { KEEPERS: 'v2' }, registryWithV2());
-  await runFor(ctx, HOUR);
-  assert.equal(io.sends.length, 1, 'was 6 in an hour');
-  assert.ok(io.sends.every((s) => s.args[0] === COIN_V2 && s.args[1] === false));
-  await runFor(ctx, 23 * HOUR);
-  assert.equal(io.sends.length, 4, 'a day: 0, 6, 12, 18 h');
-});
-
-test('KR-01 v2: convert paced (ConvertTooEarly / maxStepIn) leaves the trigger set: 4 runs a day, not 90', async () => {
-  // the swapper converts at most maxStepIn per call and once per minBlocksBetweenConverts: 1,000 coin per run here
-  let accrued = E(100_000);
-  const sw = () => ({ address: SWAPPER, accruedCoin: accrued, maxStepIn: E(1000), sqrtPriceX96: COIN_PRICE, lpFeePpm: 0, skimPpm: 0 });
-  const io = chain({
-    previews: { v2: { swappers: 1n, accruedPaired: 0n, accruedCoin: accrued, nextConvertibleBlock: 0n } },
-    sim: () => [{ swapper: SWAPPER, flushed: 0n, converted: E('0.1') }], // 1,000 coin at 1e-4 eth
-    market: () => ({ swappers: [sw()] }),
-    onMined: (c) => { accrued -= E(1000); c.previews.v2 = { ...c.previews.v2, accruedCoin: accrued }; },
-  });
-  const ctx = ctxFor(io, { KEEPERS: 'v2' }, registryWithV2());
-  await runFor(ctx, 24 * HOUR);
-  assert.equal(io.sends.length, 4, 'was 90 runs in a day');
-  assert.ok(io.sends.every((s) => s.args[1] === true && s.args[2] === E('0.099')), 'each run still converts one quoted step');
-  assert.equal(ctx.state.keepers['v2:CRED'].noProgress.reasons[0], 'accrued_coin');
-});
-
 // KR-01: the backoff doubles from 1 h to 24 h, and the weekly timer (due on every tick here) never overrides it
 test('KR-01 backoff: no progress doubles the wait 1 h to 24 h; a due weekly timer does not override it; progress clears it', async () => {
-  const v2 = { swappers: 1n, accruedPaired: 0n, accruedCoin: E(50_000), nextConvertibleBlock: 0n };
-  const io = chain({ previews: { v2 }, sim: () => null, market: { v2: { swappers: [] } } });
-  const ctx = ctxFor(io, { KEEPERS: 'v2', KEEPER_V2_MIN_RUN_INTERVAL_SECONDS: '0', CHECK_INTERVAL_SECONDS: '0', WEEKLY_SECONDS: '60' }, registryWithV2());
+  const p111 = { ...idle111, uncollectedCoin: E(50_000) };
+  const io = chain({ previews: { '111': p111 }, sim: () => [0n, 0n, 0n] });
+  const ctx = ctxFor(io, { KEEPERS: '111', KEEPER_111_MIN_RUN_INTERVAL_SECONDS: '0', CHECK_INTERVAL_SECONDS: '0', WEEKLY_SECONDS: '60' });
   await runFor(ctx, 4 * 24 * HOUR);
   assert.deepEqual(gaps(io.sends).slice(0, 7), [1, 2, 4, 8, 16, 24, 24].map((h) => h * HOUR));
   assert.ok(ctx.log.lines.some((l) => l.msg === 'due but backing off after a run without progress' && l.reasons.includes('weekly')));
   assert.ok(ctx.log.lines.some((l) => l.msg === 'no_progress'));
   // the trigger clears after the next run: backoff and alert reset
   const n = io.sends.length;
-  ctx.io.t = ctx.state.keepers['v2:CRED'].backoffUntil;
+  ctx.io.t = ctx.state.keepers['111'].backoffUntil;
   const settle = io.mine.bind(io);
-  io.mine = (h) => { io.previews.v2 = { ...v2, accruedCoin: E(100) }; settle(h); };
+  io.mine = (h) => { io.previews['111'] = { ...p111, uncollectedCoin: E(100) }; settle(h); };
   await tick(ctx);
   assert.equal(io.sends.length, n + 1);
-  assert.equal(ctx.state.keepers['v2:CRED'].backoffUntil, null);
-  assert.equal(ctx.state.keepers['v2:CRED'].noProgress, null);
+  assert.equal(ctx.state.keepers['111'].backoffUntil, null);
+  assert.equal(ctx.state.keepers['111'].noProgress, null);
 });
 
 // KR-02 (was: run(true, 0) and rate 0 with doBurn true): the pool floor overrules a 1 wei quote
@@ -168,22 +137,6 @@ test('KR-02 rpc controlled quote: a 1 wei simulated output never sends run(true,
   const io3 = chain({ previews: { '111': p111 }, sim: () => [0n, 0n, E('1.99')] });
   await tick(ctxFor(io3, { KEEPERS: '111' }));
   assert.deepEqual(io3.sends[0].args, [true, E('1.99') * 9900n / 10000n]);
-});
-
-// KR-03 (was: a 1 eth convert sent with a 0.00099 eth floor): per swapper floors, one minOut must fit them all
-test('KR-03 v2: a 1 eth and a 0.001 eth swapper: no convert, the small one is named as the blocker', () => {
-  const A = '0x' + 'a'.repeat(40);
-  const B = '0x' + 'b'.repeat(40);
-  const ev = [{ swapper: A, flushed: 0n, converted: E(1) }, { swapper: B, flushed: 0n, converted: E('0.001') }];
-  const sw = (address, coin) => ({ address, accruedCoin: coin, maxStepIn: E(1e9), sqrtPriceX96: COIN_PRICE, lpFeePpm: 0, skimPpm: 0 });
-  const q = argsV2(COIN_V2, ev, 100, { swappers: [sw(A, E(10_000)), sw(B, E(10))] });
-  assert.equal(q.status, 'floor_above_quote');
-  assert.equal(q.blockedBy, B);
-  assert.deepEqual(q.args, [COIN_V2, false, 0n]);
-  assert.ok(q.minOut > E('0.97'), 'the 1 eth swapper would get a floor near its own quote');
-  // the same two swappers at similar sizes convert with the larger floor
-  const ok = argsV2(COIN_V2, [{ swapper: A, converted: E(1) }, { swapper: B, converted: E('0.995') }], 100, { swappers: [sw(A, E(10_000)), sw(B, E(9_950))] });
-  assert.deepEqual(ok.args, [COIN_V2, true, E('0.99')]);
 });
 
 // KR-04 (was: 9 runs queued at nonces 0 to 8): the stuck nonce is replaced at +12.5%, then cancelled; never nonce 1

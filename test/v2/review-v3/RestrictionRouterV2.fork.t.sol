@@ -77,7 +77,6 @@ contract RestrictionRouterV2ForkTest is IntegrationV2Base {
         (address coin,) = _restrictedLaunch();
         assertFalse(IArtCoinsTokenV2(coin).isAllowed(UNIVERSAL_ROUTER), "UR not allowlisted");
         assertFalse(IArtCoinsTokenV2(coin).isAllowed(PERMIT2), "permit2 not allowlisted");
-        assertEq(IArtCoinsFactoryV2(address(v2.factory)).defaultAllowed().length, 0);
     }
 
     // ── universal router trades the restricted coin without allowlisting ────
@@ -193,16 +192,12 @@ contract RestrictionRouterV2ForkTest is IntegrationV2Base {
 
     function test_restricted_escrow_cannotForwardToArbitraryWallet() public onlyFork {
         (address coin, PoolKey memory key) = _restrictedLaunch();
-        assertTrue(IArtCoinsTokenV2(coin).isAllowed(address(v2.escrow)), "escrow seeded");
+        assertFalse(IArtCoinsTokenV2(coin).isAllowed(address(v2.escrow)), "escrow not seeded");
         uint256 held = _buy(key, 1 ether);
-        // a raw send to the escrow passes (escrow is allowlisted) but books no
-        // credit (storeFees is depositor only), so the user cannot claim it out.
+        // a raw send to the escrow is a wallet to wallet transfer, so it reverts.
+        vm.expectRevert();
         IERC20(coin).transfer(address(v2.escrow), held);
-        assertEq(v2.escrow.balances(address(this), coin), 0, "no credit from a raw send");
-        vm.expectRevert(); // NoFeesToClaim
-        v2.escrow.claim(address(this), coin);
-        vm.expectRevert(); // NoFeesToClaim (claimTo requires msg.sender == feeOwner)
-        v2.escrow.claimTo(address(this), coin, payable(address(0xB0B)));
+        assertEq(v2.escrow.balances(address(this), coin), 0, "no credit");
     }
 
     // ── the accepted residual: restriction is fee priced, not absolute ──────
@@ -253,28 +248,5 @@ contract RestrictionRouterV2ForkTest is IntegrationV2Base {
         inputs = new bytes[](2);
         inputs[0] = abi.encode(actions, params);
         inputs[1] = abi.encode(address(0), to, uint256(0));
-    }
-
-    function test_restricted_locker_paysOnlyFrozenRecipients() public onlyFork {
-        IArtCoinsFactoryV2.DeploymentConfigV2 memory c =
-            _restrictedConfig(address(new I1EmptyTreasury()));
-        address project = c.locker.rewardRecipients[0];
-        address coin = _ownerLaunch(c);
-        PoolKey memory key = _key(coin);
-        _pastWindow();
-        // trade both ways so the locker position accrues coin fees
-        uint256 got = _buy(key, 2 ether);
-        _sell(key, got / 2);
-        address stranger_ = address(0xDEAD1);
-        uint256 strangerBefore = IERC20(coin).balanceOf(stranger_);
-        v2.locker.collectRewards(coin);
-        // coin fees reach the frozen reward recipient (directly or as an escrow
-        // credit), never a caller chosen wallet.
-        assertGt(
-            IERC20(coin).balanceOf(project) + v2.escrow.balances(project, coin),
-            0,
-            "project slot paid"
-        );
-        assertEq(IERC20(coin).balanceOf(stranger_), strangerBefore, "no arbitrary payout");
     }
 }

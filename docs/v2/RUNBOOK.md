@@ -57,13 +57,13 @@ done on chain (part 1 actions 1 to 5 and 8 complete; read at block 26137826):
 | finding | LF-01 critical: `collectRewardsWithoutUnlock` is permissionless and `TAKE_PAIR` takes the net position manager credit, so anyone can divert the fees still sitting in the lp positions. no switch exists on the locker (immutable, no pause). exposure is exactly what accrued since the last collect |
 | contract | locker `0x866ea3Dc2bf7A3e77374619cf50EB697FA766aab` |
 | call | `collectRewards(address token)` selector 0x5763dbd0, arg = 111 `0x61C9d89fe1212F6b55fF888816A151463287B8ae` |
-| caller | anyone. locker pays the caller `keeperRewardBps` of the eth side (live 0, so nothing) |
+| caller | anyone. locker pays the caller the v1 keeper reward share of the eth side (live 0, so nothing) |
 | send | `cast send $L111 "collectRewards(address)" $C111 --gas-limit 900000 --rpc-url $ETH_RPC_URL --account ripe0x` |
 | read now | pending is 13,404 coin and 0 eth (simulated, 658k gas). the swapper then holds the coin, the eth side would sit at the escrow under the swapper slot |
 | verify | `cast call $C111 "balanceOf(address)(uint256)" $SWAPPER --rpc-url $ETH_RPC_URL` rises by about the pending coin. `cast call $ESCROW "feesToClaim(address,address)(uint256)" $SWAPPER 0x0000000000000000000000000000000000000000 --rpc-url $ETH_RPC_URL` (eth credit, 0 expected now) |
 | risk | gas (~665k, about 0.003 eth at 5 gwei) exceeds the 0.0007 eth value pending today: this resets the exposure, it does not earn. if an eth credit appears at the escrow, flush in the same minute (`cast send $SWAPPER "flushPaired()" --gas-limit 200000 ...`, 72k gas) because anyone can `escrow.claim(swapper, 0)` and strand it (LF-02, nothing recovers it). coin side: leave it in the swapper until a keeper run converts it with a real minOut, `convert(0)` invites a sandwich bounded only by the swapper's 80% of spot floor |
 | keep collecting | action 3 keeper, hourly check, collect when `preview()` shows more than 0.02 eth or 10,000 coin uncollected, or weekly regardless. it shrinks exposure and cannot close the hole |
-| v2 class note | the LF-01 class does not exist on v2 coins. `ArtCoinsLpLockerV2` has only `collectRewards(address)` (0x5763dbd0): it opens the position manager's own unlock, takes exact balance deltas, pays the frozen split, and reverts `PoolManagerUnlocked()` (0x0e1475a4) if the pool manager is already unlocked. there is no `collectRewardsWithoutUnlock(address)` (0x86b0c83f, v1 only), no open tab collect and no hook collect path. an extension that needs to collect inside a swap would need a new locker, not a setting. so the hourly collect rule above is a v1 111 rule, v2 keepers run on the part 2 cadence |
+| v2 class note | the LF-01 class does not exist on v2 coins. `ArtCoinsLpLockerV2` is a pure lock: `placeLiquidity` mints each position to the locker, and the contract has no function that collects fees, decreases liquidity or transfers a position (`rescue` refuses the PositionManager). the v2 pool lp fee is 0 and fees are skim paid in eth by the hook at swap time. the hourly collect rule above is a v1 111 rule, v2 has nothing to collect |
 
 ### 2. collect LAYER on the legacy locker (LF-01, legacy)
 
@@ -80,7 +80,7 @@ done on chain (part 1 actions 1 to 5 and 8 complete; read at block 26137826):
 
 ### 2b. deploy and run the LAYER keeper (collect, claim, split, burn)
 
-note (D64): LAYER already has a hosted keeper, `layer-keeper` on fly.io in ripe0x/new-material, running this same pipeline every 30 minutes. do not run a second LAYER bot. this action is optional: deploy `CollectFlushKeeperLayer` only if you want the layer keeper to switch to one atomic tx. the artcoins runner must be deployed with `KEEPERS=111,v2`.
+note (D64): LAYER already has a hosted keeper, `layer-keeper` on fly.io in ripe0x/new-material, running this same pipeline every 30 minutes. do not run a second LAYER bot. this action is optional: deploy `CollectFlushKeeperLayer` only if you want the layer keeper to switch to one atomic tx. the artcoins runner must be deployed with `KEEPERS=111` (the v2 fee steps run in the LAYER bot, D92).
 
 | field | value |
 |---|---|
@@ -104,7 +104,7 @@ note (D64): LAYER already has a hosted keeper, `layer-keeper` on fly.io in ripe0
 | field | value |
 |---|---|
 | finding | LF-01 (reduces pending), LF-02 / K-01 (collect, flush and convert in one tx), K-04 (no third party earns enough to run it) |
-| contract | `src/v2/keepers/CollectFlushKeeperV1.sol`, ctor `(locker, token, swapper, escrow)` pinned to `$L111 $C111 $SWAPPER $ESCROW`. no owner, holds nothing, any wallet can deploy and run it. use a dedicated hot key, not the owner key |
+| contract | `src/v2/keepers/CollectFlushKeeperV1.sol`, ctor `(locker, token, swapper, escrow)` bound to `$L111 $C111 $SWAPPER $ESCROW`. no owner, holds nothing, any wallet can deploy and run it. use a dedicated hot key, not the owner key |
 | deploy dry run | `forge script script/v2/RunKeeper111.s.sol:DeployKeeper111 --rpc-url $ETH_RPC_URL` |
 | deploy | `forge script script/v2/RunKeeper111.s.sol:DeployKeeper111 --rpc-url $ETH_RPC_URL --broadcast --account artcoins-keeper` then `export KEEPER_111=<printed address>`. record it in `deployments/mainnet.json` |
 | check | `cast call $KEEPER_111 "preview()(uint256,uint256,uint256,uint256,uint256)" --rpc-url $ETH_RPC_URL` returns uncollectedEth, uncollectedCoin, escrowedEth, swapperEth, swapperCoin. `swapperEth > 0` means a third party already stranded eth |
@@ -190,14 +190,13 @@ verify each freeze: `cast call $SCRIPTY "contents(string)(bool,address,uint256,b
 | mechanism | `escrow.claim(swapper, 0x0)` is permissionless and pushes the swapper's eth credit into its `receive()`. `flushPaired` sizes from the escrow ledger, so it then reverts `NothingToFlush`. the swapper has no owner, no sweep, `convert` forwards only swap output |
 | recover stranded eth | nothing on chain can. swapper `0xeBD9B74A4c26C6E54e83C84CB247c069eC42A961` has no owner, the 111 slot admin is 0xdEaD, the escrow owner cannot touch credited balances. current stranded balance: 0 (`cast balance $SWAPPER`) |
 | prevent | keeper only (action 3): collect then flush in one tx. cannot stop a same tx griefer. reduces exposure only |
-| owner levers that do not help | locker `setKeeperRewardBps`, escrow `addDepositor`, factory setters. none touch the swapper |
-| residual | accept. v2 `FeeAutoSwapperV2` pays from balance and opts into `selfClaimOnly` |
+| owner levers that do not help | escrow `addDepositor`, factory setters. none touch the swapper |
+| residual | accept. the v2 stack has no fee swapper |
 
 ### 10. other owner actionable items and things to leave alone
 
 | item | contract and call | recommendation |
 |---|---|---|
-| locker keeper reward | `$L111` `setKeeperRewardBps(uint256)` selector 0x4a1e2ec0 (max 200 bps), `setKeeperRewardCap(uint256)` 0x2678c7dc (0.001 to 0.05 eth). live bps 0, cap 0.01 eth | keep 0. it taxes the swapper's own recipient and the keeper (action 3) is the plan. a nonzero bps would pay any caller of `collectRewards` from 111 fees |
 | escrow depositors | `$ESCROW` `addDepositor(address)` selector 0xfc8acba2, no remove, no pause. depositors now: locker 0x866e, hook 0x636c | do not add any. a bad depositor can credit junk and cannot be removed. the same function exists on the open escrow 0xDD1b8C9C99Be3C717B9A5eb3C84297C5bfca1C06 and fee locker 0x1143 |
 | locker `withdrawETH(address)` 0x690d8320, `withdrawERC20(address,address)` 0x9456fbcc | `$L111`, `$LLOCKER` | stray balances only (3,312 wei of coin at 0x866e). `withdrawETH` uses `transfer` (LF-11), pass an eoa. position nfts cannot be withdrawn |
 | LAYER `protocolFeeNumerator` | hook `$LHOOK`, read 0, `protocolFeeNumerator()` | stays 0 |
@@ -228,39 +227,37 @@ about 29.5m gas over 29 txs (0.011 eth at 0.38 gwei, measured on a fork at block
 | 0b | harness rehearsal, broadcaster differs from OWNER, then accept | `FOUNDRY_PROFILE=ci forge test --match-path "test/v2/DeployV2Stack.fork.t.sol" --fork-url $ETH_RPC_URL -vv`. record the block |
 | 0c | broadcast | `RPC_URL=$ETH_RPC_URL DRY_RUN=0 script/v2/deploy.sh mainnet` (keystore address must equal OWNER, typed confirmation, `--account ripe0x --slow`, forge prompts for the keystore password) |
 
-contracts, in the order `DeployV2Lib.deploy` creates them (D38, D36):
+the v2 stack is 9 contracts, in the order `DeployV2Lib.deploy` creates them (D38, D36):
 
 | # | contract | constructor args as deployed | note |
 |---|---|---|---|
 | 1 | `ArtCoinsFeeEscrowV2` | `(broadcaster)` | owner is the broadcaster until step 12 |
 | 2 | `ArtCoinsPoolExtensionAllowlist` (v1 source, new instance) | `(OWNER)` | do not reuse 0xd6D5, it serves the v1 hook |
 | 3 | `ArtCoinsHookV2`, CREATE2 via 0x4e59b44847b379578588920cA78FbF26c0B4956C | `(PoolManager $PM, broadcaster, escrow, allowlist)` | salt mined in the script for low 14 bits 0x2DCC, max 400,000 tries, in the output json |
-| 4 | `ArtCoinsLpLockerV2` | `(broadcaster, PositionManager 0xbD21…ee9e, Permit2 0x0000…8BA3, escrow)` | |
+| 4 | `ArtCoinsLpLockerV2` | `(broadcaster, PositionManager 0xbD21…ee9e, Permit2 0x0000…8BA3)` | pure lock: no escrow, no fee collection |
 | 5 | `ArtCoinsMevLinearSkimV2` | `(hook)` | ownerless |
-| 6 | `ArtCoinsFactoryV2` | `(broadcaster, $PM, protocolBps 2000, deployFee 0.069 eth)` | ships `deprecated = true` |
+| 6 | `ArtCoinsFactoryV2` | `(broadcaster, $PM, deployFee 0.069 eth)` | ships `deprecated = true` |
 | 7 | `ArtCoinsDeployerV2` | `(factory)` | then `factory.setTokenDeployer(deployer)` (0x880183e9, owner only). D55: the deployer is an owner trust surface, the registry records its runtime code |
-| 8 | `BurnRouterV2` | `(OWNER, $PM, WETH, LAYER, LAYER pool key)` | bound to the live LAYER/WETH pool at construction; the key is read from the legacy locker `tokenRewards(LAYER).poolKey` |
+| 8 | `BurnRouterV2` | `(OWNER, $PM, WETH, LAYER, LAYER pool key)` | bound to the live LAYER/WETH pool at construction; the key is read from the live LAYER/WETH pool config |
 | 9 | `ProtocolFeeControllerV2` | `(OWNER, escrow, treasury, burnRouter, treasuryBps 8000)` | after the router, its constructor needs it |
-| 10 | `ArtCoinsKeeperV2` | `(factory)` | stateless, ownerless. record it as `KEEPER_V2` |
 
-wiring, in the order `_wire` sends it (D36: the escrow knows the hook and locker before either `setFeeEscrow`):
+wiring, in the order `_wire` sends it:
 
 | # | contract | call | why |
 |---|---|---|---|
-| 1 to 3 | escrow | `addDepositor(hook, true)`, `addDepositor(locker, true)`, `addDepositor(controller, false)` (`addDepositor(address,bool)` 0x26a760ad, the v1 escrow's one arg 0xfc8acba2 does not exist here) | core depositors cannot be removed (D23). the controller needs it for its push fallback (D33) |
-| 4 to 6 | hook | `setFeeEscrow(escrow)`, `setExtensionAllowlist(allowlist)`, `setLauncher(factory, true)` | |
-| 7 to 9 | locker | `setFeeEscrow(escrow)`, `setLauncher(factory, true)`, `setKeeperRewardBps(0)` (0x4a1e2ec0) | D28: the keeper reward starts at 0, max 2% later |
-| 10 to 13 | factory | `setHook(hook, true)`, `setLocker(locker, true)`, `setMevModule(mev, true)`, `setEscrow(escrow, true)` | enable the stack |
-| 14 to 16 | factory | `setProtocolRecipient(controller)`, `setReferralPayout(escrow or REFERRAL_PAYOUT)`, `setTeamFeeRecipient(OWNER)` | D57. referral legs are credited to the referrer in the escrow (D16), claimed with `escrow.claim(referrer, 0x0)` (0x21c0b342) |
-| 17, 18 | factory | `setDeployFee(0)`, `setDefaultProtocolFeeBps(2000)` | |
-| 19 | factory | `setMinProtocolSkimShareBps(1000)` (0x76ed5aeb) | D52: the protocol keeps at least 10% of every skim. caps `bountyBps` at 9000 and the referral cap |
+| 1, 2 | escrow | `addDepositor(hook, true)`, `addDepositor(controller, false)` (`addDepositor(address,bool)` 0x26a760ad) | the hook is a core depositor and cannot be removed (D23). the controller needs depositor rights for its push fallback (D33) |
+| 3 to 6 | hook | `setFeeEscrow(escrow)`, `setExtensionAllowlist(allowlist)`, `setLauncher(factory, true)`, `setReferralBps(25)` | D89 |
+| 7 | locker | `setLauncher(factory, true)` | the factory is the only caller of `placeLiquidity` |
+| 8 to 10 | factory | `setHook(hook, true)`, `setLocker(locker, true)`, `setMevModule(mev, true)` | enable the stack |
+| 11, 12 | factory | `setProtocolRecipient(controller)`, `setTeamFeeRecipient(OWNER)` | D57 |
+| 13 | factory | `setDeployFee(0.069 eth)` | |
 | none | factory | `deprecated` stays true | opening is the last owner tx, 2c |
 
 | step | what | detail |
 |---|---|---|
-| 11 | wiring | the table above, 19 calls after step 10. not wired at deploy: a coin's fee swapper as depositor, a per coin owner call in 2b (D33) |
+| 11 | wiring | the table above, 13 calls after step 9 |
 | 12 | ownership, Ownable2Step (D20) | broadcaster == OWNER: nothing to do. otherwise escrow, hook, locker and factory end with `pendingOwner() == OWNER` (0xe30c3978) and the broadcaster still owns them. the allowlist, router and controller are constructed with OWNER, nothing to accept |
-| 13 | post deploy asserts, in the script | `constantsHash()` of escrow, hook, locker, mev, factory, deployer, router, controller. hook low bits 0x2DCC, permissions equal the address flags, hook PoolManager, globals escrow and allowlist, factory is a launcher. escrow depositors and core flags. locker escrow, launcher, reward bps 0. every factory getter above, deployer binding, `deprecated`, `STACK_VERSION`. mev hook, keeper factory, controller and router links, router `coin() == 0`. owners or pending owners. runtime size of all 10 under 24,576. prints `post deploy asserts: ok`, the registry json, writes `tmp/v2-deploy-1.json` |
+| 13 | post deploy asserts, in the script | `constantsHash()` of escrow, hook, locker, mev, factory, deployer, router, controller. hook low bits 0x2DCC, permissions equal the address flags, hook PoolManager, globals escrow and allowlist, factory is a launcher, `referralBps`. escrow depositors and core flags. locker is a launcher. every factory getter above, deployer binding, `deprecated`, `STACK_VERSION`. mev hook, controller and router links, router `coin()` and pool key. owners or pending owners. runtime size of all 9 under 24,576. prints `post deploy asserts: ok`, the registry json, writes `tmp/v2-deploy-1.json` |
 
 step 12 for a broadcaster that is not OWNER, one tx at a time, before anything else (until all four are accepted the broadcaster holds the owner powers). `acceptOwnership()` is 0x79ba5097:
 
@@ -284,29 +281,27 @@ per contract: the first line simulates, the second sends, `owner()` must return 
 
 ### 2b. launch the first coin (credits engine coin), factory still owner only
 
-the first coin is `deployTokenAsOwner` (the one path that sets the protocol slot bps), which works while the factory is deprecated.
+the first coin is launched with `factory.deployToken`, which the owner can call while the factory is deprecated.
 
 | step | what | detail and check |
 |---|---|---|
-| 1 | owner calls before launch | `factory.setExemptAllowed(treasury, true)` (0xa492f064, D47) only if the treasury must be in `tax.exempt` (VENUE mode only, needs code at launch). `escrow.addDepositor(feeSwapper, false)` (0x26a760ad, D33) if a per coin `FeeAutoSwapperV2` is a locker reward recipient: deploy the swapper first, its address goes into `rewardRecipients`. a plain treasury recipient needs neither. referral payout is the escrow (D57), no call |
-| 2 | config | `cp script/v2/launch-configs/example.json my-coin.json`, set treasury, names, ticks, `"example": false`. limits: `bountyBps` at most 9000, `lpFee` at least 3000 pips, referral cap under the D52 floor, project `rewardBps` plus protocolBps equal 10000, native eth only, tax sink is DEAD or the bounty recipient. the json cannot carry launch extensions, a pool extension or tax venues |
+| 1 | owner calls before launch | none. the referral rate is the hook wide `referralBps` (D89), the protocol recipient is the controller, and a plain treasury bounty recipient needs no depositor rights |
+| 2 | config | `cp script/v2/launch-configs/example.json my-coin.json`, set treasury, names, ticks, `"example": false`. limits: `bountyBps` at most 9,999, `baselineSkimBps` from 1 to 1,000, `positionBps` sum to 10,000, native eth only. the json carries the keys of `script/v2/launch-configs/example.json` |
 | 3 | dry run | `forge script script/v2/LaunchV2Coin.s.sol --sig "run(string)" "$(cat my-coin.json)" --rpc-url $ETH_RPC_URL --sender $OWNER`. preflight on the wiring, `predictToken`, a snapshot dry run, then it stops before the tx. record the predicted token, `configHash`, value (the deploy fee) and pool id |
 | 4 | broadcast | the same command plus `--account ripe0x --broadcast --slow`. excess value above `deployFee()` plus extension msgValues is refunded |
 | 5 | checks | `factory.isCoin(token)`, token equals the predicted address, `hook.poolInfo(poolId).version == 2`, `token.launcherVersion() == 2`, the `TokenCreatedV2` event echoes the config and its `configHash` equals the dry run |
-| 6 | post launch owner calls | `escrow.isDepositor(feeSwapper)` (0x2f70d1ba) is true, add it if step 1 was skipped. the swapper's deployer calls `swapper.setup(coin)` (0x66d38203). the burn router needs no per coin call (it burns LAYER for every coin) |
-| 7 | run the keeper once | see the next table. then a small buy and sell and check the fee legs: the bounty is pushed with the 2,300 gas stipend (D41), anything that fails sits in the escrow under the recipient, claim it |
-| 8 | registry and cron | add the coin to the registry `coins` list (`verify-registry` passes) and to the keeper cron |
+| 6 | post launch owner calls | none. the burn router burns LAYER for every coin |
+| 7 | check the fee legs | a small buy and sell and check the fee legs: the bounty is pushed with the 2,300 gas stipend (D41), anything that fails sits in the escrow under the recipient, claim it |
+| 8 | registry | add the coin to the registry `coins` list (`verify-registry` passes) |
 
-keeper for a v2 coin: `ArtCoinsKeeperV2.collectAndForward(address token, bool doConvert, uint256 minOut)` selector 0x4f4b6733, permissionless, holds nothing, forwards what it receives to the caller. there is no forge script for it yet, use cast:
+fee processing for the stack: the LAYER bot calls `ProtocolFeeControllerV2.processFees()` to split the protocol leg held in the escrow between the treasury and the burn router, and `BurnRouterV2.processBurn(minOut)` to buy and burn LAYER with the router's weth.
 
 | item | value |
 |---|---|
-| dry run | `cast call --from $KEEPER_ADDR $KEEPER_V2 "collectAndForward(address,bool,uint256)" $TOKEN true 0 --gas-limit 2000000 --rpc-url $ETH_RPC_URL` |
-| send | `cast send $KEEPER_V2 "collectAndForward(address,bool,uint256)" $TOKEN true $MINOUT --gas-limit 2000000 --rpc-url $ETH_RPC_URL --account artcoins-keeper`. `$MINOUT` is the simulated convert output at `minOut` 0 minus 100 bps, never spot. `0` only for the first dry run |
-| gas floors (D49) | collect 900k, flush 150k, convert 400k, erc165 probe 30k, each plus 50k margin and the 1/63 reserve. floors, not caps. below them the call reverts `InsufficientGas(step)` (0x969aeb08, 1 collect, 2 flush, 3 convert, 4 probe). set the limit by hand, 2,000,000 is safe. the figures are v1 measurements with room, re measure on the live v2 coin and tighten |
-| failed step | collect bubbles its revert. flush and convert reverts are logged (`FlushSkipped`, `ConvertSkipped`) and the run completes. a reward recipient that is not a swapper (a plain treasury) is skipped, the locker pushes its share itself |
-| cadence | the locker has no LF-01 hole, so there is no hourly rule. hourly cron reads `preview(token)` (0x13a69df9: swappers, accruedPaired, accruedArtCoin, nextConvertibleBlock) and runs when the accrued amounts are worth more than the gas, and at least weekly regardless (uncollected lp fees are not readable through the locker interface). convert is paced per swapper, extra attempts are logged no ops |
-| monitor | key balance under 0.05 eth, `FlushSkipped` and `ConvertSkipped` reasons, escrow credit under the swapper and treasury, `nextConvertibleBlock` age |
+| dry run | `cast call --from $BOT_ADDR $CONTROLLER "processFees()" --rpc-url $ETH_RPC_URL` |
+| send | `cast send $CONTROLLER "processFees()" --rpc-url $ETH_RPC_URL --account artcoins-keeper`, then `cast send $BURN_ROUTER "processBurn(uint256)" $MINOUT --rpc-url $ETH_RPC_URL --account artcoins-keeper`. `$MINOUT` is the simulated LAYER output minus 100 bps |
+| cadence | the bot reads the controller and router balances and runs when the pending amount is worth more than the gas |
+| monitor | key balance under 0.05 eth, escrow credit under the controller, router weth balance |
 
 ### 2c. open to the public, `setDeprecated(false)` last
 
@@ -319,15 +314,15 @@ before the call: every gate below is true, the first coin ran at least one full 
 | 1 | ci green on the release commit, fork tests that actually ran | jobs `Foundry project (no network)` (fmt, build sizes, hook size gate, tests), `Foundry fork tests (pinned mainnet block)`, `Registry schema`, `Registry vs chain and bytecode`. read the skip count: a fork job that skipped is not green (H5). the four known red v1 `BurnRouter` floor fork tests in `hygiene-fixes.md` are fixed or accepted in writing. `review-proofs` stays informational |
 | 2 | `script/v2/verify-v2.sh` clean | exit 0 after the `acceptOwnership` calls, source verified on the explorer, runtime equals the ci build, wiring and owners match |
 | 3 | registry verifies against chain and build | `node script-js/verify-registry.mjs --require-artifacts` exit 0, weekly workflow green, v2 stack present with deploy blocks |
-| 4 | sizes under the ci profile | `FOUNDRY_PROFILE=ci forge build --sizes`: all 10 contracts under 24,576, hook and locker at least 1,024 bytes of headroom (D14, D45) |
+| 4 | sizes under the ci profile | `FOUNDRY_PROFILE=ci forge build --sizes`: all 9 contracts under 24,576, hook and locker at least 1,024 bytes of headroom (D14, D45) |
 | 5 | external review of the hook swap path | written report covering beforeSwap, afterSwap return delta, the skim refund (D42, D51), stipend fee pushes (D41), `FeeDelivery`, the factory and locker interplay. every high fixed or accepted in writing. internal reviews did not verify: V2H-01 end to end (no hostile recipient built), a nested swap from a recipient, partial fill refunds through a live universal router, the HARD `donate` path, sizes at ci, the locker with the real hook and a taxed coin end to end |
 | 6 | external review of the HARD mode token | D24, D34 netting, D43, D46. not verified internally: D34 netting with several canonical flows in one tx, routers that settle a gross amount after an opposite flow netted the grant down, erc6909 claims on side pools (accepted residual, D24), V2B-05 burn router sandwich profit (estimate only) |
-| 7 | fork rehearsal of the first coin | the 2b steps 3 to 7 against a fork of the deployed stack: launch, buy, sell, collect, keeper run, claim, with the real config. covers what reviews left open: gas at the ci profile, airdrop as a launch extension, dev buy partial fill refund, keeper gas on the real v2 stack, the mainnet gas limit and the 16.7m tx cap (D54: a config with every cap at its limit costs about 19.6m gas, accepted, the ui keeps configs far below) |
+| 7 | fork rehearsal of the first coin | the 2b steps 3 to 7 against a fork of the deployed stack: launch, buy, sell, `processFees()`, `processBurn(minOut)`, claim, with the real config. covers what reviews left open: gas at the ci profile, airdrop as a launch extension, dev buy partial fill refund, the mainnet gas limit and the 16.7m tx cap (D54: a config with every cap at its limit costs about 19.6m gas, accepted, the ui keeps configs far below) |
 | 8 | site points at the v2 factory | the site (ripe0x/new-material) mirrors `abi/deployments.generated.ts` and `abi/{v1,v2}` from this repo's submodule pin; bump the pin after the registry holds the v2 stack. it reads `deprecated()` and `deployFee()`, shows the fee, blocks on an unknown chain, simulates before send (UI-01 to UI-09). check the coin renders in a real marketplace (not verified) |
-| 9 | keeper cron running | `CollectFlushKeeperV1` for 111 (part 1 action 3, 1.2M gas limit) and `ArtCoinsKeeperV2` for the first v2 coin (2b), hot key under 0.05 eth, alerts set |
+| 9 | bot cron running | `CollectFlushKeeperV1` for 111 (part 1 action 3, 1.2M gas limit) and the LAYER bot calling `processFees()` and `processBurn(minOut)` on the v2 stack (2b), hot key under 0.05 eth, alerts set |
 | 9b | LAYER keeper cron running | `CollectFlushKeeperLayer` (part 1 action 2b, 3.5M gas limit, `ALLOW_SUPERSEDED=1` for the scripts), daily `preview()` check, weekly run regardless. alert when a router stays at or above 0.01 weth for more than a day, or a run logs `StepSkipped` step 5 |
 | 10 | old factories deprecated | `deprecated()` true on `$F_OPEN`, `$F_CUR`, `$F_LEGACY`. `setHook(0x636c…, false)` on `$F_CUR` after the first v2 coin trades (part 1 action 7) |
 | 11 | part 1 actions 1, 2, 4 and 5 done, router floors fresh | collect timestamps, `minLayerOutPerWeth()` within 5% of 95% of spot |
-| 12 | stack defaults read back | hook `referralBps` 25, controller split 8000/2000, locker `keeperRewardBps` 0, `deprecated` true until the last tx |
+| 12 | stack defaults read back | hook `referralBps` 25, controller split 8000/2000, `deprecated` true until the last tx |
 | 13 | public repo decision D26 reviewed | `origin` is the public ripe0x/artcoins (H3), branch `v2` and the review docs with findings on live contracts are already public (D26): keep or delete the remote branch on purpose. curated merge of `docs/v2` and `test/v2/review` (H2), mirror tag filter fixed (H1). part 1 of this file stays off the mirror until actions 1, 2, 4 and 5 are done |
 | 14 | owner key custody | hardware or keystore. `acceptOwnership` was exercised on a fork (step 0b) before the real accepts |

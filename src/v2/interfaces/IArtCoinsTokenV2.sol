@@ -8,20 +8,20 @@ pragma solidity ^0.8.26;
 ///         allowlist, or if one side is the PoolManager and the amount fits the
 ///         transient allowance the canonical hook granted this transaction. The
 ///         coin admin manages the allowlist, may turn restriction off once, and
-///         may lock the allowlist and the switch permanently.
+///         may `lock` the coin: the allowlist, the restriction switch and the
+///         coin's hook side settings (bounty recipient, pool extension, skim)
+///         freeze permanently.
 interface IArtCoinsTokenV2 {
     // ── events ────────────────────────────────────────────────────────────
 
-    /// @notice An allowlist entry changed. `pinned` marks a factory seeded entry
-    ///         the coin admin cannot remove. Emitted once per seed at construction
+    /// @notice An allowlist entry changed. Emitted once per seed at construction
     ///         and on every `setAllowed`.
-    event AllowedSet(address indexed account, bool allowed, bool pinned);
+    event AllowedSet(address indexed account, bool allowed);
     /// @notice Restriction turned off. Every transfer passes after this.
     event Unrestricted();
-    /// @notice The allowlist and the restriction switch are frozen.
-    event AllowlistLocked();
-    /// @notice The bounty and reward recipient setters on the hook and locker are frozen.
-    event RecipientsLocked();
+    /// @notice The coin is locked: the allowlist, the restriction switch and the
+    ///         coin admin's hook settings are frozen.
+    event Locked();
     /// @notice The admin changed the description.
     event UpdateDescription(string description);
     /// @notice The admin changed the image url.
@@ -52,12 +52,8 @@ interface IArtCoinsTokenV2 {
     error CanonicalPoolInvalid();
     /// @notice An allowlist entry names the PoolManager or the canonical hook.
     error AllowedForbidden(address account);
-    /// @notice `setAllowed` tried to remove a factory seeded (pinned) entry.
-    error AllowedPinned(address account);
-    /// @notice The allowlist and the restriction switch are frozen.
-    error AllowlistAlreadyLocked();
-    /// @notice The bounty and reward recipient setters are frozen.
-    error RecipientsAlreadyLocked();
+    /// @notice The coin is locked.
+    error CoinLocked();
     /// @notice Restriction is already off.
     error NotRestricted();
     /// @notice Restricted transfer with no allowlisted side and no sufficient
@@ -71,15 +67,11 @@ interface IArtCoinsTokenV2 {
 
     /// @notice True while holder to holder transfers need an allowlisted side.
     function restricted() external view returns (bool);
-    /// @notice True once the allowlist and the restriction switch are frozen.
-    function allowlistLocked() external view returns (bool);
-    /// @notice True once the bounty and reward recipient setters on the hook and
-    ///         locker are frozen.
-    function recipientsLocked() external view returns (bool);
+    /// @notice True once the coin is locked: the allowlist, the restriction
+    ///         switch and the coin admin's hook settings are frozen.
+    function locked() external view returns (bool);
     /// @notice True if `account` is on the allowlist.
     function isAllowed(address account) external view returns (bool);
-    /// @notice True if `account` is a factory seeded entry the coin admin cannot remove.
-    function isPinned(address account) external view returns (bool);
     /// @notice True if a holder to holder transfer from `from` to `to` would be
     ///         rejected: restriction is on and neither side is allowlisted. This
     ///         ignores the per swap PoolManager transient allowance, so a transfer
@@ -105,17 +97,17 @@ interface IArtCoinsTokenV2 {
 
     // ── restriction admin (coin admin only) ───────────────────────────────
 
-    /// @notice Add or remove an allowlist entry. Reverts once the allowlist is
-    ///         locked, if `account` is zero, the PoolManager or the hook, or if
-    ///         it removes a pinned entry.
+    /// @notice Add or remove an allowlist entry. Reverts once locked, or if
+    ///         `account` is zero, the PoolManager or the hook. The factory seeds
+    ///         this launch's locker and extensions; removing them is the admin's
+    ///         own loss.
     function setAllowed(address account, bool allowed) external;
     /// @notice Turn restriction off permanently. Reverts once locked.
     function unrestrict() external;
-    /// @notice Freeze the allowlist and the restriction switch permanently.
-    function lockAllowlist() external;
-    /// @notice Freeze the bounty and reward recipient setters on the hook and
-    ///         locker permanently.
-    function lockRecipients() external;
+    /// @notice Lock the coin permanently: `setAllowed`, `unrestrict` and the coin
+    ///         admin's hook setters (`setBountyRecipient`, `setPoolExtension`,
+    ///         `lowerBaselineSkim`) revert from now on.
+    function lock() external;
 
     // ── canonical hook only ───────────────────────────────────────────────
 
