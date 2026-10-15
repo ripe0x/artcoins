@@ -34,9 +34,9 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 ///         - The price limit is the pool boundary, so a partial fill happens
 ///           only when the buy exhausts all liquidity. Unspent eth goes to
 ///           `refundRecipient` from `extensionData`.
-///         - The swap passes the recipient as the refund address in `hookData`,
-///           so the hook credits the unused skim of a partial fill to the
-///           recipient in the fee escrow. The hook reverts a partial fill that
+///         - The swap passes `refundRecipient` as the refund address in `hookData`,
+///           so the hook credits the unused skim of a partial fill to
+///           `refundRecipient` in the fee escrow. The hook reverts a partial fill that
 ///           carries no refund address.
 ///         - The contract sets `selfClaimOnly` on the escrow before the swap.
 ///           After the swap it claims any credit it holds to itself, and a
@@ -119,7 +119,7 @@ contract ArtCoinsUniv4EthDevBuyV2 is ReentrancyGuard, IUnlockCallback, IArtCoins
         }
 
         (uint256 spent, uint256 out) = abi.decode(
-            poolManager.unlock(abi.encode(poolKey, msg.value, recipient, minOut)),
+            poolManager.unlock(abi.encode(poolKey, msg.value, recipient, refundRecipient, minOut)),
             (uint256, uint256)
         );
 
@@ -146,8 +146,13 @@ contract ArtCoinsUniv4EthDevBuyV2 is ReentrancyGuard, IUnlockCallback, IArtCoins
     ///         only this contract calls `unlock`, and only the PoolManager calls back.
     function unlockCallback(bytes calldata data) external returns (bytes memory) {
         if (msg.sender != address(poolManager)) revert NotPoolManager();
-        (PoolKey memory key, uint256 amountIn, address recipient, uint256 minOut) =
-            abi.decode(data, (PoolKey, uint256, address, uint256));
+        (
+            PoolKey memory key,
+            uint256 amountIn,
+            address recipient,
+            address refundTo,
+            uint256 minOut
+        ) = abi.decode(data, (PoolKey, uint256, address, address, uint256));
 
         BalanceDelta delta = poolManager.swap(
             key,
@@ -157,7 +162,7 @@ contract ArtCoinsUniv4EthDevBuyV2 is ReentrancyGuard, IUnlockCallback, IArtCoins
                 sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
             }),
             abi.encode(
-                SwapData({mevModuleSwapData: abi.encode(recipient), poolExtensionSwapData: ""})
+                SwapData({mevModuleSwapData: abi.encode(refundTo), poolExtensionSwapData: ""})
             )
         );
 

@@ -57,6 +57,9 @@ contract V2BPoker {
     receive() external payable {}
 }
 
+/// @dev Contract with no payable receive and no calls into the escrow.
+contract V2BNoReceive {}
+
 contract V2BPeripheryForkTest is HookV2ForkBase {
     address internal griefer = makeAddr("v2b-griefer");
 
@@ -95,8 +98,8 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
     }
 
     /// partial fill through the real hook: the over charged skim is credited in
-    /// the escrow to the dev buy recipient, the launch succeeds, and the
-    /// recipient claims the credit. The refund recipient gets the unspent eth.
+    /// the escrow to the refund recipient, the launch succeeds, and the refund
+    /// recipient claims the credit and gets the unspent eth.
     function test_holds_devBuy_partialFill_skimRefundReachesRecipient() public onlyFork {
         ArtCoinsTokenV2 token = _newToken(false, bountyEoa, address(hook));
         PoolKey memory key = hook.initializePool(_params(_defaults(bountyEoa), address(token)));
@@ -105,22 +108,44 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
         address refundTo = makeAddr("v2b-refund2");
         address buyer = makeAddr("v2b-buyer2");
         _devBuyCall(d, key, address(token), 100 ether, buyer, refundTo);
-        uint256 credit = escrow.balances(buyer, address(0));
-        assertGt(credit, 0, "over charge credited to the recipient");
+        uint256 credit = escrow.balances(refundTo, address(0));
+        assertGt(credit, 0, "over charge credited to the refund recipient");
+        assertEq(escrow.balances(buyer, address(0)), 0, "token recipient holds no credit");
         assertEq(escrow.balances(address(d), address(0)), 0, "dev buy holds no credit");
         assertEq(address(d).balance, 0);
         assertGt(refundTo.balance, 60 ether, "unspent eth refunded");
-        uint256 before = buyer.balance;
-        vm.prank(buyer);
-        escrow.claim(buyer, address(0));
-        assertEq(buyer.balance - before, credit, "recipient claims the credit");
-        assertEq(escrow.balances(buyer, address(0)), 0);
+        uint256 before = refundTo.balance;
+        vm.prank(refundTo);
+        escrow.claim(refundTo, address(0));
+        assertEq(refundTo.balance - before, credit, "refund recipient claims the credit");
+        assertEq(escrow.balances(refundTo, address(0)), 0);
+    }
+
+    /// a token recipient that cannot receive eth or call the escrow does not
+    /// block the launch: coins reach it, the partial fill credit belongs to the
+    /// EOA refund recipient and is claimable.
+    function test_V2B08_devBuy_inertTokenRecipient_creditToRefundRecipient() public onlyFork {
+        ArtCoinsUniv4EthDevBuyV2 d = _devBuy();
+        address inert = address(new V2BNoReceive());
+        address refundTo = makeAddr("v2b08-inert-refund");
+        ArtCoinsTokenV2 tk = _newToken(false, bountyEoa, address(hook));
+        PoolKey memory k = hook.initializePool(_params(_defaults(bountyEoa), address(tk)));
+        _modify(k, -600, 0, int256(LIQ), 0);
+        _devBuyCall(d, k, address(tk), 100 ether, inert, refundTo);
+        assertGt(tk.balanceOf(inert), 0, "coins reach the token recipient");
+        assertEq(escrow.balances(inert, address(0)), 0, "token recipient holds no credit");
+        uint256 credit = escrow.balances(refundTo, address(0));
+        assertGt(credit, 0, "credit belongs to the refund recipient");
+        uint256 before = refundTo.balance;
+        vm.prank(refundTo);
+        escrow.claim(refundTo, address(0));
+        assertEq(refundTo.balance - before, credit, "credit claimable");
     }
 
     /// @dev One launch on a fresh coin and pool through `d`, liquidity in
     ///      [lo, hi], coins to `buyer`. Returns the eth the pool took, the eth
     ///      refunded to `refundTo` and the escrow credit the launch created for
-    ///      `buyer`, and checks the payout identity and the post launch invariant.
+    ///      `refundTo`, and checks the payout identity and the post launch invariant.
     function _launchThrough(
         ArtCoinsUniv4EthDevBuyV2 d,
         address buyer,
@@ -133,7 +158,7 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
         PoolKey memory k = hook.initializePool(_params(_defaults(bountyEoa), address(tk)));
         _modify(k, lo, hi, int256(LIQ), 0);
         uint256 before = refundTo.balance;
-        uint256 creditBefore = escrow.balances(buyer, address(0));
+        uint256 creditBefore = escrow.balances(refundTo, address(0));
         vm.recordLogs();
         _devBuyCall(d, k, address(tk), value, buyer, refundTo);
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -142,7 +167,7 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
                 (spent,, refunded,) = abi.decode(logs[i].data, (uint256, uint256, uint256, address));
             }
         }
-        credit = escrow.balances(buyer, address(0)) - creditBefore;
+        credit = escrow.balances(refundTo, address(0)) - creditBefore;
         assertEq(refundTo.balance - before, refunded, "event matches payout");
         assertGe(refunded, value - spent, "refund covers the unspent eth");
         assertEq(address(d).balance, 0, "dev buy holds no eth");
@@ -154,18 +179,18 @@ contract V2BPeripheryForkTest is HookV2ForkBase {
     }
 
     /// two partial fill launches through one dev buy contract: each recipient
-    /// is credited the over charge of its own launch.
+    /// refund recipient is credited the over charge of its own launch.
     function test_V2B08_devBuy_refundCreditIsPerLaunch() public onlyFork {
         ArtCoinsUniv4EthDevBuyV2 d = _devBuy();
         address b1 = makeAddr("v2b08-launch1-recipient");
         address b2 = makeAddr("v2b08-launch2-recipient");
-        (, uint256 refunded1, uint256 credit1) =
-            _launchThrough(d, b1, makeAddr("v2b08-r1"), -600, 0, 100 ether);
-        (, uint256 refunded2, uint256 credit2) =
-            _launchThrough(d, b2, makeAddr("v2b08-r2"), -600, 0, 100 ether);
+        address r1 = makeAddr("v2b08-r1");
+        address r2 = makeAddr("v2b08-r2");
+        (, uint256 refunded1, uint256 credit1) = _launchThrough(d, b1, r1, -600, 0, 100 ether);
+        (, uint256 refunded2, uint256 credit2) = _launchThrough(d, b2, r2, -600, 0, 100 ether);
         assertGt(credit1, 0);
-        assertEq(escrow.balances(b1, address(0)), credit1);
-        assertEq(escrow.balances(b2, address(0)), credit2);
+        assertEq(escrow.balances(r1, address(0)), credit1);
+        assertEq(escrow.balances(r2, address(0)), credit2);
         // identical launches pay identical amounts
         assertEq(refunded1, refunded2);
         assertEq(credit1, credit2);

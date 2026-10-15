@@ -47,8 +47,9 @@ library HookCalldata {
 
     /// @notice Optional refund address for the unfilled skim of a price
     ///         limited swap: `mevModuleSwapData == abi.encode(address)`
-    ///         (exactly 32 bytes, clean high bits). Zero if absent or
-    ///         malformed (the hook then refunds the PoolManager caller).
+    ///         (exactly 32 bytes, clean high bits). Missing or
+    ///         malformed data returns zero. A charged partial quote fill then
+    ///         reverts `RefundAddressRequired`.
     /// @dev    The refund is the swapper's own over charge, so the address needs no
     ///         authorization. Never reverts: same bounds checks as `decode`.
     /// @param d The swap `hookData`.

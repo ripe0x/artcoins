@@ -969,8 +969,10 @@ contract HookV2ForkTest is HookV2ForkBase {
         hook.setBountyRecipient(pid, payable(enabled));
 
         this.setLaunchExtension(enabled, false);
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsHookV2.RecipientCannotReceive.selector, enabled)
+        );
         hook.setBountyRecipient(pid, payable(enabled));
-        assertEq(hook.skimConfig(pid).bountyRecipient, enabled);
     }
 
     function test_initializePool_escrowMustListHookAsCoreDepositor() public {
@@ -1113,6 +1115,17 @@ contract HookV2ForkTest is HookV2ForkBase {
         assertEq(hook.poolInfo(pid).extension, address(0));
         _swap(key, true, -0.1 ether, 0, "");
         assertEq(second.swaps(), 1, "cleared extension is not called");
+    }
+
+    function test_setPoolExtension_rejectsBountyRecipient() public onlyFork {
+        (PoolKey memory key,) = _launch(_defaults(bountyEoa));
+        HV2Extension ext = new HV2Extension(address(hook));
+        allowlist.setPoolExtension(address(ext), true);
+        hook.setBountyRecipient(key.toId(), payable(address(ext)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtCoinsHookV2.RecipientCannotReceive.selector, address(ext))
+        );
+        hook.setPoolExtension(key, address(ext), "");
     }
 
     function test_setPoolExtension_guards() public onlyFork {
@@ -1266,6 +1279,7 @@ contract HookV2ForkTest is HookV2ForkBase {
             })
         );
         assertEq(h.refundTo(dirty), address(0), "dirty high bits");
+        assertEq(h.refundTo(abi.encode(me)), address(0), "raw 32 byte word");
     }
 
     function testFuzz_calldata_neverReverts(bytes calldata junk) public {

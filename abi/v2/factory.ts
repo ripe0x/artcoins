@@ -644,6 +644,25 @@ export const factoryV2Abi = [
   },
   {
     "type": "function",
+    "name": "everEnabledExtensions",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "isCoin",
     "inputs": [
       {

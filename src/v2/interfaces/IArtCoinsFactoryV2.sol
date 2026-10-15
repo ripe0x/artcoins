@@ -89,16 +89,16 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     }
 
     /// @notice Anti sniper skim parameters.
+    /// @dev    The signed config and the CREATE2 salt bind the values the hook runs, so both
+    ///         numeric fields are required when a module is set.
     /// @param module IArtCoinsMevSkimV2 module whose `hook()` equals `PoolConfigV2.hook` and whose
     ///        `constantsHash()` matches. 0 for none, in which case the other two fields must be 0,
     ///        else `InvalidMevConfig`.
-    /// @param startingSkimBps Skim at launch in bps of swap volume. 0 selects
-    ///        `Constants.DEFAULT_START_SKIM_BPS`. The resulting value is at least
+    /// @param startingSkimBps Skim at launch in bps of swap volume. At least
     ///        `FeeConfigV2.baselineSkimBps` and at most `Constants.MAX_SKIM_BPS`, else
-    ///        `InvalidMevConfig`.
-    /// @param windowSeconds Skim window in seconds. 0 selects `Constants.DEFAULT_MEV_WINDOW`. The
-    ///        resulting value is within [`Constants.MIN_MEV_WINDOW`, `Constants.MAX_MEV_WINDOW`],
-    ///        else `InvalidMevConfig`.
+    ///        `InvalidMevConfig`. 0 reverts `InvalidMevConfig`.
+    /// @param windowSeconds Skim window in seconds, within [`Constants.MIN_MEV_WINDOW`,
+    ///        `Constants.MAX_MEV_WINDOW`], else `InvalidMevConfig`. 0 reverts `InvalidMevConfig`.
     struct MevConfigV2 {
         address module;
         uint24 startingSkimBps;
@@ -296,7 +296,10 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
     ///         an escrow credit: the factory, the coin, the PoolManager, the
     ///         launch's hook, locker, locker PositionManager, hook fee escrow,
     ///         token deployer, mev module, pool extension, or a launch extension
-    ///         in the config.
+    ///         in the config, or an extension ever enabled. The bounty recipient also
+    ///         cannot be `protocolRecipient`. Other contract recipients are the chooser's
+    ///         responsibility: the hook pushes with 2,300 gas and falls back to an escrow
+    ///         credit the recipient must claim.
     error RecipientCannotReceive(address recipient);
 
     // ── launch ────────────────────────────────────────────────────────────
@@ -364,6 +367,9 @@ interface IArtCoinsFactoryV2 is IConstantsBound {
 
     /// @notice Whether `extension` may be used by new launches.
     function enabledExtensions(address extension) external view returns (bool);
+
+    /// @notice Whether `extension` was ever enabled. Stays true after `setExtension(extension, false)`.
+    function everEnabledExtensions(address extension) external view returns (bool);
 
     // ── owner ─────────────────────────────────────────────────────────────
 

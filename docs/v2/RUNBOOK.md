@@ -305,7 +305,7 @@ the first coin is launched with `factory.deployToken`, which the owner can call 
 | 7 | check the fee legs | a small buy and sell and check the fee legs: the bounty is pushed with the 2,300 gas stipend, anything that fails sits in the escrow under the recipient, claim it |
 | 8 | registry | add the coin to the registry `coins` list (`verify-registry` passes) |
 
-fee processing for the stack: the LAYER bot calls `ProtocolFeeControllerV2.processFees()` to split the protocol leg held in the escrow between the treasury and the burn router, and `BurnRouterV2.processBurn(minOut)` to buy and burn LAYER with the router's weth.
+fee processing for the stack: the LAYER bot calls `ProtocolFeeControllerV2.processFees()` to split the ETH the controller received directly plus any escrow credit it claims, between the treasury and the burn router, and `BurnRouterV2.processBurn(minOut)` to buy and burn LAYER with the router's weth.
 
 | item | value |
 |---|---|
@@ -313,6 +313,7 @@ fee processing for the stack: the LAYER bot calls `ProtocolFeeControllerV2.proce
 | send | `cast send $CONTROLLER "processFees()" --rpc-url $ETH_RPC_URL --account artcoins-keeper`, then `cast send $BURN_ROUTER "processBurn(uint256)" $MINOUT --rpc-url $ETH_RPC_URL --account artcoins-keeper`. `$MINOUT` is the simulated LAYER output minus 100 bps |
 | cadence | the bot reads the controller and router balances and runs when the pending amount is worth more than the gas |
 | monitor | key balance under 0.05 eth, escrow credit under the controller, router weth balance |
+| LAYER hook fee | before opening and while burns run, read `protocolFeeNumerator()` on the LAYER hook and alert when it is nonzero. the router reads the hook's `protocolFee()` at burn time and removes the weth the hook takes from the whole budget of an exact input swap from the weth priced at spot before applying `spotFloorBps`. a nonzero value therefore burns less LAYER per weth (the hook takes that share of every burn) and the floor tracks it |
 
 ### 2c. open to the public, `setDeprecated(false)` last
 
@@ -326,7 +327,7 @@ before the call: every gate below is true, the first coin ran at least one full 
 | 2 | `script/v2/verify-v2.sh` clean | exit 0 after the `acceptOwnership` calls, source verified on the explorer, runtime equals the ci build, wiring and owners match |
 | 3 | registry verifies against chain and build | `node script-js/verify-registry.mjs --require-artifacts` exit 0, weekly workflow green, v2 stack present with deploy blocks |
 | 4 | sizes under the ci profile | `FOUNDRY_PROFILE=ci forge build --sizes`: all 9 contracts under 24,576, hook and locker at least 1,024 bytes of headroom |
-| 5 | external review of the hook swap path | written report covering beforeSwap, afterSwap return delta, the skim refund, stipend fee pushes, `FeeDelivery`, the factory and locker interplay. every high fixed or accepted in writing. internal reviews did not verify: V2H-01 end to end (no hostile recipient built), a nested swap from a recipient, partial fill refunds through a live universal router, the HARD `donate` path, sizes at ci, the locker with the real hook and a taxed coin end to end |
+| 5 | external review of the hook swap path | written report covering beforeSwap, afterSwap return delta, the skim refund, stipend fee pushes, `FeeDelivery`, the factory and locker interplay. every high fixed or accepted in writing. covered by tests: a hostile fee recipient (`test_swap_hostileRecipient_cannotRevertSwap`), partial fills through the Universal Router with and without a refund address (`test_i1_partialFill_universalRouter_*`, `test_skim_universalRouterPartialFill_nothingInEscrow`), and the dev buy partial fill refund (`test_holds_devBuy_partialFill_skimRefundReachesRecipient`). not covered by a test: a nested swap from a recipient, sizes at ci for every contract |
 | 6 | external review of the HARD mode token | D24, D34 netting, D43, D46. not verified internally: D34 netting with several canonical flows in one tx, routers that settle a gross amount after an opposite flow netted the grant down, erc6909 claims on side pools (accepted residual, D24), V2B-05 burn router sandwich profit (estimate only) |
 | 7 | fork rehearsal of the first coin | the 2b steps 3 to 7 against a fork of the deployed stack: launch, buy, sell, `processFees()`, `processBurn(minOut)`, claim, with the real config. covers what reviews left open: gas at the ci profile, airdrop as a launch extension, dev buy partial fill refund, the mainnet gas limit and the 16.7m tx cap (D54: a config with every cap at its limit costs about 19.6m gas, accepted, the ui keeps configs far below) |
 | 8 | site points at the v2 factory | the site (ripe0x/new-material) mirrors `abi/deployments.generated.ts` and `abi/{v1,v2}` from this repo's submodule pin; bump the pin after the registry holds the v2 stack. it reads `deprecated()` and `deployFee()`, shows the fee, blocks on an unknown chain, simulates before send (UI-01 to UI-09). check the coin renders in a real marketplace (not verified) |

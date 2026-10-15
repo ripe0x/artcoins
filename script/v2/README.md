@@ -7,7 +7,7 @@ sign on the command line with `--ledger`, `--account <keystore>` or `--private-k
 | `DeployV2Lib.sol` | the deploy routine, the post deploy asserts, constructor args. used by the script and by the fork harness (`test/v2/harness/ForkStack.sol` `deployV2Stack`), so tests run the exact broadcast |
 | `DeployV2Stack.s.sol` | one broadcast: deploy, wire, hand over, assert, print the registry json, write `tmp/v2-deploy-<chainid>.json` |
 | `LaunchV2Coin.s.sol` | `factory.deployToken` from a json config (the owner may call it while the factory is deprecated): preflight (wiring, `predictToken`), snapshot dry run, then the tx |
-| `launch-configs/example.json` | credits engine style coin: treasury as bounty recipient and project slot, not restricted (plain erc20), native eth, 69 minute linear skim |
+| `launch-configs/example.json` | credits style coin with the treasury as bounty recipient, not restricted (plain erc20), native eth, 69 minute linear skim |
 | `deploy.sh` | the deploy wrapper, `deploy.sh <local\|mainnet>`: guards, warm ci build, dry run, broadcast, readback, record, verify. values in `env/<env>.env` |
 | `env/local.env`, `env/mainnet.env` | values only: chain id, rpc default, profile, wallet mode, owner, treasury, fee parameters, verify mode. secrets come from the shell |
 | `verify-v2.sh` | `forge verify-contract` for every contract, then the chain check (runtime vs local ci build, owners, wiring) |

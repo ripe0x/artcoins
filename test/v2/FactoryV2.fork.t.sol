@@ -1132,17 +1132,46 @@ contract FactoryV2ForkTest is ForkBase {
         }
     }
 
-    /// @dev Zero starting skim and window select the Constants defaults.
-    function test_launch_mevZeroes_selectDefaults() public onlyFork {
+    /// @dev A zero starting skim or window reverts when a module is set.
+    function test_launch_mevZeroes_revert() public onlyFork {
         IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
         c.mev.startingSkimBps = 0;
+        _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidMevConfig.selector));
+        c = _cfg();
         c.mev.windowSeconds = 0;
-        address token = _deploy(alice, c);
-        PoolId pid = factory.deploymentInfo(token).poolId;
-        ArtCoinsMevLinearSkimV2.SkimSchedule memory sch = mev.schedule(pid);
-        assertEq(sch.startingSkimBps, Constants.DEFAULT_START_SKIM_BPS, "start");
-        assertEq(sch.windowSeconds, Constants.DEFAULT_MEV_WINDOW, "window");
-        assertEq(mev.windowEnd(pid), block.timestamp + Constants.DEFAULT_MEV_WINDOW);
+        _expectRevertDeploy(c, abi.encodeWithSelector(IArtCoinsFactoryV2.InvalidMevConfig.selector));
+    }
+
+    /// @dev Enabling records the extension permanently. Disabling clears only `enabledExtensions`.
+    function test_setExtension_everEnabledSticks() public onlyFork {
+        FV2Extension ext = _newExt();
+        assertTrue(factory.enabledExtensions(address(ext)));
+        assertTrue(factory.everEnabledExtensions(address(ext)));
+        factory.setExtension(address(ext), false);
+        assertFalse(factory.enabledExtensions(address(ext)));
+        assertTrue(factory.everEnabledExtensions(address(ext)));
+        assertFalse(factory.everEnabledExtensions(makeAddr("fv2-never")));
+    }
+
+    /// @dev A disabled extension is still rejected as a recipient, and the protocol recipient
+    ///      is rejected as the bounty recipient.
+    function test_launch_historicalExtensionAndProtocolRecipient_reverts() public onlyFork {
+        FV2Extension ext = _newExt();
+        factory.setExtension(address(ext), false);
+        IArtCoinsFactoryV2.DeploymentConfigV2 memory c = _cfg();
+        c.fee.bountyRecipient = payable(address(ext));
+        _expectRevertDeploy(
+            c,
+            abi.encodeWithSelector(IArtCoinsFactoryV2.RecipientCannotReceive.selector, address(ext))
+        );
+        c = _cfg();
+        c.fee.bountyRecipient = factory.protocolRecipient();
+        _expectRevertDeploy(
+            c,
+            abi.encodeWithSelector(
+                IArtCoinsFactoryV2.RecipientCannotReceive.selector, factory.protocolRecipient()
+            )
+        );
     }
 
     /// @dev The coin address depends on the config hash, so a recipient cannot

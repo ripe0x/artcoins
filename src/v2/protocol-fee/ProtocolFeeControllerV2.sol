@@ -29,8 +29,10 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 ///         `treasuryBps` within [PFC_MIN_TREASURY_BPS, BPS - PFC_MIN_BURN_BPS]
 ///         (1000 to 9000 bps), and `rescue` of any erc20. `setBurnRouter` does not
 ///         call the old router, so a faulty router can be replaced. The treasury
-///         and the router differ from each other and from this contract, and the
-///         router answers `constantsHash()`, `coin()` and `poolManager()`.
+///         and the router differ from each other and from this contract, the treasury
+///         differs from `feeEscrow`, and the router answers `constantsHash()` with this
+///         build's hash and reports the `coin` and `poolManager` fixed at construction from
+///         the initial router.
 contract ProtocolFeeControllerV2 is
     IProtocolFeeControllerV2,
     IConstantsBound,
@@ -44,6 +46,10 @@ contract ProtocolFeeControllerV2 is
 
     /// @inheritdoc IProtocolFeeControllerV2
     address public immutable feeEscrow;
+    /// @inheritdoc IProtocolFeeControllerV2
+    address public immutable coin;
+    /// @inheritdoc IProtocolFeeControllerV2
+    address public immutable poolManager;
 
     /// @inheritdoc IProtocolFeeControllerV2
     address public treasury;
@@ -62,9 +68,11 @@ contract ProtocolFeeControllerV2 is
         if (feeEscrow_ == address(0) || treasury_ == address(0) || burnRouter_ == address(0)) {
             revert ZeroAddress();
         }
+        feeEscrow = feeEscrow_;
+        coin = _readAddress(burnRouter_, IBurnRouterV2.coin.selector);
+        poolManager = _readAddress(burnRouter_, IBurnRouterV2.poolManager.selector);
         _checkRecipients(treasury_, burnRouter_);
         _checkRouter(burnRouter_);
-        feeEscrow = feeEscrow_;
         treasury = treasury_;
         burnRouter = burnRouter_;
         emit TreasurySet(address(0), treasury_);
@@ -148,12 +156,14 @@ contract ProtocolFeeControllerV2 is
 
     /// @dev The recipients differ from each other and from this contract.
     function _checkRecipients(address treasury_, address router_) private view {
-        if (treasury_ == address(this)) revert InvalidRecipient(treasury_);
+        if (treasury_ == address(this) || treasury_ == feeEscrow) {
+            revert InvalidRecipient(treasury_);
+        }
         if (router_ == address(this) || router_ == treasury_) revert InvalidRecipient(router_);
     }
 
     /// @dev `router_.constantsHash()` must equal this build's hash, and `coin()` and
-    ///      `poolManager()` must answer nonzero.
+    ///      `poolManager()` must equal the values fixed at construction (nonzero).
     function _checkRouter(address router_) private view {
         (bool ok, bytes memory ret) =
             router_.staticcall(abi.encodeCall(IConstantsBound.constantsHash, ()));
@@ -161,8 +171,8 @@ contract ProtocolFeeControllerV2 is
             revert ConstantsMismatch(router_);
         }
         if (
-            _readAddress(router_, IBurnRouterV2.coin.selector) == address(0)
-                || _readAddress(router_, IBurnRouterV2.poolManager.selector) == address(0)
+            coin == address(0) || _readAddress(router_, IBurnRouterV2.coin.selector) != coin
+                || _readAddress(router_, IBurnRouterV2.poolManager.selector) != poolManager
         ) revert InvalidRecipient(router_);
     }
 
