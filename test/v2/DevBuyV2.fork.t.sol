@@ -35,6 +35,14 @@ contract DBCoin is ERC20 {
 
 /// @dev Plays the factory for one dev buy entry.
 contract DBStubFactory {
+    mapping(address => bool) public enabledExtensions;
+    mapping(address => bool) public everEnabledExtensions;
+
+    function setExtension(address ext, bool enabled, bool everEnabled) external {
+        enabledExtensions[ext] = enabled;
+        everEnabledExtensions[ext] = everEnabled;
+    }
+
     function launch(
         address ext,
         address token,
@@ -162,6 +170,28 @@ contract DevBuyV2ForkTest is Test {
         _launch(1 ether, _data(address(0), refund, 1));
         vm.expectRevert(IArtCoinsUniv4EthDevBuyV2.ZeroRecipient.selector);
         _launch(1 ether, _data(buyer, address(0), 1));
+    }
+
+    function test_refundRecipientRejectsStackContracts() public onlyFork {
+        _deepPool();
+        address ext = makeAddr("enabledExt");
+        address oldExt = makeAddr("everEnabledExt");
+        stub.setExtension(ext, true, true);
+        stub.setExtension(oldExt, false, true);
+        address[7] memory bad = [
+            address(devBuy),
+            address(stub),
+            address(coin),
+            address(key.hooks),
+            POOL_MANAGER,
+            ext,
+            oldExt
+        ];
+        for (uint256 i; i < bad.length; ++i) {
+            if (bad[i] == address(0)) continue; // hookless key: zero is ZeroRecipient
+            vm.expectRevert(IArtCoinsUniv4EthDevBuyV2.InvalidRefundRecipient.selector);
+            _launch(1 ether, _data(buyer, bad[i], 1));
+        }
     }
 
     function test_nonFactoryCallerReverts() public onlyFork {

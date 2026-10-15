@@ -1354,6 +1354,26 @@ contract HookV2ForkTest is HookV2ForkBase {
         );
         assertEq(referrer, address(0), "offset word is not a referrer");
         assertEq(keccak256(ext), keccak256(oldShape), "extension slice kept");
+        // a 64 byte inner slice (address, 0x40) has no length word: no referrer
+        bytes memory shortInner = abi.encode(ref, uint256(0x40));
+        (ext, referrer) = h.decode(
+            abi.encode(
+                IArtCoinsHook.PoolSwapData({
+                    mevModuleSwapData: "", poolExtensionSwapData: shortInner
+                })
+            )
+        );
+        assertEq(shortInner.length, 64);
+        assertEq(referrer, address(0), "64 byte inner slice: no referrer");
+        assertEq(keccak256(ext), keccak256(shortInner), "extension slice kept");
+        // a declared payload length beyond the slice: no referrer
+        bytes memory longLen = abi.encode(ref, uint256(0x40), uint256(1));
+        (ext, referrer) = h.decode(
+            abi.encode(
+                IArtCoinsHook.PoolSwapData({mevModuleSwapData: "", poolExtensionSwapData: longLen})
+            )
+        );
+        assertEq(referrer, address(0), "declared length past the slice: no referrer");
         (ext, referrer) = h.decode("");
         assertEq(ext.length, 0);
         assertEq(referrer, address(0));

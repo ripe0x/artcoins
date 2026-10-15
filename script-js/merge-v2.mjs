@@ -15,6 +15,7 @@
 // Then run: cd script-js && npm run gen:addresses
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { getAddress } from 'viem';
 
 const argv = process.argv.slice(2);
 const fi = argv.indexOf('--file');
@@ -59,6 +60,17 @@ if (rollback) {
   if (ids.length !== 1 || ids[0] !== 'v2') die('record must hold exactly the stack v2, got ' + ids);
   const bad = rec.contracts.filter((c) => c.stack !== 'v2');
   if (bad.length) die('record contracts outside stack v2: ' + bad.map((c) => c.name));
+  const expected = JSON.parse(fs.readFileSync(new URL('../deployments/v2.template.json', import.meta.url), 'utf8')).contracts.filter((c) => c.stack === 'v2').map((c) => c.name);
+  const counts = {};
+  for (const c of rec.contracts) counts[c.name] = (counts[c.name] || 0) + 1;
+  const missing = expected.filter((n) => !counts[n]);
+  const dup = Object.keys(counts).filter((n) => counts[n] > 1);
+  const extra = Object.keys(counts).filter((n) => !expected.includes(n));
+  if (missing.length || dup.length || extra.length) die(`record must hold exactly the ${expected.length} v2 contracts once each; missing: ${missing.join(', ') || 'none'}; duplicated: ${dup.join(', ') || 'none'}; unexpected: ${extra.join(', ') || 'none'}`);
+  const addrs = rec.contracts.map((c) => String(c.address).toLowerCase());
+  if (new Set(addrs).size !== addrs.length) die('record has a repeated address');
+  const unchecked = rec.contracts.filter((c) => { try { return getAddress(c.address) !== c.address; } catch { return true; } });
+  if (unchecked.length) die('record addresses not checksummed: ' + unchecked.map((c) => c.name));
   if (cutover && (rec.ownershipPending !== false || rec.contracts.some((c) => c.source.bytecodeMatch !== 'verified'))) {
     die('--cutover needs a record with bytecode verified and ownership accepted (run verify-v2.sh after the accepts, then v2-record.mjs --verified)');
   }

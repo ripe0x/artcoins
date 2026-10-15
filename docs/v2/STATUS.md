@@ -212,3 +212,9 @@ third external audit of `46cec5be`: no high severity finding. fixes on branch `p
 ## D98 (2026-10-15, per pool referral rate)
 
 - the referral rate is `SkimConfig.referralBps`, set per pool in the launch config (default 0, cap 100 bps) and changed by the coin admin with `hook.setReferralBps(poolId, bps)` until `lock()`. The hook wide rate, its owner setter and the `REFERRAL_BPS` deploy input are removed.
+
+## D99 (2026-10-15, fourth audit of 6d099486)
+
+- no high severity finding. fixes on `post-audit-4`: airdrop leaves carry a unique index and claims are tracked per index; extension payout addresses (dev buy refund, airdrop sweep, vault beneficiary) reject stack contracts; `HookCalldata` validates the inner slice length; `merge-v2.mjs` requires the 12 unique v2 contract names and unique addresses before a replacement; `DeployV2Lib.check` asserts each extension's ERC-165 interface id; `deploy.sh` guards the forge version against the CI pin; the rehearsal asserts burn accounting by equality; gate 7 on the deployed stack runs the real launch JSON.
+- AUDIT-BRIEF, RUNBOOK, script/v2/README, DESIGN and CREDITS-ENGINE-INTERFACE corrected against the code (12 contract stack, `v2-<deployedAt>` record, burn floor, rates, removed modules).
+- remaining deploy sequence: pass the pinned 1.7.1 candidate run, deploy with the factory deprecated, merge the record, regenerate the addresses, run the deployed-stack gate with the credits launch JSON, then launch.

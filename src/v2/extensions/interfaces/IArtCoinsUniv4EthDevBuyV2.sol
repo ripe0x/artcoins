@@ -4,12 +4,12 @@ pragma solidity ^0.8.26;
 import {IArtCoinsExtensionV2} from "../../interfaces/IArtCoinsExtensionV2.sol";
 
 /// @title  IArtCoinsUniv4EthDevBuyV2
-/// @notice Buys the new art coin with native eth from its own pool during the
-///         launch tx. Swaps through the PoolManager directly. Takes no supply.
+/// @notice Buys the new art coin with native eth from its own pool during the launch tx.
+/// @dev    Swaps through the PoolManager directly. Takes no supply.
 interface IArtCoinsUniv4EthDevBuyV2 is IArtCoinsExtensionV2 {
     /// @notice `extensionData` layout: `abi.encode(recipient, refundRecipient, minTokenOut)`.
     /// @param recipient Receives the bought coin. Nonzero.
-    /// @param refundRecipient Receives any eth the pool did not take (partial fill). Nonzero.
+    /// @param refundRecipient Receives any eth the pool did not take (partial fill). Nonzero and not the dev buy contract, factory, coin, hook, PoolManager or an extension the factory has enabled.
     /// @param minTokenOut Minimum coin out as reported by the pool, in coin base units. Nonzero.
     struct DevBuyDataV2 {
         address recipient;
@@ -25,6 +25,8 @@ interface IArtCoinsUniv4EthDevBuyV2 is IArtCoinsExtensionV2 {
     error ZeroRecipient();
     /// @notice `minTokenOut` is zero.
     error ZeroMinOut();
+    /// @notice `refundRecipient` is a stack contract that cannot take the refund.
+    error InvalidRefundRecipient();
     /// @notice The config entry at `extensionIndex` is not this contract.
     error WrongExtensionEntry();
     /// @notice The pool key is not native eth against the coin on the launch hook.

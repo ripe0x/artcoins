@@ -18,10 +18,10 @@ contract FreshStackRehearsalForkTest is ForkStack, RehearsalFlow {
         forkMainnet();
     }
 
-    function test_gate7_freshStack_fullSequence() public onlyFork {
+    function _freshRig() internal returns (Rig memory r) {
         DeployV2Lib.Params memory p = v2DefaultParams(LIVE_OWNER, LIVE_OWNER);
         DeployV2Lib.Stack memory s = deployV2Stack(p);
-        Rig memory r = Rig({
+        r = Rig({
             factory: s.factory,
             hook: address(s.hook),
             locker: address(s.locker),
@@ -35,10 +35,21 @@ contract FreshStackRehearsalForkTest is ForkStack, RehearsalFlow {
             airdrop: address(s.airdrop),
             vault: address(s.vault)
         });
-        LaunchV2Lib.Launch memory l =
-            LaunchV2Lib.parse(vm.readFile(LaunchV2Lib.EXAMPLE_PATH), _target(r));
+    }
+
+    function _freshLaunch(Rig memory r) internal returns (LaunchV2Lib.Launch memory l) {
+        l = LaunchV2Lib.parse(vm.readFile(LaunchV2Lib.EXAMPLE_PATH), _target(r));
         // dev buy, airdrop and vault on the fresh stack, asserted inside the launch
         _addExtensions(r, l);
-        _rehearse(r, l);
+    }
+
+    function test_gate7_freshStack_fullSequence() public onlyFork {
+        Rig memory r = _freshRig();
+        _rehearse(r, _freshLaunch(r));
+    }
+
+    function test_gate7_freshStack_rejectingBountyRecipient() public onlyFork {
+        Rig memory r = _freshRig();
+        _rehearseRejecting(r, _freshLaunch(r));
     }
 }

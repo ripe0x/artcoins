@@ -16,9 +16,9 @@ export const airdropV2Abi = [
         "internalType": "uint256"
       },
       {
-        "name": "recipient",
-        "type": "address",
-        "internalType": "address"
+        "name": "leafIndex",
+        "type": "uint256",
+        "internalType": "uint256"
       },
       {
         "name": "allocatedAmount",
@@ -46,6 +46,11 @@ export const airdropV2Abi = [
       },
       {
         "name": "index",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "leafIndex",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -96,12 +101,7 @@ export const airdropV2Abi = [
         "internalType": "uint256"
       },
       {
-        "name": "recipient",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "allocatedAmount",
+        "name": "leafIndex",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -119,6 +119,11 @@ export const airdropV2Abi = [
     "type": "function",
     "name": "leafHash",
     "inputs": [
+      {
+        "name": "leafIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
       {
         "name": "account",
         "type": "address",
@@ -520,6 +525,12 @@ export const airdropV2Abi = [
         "internalType": "uint256"
       },
       {
+        "name": "leafIndex",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
         "name": "recipient",
         "type": "address",
         "indexed": true,
@@ -700,6 +711,11 @@ export const airdropV2Abi = [
   },
   {
     "type": "error",
+    "name": "InvalidSweepRecipient",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "SweepNotReady",
     "inputs": []
   },
@@ -736,11 +752,6 @@ export const airdropV2Abi = [
   {
     "type": "error",
     "name": "ZeroExtensionSupply",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "ZeroSweepRecipient",
     "inputs": []
   },
   {

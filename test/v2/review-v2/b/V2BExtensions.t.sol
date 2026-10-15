@@ -22,10 +22,11 @@ contract V2BCoin is ERC20 {
 
 contract V2BExtensionsTest is Test {
     // vector from @openzeppelin/merkle-tree StandardMerkleTree.of(
-    //   [[0x11..11, 1000e18], [0x22..22, 2500e18], [0x33..33, 42]], ["address","uint256"])
-    // the same call script-js/merkle.ts buildTree makes.
+    //   [[0, 0x11..11, 1000e18], [1, 0x22..22, 2500e18], [2, 0x33..33, 42]],
+    //   ["uint256","address","uint256"])
+    // the same call script-js/merkle.ts buildTree makes (leaf index, recipient, amount).
     bytes32 internal constant ROOT =
-        0xa25312279267352059d2ad647c87c163e44357aefb68c3cf2beaa679e277261d;
+        0xcebe3511e34d6878e7c762e1e7dce6e88d9bcf58a2e5781f443f454a4cdc3b3c;
     address internal constant A = 0x1111111111111111111111111111111111111111;
     address internal constant C = 0x3333333333333333333333333333333333333333;
 
@@ -33,6 +34,17 @@ contract V2BExtensionsTest is Test {
     ArtCoinsAirdropV2 internal air;
     ArtCoinsVaultV2 internal vault;
     PoolKey internal key;
+
+    // the test contract plays the factory
+    address public constant poolManager = address(0x9a9a);
+
+    function enabledExtensions(address) external pure returns (bool) {
+        return false;
+    }
+
+    function everEnabledExtensions(address) external pure returns (bool) {
+        return false;
+    }
 
     function setUp() public {
         vm.warp(1_800_000_000);
@@ -56,13 +68,13 @@ contract V2BExtensionsTest is Test {
 
     function _proofA() internal pure returns (bytes32[] memory p) {
         p = new bytes32[](2);
-        p[0] = 0x72b368ad0596ce9c713617da08373230fee08b9c8592ccc108f496d2585eca14;
-        p[1] = 0xe17e2469047adc6db21d0ec305f3d9cb275607495e7ef0363a7609b1e77073ae;
+        p[0] = 0x9ec8d5aa5127c13b6827f1d5cb7e6e37c16376ca48c6601752116820ca4f6706;
+        p[1] = 0xcc05ea3731f2def729422a18cb254586cdc78b405ffc2998a52c93cebc8b244e;
     }
 
     function _proofC() internal pure returns (bytes32[] memory p) {
         p = new bytes32[](1);
-        p[0] = 0x1b56d98ac230498959773c18e92fae8d28eb7be168a8162af1179c78ae9e1c4b;
+        p[0] = 0xfac1f26c8e269d58c81e7c25a618641283bca5b9dbf24e37193f9f2f22d70c01;
     }
 
     /// js StandardMerkleTree proofs verify on chain; claim window edges are
@@ -78,21 +90,21 @@ contract V2BExtensionsTest is Test {
         IArtCoinsAirdropV2.Tranche memory t = air.tranche(address(coin), 0);
         // lockup 0: claimable from the launch second, linear over 100 s
         vm.warp(t.lockupEnd + 50);
-        air.claim(address(coin), 0, A, 1000e18, _proofA());
+        air.claim(address(coin), 0, 0, A, 1000e18, _proofA());
         assertEq(coin.balanceOf(A), 500e18);
         // wrong amount for a valid address fails
         vm.expectRevert(IArtCoinsAirdropV2.InvalidProof.selector);
-        air.claim(address(coin), 0, A, 1001e18, _proofA());
+        air.claim(address(coin), 0, 0, A, 1001e18, _proofA());
 
         vm.warp(t.sweepTime - 1);
-        air.claim(address(coin), 0, C, 42, _proofC());
+        air.claim(address(coin), 0, 2, C, 42, _proofC());
         assertEq(coin.balanceOf(C), 42);
         vm.expectRevert(IArtCoinsAirdropV2.SweepNotReady.selector);
         air.sweep(address(coin), 0);
 
         vm.warp(t.sweepTime);
         vm.expectRevert(IArtCoinsAirdropV2.ClaimWindowClosed.selector);
-        air.claim(address(coin), 0, A, 1000e18, _proofA());
+        air.claim(address(coin), 0, 0, A, 1000e18, _proofA());
         air.sweep(address(coin), 0);
         assertEq(coin.balanceOf(address(0xBEEF)), 4000e18 - 500e18 - 42);
     }

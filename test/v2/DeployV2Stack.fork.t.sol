@@ -13,6 +13,8 @@ import {DeployV2Lib} from "../../script/v2/DeployV2Lib.sol";
 import {LaunchV2Coin, LaunchV2Lib} from "../../script/v2/LaunchV2Coin.s.sol";
 import {Constants} from "../../src/Constants.sol";
 import {ArtCoinsFeeEscrowV2} from "../../src/v2/ArtCoinsFeeEscrowV2.sol";
+import {ArtCoinsAirdropV2} from "../../src/v2/extensions/ArtCoinsAirdropV2.sol";
+import {ArtCoinsVaultV2} from "../../src/v2/extensions/ArtCoinsVaultV2.sol";
 import {ArtCoinsHookV2} from "../../src/v2/hooks/ArtCoinsHookV2.sol";
 import {IArtCoinsFactoryV2} from "../../src/v2/interfaces/IArtCoinsFactoryV2.sol";
 import {ForkStack} from "./harness/ForkStack.sol";
@@ -127,6 +129,22 @@ contract DeployV2StackForkTest is ForkStack {
         vm.prank(stranger);
         vm.expectRevert(IArtCoinsFactoryV2.Deprecated.selector);
         s.factory.deployToken(c);
+    }
+
+    /// @dev External entry so `vm.expectRevert` sees the library revert.
+    function runCheck(DeployV2Lib.Stack memory st, DeployV2Lib.Params memory pp, bool accepted)
+        external
+        view
+    {
+        DeployV2Lib.check(st, pp, accepted);
+    }
+
+    function test_deployV2Stack_checkRejectsSwappedExtensions() public onlyFork {
+        DeployV2Lib.Stack memory swapped = s;
+        (swapped.airdrop, swapped.vault) =
+        (ArtCoinsAirdropV2(address(s.vault)), ArtCoinsVaultV2(address(s.airdrop)));
+        vm.expectRevert(bytes("v2: airdrop interface"));
+        this.runCheck(swapped, p, false);
     }
 
     // ══════════════════════════════════════════════════════════════════════

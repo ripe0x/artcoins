@@ -4,6 +4,8 @@ status: architect draft for the build agents. scope: contracts, interfaces, cons
 
 D92 (2026-10-14) supersedes the parts of this draft that describe the fee swapper, the v2 keeper, locker rewards, the pool lp fee, `deployTokenAsOwner`, protocol bps, `pinned`, `lockAllowlist` and `lockRecipients`. the current shape is in docs/v2/DECISIONS.md D92 and `src/v2`.
 
+sections 5 and 8 record the draft's hook split into a hot contract and a cold module. the shipped hook is the single contract `src/v2/hooks/ArtCoinsHookV2.sol`.
+
 section 3 block ids are stable references from tests and reviews. ids b1 and d8 are retired, and the remaining ids keep their numbers. d2 describes the launch restriction.
 
 chain facts below were read with `cast call` against mainnet on 2026-10-06 (read only). everything else is from code.
@@ -32,7 +34,7 @@ v1 sources under `src/` stay frozen as the record of deployed bytecode. all v2 c
 | factory | `ArtCoinsFactory` owner + admins, 3 deploy entrypoints, protocol bps override public | `src/v2/ArtCoinsFactoryV2.sol`, single owner (Ownable2Step), one `deployToken(DeploymentConfigV2)`, the owner calls it while `deprecated` | rewrite |
 | deployer | `ArtCoinsDeployer`, salt = (tokenAdmin, salt) | `src/v2/utils/ArtCoinsDeployerV2.sol`, salt = (sender, configHash) | fix |
 | token | `ArtCoinsToken`, v1 transfer fee on venue outflows, frozen venue set | `src/v2/ArtCoinsTokenV2.sol`, optional either-side transfer allowlist with a transient PoolManager allowance, version tag | rewrite |
-| hook | `ArtCoinsHookSkimFee` on `ArtCoinsHook` base (sniper path, lp fee mev, open pools, extension swapping) | `src/v2/hooks/ArtCoinsHookV2.sol` hot path + `HookColdModule.sol` (immutable delegate), skim only | rewrite |
+| hook | `ArtCoinsHookSkimFee` on `ArtCoinsHook` base (sniper path, lp fee mev, open pools, extension swapping) | `src/v2/hooks/ArtCoinsHookV2.sol`, one contract, skim only | rewrite |
 | static fee hook | `ArtCoinsHookStaticFee` | dropped | drop |
 | locker | `ArtCoinsLpLocker`, slot admins can repoint recipients, deposits to escrow | `src/v2/lp-lockers/ArtCoinsLpLockerV2.sol`, pure lock (D92): holds the position NFTs, no fee collection | modify |
 | escrow | `ArtCoinsFeeEscrow`, add only depositors, permissionless claim | `src/v2/ArtCoinsFeeEscrowV2.sol`, core depositors, `selfClaimOnly` opt in, rescue of unowed excess | modify |
@@ -46,7 +48,7 @@ v1 sources under `src/` stay frozen as the record of deployed bytecode. all v2 c
 
 ## 2. frozen vs owner mutable boundary
 
-rule: per coin state is written once inside the launch tx and has no writer afterwards. owner powers on boundary contracts (hook, locker) are limited to global pointers, bounded global params, and rescue of balances that are not owed to anyone. the hook's cold module address is an immutable, so the owner cannot swap in code that rewrites per coin storage.
+rule: per coin state is written once inside the launch tx and has no writer afterwards. owner powers on boundary contracts (hook, locker) are limited to global pointers, bounded global params, and rescue of balances that are not owed to anyone. the hook is one contract with no delegate module, so no owner setter can replace the code that writes per coin storage.
 
 | contract | field | who can change | reason |
 |---|---|---|---|
@@ -56,7 +58,10 @@ rule: per coin state is written once inside the launch tx and has no writer afte
 | token | `lock()` | token admin, once | freezes `setAllowed`, `unrestrict` and the hook's coin admin setters |
 | token | metadata, image, renderer pointer, admin | token admin | cosmetic, as v1 |
 | token | launcher, launcherVersion | nobody | integrator version tag |
-| hook (per pool) | artCoinIsToken0, locker, mevModule, createdAt, skim rates and caps (baselineSkimBps, bountyBps), protocolRecipient, referralPayout, quote, restricted, extension, launcher, version | nobody | fee caps and the protocol recipient fixed. the pool lp fee is 0 (D92) |
+| hook (per pool) | token, locker, mevModule, createdAt, bountyBps, protocolRecipient, restricted, launcher, version | nobody | the bounty share and the protocol recipient are fixed at launch. the pool lp fee is 0 (D92) |
+| hook (per pool) | baselineSkimBps | coin admin, lower only, until `lock()` or renounce (D91) | `lowerBaselineSkim` |
+| hook (per pool) | referralBps | coin admin, 0 to 100 bps of volume, until `lock()` or renounce (D98) | `setReferralBps`; default 0 (off); paid out of the protocol leg to the referrer named in hookData |
+| hook (per pool) | extension | coin admin, until `lock()` or renounce (D88) | `setPoolExtension` |
 | hook (per pool) | bountyRecipient | coin admin, until the coin is locked (`lock()`) or the admin renounced (D76) | the coin admin moves its own recipient; the rejected set mirrors the factory launch checks |
 | hook (global) | launchers allowlist | owner | factory side is replaceable; a new factory must be able to init pools |
 | hook (global) | feeEscrow pointer | owner | escrow is replaceable; only affects where failed pushes land from now on |
@@ -172,10 +177,10 @@ v1: `ArtCoinsMevLinearFees` and `ArtCoinsMevLinearSkim` accept up to 180m; the b
 |---|---|
 | library | `FeeDelivery` (internal): `function sendNative(address escrow, address to, uint256 amount, uint256 gasCap) internal returns (bool pushed)`: `call{value: amount, gas: gasCap}("")`, on failure `IArtCoinsFeeEscrowV2(escrow).storeFeesNative{value: amount}(to)`. `function sendErc20(address escrow, address token, address to, uint256 amount) internal returns (bool pushed)`: low level `transfer` with success and return check, on failure approve and `storeFees` |
 | users | hook (bounty, protocol, referral legs), ProtocolFeeControllerV2 |
-| referral | pushed straight to the referrer with the 2,300 gas stipend like the other legs, escrow on failure (D16, D59); `referralPayout` stays in the frozen config but is not called during a swap (D41) |
-| events | hook `FeeDelivered(PoolId indexed poolId, uint8 indexed leg, address indexed to, uint256 amount, bool escrowed)` replaces `LegForwarded`; locker `RewardDelivered(address indexed token, address indexed currency, address indexed to, uint256 amount, bool escrowed)` |
+| referral | the referrer named in hookData receives `referralBps` of volume (per pool rate set by the coin admin, default 0, at most 100 bps, D98), carved from the protocol leg and capped by it. pushed with the 2,300 gas stipend like the other legs, escrow on failure (D16, D59) |
+| events | hook `FeeDelivered(PoolId indexed poolId, uint8 indexed leg, address indexed to, uint256 amount, bool escrowed)`; `SkimRefunded(PoolId indexed poolId, address indexed to, uint256 amount)` for the refund credit |
 | invariant | delivery never reverts its caller once the caller is a core depositor; every wei reaches `to` or `to`'s escrow balance |
-| tests | `test_delivery_payable_pushed`, `test_delivery_reverting_escrowed`, `test_delivery_gasBurner_escrowed`, `test_lockerV2_collect_revertingRecipient_noRevert` |
+| tests | `test_delivery_payable_pushed`, `test_delivery_reverting_escrowed`, `test_delivery_gasBurner_escrowed` |
 
 ### d2. launch restriction: either-side allowlist with a transient PoolManager allowance
 `restricted` is set on the token at construction (`RestrictionConfigV2.restricted`) and mirrored into the hook pool record at init. `unrestrict()` clears it permanently.
@@ -195,15 +200,15 @@ v4 picks the `take` recipient after the hook returns, so the hook cannot name th
 ### d3. no open pools, official pools distinguishable
 | item | design |
 |---|---|
-| hook | `initializePoolOpen` removed. `_beforeInitialize` reverts unless the hook itself is initializing inside `initializePool` (transient flag). `struct PoolInfo { uint16 version; bool restricted; uint40 createdAt; address launcher; }`, `function poolInfo(PoolId) external view returns (PoolInfo memory)`, `function isOfficialPool(PoolId) external view returns (bool)` (launcher != 0) |
-| factory | `function isArtCoin(address token) external view returns (bool)`; `deploymentInfo(token)` returns `DeploymentInfoV2 { address token; address hook; address locker; address mevModule; PoolId poolId; uint16 version; uint40 launchedAt; address[] extensions; }` |
+| hook | `initializePoolOpen` removed. `_beforeInitialize` reverts unless the hook itself is initializing inside `initializePool` (transient flag). `struct PoolInfo { uint16 version; bool restricted; uint40 createdAt; address launcher; address token; address locker; address mevModule; address extension; }`, `function poolInfo(PoolId) external view returns (PoolInfo memory)`, `function isOfficialPool(PoolId) external view returns (bool)` (launcher != 0) |
+| factory | `deploymentInfo(token)` returns `DeploymentInfoV2 { address token; address hook; address locker; address mevModule; address escrow; PoolId poolId; bytes32 configHash; uint16 version; uint40 launchedAt; bool restricted; address[] extensions; }` |
 | tests | `test_hookV2_noOpenInit`, `test_hookV2_directPoolManagerInit_reverts`, `test_hookV2_poolInfo_matchesLaunch` |
 
 ### d4. sender in salt, full config in launch event
 b4 covers the salt. section 6 covers the event.
 
 ### d5. one constants file, checked at init
-`src/Constants.sol` (section 4). every v2 contract has `function constantsHash() external pure returns (bytes32) { return Constants.hash(); }`. checks: factory `setHook`, `setLocker`, `setMevModule`, `setExtension`, `setEscrow`; hook `initializePool` checks locker and module; module `initialize` checks the hook; locker `placeLiquidity` checks the hook. a mismatch reverts `ConstantsMismatch(address module)`. constructor asserts cost no runtime bytes, so the hook may also assert in its constructor that `Hooks.validateHookPermissions` matches section 5. test `test_constants_mismatchedModule_rejected`.
+`src/Constants.sol` (section 4). every v2 contract has `function constantsHash() external pure returns (bytes32) { return Constants.hash(); }`. checks: factory `setHook`, `setLocker`, `setMevModule`, `setExtension`, `setTokenDeployer`; hook `setFeeEscrow` checks the escrow and `initializePool` checks the locker and the mev module; module `initialize` checks the hook; locker `placeLiquidity` checks the hook. a mismatch reverts `ConstantsMismatch(address module)`. constructor asserts cost no runtime bytes, so the hook may also assert in its constructor that `Hooks.validateHookPermissions` matches section 5. test `test_constants_mismatchedModule_rejected`.
 
 ### d6. version tag per pool
 `Constants.STACK_VERSION = 2`. token: `function launcherVersion() external pure returns (uint16)`, `address public immutable launcher`. hook: `poolInfo(pid).version`. factory: `STACK_VERSION`, `DeploymentInfoV2.version`, event field. integrators check `hook.poolInfo(pid).version == 2 && factory.isArtCoin(token)`. test `test_versionTag_consistentAcrossTokenHookFactory`.
@@ -211,9 +216,9 @@ b4 covers the salt. section 6 covers the event.
 ### d7. deployment hygiene
 | item | design |
 |---|---|
-| one factory | `script/v2/DeployV2Stack.s.sol` deploys constants checked stack in one broadcast: escrow, extension allowlist, hook cold module, hook (mined salt, flags in section 5), locker, linear skim module, factory, fee delivery users (protocol fee controller, burn router). wires core depositors, launchers, enables modules, sets `deprecated = false` last |
-| verify | `script/v2/verify-v2.sh` runs `forge verify-contract` for every address with profile `tune`, then a fork check that the on chain runtime equals the local build (fixes the provenance gap above) |
-| superseded | registry json lists every stack with `status: active, superseded, deprecated`; owner txs: 0xf051 `setDeprecated(true)`; 0x4959 `setHook(0x636c…, false)` after v2 is live |
+| one factory | `script/v2/DeployV2Stack.s.sol` deploys constants checked stack in one broadcast: the 12 contract stack: escrow, extension allowlist, hook (mined salt, flags in section 5), locker, linear skim module, factory, token deployer, burn router, protocol fee controller and the three launch extensions (dev buy, airdrop, vault). wires core depositors, launchers, enables the hook, locker, mev module and extensions; the factory ships `deprecated` and opening it is a separate owner tx |
+| verify | `script/v2/verify-v2.sh` runs `forge verify-contract` for every address with profile `ci`, then a chain check that the on chain runtime equals the local ci build |
+| superseded | `deployments/mainnet.json` lists every stack with a status (`current`, `deployed`, `planned`, `superseded`, `legacy`); a replaced v2 stack stays listed as `v2-<deployedAt>` (D96). owner txs: 0xf051 `setDeprecated(true)`; 0x4959 `setHook(0x636c…, false)` after v2 is live |
 | tests | `test_deployV2Stack_wiringComplete`, `test_deployV2Stack_runtimeMatchesBuild` |
 
 protocol fees leave the stack through `ProtocolFeeControllerV2.processFees()` and `BurnRouterV2.processBurn(minOut)` (D92).
@@ -346,6 +351,7 @@ struct FeeConfigV2 {
     uint24 baselineSkimBps;
     uint16 bountyBps;      // <= MAX_BOUNTY_BPS
     address payable bountyRecipient;
+    uint24 referralBps;    // <= 100 bps of volume, 0 = off (D98); the coin admin changes it later
 }                          // protocolRecipient is injected by the factory
 struct LockerConfigV2 {
     address locker;
@@ -397,18 +403,18 @@ notes: the whole config is emitted, so an indexer can rebuild every frozen field
 
 ## 7. credits engine coin: interface changes
 
-the treasury is the fee recipient. it may or may not implement `IPreSwapStream`, may have a payable fallback, and must work with eth.
+the treasury is the fee recipient. it may have a payable fallback and must work with eth.
 
 | surface | v1 behavior | v2 behavior | treasury needs |
 |---|---|---|---|
-| `IPreSwapStream.streamForward()` probe | high level call, all gas, return decoded outside try: eoa or empty fallback with >= 0.01 eth bricks swaps | low level, gas capped (`preSwapStreamGas`), return ignored, only if code and balance >= `preSwapStreamMin` | optional. if implemented: finish under the gas cap, never touch the PoolManager, no reliance on the return value |
-| bounty leg | push all gas, revert swap on failure | push with `pushGas`, escrow on failure, `FeeDelivered` event | `receive` or payable fallback under `pushGas` (default 50k). otherwise funds sit in escrow under the treasury |
+| `IPreSwapStream.streamForward()` probe | high level call, all gas, return decoded outside try: eoa or empty fallback with >= 0.01 eth bricks swaps | removed (D41, D60); the hook makes no call to the treasury other than the fee push | none |
+| bounty leg | push all gas, revert swap on failure | push with zero gas (the 2,300 gas stipend), escrow on failure, `FeeDelivered` event | `receive` or payable fallback within the stipend. otherwise funds sit in escrow under the treasury |
 | escrow fallback | n/a | `claim(treasury, address(0))` permissionless unless the treasury opts into `selfClaimOnly` | nothing if its fallback is payable; anyone can push the balance. a treasury that cannot receive plain eth must call `claimTo` itself |
 | weth | lp side paid weth on weth pools | v2 pools are native eth only, nothing pays weth | wrap itself if it wants weth |
-| protocol and referral legs | deployer chosen | factory injected | none |
-| hookData | `PoolSwapData{mevModuleSwapData, poolExtensionSwapData = abi.encode(PCSwapData)}` | unchanged | none |
+| protocol and referral legs | deployer chosen | the factory injects the protocol recipient; the referral is a per pool rate (`referralBps`, default 0, coin admin) paid to the referrer named in hookData | none |
+| hookData | `PoolSwapData{mevModuleSwapData, poolExtensionSwapData = abi.encode(PCSwapData)}` | `SwapData{mevModuleSwapData = abi.encode(address refundTo), poolExtensionSwapData = abi.encode(address referrer, bytes payload)}`. A charged partial fill without a refund address reverts `RefundAddressRequired` (D93) | none |
 | version and discovery | none | `hook.poolInfo(pid)`, `factory.deploymentInfo(token)`, `token.launcherVersion()` | none |
-| accounting | `LegForwarded` | `FeeDelivered`, `RewardDelivered`, `SkimRefunded` | index these, no callback (open decision 15) |
+| accounting | `LegForwarded` | `FeeDelivered`, `SkimRefunded` | index these, no callback (open decision 15) |
 
 ## 8. work breakdown
 

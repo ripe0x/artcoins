@@ -4,8 +4,8 @@
   "expectedToken": "0x0000000000000000000000000000000000000000",
   "token": {
     "tokenAdmin": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
-    "name": "Credits Dev Buy Example",
-    "symbol": "CREDB",
+    "name": "Credits Vault Example",
+    "symbol": "CREDV",
     "salt": "0x0000000000000000000000000000000000000000000000000000000000000001",
     "image": "ipfs://example",
     "description": "{\"description\":\"credits engine example coin\"}",

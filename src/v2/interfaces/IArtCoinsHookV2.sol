@@ -17,9 +17,12 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 ///         address, which the swap's `hookData` must carry.
 ///
 ///         Authority: allowlisted launchers create pools. The owner sets
-///         launchers, fee escrow, extension allowlist and referral rate. The coin
-///         admin sets the pool's bounty recipient and extension and lowers its
-///         baseline skim, until the coin is locked (`locked()`) or the admin is 0.
+///         launchers, fee escrow and the extension allowlist. The coin admin sets
+///         the pool's referral rate up to the cap, its bounty recipient and its
+///         extension, and lowers its baseline skim, until the coin is locked
+///         (`locked()`) or the admin is 0. `lock()` freezes `setAllowed`,
+///         `unrestrict`, `setBountyRecipient`, `lowerBaselineSkim`,
+///         `setPoolExtension` and `setReferralBps`.
 ///         Units: bps = 1/10,000 of swap volume, amounts in wei, seconds.
 ///
 ///         Swap `hookData` is optional. Malformed data supplies no referrer, and a

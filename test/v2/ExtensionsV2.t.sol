@@ -27,7 +27,16 @@ contract ExtMockCoin is ERC20 {
 /// @dev Plays the factory: holds the coin, approves exactly the share, calls
 ///      `receiveTokens` with a config whose `extensions[idx]` is `entry`.
 contract StubFactory {
+    address public constant poolManager = address(0x9a9a);
+    mapping(address => bool) public enabledExtensions;
+    mapping(address => bool) public everEnabledExtensions;
+
     receive() external payable {}
+
+    function setExtension(address ext, bool enabled, bool everEnabled) external {
+        enabledExtensions[ext] = enabled;
+        everEnabledExtensions[ext] = everEnabled;
+    }
 
     function launch(
         address ext,
@@ -113,15 +122,15 @@ contract AirdropV2Test is ExtBase {
         (root, leafA, leafB) = _tree(alice, A_AMT, bob, B_AMT);
     }
 
-    // OpenZeppelin StandardMerkleTree over ["address","uint256"], two leaves:
-    // leaf = keccak(keccak(abi.encode(a, amt))), root = keccak(sorted pair).
+    // OpenZeppelin StandardMerkleTree over ["uint256","address","uint256"], two leaves:
+    // leaf = keccak(keccak(abi.encode(leafIndex, a, amt))), root = keccak(sorted pair).
     function _tree(address a, uint256 amtA, address b, uint256 amtB)
         internal
         pure
         returns (bytes32 r, bytes32 la, bytes32 lb)
     {
-        la = keccak256(bytes.concat(keccak256(abi.encode(a, amtA))));
-        lb = keccak256(bytes.concat(keccak256(abi.encode(b, amtB))));
+        la = keccak256(bytes.concat(keccak256(abi.encode(uint256(0), a, amtA))));
+        lb = keccak256(bytes.concat(keccak256(abi.encode(uint256(1), b, amtB))));
         r = la < lb ? keccak256(abi.encodePacked(la, lb)) : keccak256(abi.encodePacked(lb, la));
     }
 
@@ -181,15 +190,37 @@ contract AirdropV2Test is ExtBase {
     }
 
     function test_launch_zeroSweepRecipientReverts() public {
-        vm.expectRevert(IArtCoinsAirdropV2.ZeroSweepRecipient.selector);
+        vm.expectRevert(IArtCoinsAirdropV2.InvalidSweepRecipient.selector);
         _launch(_data(address(0), root, LOCK, VEST), 0, 0);
     }
 
     function test_launch_sweepRecipientCannotBeTokenOrSelf() public {
-        vm.expectRevert(IArtCoinsAirdropV2.ZeroSweepRecipient.selector);
+        vm.expectRevert(IArtCoinsAirdropV2.InvalidSweepRecipient.selector);
         _launch(_data(address(coin), root, LOCK, VEST), 0, 0);
-        vm.expectRevert(IArtCoinsAirdropV2.ZeroSweepRecipient.selector);
+        vm.expectRevert(IArtCoinsAirdropV2.InvalidSweepRecipient.selector);
         _launch(_data(address(air), root, LOCK, VEST), 0, 0);
+    }
+
+    function test_launch_sweepRecipientRejectsStackContracts() public {
+        address hook = makeAddr("hook");
+        address ext = makeAddr("enabledExt");
+        address oldExt = makeAddr("everEnabledExt");
+        stub.setExtension(ext, true, true);
+        stub.setExtension(oldExt, false, true);
+        address[6] memory bad =
+            [address(stub), address(coin), hook, stub.poolManager(), ext, oldExt];
+        for (uint256 i; i < bad.length; ++i) {
+            vm.expectRevert(IArtCoinsAirdropV2.InvalidSweepRecipient.selector);
+            stub.launch(
+                address(air),
+                address(coin),
+                _one(_entry(address(air), 0, 1000, _data(bad[i], root, LOCK, VEST))),
+                emptyKey,
+                hook,
+                SUPPLY,
+                0
+            );
+        }
     }
 
     function test_launch_nonzeroMsgValueReverts() public {
@@ -270,12 +301,12 @@ contract AirdropV2Test is ExtBase {
         // tranche 1 has no lockup and no vesting: alice claims her leaf at once
         bytes32[] memory p = new bytes32[](1);
         p[0] = lb2;
-        air.claim(address(coin), 1, alice, 7e18, p);
+        air.claim(address(coin), 1, 0, alice, 7e18, p);
         assertEq(coin.balanceOf(alice), 7e18);
         // the same proof against tranche 0 fails (different root)
         vm.warp(T0 + LOCK + VEST);
         vm.expectRevert(IArtCoinsAirdropV2.InvalidProof.selector);
-        air.claim(address(coin), 0, alice, 7e18, p);
+        air.claim(address(coin), 0, 0, alice, 7e18, p);
         la2;
     }
 
@@ -284,7 +315,7 @@ contract AirdropV2Test is ExtBase {
     function test_claim_beforeLockupReverts() public {
         _launchOk();
         vm.expectRevert(IArtCoinsAirdropV2.AirdropNotUnlocked.selector);
-        air.claim(address(coin), 0, alice, A_AMT, _proofA());
+        air.claim(address(coin), 0, 0, alice, A_AMT, _proofA());
     }
 
     function test_claim_happyPath_vestsLinearlyThenFull() public {
@@ -292,22 +323,22 @@ contract AirdropV2Test is ExtBase {
         // at lockup end nothing is vested yet
         vm.warp(T0 + LOCK);
         vm.expectRevert(IArtCoinsAirdropV2.ZeroToClaim.selector);
-        air.claim(address(coin), 0, alice, A_AMT, _proofA());
+        air.claim(address(coin), 0, 0, alice, A_AMT, _proofA());
 
         // half way: half of each leaf
         vm.warp(T0 + LOCK + VEST / 2);
-        assertEq(air.amountAvailableToClaim(address(coin), 0, alice, A_AMT), A_AMT / 2);
-        air.claim(address(coin), 0, alice, A_AMT, _proofA());
+        assertEq(air.amountAvailableToClaim(address(coin), 0, 0, A_AMT), A_AMT / 2);
+        air.claim(address(coin), 0, 0, alice, A_AMT, _proofA());
         assertEq(coin.balanceOf(alice), A_AMT / 2);
-        assertEq(air.leafClaimed(address(coin), 0, alice, A_AMT), A_AMT / 2);
+        assertEq(air.leafClaimed(address(coin), 0, 0), A_AMT / 2);
 
         // after vesting: the rest, anyone can trigger, funds go to the leaf address
         vm.warp(T0 + LOCK + VEST);
         vm.prank(makeAddr("stranger"));
-        air.claim(address(coin), 0, alice, A_AMT, _proofA());
+        air.claim(address(coin), 0, 0, alice, A_AMT, _proofA());
         assertEq(coin.balanceOf(alice), A_AMT);
 
-        air.claim(address(coin), 0, bob, B_AMT, _proofB());
+        air.claim(address(coin), 0, 1, bob, B_AMT, _proofB());
         assertEq(coin.balanceOf(bob), B_AMT);
         assertEq(air.tranche(address(coin), 0).totalClaimed, A_AMT + B_AMT);
     }
@@ -315,17 +346,17 @@ contract AirdropV2Test is ExtBase {
     function test_claim_doubleClaimReverts() public {
         _launchOk();
         vm.warp(T0 + LOCK + VEST);
-        air.claim(address(coin), 0, alice, A_AMT, _proofA());
+        air.claim(address(coin), 0, 0, alice, A_AMT, _proofA());
         vm.expectRevert(IArtCoinsAirdropV2.UserMaxClaimed.selector);
-        air.claim(address(coin), 0, alice, A_AMT, _proofA());
+        air.claim(address(coin), 0, 0, alice, A_AMT, _proofA());
     }
 
     function test_claim_sameInstantTwiceRevertsZero() public {
         _launchOk();
         vm.warp(T0 + LOCK + VEST / 2);
-        air.claim(address(coin), 0, alice, A_AMT, _proofA());
+        air.claim(address(coin), 0, 0, alice, A_AMT, _proofA());
         vm.expectRevert(IArtCoinsAirdropV2.ZeroToClaim.selector);
-        air.claim(address(coin), 0, alice, A_AMT, _proofA());
+        air.claim(address(coin), 0, 0, alice, A_AMT, _proofA());
     }
 
     function test_claim_wrongProofReverts() public {
@@ -333,34 +364,35 @@ contract AirdropV2Test is ExtBase {
         vm.warp(T0 + LOCK + VEST);
         // bob's proof for alice's leaf
         vm.expectRevert(IArtCoinsAirdropV2.InvalidProof.selector);
-        air.claim(address(coin), 0, alice, A_AMT, _proofB());
+        air.claim(address(coin), 0, 0, alice, A_AMT, _proofB());
         // right proof, inflated amount
         vm.expectRevert(IArtCoinsAirdropV2.InvalidProof.selector);
-        air.claim(address(coin), 0, alice, A_AMT + 1, _proofA());
+        air.claim(address(coin), 0, 0, alice, A_AMT + 1, _proofA());
         // right proof, wrong recipient
         vm.expectRevert(IArtCoinsAirdropV2.InvalidProof.selector);
-        air.claim(address(coin), 0, makeAddr("mallory"), A_AMT, _proofA());
+        air.claim(address(coin), 0, 0, makeAddr("mallory"), A_AMT, _proofA());
         // empty proof
         vm.expectRevert(IArtCoinsAirdropV2.InvalidProof.selector);
-        air.claim(address(coin), 0, alice, A_AMT, new bytes32[](0));
+        air.claim(address(coin), 0, 0, alice, A_AMT, new bytes32[](0));
     }
 
     function test_claim_zeroAmountAndMissingTranche() public {
         _launchOk();
         vm.warp(T0 + LOCK + VEST);
         vm.expectRevert(IArtCoinsAirdropV2.ZeroClaim.selector);
-        air.claim(address(coin), 0, alice, 0, _proofA());
+        air.claim(address(coin), 0, 0, alice, 0, _proofA());
         vm.expectRevert(IArtCoinsAirdropV2.AirdropNotCreated.selector);
-        air.claim(address(coin), 5, alice, A_AMT, _proofA());
+        air.claim(address(coin), 5, 0, alice, A_AMT, _proofA());
     }
 
     function test_leafHashMatchesStandardMerkleTreeEncoding() public view {
-        assertEq(air.leafHash(alice, A_AMT), leafA);
+        assertEq(air.leafHash(0, alice, A_AMT), leafA);
         assertEq(
-            air.leafHash(alice, A_AMT), keccak256(bytes.concat(keccak256(abi.encode(alice, A_AMT))))
+            air.leafHash(0, alice, A_AMT),
+            keccak256(bytes.concat(keccak256(abi.encode(uint256(0), alice, A_AMT))))
         );
         // a single hashed leaf is NOT accepted: the second preimage / inner node attack
-        assertTrue(air.leafHash(alice, A_AMT) != keccak256(abi.encode(alice, A_AMT)));
+        assertTrue(air.leafHash(0, alice, A_AMT) != keccak256(abi.encode(uint256(0), alice, A_AMT)));
     }
 
     function test_claim_innerNodeCannotBeUsedAsLeaf() public {
@@ -371,15 +403,15 @@ contract AirdropV2Test is ExtBase {
         // The double hash makes that infeasible; assert the root itself cannot be proven with no proof
         vm.expectRevert(IArtCoinsAirdropV2.InvalidProof.selector);
         air.claim(
-            address(coin), 0, address(uint160(uint256(root))), uint256(root), new bytes32[](0)
+            address(coin), 0, 0, address(uint160(uint256(root))), uint256(root), new bytes32[](0)
         );
     }
 
     // ── A4: two leaves for one address ────────────────────────────────────
 
     function test_A4_twoLeavesForOneAddressBothPaid() public {
-        bytes32 l1 = keccak256(bytes.concat(keccak256(abi.encode(alice, uint256(100e18)))));
-        bytes32 l2 = keccak256(bytes.concat(keccak256(abi.encode(alice, uint256(50e18)))));
+        bytes32 l1 = keccak256(bytes.concat(keccak256(abi.encode(uint256(0), alice, 100e18))));
+        bytes32 l2 = keccak256(bytes.concat(keccak256(abi.encode(uint256(1), alice, 50e18))));
         bytes32 r =
             l1 < l2 ? keccak256(abi.encodePacked(l1, l2)) : keccak256(abi.encodePacked(l2, l1));
         _launch(_data(sweeper, r, 0, 0), 0, 0);
@@ -387,9 +419,34 @@ contract AirdropV2Test is ExtBase {
         p1[0] = l2;
         bytes32[] memory p2 = new bytes32[](1);
         p2[0] = l1;
-        air.claim(address(coin), 0, alice, 100e18, p1);
-        air.claim(address(coin), 0, alice, 50e18, p2);
+        air.claim(address(coin), 0, 0, alice, 100e18, p1);
+        air.claim(address(coin), 0, 1, alice, 50e18, p2);
         assertEq(coin.balanceOf(alice), 150e18);
+    }
+
+    /// Identical (recipient, amount) pairs at different leaf indices are distinct
+    /// leaves with separate claim counters, and each pays out.
+    function test_duplicateRecipientAndAmountLeavesBothClaim() public {
+        bytes32 l0 = air.leafHash(0, alice, 100e18);
+        bytes32 l1 = air.leafHash(1, alice, 100e18);
+        assertTrue(l0 != l1);
+        bytes32 r =
+            l0 < l1 ? keccak256(abi.encodePacked(l0, l1)) : keccak256(abi.encodePacked(l1, l0));
+        _launch(_data(sweeper, r, 0, 0), 0, 0);
+        bytes32[] memory p0 = new bytes32[](1);
+        p0[0] = l1;
+        bytes32[] memory p1 = new bytes32[](1);
+        p1[0] = l0;
+        air.claim(address(coin), 0, 0, alice, 100e18, p0);
+        assertEq(air.leafClaimed(address(coin), 0, 0), 100e18);
+        assertEq(air.leafClaimed(address(coin), 0, 1), 0);
+        air.claim(address(coin), 0, 1, alice, 100e18, p1);
+        assertEq(coin.balanceOf(alice), 200e18);
+        // a leaf index cannot be claimed twice, and the proof is bound to its index
+        vm.expectRevert(IArtCoinsAirdropV2.UserMaxClaimed.selector);
+        air.claim(address(coin), 0, 1, alice, 100e18, p1);
+        vm.expectRevert(IArtCoinsAirdropV2.InvalidProof.selector);
+        air.claim(address(coin), 0, 2, alice, 100e18, p1);
     }
 
     function test_overAllocatedTreeIsCappedAtSupply() public {
@@ -400,12 +457,12 @@ contract AirdropV2Test is ExtBase {
         pa[0] = lb;
         bytes32[] memory pb = new bytes32[](1);
         pb[0] = la;
-        air.claim(address(coin), 0, alice, 700e18, pa);
-        air.claim(address(coin), 0, bob, 600e18, pb);
+        air.claim(address(coin), 0, 0, alice, 700e18, pa);
+        air.claim(address(coin), 0, 1, bob, 600e18, pb);
         assertEq(coin.balanceOf(bob), 300e18); // capped
         // supply is exhausted: the tranche level cap trips before the leaf level one
         vm.expectRevert(IArtCoinsAirdropV2.TotalMaxClaimed.selector);
-        air.claim(address(coin), 0, bob, 600e18, pb);
+        air.claim(address(coin), 0, 1, bob, 600e18, pb);
         assertEq(air.tranche(address(coin), 0).totalClaimed, SUPPLY);
     }
 
@@ -443,7 +500,7 @@ contract AirdropV2Test is ExtBase {
     function test_A2_originalRootStillClaimsAfterOneDay() public {
         _launchOk();
         vm.warp(T0 + LOCK + 2 days);
-        air.claim(address(coin), 0, alice, A_AMT, _proofA());
+        air.claim(address(coin), 0, 0, alice, A_AMT, _proofA());
         assertEq(coin.balanceOf(alice), A_AMT * 2 / 10);
     }
 
@@ -459,7 +516,7 @@ contract AirdropV2Test is ExtBase {
     function test_sweep_afterWindowPaysFixedRecipientOnly() public {
         _launchOk();
         vm.warp(T0 + LOCK + VEST);
-        air.claim(address(coin), 0, alice, A_AMT, _proofA());
+        air.claim(address(coin), 0, 0, alice, A_AMT, _proofA());
 
         vm.warp(T0 + LOCK + VEST + 14 days);
         address caller = makeAddr("anyone");
@@ -477,8 +534,8 @@ contract AirdropV2Test is ExtBase {
         _launchOk();
         vm.warp(T0 + LOCK + VEST + 14 days);
         vm.expectRevert(IArtCoinsAirdropV2.ClaimWindowClosed.selector);
-        air.claim(address(coin), 0, bob, B_AMT, _proofB());
-        assertEq(air.amountAvailableToClaim(address(coin), 0, bob, B_AMT), 0);
+        air.claim(address(coin), 0, 1, bob, B_AMT, _proofB());
+        assertEq(air.amountAvailableToClaim(address(coin), 0, 1, B_AMT), 0);
     }
 
     function test_sweep_missingTrancheReverts() public {
@@ -526,8 +583,8 @@ contract AirdropV2Test is ExtBase {
         pa[0] = lb;
         bytes32[] memory pb = new bytes32[](1);
         pb[0] = la;
-        try air.claim(address(coin), 0, alice, amtA, pa) {} catch {}
-        try air.claim(address(coin), 0, bob, amtB, pb) {} catch {}
+        try air.claim(address(coin), 0, 0, alice, amtA, pa) {} catch {}
+        try air.claim(address(coin), 0, 1, bob, amtB, pb) {} catch {}
         assertLe(coin.balanceOf(alice), amtA);
         assertLe(coin.balanceOf(bob), amtB);
         assertLe(coin.balanceOf(alice) + coin.balanceOf(bob), SUPPLY);
@@ -561,6 +618,39 @@ contract VaultV2Test is ExtBase {
             _one(_entry(address(vault), 0, 2000, data)),
             emptyKey,
             address(0),
+            SUPPLY,
+            0
+        );
+    }
+
+    function test_launch_beneficiaryRejectsStackContracts() public {
+        address hook = makeAddr("hook");
+        address ext = makeAddr("enabledExt");
+        address oldExt = makeAddr("everEnabledExt");
+        stub.setExtension(ext, true, true);
+        stub.setExtension(oldExt, false, true);
+        address[7] memory bad = [
+            address(0), address(vault), address(stub), address(coin), hook, stub.poolManager(), ext
+        ];
+        for (uint256 i; i < bad.length; ++i) {
+            vm.expectRevert(IArtCoinsVaultV2.InvalidBeneficiary.selector);
+            stub.launch(
+                address(vault),
+                address(coin),
+                _one(_entry(address(vault), 0, 2000, _data(bad[i], LOCK, VEST))),
+                emptyKey,
+                hook,
+                SUPPLY,
+                0
+            );
+        }
+        vm.expectRevert(IArtCoinsVaultV2.InvalidBeneficiary.selector);
+        stub.launch(
+            address(vault),
+            address(coin),
+            _one(_entry(address(vault), 0, 2000, _data(oldExt, LOCK, VEST))),
+            emptyKey,
+            hook,
             SUPPLY,
             0
         );

@@ -7,6 +7,7 @@ import {IArtCoinsFactoryV2} from "../interfaces/IArtCoinsFactoryV2.sol";
 import {IArtCoinsFeeEscrowV2} from "../interfaces/IArtCoinsFeeEscrowV2.sol";
 import {IArtCoinsHookV2} from "../interfaces/IArtCoinsHookV2.sol";
 import {IConstantsBound} from "../interfaces/IConstantsBound.sol";
+import {ExtensionRecipient} from "./ExtensionRecipient.sol";
 import {IArtCoinsUniv4EthDevBuyV2} from "./interfaces/IArtCoinsUniv4EthDevBuyV2.sol";
 
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -33,7 +34,8 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 ///           run before `initializeMevModule`, so the skim is the pool baseline.
 ///         - The price limit is the pool boundary, so a partial fill happens
 ///           only when the buy exhausts all liquidity. Unspent eth goes to
-///           `refundRecipient` from `extensionData`.
+///           `refundRecipient` from `extensionData`. The refund recipient is not
+///           a stack contract (`ExtensionRecipient`), which could revert the refund.
 ///         - The swap passes `refundRecipient` as the refund address in `hookData`,
 ///           so the hook credits the unused skim of a partial fill to
 ///           `refundRecipient` in the fee escrow. The hook reverts a partial fill that
@@ -105,6 +107,9 @@ contract ArtCoinsUniv4EthDevBuyV2 is ReentrancyGuard, IUnlockCallback, IArtCoins
             abi.decode(e.extensionData, (address, address, uint128));
         if (recipient == address(0) || refundRecipient == address(0)) revert ZeroRecipient();
         if (minOut == 0) revert ZeroMinOut();
+        if (ExtensionRecipient.isReserved(
+                factory, address(poolManager), refundRecipient, token, config.pool.hook
+            )) revert InvalidRefundRecipient();
 
         if (
             Currency.unwrap(poolKey.currency0) != address(0)

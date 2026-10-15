@@ -2,7 +2,7 @@
  * Build a merkle allowlist for a NewMaterialAirdropV2.
  *
  * Usage:
- *   npx tsx script-js/build-allowlist.ts <input.csv> <token-address> [--out <path>]
+ *   npx tsx script-js/build-allowlist.ts <input.csv> <token-address> [--out <path>] [--supply <whole units>]
  *
  * Input CSV: two columns, no header — `address,amount`.
  *   - `address`: 0x-prefixed checksum or lowercase address
@@ -25,7 +25,7 @@ import {
 
 function usage(): never {
   process.stderr.write(
-    'Usage: tsx script-js/build-allowlist.ts <input.csv> <token-address> [--out <path>]\n'
+    'Usage: tsx script-js/build-allowlist.ts <input.csv> <token-address> [--out <path>] [--supply <whole units>]\n'
   );
   process.exit(1);
 }
@@ -64,8 +64,10 @@ function main() {
   const token = getAddress(tokenArg) as Address;
 
   let outPath: string | undefined;
+  let supply: bigint | undefined;
   for (let i = 0; i < rest.length; i++) {
     if (rest[i] === '--out') outPath = rest[i + 1];
+    if (rest[i] === '--supply') supply = parseUnits(rest[i + 1], 18);
   }
   if (!outPath) {
     outPath = resolve(
@@ -78,7 +80,7 @@ function main() {
 
   const csvText = readFileSync(resolve(csvPath), 'utf8');
   const entries = parseCsv(csvText);
-  const file = buildAllowlistFile(token, entries);
+  const file = buildAllowlistFile(token, entries, supply);
 
   mkdirSync(dirname(outPath), { recursive: true });
   writeFileSync(outPath, JSON.stringify(file, null, 2) + '\n');

@@ -5,6 +5,7 @@ import {Constants} from "../../Constants.sol";
 import {IArtCoinsExtensionV2} from "../interfaces/IArtCoinsExtensionV2.sol";
 import {IArtCoinsFactoryV2} from "../interfaces/IArtCoinsFactoryV2.sol";
 import {IConstantsBound} from "../interfaces/IConstantsBound.sol";
+import {ExtensionRecipient} from "./ExtensionRecipient.sol";
 import {IArtCoinsAirdropV2} from "./interfaces/IArtCoinsAirdropV2.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -24,11 +25,13 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 ///         - The root and the sweep recipient are nonzero. `sweep` is
 ///           permissionless and pays the sweep recipient.
 ///         - Leaves are double hashed as in OpenZeppelin StandardMerkleTree with
-///           types `["address","uint256"]`, so a leaf cannot equal an inner node.
-///         - Claimed amounts are tracked per leaf, so an address with two
-///           leaves is paid for both. Total claimed is capped at the tranche
-///           supply, so an over allocated tree pays first come first served.
-///           The tree builder keeps the sum of allocations at or below the supply.
+///           types `["uint256","address","uint256"]` (leaf index, recipient,
+///           amount), so a leaf cannot equal an inner node.
+///         - Claimed amounts are tracked per leaf index, so identical
+///           `(recipient, amount)` pairs at different indices each pay out.
+///           Total claimed is capped at the tranche supply, so an over
+///           allocated tree pays first come first served. `script-js/merkle.ts`
+///           refuses a tree whose allocations exceed the supply passed to it.
 ///         Claims open at `lockupEnd`, vest linearly to `vestingEnd` and close at
 ///         `sweepTime = vestingEnd + CLAIM_EXPIRATION_INTERVAL`. From `sweepTime`
 ///         anyone may call `sweep` and claims revert.
@@ -44,8 +47,8 @@ contract ArtCoinsAirdropV2 is ReentrancyGuard, IArtCoinsAirdropV2 {
     uint256 public constant MAX_DURATION = 3650 days;
 
     mapping(address token => mapping(uint256 index => Tranche)) private _tranches;
-    mapping(address token => mapping(uint256 index => mapping(bytes32 leaf => uint256))) private
-        _leafClaimed;
+    mapping(address token => mapping(uint256 index => mapping(uint256 leafIndex => uint256)))
+        private _leafClaimed;
 
     modifier onlyFactory() {
         if (msg.sender != factory) revert Unauthorized();
@@ -79,10 +82,12 @@ contract ArtCoinsAirdropV2 is ReentrancyGuard, IArtCoinsAirdropV2 {
             abi.decode(e.extensionData, (address, bytes32, uint256, uint256));
         if (root == bytes32(0)) revert InvalidMerkleRoot();
         if (
-            sweepRecipient == address(0) || sweepRecipient == token
-                || sweepRecipient == address(this)
+            sweepRecipient == address(0)
+                || ExtensionRecipient.isReservedByFactory(
+                    factory, sweepRecipient, token, config.pool.hook
+                )
         ) {
-            revert ZeroSweepRecipient();
+            revert InvalidSweepRecipient();
         }
         if (lockup > MAX_DURATION || vesting > MAX_DURATION) revert DurationTooLong();
 
@@ -119,6 +124,7 @@ contract ArtCoinsAirdropV2 is ReentrancyGuard, IArtCoinsAirdropV2 {
     function claim(
         address token,
         uint256 index,
+        uint256 leafIndex,
         address recipient,
         uint256 allocatedAmount,
         bytes32[] calldata proof
@@ -130,10 +136,10 @@ contract ArtCoinsAirdropV2 is ReentrancyGuard, IArtCoinsAirdropV2 {
         if (allocatedAmount == 0) revert ZeroClaim();
         if (t.totalClaimed >= t.supply) revert TotalMaxClaimed();
 
-        bytes32 leaf = _leaf(recipient, allocatedAmount);
+        bytes32 leaf = _leaf(leafIndex, recipient, allocatedAmount);
         if (!MerkleProof.verifyCalldata(proof, t.merkleRoot, leaf)) revert InvalidProof();
 
-        uint256 done = _leafClaimed[token][index][leaf];
+        uint256 done = _leafClaimed[token][index][leafIndex];
         if (done >= allocatedAmount) revert UserMaxClaimed();
 
         uint256 amount = _vested(t, allocatedAmount) - done;
@@ -144,11 +150,11 @@ contract ArtCoinsAirdropV2 is ReentrancyGuard, IArtCoinsAirdropV2 {
         if (amount == 0) revert ZeroToClaim();
 
         uint256 newDone = done + amount;
-        _leafClaimed[token][index][leaf] = newDone;
+        _leafClaimed[token][index][leafIndex] = newDone;
         t.totalClaimed += amount;
 
         IERC20(token).safeTransfer(recipient, amount);
-        emit AirdropClaimed(token, index, recipient, amount, newDone, allocatedAmount);
+        emit AirdropClaimed(token, index, leafIndex, recipient, amount, newDone, allocatedAmount);
     }
 
     /// @inheritdoc IArtCoinsAirdropV2
@@ -172,13 +178,13 @@ contract ArtCoinsAirdropV2 is ReentrancyGuard, IArtCoinsAirdropV2 {
     function amountAvailableToClaim(
         address token,
         uint256 index,
-        address recipient,
+        uint256 leafIndex,
         uint256 allocatedAmount
     ) external view returns (uint256) {
         Tranche storage t = _tranches[token][index];
         if (t.supply == 0) revert AirdropNotCreated();
         if (block.timestamp < t.lockupEnd || block.timestamp >= t.sweepTime) return 0;
-        uint256 done = _leafClaimed[token][index][_leaf(recipient, allocatedAmount)];
+        uint256 done = _leafClaimed[token][index][leafIndex];
         uint256 vested = _vested(t, allocatedAmount);
         uint256 amount = vested > done ? vested - done : 0;
         uint256 left = t.supply - t.totalClaimed;
@@ -186,17 +192,21 @@ contract ArtCoinsAirdropV2 is ReentrancyGuard, IArtCoinsAirdropV2 {
     }
 
     /// @inheritdoc IArtCoinsAirdropV2
-    function leafClaimed(address token, uint256 index, address recipient, uint256 allocatedAmount)
+    function leafClaimed(address token, uint256 index, uint256 leafIndex)
         external
         view
         returns (uint256)
     {
-        return _leafClaimed[token][index][_leaf(recipient, allocatedAmount)];
+        return _leafClaimed[token][index][leafIndex];
     }
 
     /// @inheritdoc IArtCoinsAirdropV2
-    function leafHash(address account, uint256 amount) external pure returns (bytes32) {
-        return _leaf(account, amount);
+    function leafHash(uint256 leafIndex, address account, uint256 amount)
+        external
+        pure
+        returns (bytes32)
+    {
+        return _leaf(leafIndex, account, amount);
     }
 
     /// @inheritdoc IArtCoinsAirdropV2
@@ -222,8 +232,12 @@ contract ArtCoinsAirdropV2 is ReentrancyGuard, IArtCoinsAirdropV2 {
     // ── internal ──────────────────────────────────────────────────────────
 
     /// @dev OpenZeppelin StandardMerkleTree leaf hash.
-    function _leaf(address account, uint256 amount) private pure returns (bytes32) {
-        return keccak256(bytes.concat(keccak256(abi.encode(account, amount))));
+    function _leaf(uint256 leafIndex, address account, uint256 amount)
+        private
+        pure
+        returns (bytes32)
+    {
+        return keccak256(bytes.concat(keccak256(abi.encode(leafIndex, account, amount))));
     }
 
     /// @dev Linear from `lockupEnd` to `vestingEnd`; everything at or after `vestingEnd`.

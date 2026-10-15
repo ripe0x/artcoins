@@ -8,6 +8,11 @@ import {ArtCoinsFeeEscrowV2} from "../../src/v2/ArtCoinsFeeEscrowV2.sol";
 import {ArtCoinsAirdropV2} from "../../src/v2/extensions/ArtCoinsAirdropV2.sol";
 import {ArtCoinsUniv4EthDevBuyV2} from "../../src/v2/extensions/ArtCoinsUniv4EthDevBuyV2.sol";
 import {ArtCoinsVaultV2} from "../../src/v2/extensions/ArtCoinsVaultV2.sol";
+import {IArtCoinsAirdropV2} from "../../src/v2/extensions/interfaces/IArtCoinsAirdropV2.sol";
+import {
+    IArtCoinsUniv4EthDevBuyV2
+} from "../../src/v2/extensions/interfaces/IArtCoinsUniv4EthDevBuyV2.sol";
+import {IArtCoinsVaultV2} from "../../src/v2/extensions/interfaces/IArtCoinsVaultV2.sol";
 import {ArtCoinsHookV2} from "../../src/v2/hooks/ArtCoinsHookV2.sol";
 import {IArtCoinsHookV2} from "../../src/v2/interfaces/IArtCoinsHookV2.sol";
 import {ArtCoinsLpLockerV2} from "../../src/v2/lp-lockers/ArtCoinsLpLockerV2.sol";
@@ -15,6 +20,7 @@ import {ArtCoinsMevLinearSkimV2} from "../../src/v2/mev-modules/ArtCoinsMevLinea
 import {BurnRouterV2} from "../../src/v2/protocol-fee/BurnRouterV2.sol";
 import {ProtocolFeeControllerV2} from "../../src/v2/protocol-fee/ProtocolFeeControllerV2.sol";
 import {ArtCoinsDeployerV2} from "../../src/v2/utils/ArtCoinsDeployerV2.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
@@ -336,11 +342,35 @@ library DeployV2Lib {
         require(address(s.devBuy.poolManager()) == p.poolManager, "v2: dev buy PoolManager");
         require(s.airdrop.factory() == address(f), "v2: airdrop factory");
         require(s.vault.factory() == address(f), "v2: vault factory");
+        _checkExtensionIds(s);
         require(f.protocolRecipient() == address(s.controller), "v2: protocol recipient");
         require(f.teamFeeRecipient() == p.owner, "v2: team fee recipient");
         require(f.deployFee() == p.deployFee, "v2: deploy fee");
         require(f.deprecated(), "v2: factory must ship deprecated");
         require(f.STACK_VERSION() == Constants.STACK_VERSION, "v2: stack version");
+    }
+
+    /// @dev Each extension address supports its own interface id and the other two extensions' ids are
+    ///      unsupported. The factory binding and constants hash are identical across the three.
+    function _checkExtensionIds(Stack memory s) private view {
+        bytes4 d = type(IArtCoinsUniv4EthDevBuyV2).interfaceId;
+        bytes4 a = type(IArtCoinsAirdropV2).interfaceId;
+        bytes4 v = type(IArtCoinsVaultV2).interfaceId;
+        IERC165 dev = IERC165(address(s.devBuy));
+        IERC165 air = IERC165(address(s.airdrop));
+        IERC165 vau = IERC165(address(s.vault));
+        require(
+            dev.supportsInterface(d) && !dev.supportsInterface(a) && !dev.supportsInterface(v),
+            "v2: dev buy interface"
+        );
+        require(
+            air.supportsInterface(a) && !air.supportsInterface(d) && !air.supportsInterface(v),
+            "v2: airdrop interface"
+        );
+        require(
+            vau.supportsInterface(v) && !vau.supportsInterface(d) && !vau.supportsInterface(a),
+            "v2: vault interface"
+        );
     }
 
     function _checkPeriphery(Stack memory s, Params memory p) private view {

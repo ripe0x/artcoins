@@ -5,6 +5,7 @@ import {Constants} from "../../Constants.sol";
 import {IArtCoinsExtensionV2} from "../interfaces/IArtCoinsExtensionV2.sol";
 import {IArtCoinsFactoryV2} from "../interfaces/IArtCoinsFactoryV2.sol";
 import {IConstantsBound} from "../interfaces/IConstantsBound.sol";
+import {ExtensionRecipient} from "./ExtensionRecipient.sol";
 import {IArtCoinsVaultV2} from "./interfaces/IArtCoinsVaultV2.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -22,7 +23,8 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 ///         fully vested at `vestingEnd = lockupEnd + vestingDuration`. The
 ///         vested amount rounds down, is monotone and equals the total at
 ///         `vestingEnd`.
-///         - `receiveTokens` reverts for a zero beneficiary.
+///         - `receiveTokens` reverts for a zero beneficiary and for a stack
+///           contract (`ExtensionRecipient`) that cannot release coins.
 ///         - `claim` is callable by anyone and pays the beneficiary, so a
 ///           contract beneficiary needs no key to trigger it. The event reports the
 ///           remaining amount, `amountTotal - amountClaimed` after the claim.
@@ -70,7 +72,12 @@ contract ArtCoinsVaultV2 is ReentrancyGuard, IArtCoinsVaultV2 {
 
         (address beneficiary, uint256 lockup, uint256 vesting) =
             abi.decode(e.extensionData, (address, uint256, uint256));
-        if (beneficiary == address(0) || beneficiary == token || beneficiary == address(this)) {
+        if (
+            beneficiary == address(0)
+                || ExtensionRecipient.isReservedByFactory(
+                    factory, beneficiary, token, config.pool.hook
+                )
+        ) {
             revert InvalidBeneficiary();
         }
         if (lockup < MIN_LOCKUP_DURATION) revert VaultLockupDurationTooShort();
