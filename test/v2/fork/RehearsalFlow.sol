@@ -195,8 +195,9 @@ abstract contract RehearsalFlow is Test {
             assertEq(spent + refunded, e.msgValue, "dev buy eth accounted");
             assertGt(out, 0, "dev buy out");
             assertEq(IERC20(token).balanceOf(recipient), out, "dev buy recipient coin balance");
-            assertEq(refundRecipient.balance, refunded, "refund recipient eth");
-            // a full fill refunds nothing and credits no skim
+            // a full fill refunds nothing and credits no skim. The refund recipient's
+            // absolute balance is not asserted: on a live fork the configured address
+            // may already hold eth.
             assertEq(refunded, 0, "full fill: no refund");
             assertEq(r.escrow.balances(refundRecipient, address(0)), 0, "refund escrow credit");
         }
