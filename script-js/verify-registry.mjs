@@ -212,8 +212,10 @@ for (const c of C) {
   const set = (g) => ({ factory: [sf], feeLocker: inStack(c.stack, 'escrow').map((x) => x.address), feeEscrow: inStack(c.stack, 'escrow').map((x) => x.address), hook: inStack(c.stack, 'hook').map((x) => x.address),
     burnRouter: inStack(c.stack, 'router').map((x) => x.address), poolExtensionAllowlist: C.filter((x) => x.role === 'allowlist').map((x) => x.address) }[g]);
   for (const g of getters[c.role] || []) plan.push({ c, kind: 'link:' + g, key: rd(g, a), set: set(g), optional: true });
-  // v1 escrows answer allowedDepositors, v2 escrows isDepositor: either one true passes
-  if (c.role === 'escrow') for (const x of [...inStack(c.stack, 'locker'), ...inStack(c.stack, 'hook')]) plan.push({ c, kind: 'depositor:' + x.name, key: rd('allowedDepositors', a, [x.address]), key2: rd('isDepositor', a, [x.address]), exp: true, hookOnlyIfLinked: x.role === 'hook' ? x.address : null });
+  // v1 escrows answer allowedDepositors, v2 escrows isDepositor: either one true passes.
+  // Depositors: v1 locker and hook; v2 hook and protocol fee controller (the v2 locker holds no fees).
+  const depositors = c.stack === 'v2' || c.stack.startsWith('v2-') ? [...inStack(c.stack, 'hook'), ...inStack(c.stack, 'controller')] : [...inStack(c.stack, 'locker'), ...inStack(c.stack, 'hook')];
+  if (c.role === 'escrow') for (const x of depositors) plan.push({ c, kind: 'depositor:' + x.name, key: rd('allowedDepositors', a, [x.address]), key2: rd('isDepositor', a, [x.address]), exp: true, hookOnlyIfLinked: x.role === 'hook' ? x.address : null });
 }
 for (const k of reg.coins) {
   plan.push({ c: k, kind: 'coin:name', key: rd('name', k.address), exp: k.name }, { c: k, kind: 'coin:symbol', key: rd('symbol', k.address), exp: k.symbol });
