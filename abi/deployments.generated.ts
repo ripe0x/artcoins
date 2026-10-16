@@ -5,7 +5,7 @@ import type { Address } from 'viem';
 export const REGISTRY_CHAIN_ID = 1;
 export const REGISTRY_OWNER: Address = '0xCB43078C32423F5348Cab5885911C3B5faE217F9';
 
-export type StackId = 'legacy' | 'open' | 'current' | 'v2';
+export type StackId = 'legacy' | 'open' | 'current' | 'v2-2026-10-09' | 'v2';
 
 export interface RegistryStack {
   label: string;
@@ -38,12 +38,19 @@ export const STACKS: Record<StackId, RegistryStack> = {
     deployedAt: '2026-06-06',
     deployBlock: 25260062n,
   },
-  v2: {
+  v2-2026-10-09: {
     label: 'v2 stack (skim hook v2, constants bound)',
-    status: 'current',
+    status: 'superseded',
     factory: '0x9b17bf6f97F5429368E11028BC637479b4667f7b',
     deployedAt: '2026-10-09',
     deployBlock: 26157200n,
+  },
+  v2: {
+    label: 'v2 stack (skim hook v2, constants bound)',
+    status: 'current',
+    factory: '0xC27e182ef5D8A1A7C9dd0a27414fEaBA47DF8e3c',
+    deployedAt: '2026-10-16',
+    deployBlock: 26202473n,
   },
 };
 
@@ -68,16 +75,19 @@ export const CURRENT = {
 
 /** addresses of the stack with id v2 */
 export const V2 = {
-  factory: '0x9b17bf6f97F5429368E11028BC637479b4667f7b',
-  hook: '0x2f7976bf73dE8e1D49D4c687404e527a75b0e8Cc',
-  locker: '0x1e2456861B864B96FFe6b34066b12FBD7EEb23fC',
-  escrow: '0x32845df52436a737C9623Af1d461A1c9999BBc1e',
-  allowlist: '0xddbC9EE6A8E08b4afC208B9dD1f283506E669C11',
-  mevModule: '0xFbb55b4C13b8517C000e2686efB12F0FAAFc9072',
-  deployer: '0xB2f0086E6EE82f059AD1736dD265a783cE50f473',
-  burnRouter: '0x6f159a0BDddB808Ca364cd006fb29C7B52eB88e1',
-  protocolFeeController: '0x183De82db1b7AAb798328AB1d7AE181ff39460c2',
-  deployBlock: 26157200n,
+  factory: '0xC27e182ef5D8A1A7C9dd0a27414fEaBA47DF8e3c',
+  hook: '0x866F31562dDe70D7B989C2529a9deFFFFd3bE8CC',
+  locker: '0xbD049E961a414CaF3Ec040405fa688f641e63C64',
+  escrow: '0xB65816a3cE6C4DFd1dfa6D27832eD77781a65192',
+  allowlist: '0xc73eB3D8b3c0066DAcBb3ED3a64658a5E54452B9',
+  mevModule: '0x32Ab8Ec09eE09A37a6cD58Fbc7d6Da2da31982c5',
+  deployer: '0x99EB38d6a757a9f1061dFb1887bffD4637050903',
+  burnRouter: '0x183751c6D50c3f2B377c0aD9BD8Fab1e187740d4',
+  protocolFeeController: '0xbD5A853f556F17EAF692a4925371f5BFe3DD40df',
+  devBuy: '0x077d8ac56E14e59C01c1FD54624727c93F8de299',
+  airdrop: '0xE35c372A5D225db40BDf867a61010365a3A568DA',
+  vault: '0xF255cBbCa7f901BBE02f700BE745aD938806E160',
+  deployBlock: 26202473n,
 } as const;
 
 

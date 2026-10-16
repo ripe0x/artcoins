@@ -25,13 +25,22 @@
       "deployedAt": "2026-06-06",
       "notes": "factory 0x4959 matches repo head under profile ci (optimizer_runs 200) modulo linked libraries and metadata. owner only deploys, deploy fee 0.069 eth. coin: 111"
     },
-    "v2": {
+    "v2-2026-10-09": {
       "label": "v2 stack (skim hook v2, constants bound)",
-      "status": "current",
+      "status": "superseded",
       "factory": "0x9b17bf6f97F5429368E11028BC637479b4667f7b",
       "deployedAt": "2026-10-09",
       "notes": "deployed by script/v2/DeployV2Stack.s.sol. factory ships deprecated (owner only) until the first coin ran a fee cycle",
-      "replaces": "current"
+      "replaces": "current",
+      "supersededBy": "v2",
+      "supersededAt": "2026-10-16"
+    },
+    "v2": {
+      "label": "v2 stack (skim hook v2, constants bound)",
+      "status": "current",
+      "factory": "0xC27e182ef5D8A1A7C9dd0a27414fEaBA47DF8e3c",
+      "deployedAt": "2026-10-16",
+      "notes": "deployed by script/v2/DeployV2Stack.s.sol. factory ships deprecated (owner only) until the first coin ran a fee cycle"
     }
   },
   "contracts": [
@@ -1406,7 +1415,7 @@
     {
       "name": "ArtCoinsFeeEscrowV2",
       "address": "0x32845df52436a737C9623Af1d461A1c9999BBc1e",
-      "stack": "v2",
+      "stack": "v2-2026-10-09",
       "role": "escrow",
       "deployBlock": 26157195,
       "deployTxHash": "0xec6f49e2cc90d7c56f8c77cc489f5e43ed4cbe2c8803df3b44f09aea1e64eed2",
@@ -1422,7 +1431,7 @@
       "etherscanVerified": "unknown",
       "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "state": "unknown",
-      "status": "current",
+      "status": "superseded",
       "provenance": "broadcast",
       "chainVerified": false,
       "notes": "v2 stack | bytecode: ci/none runs=200"
@@ -1430,7 +1439,7 @@
     {
       "name": "ArtCoinsPoolExtensionAllowlist",
       "address": "0xddbC9EE6A8E08b4afC208B9dD1f283506E669C11",
-      "stack": "v2",
+      "stack": "v2-2026-10-09",
       "role": "allowlist",
       "deployBlock": 26157196,
       "deployTxHash": "0xa85bb7c913fcfa0e2bdc109b7c174498660b097d4ee5c75e75a3b0f1377ddcef",
@@ -1446,7 +1455,7 @@
       "etherscanVerified": "unknown",
       "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "state": "unknown",
-      "status": "current",
+      "status": "superseded",
       "provenance": "broadcast",
       "chainVerified": false,
       "notes": "v2 stack | bytecode: ci/none runs=200"
@@ -1454,7 +1463,7 @@
     {
       "name": "ArtCoinsHookV2",
       "address": "0x2f7976bf73dE8e1D49D4c687404e527a75b0e8Cc",
-      "stack": "v2",
+      "stack": "v2-2026-10-09",
       "role": "hook",
       "deployBlock": 26157197,
       "deployTxHash": "0x49300b86b4a23384051630eadab6dc5ccfc206f6e0afb63a248cfe2c01324f5c",
@@ -1470,7 +1479,7 @@
       "etherscanVerified": "unknown",
       "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "state": "enabled",
-      "status": "current",
+      "status": "superseded",
       "provenance": "broadcast",
       "chainVerified": false,
       "notes": "CREATE2 via 0x4e59b44847b379578588920cA78FbF26c0B4956C salt 0x0000000000000000000000000000000000000000000000000000000000005544"
@@ -1478,7 +1487,7 @@
     {
       "name": "ArtCoinsLpLockerV2",
       "address": "0x1e2456861B864B96FFe6b34066b12FBD7EEb23fC",
-      "stack": "v2",
+      "stack": "v2-2026-10-09",
       "role": "locker",
       "deployBlock": 26157198,
       "deployTxHash": "0x47c50f5a005babcb75a1c3a0d7089460256154e381f91d2801d58a0956d50c9e",
@@ -1494,7 +1503,7 @@
       "etherscanVerified": "unknown",
       "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "state": "unknown",
-      "status": "current",
+      "status": "superseded",
       "provenance": "broadcast",
       "chainVerified": false,
       "notes": "v2 stack | bytecode: ci/none runs=200"
@@ -1502,7 +1511,7 @@
     {
       "name": "ArtCoinsMevLinearSkimV2",
       "address": "0xFbb55b4C13b8517C000e2686efB12F0FAAFc9072",
-      "stack": "v2",
+      "stack": "v2-2026-10-09",
       "role": "mevModule",
       "deployBlock": 26157199,
       "deployTxHash": "0x09b6ec0f61bdbac6a7af6ef9908b505f90c8f80e4c76370c5c8c2439d474c1f2",
@@ -1518,7 +1527,7 @@
       "etherscanVerified": "unknown",
       "owner": null,
       "state": "enabled",
-      "status": "current",
+      "status": "superseded",
       "provenance": "broadcast",
       "chainVerified": false,
       "notes": "v2 stack | bytecode: ci/none runs=200"
@@ -1526,7 +1535,7 @@
     {
       "name": "ArtCoinsFactoryV2",
       "address": "0x9b17bf6f97F5429368E11028BC637479b4667f7b",
-      "stack": "v2",
+      "stack": "v2-2026-10-09",
       "role": "factory",
       "deployBlock": 26157200,
       "deployTxHash": "0x4780a4b9ca43ed2808eb022db9701d80e43bb95442596f4814adf5ebc2f1a092",
@@ -1542,7 +1551,7 @@
       "etherscanVerified": "unknown",
       "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "state": "deprecated",
-      "status": "current",
+      "status": "superseded",
       "provenance": "broadcast",
       "chainVerified": false,
       "notes": "v2 stack | bytecode: ci/none runs=200"
@@ -1550,7 +1559,7 @@
     {
       "name": "ArtCoinsDeployerV2",
       "address": "0xB2f0086E6EE82f059AD1736dD265a783cE50f473",
-      "stack": "v2",
+      "stack": "v2-2026-10-09",
       "role": "other",
       "deployBlock": 26157201,
       "deployTxHash": "0x20bf75165b571dd2f21a013bb8d59a394c5ec9109b0fa69b410cd4754334ce41",
@@ -1566,7 +1575,7 @@
       "etherscanVerified": "unknown",
       "owner": null,
       "state": "unknown",
-      "status": "current",
+      "status": "superseded",
       "provenance": "broadcast",
       "chainVerified": false,
       "notes": "v2 stack | bytecode: ci/none runs=200"
@@ -1574,7 +1583,7 @@
     {
       "name": "BurnRouterV2",
       "address": "0x6f159a0BDddB808Ca364cd006fb29C7B52eB88e1",
-      "stack": "v2",
+      "stack": "v2-2026-10-09",
       "role": "router",
       "deployBlock": 26157203,
       "deployTxHash": "0xa27933bf3557119b87a507980a5b4abd662e3308f645d0a188620bfd8c0b6542",
@@ -1590,7 +1599,7 @@
       "etherscanVerified": "unknown",
       "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "state": "unknown",
-      "status": "current",
+      "status": "superseded",
       "provenance": "broadcast",
       "chainVerified": false,
       "notes": "v2 stack | bytecode: ci/none runs=200"
@@ -1598,7 +1607,7 @@
     {
       "name": "ProtocolFeeControllerV2",
       "address": "0x183De82db1b7AAb798328AB1d7AE181ff39460c2",
-      "stack": "v2",
+      "stack": "v2-2026-10-09",
       "role": "controller",
       "deployBlock": 26157204,
       "deployTxHash": "0xa3d667ff7d54bf14fe753e6a748f6085600f9f1f318fac64c38375f1e2242446",
@@ -1614,7 +1623,7 @@
       "etherscanVerified": "unknown",
       "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "state": "unknown",
-      "status": "current",
+      "status": "superseded",
       "provenance": "broadcast",
       "chainVerified": false,
       "notes": "v2 stack | bytecode: ci/none runs=200"
@@ -1622,7 +1631,7 @@
     {
       "name": "ArtCoinsKeeperV2",
       "address": "0x9884B79974a51aaa07b3a7f0B45b6Ae294FC7072",
-      "stack": "v2",
+      "stack": "v2-2026-10-09",
       "role": "other",
       "deployBlock": 26157205,
       "deployTxHash": "0x86c8c3f6c30a9096d43da560071014b26af0dc346978a1db9d7a2380722112de",
@@ -1638,10 +1647,298 @@
       "etherscanVerified": "unknown",
       "owner": null,
       "state": "unknown",
-      "status": "current",
+      "status": "superseded",
       "provenance": "broadcast",
       "chainVerified": false,
       "notes": "v2 stack | bytecode: ci/none runs=200"
+    },
+    {
+      "name": "ArtCoinsFeeEscrowV2",
+      "address": "0xB65816a3cE6C4DFd1dfa6D27832eD77781a65192",
+      "stack": "v2",
+      "role": "escrow",
+      "deployBlock": 26202467,
+      "deployTxHash": "0x0000d6dc0839afd517c2c746c6d63624b300b10d381472f61fe8198409770ce8",
+      "deployedAt": "2026-10-16",
+      "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "source": {
+        "repoPath": "src/v2/ArtCoinsFeeEscrowV2.sol",
+        "commit": "d27c932fe3dee987521897f06972f6efcfdd4cbb",
+        "bytecodeMatch": "verified",
+        "profile": "ci",
+        "metadata": "none"
+      },
+      "etherscanVerified": "unknown",
+      "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "state": "unknown",
+      "status": "current",
+      "provenance": "broadcast",
+      "chainVerified": false,
+      "notes": "v2 stack"
+    },
+    {
+      "name": "ArtCoinsPoolExtensionAllowlist",
+      "address": "0xc73eB3D8b3c0066DAcBb3ED3a64658a5E54452B9",
+      "stack": "v2",
+      "role": "allowlist",
+      "deployBlock": 26202468,
+      "deployTxHash": "0x0e43325f1d8041aa2c685b6a70039f15c3aab4b79fe15299b4e56979db79ffee",
+      "deployedAt": "2026-10-16",
+      "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "source": {
+        "repoPath": "src/hooks/ArtCoinsPoolExtensionAllowlist.sol",
+        "commit": "d27c932fe3dee987521897f06972f6efcfdd4cbb",
+        "bytecodeMatch": "verified",
+        "profile": "ci",
+        "metadata": "none"
+      },
+      "etherscanVerified": "unknown",
+      "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "state": "unknown",
+      "status": "current",
+      "provenance": "broadcast",
+      "chainVerified": false,
+      "notes": "v2 stack"
+    },
+    {
+      "name": "ArtCoinsHookV2",
+      "address": "0x866F31562dDe70D7B989C2529a9deFFFFd3bE8CC",
+      "stack": "v2",
+      "role": "hook",
+      "deployBlock": 26202469,
+      "deployTxHash": "0x80cbf7d7540d32a745a128ec5240733c67c6ba190db5ea860815674a9fc12b2a",
+      "deployedAt": "2026-10-16",
+      "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "source": {
+        "repoPath": "src/v2/hooks/ArtCoinsHookV2.sol",
+        "commit": "d27c932fe3dee987521897f06972f6efcfdd4cbb",
+        "bytecodeMatch": "verified",
+        "profile": "ci",
+        "metadata": "none"
+      },
+      "etherscanVerified": "unknown",
+      "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "state": "enabled",
+      "status": "current",
+      "provenance": "broadcast",
+      "chainVerified": false,
+      "notes": "CREATE2 via 0x4e59b44847b379578588920cA78FbF26c0B4956C salt 0x00000000000000000000000000000000000000000000000000000000000008b2"
+    },
+    {
+      "name": "ArtCoinsLpLockerV2",
+      "address": "0xbD049E961a414CaF3Ec040405fa688f641e63C64",
+      "stack": "v2",
+      "role": "locker",
+      "deployBlock": 26202471,
+      "deployTxHash": "0x7fd941cc4f8852a77d9b546cbcafaa4cdba613b31b1eaea932d35befc9821f37",
+      "deployedAt": "2026-10-16",
+      "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "source": {
+        "repoPath": "src/v2/lp-lockers/ArtCoinsLpLockerV2.sol",
+        "commit": "d27c932fe3dee987521897f06972f6efcfdd4cbb",
+        "bytecodeMatch": "verified",
+        "profile": "ci",
+        "metadata": "none"
+      },
+      "etherscanVerified": "unknown",
+      "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "state": "unknown",
+      "status": "current",
+      "provenance": "broadcast",
+      "chainVerified": false,
+      "notes": "v2 stack"
+    },
+    {
+      "name": "ArtCoinsMevLinearSkimV2",
+      "address": "0x32Ab8Ec09eE09A37a6cD58Fbc7d6Da2da31982c5",
+      "stack": "v2",
+      "role": "mevModule",
+      "deployBlock": 26202472,
+      "deployTxHash": "0x3368da1c30d3c63c75f2537b09fa707428798a668320a4b4a6ea600a44120454",
+      "deployedAt": "2026-10-16",
+      "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "source": {
+        "repoPath": "src/v2/mev-modules/ArtCoinsMevLinearSkimV2.sol",
+        "commit": "d27c932fe3dee987521897f06972f6efcfdd4cbb",
+        "bytecodeMatch": "verified",
+        "profile": "ci",
+        "metadata": "none"
+      },
+      "etherscanVerified": "unknown",
+      "owner": null,
+      "state": "enabled",
+      "status": "current",
+      "provenance": "broadcast",
+      "chainVerified": false,
+      "notes": "v2 stack"
+    },
+    {
+      "name": "ArtCoinsFactoryV2",
+      "address": "0xC27e182ef5D8A1A7C9dd0a27414fEaBA47DF8e3c",
+      "stack": "v2",
+      "role": "factory",
+      "deployBlock": 26202473,
+      "deployTxHash": "0xd9fc492bebc3d480c8a6253b5cdfb1016b9a89ce2e829ec93df5a11f4d449e49",
+      "deployedAt": "2026-10-16",
+      "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "source": {
+        "repoPath": "src/v2/ArtCoinsFactoryV2.sol",
+        "commit": "d27c932fe3dee987521897f06972f6efcfdd4cbb",
+        "bytecodeMatch": "verified",
+        "profile": "ci",
+        "metadata": "none"
+      },
+      "etherscanVerified": "unknown",
+      "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "state": "deprecated",
+      "status": "current",
+      "provenance": "broadcast",
+      "chainVerified": false,
+      "notes": "v2 stack"
+    },
+    {
+      "name": "ArtCoinsDeployerV2",
+      "address": "0x99EB38d6a757a9f1061dFb1887bffD4637050903",
+      "stack": "v2",
+      "role": "other",
+      "deployBlock": 26202474,
+      "deployTxHash": "0x37837c5e4cb68fc16dc04ad031a6af7549d3f5ce308ab2ac476c69ab61ad2491",
+      "deployedAt": "2026-10-16",
+      "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "source": {
+        "repoPath": "src/v2/utils/ArtCoinsDeployerV2.sol",
+        "commit": "d27c932fe3dee987521897f06972f6efcfdd4cbb",
+        "bytecodeMatch": "verified",
+        "profile": "ci",
+        "metadata": "none"
+      },
+      "etherscanVerified": "unknown",
+      "owner": null,
+      "state": "unknown",
+      "status": "current",
+      "provenance": "broadcast",
+      "chainVerified": false,
+      "notes": "v2 stack"
+    },
+    {
+      "name": "BurnRouterV2",
+      "address": "0x183751c6D50c3f2B377c0aD9BD8Fab1e187740d4",
+      "stack": "v2",
+      "role": "router",
+      "deployBlock": 26202477,
+      "deployTxHash": "0xd6ee37f093e8c4d990f658c95fc84d3a95125d7a26275efd91ba1543933f2a26",
+      "deployedAt": "2026-10-16",
+      "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "source": {
+        "repoPath": "src/v2/protocol-fee/BurnRouterV2.sol",
+        "commit": "d27c932fe3dee987521897f06972f6efcfdd4cbb",
+        "bytecodeMatch": "verified",
+        "profile": "ci",
+        "metadata": "none"
+      },
+      "etherscanVerified": "unknown",
+      "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "state": "unknown",
+      "status": "current",
+      "provenance": "broadcast",
+      "chainVerified": false,
+      "notes": "v2 stack"
+    },
+    {
+      "name": "ProtocolFeeControllerV2",
+      "address": "0xbD5A853f556F17EAF692a4925371f5BFe3DD40df",
+      "stack": "v2",
+      "role": "controller",
+      "deployBlock": 26202478,
+      "deployTxHash": "0x379b6037d6b18c98310a677e3e2969eb00a00b75c3f3739424d50d617631b29d",
+      "deployedAt": "2026-10-16",
+      "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "source": {
+        "repoPath": "src/v2/protocol-fee/ProtocolFeeControllerV2.sol",
+        "commit": "d27c932fe3dee987521897f06972f6efcfdd4cbb",
+        "bytecodeMatch": "verified",
+        "profile": "ci",
+        "metadata": "none"
+      },
+      "etherscanVerified": "unknown",
+      "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "state": "unknown",
+      "status": "current",
+      "provenance": "broadcast",
+      "chainVerified": false,
+      "notes": "v2 stack"
+    },
+    {
+      "name": "ArtCoinsUniv4EthDevBuyV2",
+      "address": "0x077d8ac56E14e59C01c1FD54624727c93F8de299",
+      "stack": "v2",
+      "role": "extension",
+      "deployBlock": 26202479,
+      "deployTxHash": "0x1372462f78dac9cbed2ea6fe66ac9ba1463289956a7fedfb61790b01c227ba41",
+      "deployedAt": "2026-10-16",
+      "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "source": {
+        "repoPath": "src/v2/extensions/ArtCoinsUniv4EthDevBuyV2.sol",
+        "commit": "d27c932fe3dee987521897f06972f6efcfdd4cbb",
+        "bytecodeMatch": "verified",
+        "profile": "ci",
+        "metadata": "none"
+      },
+      "etherscanVerified": "unknown",
+      "owner": null,
+      "state": "enabled",
+      "status": "current",
+      "provenance": "broadcast",
+      "chainVerified": false,
+      "notes": "v2 stack"
+    },
+    {
+      "name": "ArtCoinsAirdropV2",
+      "address": "0xE35c372A5D225db40BDf867a61010365a3A568DA",
+      "stack": "v2",
+      "role": "extension",
+      "deployBlock": 26202480,
+      "deployTxHash": "0x84a6082e5567000af4b9cbe3a4e820d05bd3394cdac6ecd9849a025b52410bdb",
+      "deployedAt": "2026-10-16",
+      "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "source": {
+        "repoPath": "src/v2/extensions/ArtCoinsAirdropV2.sol",
+        "commit": "d27c932fe3dee987521897f06972f6efcfdd4cbb",
+        "bytecodeMatch": "verified",
+        "profile": "ci",
+        "metadata": "none"
+      },
+      "etherscanVerified": "unknown",
+      "owner": null,
+      "state": "enabled",
+      "status": "current",
+      "provenance": "broadcast",
+      "chainVerified": false,
+      "notes": "v2 stack"
+    },
+    {
+      "name": "ArtCoinsVaultV2",
+      "address": "0xF255cBbCa7f901BBE02f700BE745aD938806E160",
+      "stack": "v2",
+      "role": "extension",
+      "deployBlock": 26202481,
+      "deployTxHash": "0x2afd13f3f10b21f1457e03e57a2cd895a9318a61acf53021e2fabfdcc6dc35fd",
+      "deployedAt": "2026-10-16",
+      "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
+      "source": {
+        "repoPath": "src/v2/extensions/ArtCoinsVaultV2.sol",
+        "commit": "d27c932fe3dee987521897f06972f6efcfdd4cbb",
+        "bytecodeMatch": "verified",
+        "profile": "ci",
+        "metadata": "none"
+      },
+      "etherscanVerified": "unknown",
+      "owner": null,
+      "state": "enabled",
+      "status": "current",
+      "provenance": "broadcast",
+      "chainVerified": false,
+      "notes": "v2 stack"
     }
   ],
   "coins": [
