@@ -1,7 +1,7 @@
 {
   "chainId": 1,
-  "generatedAt": "2026-10-09T21:56:32.711Z",
-  "repoCommit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+  "generatedAt": "2026-10-26T17:49:17.826Z",
+  "repoCommit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
   "owner": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
   "stacks": {
     "legacy": {
@@ -55,7 +55,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/utils/ArtCoinsDeployer.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -79,7 +79,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/legacy/ArtCoinsFeeLocker.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -103,7 +103,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/legacy/ArtCoinsFactory.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -127,7 +127,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/hooks/ArtCoinsPoolExtensionAllowlist.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -151,7 +151,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/hooks/legacy/ArtCoinsHookStaticFeeV2.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -175,7 +175,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/lp-lockers/legacy/ArtCoinsLpLockerMultiple.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -199,7 +199,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/mev-modules/ArtCoinsMevTimeDelay.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -223,7 +223,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/mev-modules/ArtCoinsMevDescendingFees.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -247,7 +247,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/mev-modules/ArtCoinsMevLinearFees.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -271,7 +271,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/mev-modules/ArtCoinsMevSniperSteppedFees.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -295,7 +295,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/extensions/ArtCoinsVault.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -319,7 +319,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/extensions/ArtCoinsAirdrop.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -343,7 +343,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/extensions/BurnExtension.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -367,7 +367,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/extensions/legacy/ArtCoinsUniv4EthDevBuy.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -391,7 +391,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/renderer/DefaultMetadataRenderer.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -415,7 +415,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/extensions/LiquidityLayerCounterPoolExtension.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -583,7 +583,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/extensions/LiquidityLayerOnchainRenderer.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -631,7 +631,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/protocol-fee/legacy/BurnRouter.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -655,7 +655,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/protocol-fee/legacy/ProtocolFeeController.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -679,7 +679,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/ArtCoinsToken.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -703,7 +703,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/extensions/LiquidityLayerAutoForwardExtension.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -727,7 +727,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/extensions/LiquidityLayerOnchainRenderer.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -823,7 +823,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/ArtCoinsFactory.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -847,7 +847,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/hooks/ArtCoinsPoolExtensionAllowlist.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -871,7 +871,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/ArtCoinsFeeEscrow.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -895,7 +895,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/lp-lockers/ArtCoinsLpLocker.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "mismatch",
         "profile": "default",
         "metadata": "none"
@@ -919,7 +919,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/protocol-fee/BurnRouter.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -943,7 +943,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/hooks/ArtCoinsHookStaticFee.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -967,7 +967,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/protocol-fee/BurnRouter.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -1015,7 +1015,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/utils/ArtCoinsDeployer.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "ipfs"
@@ -1039,7 +1039,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/hooks/libraries/SkimFeeInitLib.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "ipfs"
@@ -1063,7 +1063,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/ArtCoinsFactory.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "ipfs"
@@ -1087,7 +1087,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/ArtCoinsFeeEscrow.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "ipfs"
@@ -1111,7 +1111,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/hooks/ArtCoinsHookSkimFee.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "ipfs"
@@ -1135,7 +1135,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/mev-modules/ArtCoinsMevLinearSkim.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "ipfs"
@@ -1159,7 +1159,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/protocol-fee/ProtocolFeeController.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "ipfs"
@@ -1183,7 +1183,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/lp-lockers/ArtCoinsLpLocker.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "ipfs"
@@ -1327,7 +1327,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/FeeAutoSwapper.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "mismatch",
         "profile": null,
         "metadata": null
@@ -1351,7 +1351,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/ArtCoinsToken.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "ipfs"
@@ -1375,7 +1375,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/protocol-fee/BurnRouter.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -1399,7 +1399,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/legacy/keepers/CollectFlushKeeperV1.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "default",
         "metadata": "none"
@@ -1423,7 +1423,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/v2/ArtCoinsFeeEscrowV2.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "none"
@@ -1433,8 +1433,8 @@
       "state": "unknown",
       "status": "superseded",
       "provenance": "broadcast",
-      "chainVerified": false,
-      "notes": "v2 stack | bytecode: ci/none runs=200"
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: first diff @34 (chain 3796 vs artifact 3712, best ci/none runs=200; tried ci/none)"
     },
     {
       "name": "ArtCoinsPoolExtensionAllowlist",
@@ -1447,7 +1447,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/hooks/ArtCoinsPoolExtensionAllowlist.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "none"
@@ -1457,7 +1457,7 @@
       "state": "unknown",
       "status": "superseded",
       "provenance": "broadcast",
-      "chainVerified": false,
+      "chainVerified": true,
       "notes": "v2 stack | bytecode: ci/none runs=200"
     },
     {
@@ -1471,7 +1471,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/v2/hooks/ArtCoinsHookV2.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "none"
@@ -1481,8 +1481,8 @@
       "state": "enabled",
       "status": "superseded",
       "provenance": "broadcast",
-      "chainVerified": false,
-      "notes": "CREATE2 via 0x4e59b44847b379578588920cA78FbF26c0B4956C salt 0x0000000000000000000000000000000000000000000000000000000000005544"
+      "chainVerified": true,
+      "notes": "CREATE2 via 0x4e59b44847b379578588920cA78FbF26c0B4956C salt 0x0000000000000000000000000000000000000000000000000000000000005544 | bytecode: first diff @104 (chain 16170 vs artifact 17369, best ci/none runs=200; tried ci/none)"
     },
     {
       "name": "ArtCoinsLpLockerV2",
@@ -1495,7 +1495,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/v2/lp-lockers/ArtCoinsLpLockerV2.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "none"
@@ -1505,8 +1505,8 @@
       "state": "unknown",
       "status": "superseded",
       "provenance": "broadcast",
-      "chainVerified": false,
-      "notes": "v2 stack | bytecode: ci/none runs=200"
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: first diff @1 (chain 15482 vs artifact 8274, best ci/none runs=200; tried ci/none)"
     },
     {
       "name": "ArtCoinsMevLinearSkimV2",
@@ -1519,7 +1519,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/v2/mev-modules/ArtCoinsMevLinearSkimV2.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "none"
@@ -1529,8 +1529,8 @@
       "state": "enabled",
       "status": "superseded",
       "provenance": "broadcast",
-      "chainVerified": false,
-      "notes": "v2 stack | bytecode: ci/none runs=200"
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: first diff @1943 (chain 2280 vs artifact 2193, best ci/none runs=200; tried ci/none)"
     },
     {
       "name": "ArtCoinsFactoryV2",
@@ -1543,7 +1543,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/v2/ArtCoinsFactoryV2.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "none"
@@ -1553,8 +1553,8 @@
       "state": "deprecated",
       "status": "superseded",
       "provenance": "broadcast",
-      "chainVerified": false,
-      "notes": "v2 stack | bytecode: ci/none runs=200"
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: first diff @1 (chain 19272 vs artifact 16034, best ci/none runs=200; tried ci/none)"
     },
     {
       "name": "ArtCoinsDeployerV2",
@@ -1567,7 +1567,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/v2/utils/ArtCoinsDeployerV2.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "none"
@@ -1577,8 +1577,8 @@
       "state": "unknown",
       "status": "superseded",
       "provenance": "broadcast",
-      "chainVerified": false,
-      "notes": "v2 stack | bytecode: ci/none runs=200"
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: first diff @2 (chain 14665 vs artifact 13878, best ci/none runs=200; tried ci/none)"
     },
     {
       "name": "BurnRouterV2",
@@ -1591,7 +1591,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/v2/protocol-fee/BurnRouterV2.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "none"
@@ -1601,8 +1601,8 @@
       "state": "unknown",
       "status": "superseded",
       "provenance": "broadcast",
-      "chainVerified": false,
-      "notes": "v2 stack | bytecode: ci/none runs=200"
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: first diff @28 (chain 9526 vs artifact 8197, best ci/none runs=200; tried ci/none)"
     },
     {
       "name": "ProtocolFeeControllerV2",
@@ -1615,7 +1615,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/v2/protocol-fee/ProtocolFeeControllerV2.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "none"
@@ -1625,8 +1625,8 @@
       "state": "unknown",
       "status": "superseded",
       "provenance": "broadcast",
-      "chainVerified": false,
-      "notes": "v2 stack | bytecode: ci/none runs=200"
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: first diff @2 (chain 4048 vs artifact 3962, best ci/none runs=200; tried ci/none)"
     },
     {
       "name": "ArtCoinsKeeperV2",
@@ -1639,7 +1639,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/v2/keepers/ArtCoinsKeeperV2.sol",
-        "commit": "fbe07c7650cf699493047c7436dba9a0da1da835",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "none"
@@ -1649,8 +1649,8 @@
       "state": "unknown",
       "status": "superseded",
       "provenance": "broadcast",
-      "chainVerified": false,
-      "notes": "v2 stack | bytecode: ci/none runs=200"
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: artifact missing in foundry-out-ci"
     },
     {
       "name": "ArtCoinsFeeEscrowV2",
@@ -1663,7 +1663,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/v2/ArtCoinsFeeEscrowV2.sol",
-        "commit": "d27c932fe3dee987521897f06972f6efcfdd4cbb",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "none"
@@ -1673,8 +1673,8 @@
       "state": "unknown",
       "status": "current",
       "provenance": "broadcast",
-      "chainVerified": false,
-      "notes": "v2 stack"
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: ci/none runs=200"
     },
     {
       "name": "ArtCoinsPoolExtensionAllowlist",
@@ -1687,7 +1687,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/hooks/ArtCoinsPoolExtensionAllowlist.sol",
-        "commit": "d27c932fe3dee987521897f06972f6efcfdd4cbb",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "none"
@@ -1697,8 +1697,8 @@
       "state": "unknown",
       "status": "current",
       "provenance": "broadcast",
-      "chainVerified": false,
-      "notes": "v2 stack"
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: ci/none runs=200"
     },
     {
       "name": "ArtCoinsHookV2",
@@ -1711,7 +1711,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/v2/hooks/ArtCoinsHookV2.sol",
-        "commit": "d27c932fe3dee987521897f06972f6efcfdd4cbb",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "none"
@@ -1721,8 +1721,8 @@
       "state": "enabled",
       "status": "current",
       "provenance": "broadcast",
-      "chainVerified": false,
-      "notes": "CREATE2 via 0x4e59b44847b379578588920cA78FbF26c0B4956C salt 0x00000000000000000000000000000000000000000000000000000000000008b2"
+      "chainVerified": true,
+      "notes": "CREATE2 via 0x4e59b44847b379578588920cA78FbF26c0B4956C salt 0x00000000000000000000000000000000000000000000000000000000000008b2 | bytecode: ci/none runs=200"
     },
     {
       "name": "ArtCoinsLpLockerV2",
@@ -1735,7 +1735,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/v2/lp-lockers/ArtCoinsLpLockerV2.sol",
-        "commit": "d27c932fe3dee987521897f06972f6efcfdd4cbb",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "none"
@@ -1745,8 +1745,8 @@
       "state": "unknown",
       "status": "current",
       "provenance": "broadcast",
-      "chainVerified": false,
-      "notes": "v2 stack"
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: ci/none runs=200"
     },
     {
       "name": "ArtCoinsMevLinearSkimV2",
@@ -1759,7 +1759,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/v2/mev-modules/ArtCoinsMevLinearSkimV2.sol",
-        "commit": "d27c932fe3dee987521897f06972f6efcfdd4cbb",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "none"
@@ -1769,8 +1769,8 @@
       "state": "enabled",
       "status": "current",
       "provenance": "broadcast",
-      "chainVerified": false,
-      "notes": "v2 stack"
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: ci/none runs=200"
     },
     {
       "name": "ArtCoinsFactoryV2",
@@ -1783,7 +1783,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/v2/ArtCoinsFactoryV2.sol",
-        "commit": "d27c932fe3dee987521897f06972f6efcfdd4cbb",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "none"
@@ -1793,8 +1793,8 @@
       "state": "deprecated",
       "status": "current",
       "provenance": "broadcast",
-      "chainVerified": false,
-      "notes": "v2 stack"
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: ci/none runs=200"
     },
     {
       "name": "ArtCoinsDeployerV2",
@@ -1807,7 +1807,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/v2/utils/ArtCoinsDeployerV2.sol",
-        "commit": "d27c932fe3dee987521897f06972f6efcfdd4cbb",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "none"
@@ -1817,8 +1817,8 @@
       "state": "unknown",
       "status": "current",
       "provenance": "broadcast",
-      "chainVerified": false,
-      "notes": "v2 stack"
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: ci/none runs=200"
     },
     {
       "name": "BurnRouterV2",
@@ -1831,7 +1831,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/v2/protocol-fee/BurnRouterV2.sol",
-        "commit": "d27c932fe3dee987521897f06972f6efcfdd4cbb",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "none"
@@ -1841,8 +1841,8 @@
       "state": "unknown",
       "status": "current",
       "provenance": "broadcast",
-      "chainVerified": false,
-      "notes": "v2 stack"
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: ci/none runs=200"
     },
     {
       "name": "ProtocolFeeControllerV2",
@@ -1855,7 +1855,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/v2/protocol-fee/ProtocolFeeControllerV2.sol",
-        "commit": "d27c932fe3dee987521897f06972f6efcfdd4cbb",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "none"
@@ -1865,8 +1865,8 @@
       "state": "unknown",
       "status": "current",
       "provenance": "broadcast",
-      "chainVerified": false,
-      "notes": "v2 stack"
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: ci/none runs=200"
     },
     {
       "name": "ArtCoinsUniv4EthDevBuyV2",
@@ -1879,7 +1879,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/v2/extensions/ArtCoinsUniv4EthDevBuyV2.sol",
-        "commit": "d27c932fe3dee987521897f06972f6efcfdd4cbb",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "none"
@@ -1889,8 +1889,8 @@
       "state": "enabled",
       "status": "current",
       "provenance": "broadcast",
-      "chainVerified": false,
-      "notes": "v2 stack"
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: ci/none runs=200"
     },
     {
       "name": "ArtCoinsAirdropV2",
@@ -1903,7 +1903,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/v2/extensions/ArtCoinsAirdropV2.sol",
-        "commit": "d27c932fe3dee987521897f06972f6efcfdd4cbb",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "none"
@@ -1913,8 +1913,8 @@
       "state": "enabled",
       "status": "current",
       "provenance": "broadcast",
-      "chainVerified": false,
-      "notes": "v2 stack"
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: ci/none runs=200"
     },
     {
       "name": "ArtCoinsVaultV2",
@@ -1927,7 +1927,7 @@
       "deployer": "0xCB43078C32423F5348Cab5885911C3B5faE217F9",
       "source": {
         "repoPath": "src/v2/extensions/ArtCoinsVaultV2.sol",
-        "commit": "d27c932fe3dee987521897f06972f6efcfdd4cbb",
+        "commit": "0b2601bdfcee0af70f9ecc3b5dcdbe4161be6225",
         "bytecodeMatch": "verified",
         "profile": "ci",
         "metadata": "none"
@@ -1937,8 +1937,8 @@
       "state": "enabled",
       "status": "current",
       "provenance": "broadcast",
-      "chainVerified": false,
-      "notes": "v2 stack"
+      "chainVerified": true,
+      "notes": "v2 stack | bytecode: ci/none runs=200"
     }
   ],
   "coins": [
